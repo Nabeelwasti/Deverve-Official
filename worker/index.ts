@@ -43,7 +43,7 @@ interface SessionRow {
   revoked_at: string | null;
 }
 
-const json = (data: unknown, status = 200): Response =>
+const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -51,6 +51,7 @@ const json = (data: unknown, status = 200): Response =>
       "cache-control": "no-store",
       "x-content-type-options": "nosniff",
       "referrer-policy": "no-referrer",
+      ...extraHeaders,
     },
   });
 
@@ -213,7 +214,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       const passwordMatches = await verifyPassword(password, admin?.password_hash ?? dummyHash);
       if (!admin || admin.is_active !== 1 || !passwordMatches) {
         await env.DB.prepare(
-          "INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at, locked_until, updated_at) VALUES (?, 1, ?, NULL, ?) ON CONFLICT(key_hash) DO UPDATE SET failure_count = CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END, window_started_at = CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN excluded.window_started_at ELSE window_started_at END, locked_until = CASE WHEN (CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END) >= 5 THEN datetime(excluded.window_started_at, '+15 minutes') ELSE locked_until END, updated_at = excluded.updated_at",
+          "INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at, locked_until, updated_at) VALUES (?, 1, ?, NULL, ?) ON CONFLICT(key_hash) DO UPDATE SET failure_count = CASE WHEN julianday(window_started_at) <= julianday(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END, window_started_at = CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN excluded.window_started_at ELSE window_started_at END, locked_until = CASE WHEN (CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END) >= 5 THEN strftime('%Y-%m-%dT%H:%M:%fZ', excluded.window_started_at, '+15 minutes') ELSE locked_until END, updated_at = excluded.updated_at",
         ).bind(attemptKey, now, now).run();
         const updated = await env.DB.prepare("SELECT locked_until FROM admin_login_attempts WHERE key_hash = ?").bind(attemptKey).first<{ locked_until: string | null }>();
         return updated?.locked_until && updated.locked_until > now
