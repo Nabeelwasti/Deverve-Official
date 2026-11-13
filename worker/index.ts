@@ -51,6 +51,8 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
   }
+  const origin = request.headers.get("origin");
+  if (origin && origin !== url.origin) return error("Cross-origin requests are not accepted", 403);
 
   if (url.pathname === "/api/health" && request.method === "GET") {
     try {
@@ -84,7 +86,9 @@ async function handleRequest(request: Request, env: Env): Promise<Response> {
     if (contentLength > 12_000) return error("Request is too large", 413);
     let body: Record<string, unknown>;
     try {
-      body = await request.json() as Record<string, unknown>;
+      const rawBody = await request.text();
+      if (new TextEncoder().encode(rawBody).byteLength > 12_000) return error("Request is too large", 413);
+      body = JSON.parse(rawBody) as Record<string, unknown>;
     } catch {
       return error("Please submit valid form details", 400);
     }
