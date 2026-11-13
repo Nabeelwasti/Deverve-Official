@@ -11,6 +11,7 @@ interface D1PreparedStatement {
 }
 interface D1Database {
   prepare(query: string): D1PreparedStatement;
+  batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 export interface Env {
   DB: D1Database;
@@ -32,6 +33,18 @@ interface AdminRow {
   role: string;
   is_active: number;
   password_hash: string;
+}
+interface AdminProductRow {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  audience: string;
+  status: "draft" | "published" | "archived";
+  retail_price_paisa: number | null;
+  wholesale_price_paisa: number | null;
+  updated_at: string;
 }
 interface SessionRow {
   id: string;
@@ -164,6 +177,157 @@ async function readJson(request: Request, maxBytes = 8_000): Promise<Record<stri
   }
 }
 
+
+interface NormalizedProduct {
+  slug: string;
+  name: string;
+  description: string;
+  category: string;
+  audience: "men" | "women" | "kids" | "unisex";
+  status: "draft" | "published" | "archived";
+  retailPrice: number | null;
+  wholesalePrice: number | null;
+}
+
+function normalizeProduct(body: Record<string, unknown>, current?: AdminProductRow): NormalizedProduct | null {
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+  const name = has("name") ? cleanText(body.name, 120) : current?.name ?? "";
+  const description = has("description") ? cleanText(body.description, 4000) : current?.description ?? "";
+  const category = has("category") ? cleanText(body.category, 60) : current?.category ?? "";
+  const audience = has("audience") ? cleanText(body.audience, 12) : current?.audience ?? "";
+  const status = has("status") ? cleanText(body.status, 12) : current?.status ?? "draft";
+  const rawSlug = has("slug") ? cleanText(body.slug, 120) : current?.slug ?? name;
+  const slug = rawSlug.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120);
+  const price = (key: string, existing: number | null | undefined): number | null | undefined => {
+    if (!has(key)) return existing;
+    const value = body[key];
+    if (value === null || value === "") return null;
+    return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  };
+  const retailPrice = price("retail_price_paisa", current?.retail_price_paisa);
+  const wholesalePrice = price("wholesale_price_paisa", current?.wholesale_price_paisa);
+  if (name.length < 2 || category.length < 2 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return null;
+  if (!["men", "women", "kids", "unisex"].includes(audience)) return null;
+  if (!["draft", "published", "archived"].includes(status)) return null;
+  if (retailPrice === undefined || wholesalePrice === undefined) return null;
+  return {
+    slug, name, description, category,
+    audience: audience as NormalizedProduct["audience"],
+    status: status as NormalizedProduct["status"],
+    retailPrice, wholesalePrice,
+  };
+}
+
+async function adminProductRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const isCollection = path === "/api/admin/products";
+  const productMatch = path.match(/^\\/api\\/admin\\/products\\/([a-f0-9-]{36})$/i);
+  const isOverview = path === "/api/admin/overview";
+  if (!isCollection && !productMatch && !isOverview) return null;
+
+  let admin: SessionRow | null;
+  try {
+    admin = await currentAdmin(request, env.DB);
+  } catch {
+    return error("Admin service is temporarily unavailable", 503);
+  }
+  if (!admin) return error("Authentication required", 401);
+
+  if (isOverview && request.method === "GET") {
+    try {
+      const stats = await env.DB.prepare(
+        "SELECT (SELECT COUNT(*) FROM products WHERE status = 'published') AS published_products, (SELECT COUNT(*) FROM products WHERE status = 'draft') AS draft_products, (SELECT COUNT(*) FROM enquiries WHERE status = 'new') AS new_enquiries, (SELECT COUNT(*) FROM orders WHERE order_status = 'pending') AS pending_orders, (SELECT COUNT(*) FROM rental_requests WHERE status = 'requested') AS rental_requests",
+      ).first<Record<string, number>>();
+      return json({ overview: stats ?? { published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 } });
+    } catch {
+      return error("Dashboard summary is temporarily unavailable", 503);
+    }
+  }
+
+  if (isCollection && request.method === "GET") {
+    try {
+      const limitValue = Number(url.searchParams.get("limit") ?? "50");
+      const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
+      const status = cleanText(url.searchParams.get("status"), 12);
+      const rows = status && ["draft", "published", "archived"].includes(status)
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
+        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
+      return json({ products: rows.results ?? [] });
+    } catch {
+      return error("Product management is temporarily unavailable", 503);
+    }
+  }
+
+  const canManage = ["owner", "manager", "catalogue"].includes(admin.role);
+  if (!canManage) return error("You do not have permission to manage products", 403);
+  if (!["POST", "PATCH", "DELETE"].includes(request.method)) return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+
+  if (isCollection && request.method === "POST") {
+    const body = await readJson(request);
+    if (!body) return error("Please submit valid product details", 400);
+    const product = normalizeProduct(body);
+    if (!product) return error("Check the product name, slug, category, audience, status and prices", 400);
+    if (admin.role === "catalogue" && product.status !== "draft") return error("Only an owner or manager can publish products", 403);
+    try {
+      const duplicate = await env.DB.prepare("SELECT id FROM products WHERE slug = ? LIMIT 1").bind(product.slug).first<{ id: string }>();
+      if (duplicate) return error("A product with this URL slug already exists", 409);
+      const id = crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO products (id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, "product.created", "product", id, JSON.stringify({ status: product.status, category: product.category })),
+      ]);
+      return json({ created: true, id, product }, 201);
+    } catch {
+      return error("Product could not be created", 503);
+    }
+  }
+
+  if (productMatch && request.method === "PATCH") {
+    const id = productMatch[1];
+    const body = await readJson(request);
+    if (!body) return error("Please submit valid product details", 400);
+    try {
+      const current = await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products WHERE id = ? LIMIT 1")
+        .bind(id).first<AdminProductRow>();
+      if (!current) return error("Product not found", 404);
+      const product = normalizeProduct(body, current);
+      if (!product) return error("Check the product name, slug, category, audience, status and prices", 400);
+      if (admin.role === "catalogue" && product.status !== "draft" && product.status !== current.status) return error("Only an owner or manager can change publication status", 403);
+      const duplicate = await env.DB.prepare("SELECT id FROM products WHERE slug = ? AND id <> ? LIMIT 1").bind(product.slug, id).first<{ id: string }>();
+      if (duplicate) return error("A product with this URL slug already exists", 409);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE products SET slug = ?, name = ?, description = ?, category = ?, audience = ?, status = ?, retail_price_paisa = ?, wholesale_price_paisa = ?, updated_at = ? WHERE id = ?")
+          .bind(product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice, new Date().toISOString(), id),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, "product.updated", "product", id, JSON.stringify({ status: product.status, category: product.category })),
+      ]);
+      return json({ updated: true, id, product });
+    } catch {
+      return error("Product could not be updated", 503);
+    }
+  }
+
+  if (productMatch && request.method === "DELETE") {
+    const id = productMatch[1];
+    try {
+      const current = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(id).first<{ id: string }>();
+      if (!current) return error("Product not found", 404);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE products SET status = 'archived', updated_at = ? WHERE id = ?").bind(new Date().toISOString(), id),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, "product.archived", "product", id, "{}"),
+      ]);
+      return json({ archived: true, id });
+    } catch {
+      return error("Product could not be archived", 503);
+    }
+  }
+  return error("Method not allowed", 405);
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
@@ -252,6 +416,8 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     }
   }
 
+  const productResponse = await adminProductRoutes(request, env, url);
+  if (productResponse) return productResponse;
   return error("Not found", 404);
 }
 
