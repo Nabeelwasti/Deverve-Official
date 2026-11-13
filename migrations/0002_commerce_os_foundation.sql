@@ -157,6 +157,8 @@ CREATE TABLE IF NOT EXISTS channel_listings (
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(channel_id,product_id,variant_id)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_listing_product_no_variant ON channel_listings(channel_id,product_id) WHERE variant_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_channel_listing_variant ON channel_listings(channel_id,variant_id) WHERE variant_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_channel_listings_product ON channel_listings(product_id,listing_status);
 
 CREATE TABLE IF NOT EXISTS channel_sync_events (
