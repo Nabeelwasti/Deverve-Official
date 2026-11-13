@@ -62,13 +62,13 @@ function cleanText(value: unknown, max: number): string {
 }
 
 function validPhone(value: string): boolean {
-  return /^\\+?[0-9 ()-]{8,20}$/.test(value);
+  return /^\+?[0-9 ()-]{8,20}$/.test(value);
 }
 
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 function fromBase64Url(value: string): Uint8Array {
@@ -177,7 +177,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     const email = cleanText(body.email, 160).toLowerCase();
     const password = typeof body.password === "string" ? body.password : "";
     if (!await constantTimeTextEqual(suppliedToken, env.ADMIN_BOOTSTRAP_TOKEN)) return error("Setup authorization failed", 403);
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
       return error("Use a valid email and a password between 12 and 128 characters", 400);
     }
     try {
@@ -200,7 +200,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     if (!body) return error("Please submit valid login details", 400);
     const email = cleanText(body.email, 160).toLowerCase();
     const password = typeof body.password === "string" ? body.password : "";
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
     const address = cleanText(request.headers.get("cf-connecting-ip"), 64) || "unknown";
     const attemptKey = await sha256(`${address.toLowerCase()}|${email}`);
     const now = new Date().toISOString();
@@ -214,7 +214,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       const passwordMatches = await verifyPassword(password, admin?.password_hash ?? dummyHash);
       if (!admin || admin.is_active !== 1 || !passwordMatches) {
         await env.DB.prepare(
-          "INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at, locked_until, updated_at) VALUES (?, 1, ?, NULL, ?) ON CONFLICT(key_hash) DO UPDATE SET failure_count = CASE WHEN julianday(window_started_at) <= julianday(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END, window_started_at = CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN excluded.window_started_at ELSE window_started_at END, locked_until = CASE WHEN (CASE WHEN window_started_at <= datetime(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END) >= 5 THEN strftime('%Y-%m-%dT%H:%M:%fZ', excluded.window_started_at, '+15 minutes') ELSE locked_until END, updated_at = excluded.updated_at",
+          "INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at, locked_until, updated_at) VALUES (?, 1, ?, NULL, ?) ON CONFLICT(key_hash) DO UPDATE SET failure_count = CASE WHEN julianday(window_started_at) <= julianday(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END, window_started_at = CASE WHEN julianday(window_started_at) <= julianday(excluded.window_started_at, '-15 minutes') THEN excluded.window_started_at ELSE window_started_at END, locked_until = CASE WHEN (CASE WHEN julianday(window_started_at) <= julianday(excluded.window_started_at, '-15 minutes') THEN 1 ELSE failure_count + 1 END) >= 5 THEN strftime('%Y-%m-%dT%H:%M:%fZ', excluded.window_started_at, '+15 minutes') ELSE locked_until END, updated_at = excluded.updated_at",
         ).bind(attemptKey, now, now).run();
         const updated = await env.DB.prepare("SELECT locked_until FROM admin_login_attempts WHERE key_hash = ?").bind(attemptKey).first<{ locked_until: string | null }>();
         return updated?.locked_until && updated.locked_until > now
@@ -306,7 +306,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     const message = cleanText(body.message, 3000);
     if (!["retail", "wholesale", "rental", "general"].includes(enquiryType)) return error("Choose a valid enquiry type", 400);
     if (customerName.length < 2 || !validPhone(phone) || message.length < 5) return error("Please check your name, phone number and message", 400);
-    if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
 
     const id = crypto.randomUUID();
     try {
