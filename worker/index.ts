@@ -221,7 +221,8 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
 async function adminProductRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   const isCollection = path === "/api/admin/products";
-  const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";\n  const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
+  const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";
+  const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
   const isOverview = path === "/api/admin/overview";
   if (!isCollection && !productMatch && !isOverview) return null;
 
