@@ -312,7 +312,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   }
 
   if (productMatch && request.method === "DELETE") {
-    const id = productMatch[1];
+    const id = productMatch;
     try {
       const current = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(id).first<{ id: string }>();
       if (!current) return error("Product not found", 404);
