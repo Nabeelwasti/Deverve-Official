@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import InstallPrompt from "./InstallPrompt";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -243,6 +244,7 @@ function App() {
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
       </footer>
+      <InstallPrompt />
       <a className="floating-whatsapp" href={whatsapp("Assalamu Alaikum, I would like to enquire about De VERVE.")} target="_blank" rel="noreferrer" aria-label="Chat with De VERVE on WhatsApp">✆</a>
     </div>
   );
