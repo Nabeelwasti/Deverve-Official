@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -20,6 +20,34 @@ function App() {
   const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [products, setProducts] = useState<Array<{
+    id: string; slug: string; name: string; description: string; category: string;
+    audience: string; retail_price_paisa: number | null; image_key: string | null;
+  }>>([]);
+  const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+
+  useEffect(() => {
+    let active = true;
+    const loadProducts = async () => {
+      try {
+        const response = await fetch("/api/products?limit=12", { headers: { accept: "application/json" } });
+        if (!response.ok) throw new Error("Catalogue unavailable");
+        const payload = await response.json() as { products?: typeof products };
+        if (!Array.isArray(payload.products)) throw new Error("Invalid catalogue response");
+        if (!active) return;
+        setProducts(payload.products);
+        setCatalogueState(payload.products.length ? "ready" : "empty");
+      } catch {
+        if (active) setCatalogueState("error");
+      }
+    };
+    void loadProducts();
+    return () => { active = false; };
+  }, []);
+
+  const formatPrice = (paisa: number | null) => paisa === null
+    ? "Ask for price"
+    : new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(paisa / 100);
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -132,6 +160,28 @@ function App() {
           </div>
           {!search && <button className="catalogue-more" type="button" onClick={() => setShowAll(!showAll)}>{showAll ? "Show less ↑" : "Explore all categories ↓"}</button>}
           <p className="catalogue-note">Category artwork is illustrative. Product photographs, prices, sizes and live stock will be added to the catalogue after the inventory is entered.</p>
+          <div className="live-catalogue" aria-live="polite">
+            <div className="live-catalogue-heading">
+              <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>Featured pieces</h3></div>
+              <span>REAL LISTINGS · UPDATED BY OUR TEAM</span>
+            </div>
+            {catalogueState === "loading" && <p className="catalogue-feedback">Loading available listings…</p>}
+            {catalogueState === "error" && <p className="catalogue-feedback">The live catalogue is not connected yet. Please contact our team for current collections.</p>}
+            {catalogueState === "empty" && <p className="catalogue-feedback">New pieces are being added. Contact us to ask about current arrivals and availability.</p>}
+            {catalogueState === "ready" && <div className="product-grid">
+              {products.map((product) => (
+                <article className="product-card" key={product.id}>
+                  <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>
+                  <div className="product-info">
+                    <span className="product-audience">{product.audience} · {product.category}</span>
+                    <h4>{product.name}</h4>
+                    <p>{product.description || "Contact our team for product details and available options."}</p>
+                    <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><a href={whatsapp(`Assalamu Alaikum, I am interested in ${product.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">Enquire ↗</a></div>
+                  </div>
+                </article>
+              ))}
+            </div>}
+          </div>
         </section>
 
         <section className="wholesale-section" id="wholesale">
