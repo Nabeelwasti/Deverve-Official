@@ -209,3 +209,35 @@ test("owner can create, edit, publish and archive products with an audit entry",
   assert.equal(db.products.get(id).status, "archived");
   assert.equal(db.audits.length, 3);
 });
+
+test("catalogue staff cannot publish or archive products", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const created = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Staff Draft Hoodie", category: "hoodies", audience: "unisex",
+  }, headers), env(db));
+  assert.equal(created.status, 201);
+  const id = (await created.json()).id;
+  const admin = [...db.admins.values()][0];
+  admin.role = "catalogue";
+
+  const publish = await handleRequest(request("/api/admin/products/" + id, "PATCH", { status: "published" }, headers), env(db));
+  assert.equal(publish.status, 403);
+  const archive = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
+  assert.equal(archive.status, 403);
+  assert.equal(db.products.get(id).status, "draft");
+});
+
+test("duplicate product slugs are rejected without a second insert", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const payload = { name: "Classic Sweatshirt", category: "sweatshirts", audience: "unisex" };
+  assert.equal((await handleRequest(request("/api/admin/products", "POST", payload, headers), env(db))).status, 201);
+  const duplicate = await handleRequest(request("/api/admin/products", "POST", payload, headers), env(db));
+  assert.equal(duplicate.status, 409);
+  assert.equal(db.products.size, 1);
+});
