@@ -44,18 +44,19 @@ Free-tier quotas and provider terms apply. Paid services will not be enabled wit
 
 ## Delivery stages
 
-1. Establish the responsive storefront and design system.
-2. Add product catalogue, product details, cart and checkout request flow.
-3. Add backend, database schema, COD order handling and admin authentication.
-4. Add wholesale enquiries, inventory and quotations.
-5. Add vehicle catalogue and rental enquiry/management workflows.
-6. Add WhatsApp links, CRM and customer communication tools.
-7. Add approved social integrations and AI provider adapters.
-8. Add reporting, security review, testing and production deployment.
+1. Establish the responsive storefront and design system. (In progress / first pass committed.)
+2. Establish the backend API and D1 schema foundation. (Source scaffold committed; deployment pending.)
+3. Add product catalogue management, product details, cart and checkout request flow.
+4. Add COD order handling and secure admin authentication.
+5. Add wholesale enquiries, inventory and quotations.
+6. Add vehicle catalogue and rental enquiry/management workflows.
+7. Add WhatsApp links, CRM and customer communication tools.
+8. Add approved social integrations and AI provider adapters.
+9. Add reporting, security review, testing and production deployment.
 
 ## Current status
 
-The responsive storefront now includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. These are front-end enquiry experiences only. Product listings, cart persistence, checkout/order storage, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet. No live deployment or production integrations are configured.
+The responsive storefront includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. A customer enquiry form now calls the Worker API. The backend foundation includes a D1 schema migration, public published-product read endpoint, enquiry persistence endpoint, health endpoint and schema smoke checks. The Worker and database are source-only and have not been deployed or connected to a live D1 database. Product management, cart persistence, COD order creation, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet.
 
 ## Local development
 
