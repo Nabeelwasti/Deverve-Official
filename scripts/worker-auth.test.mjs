@@ -18,12 +18,47 @@ class FakeStatement {
     }
     if (q.startsWith("SELECT failure_count, locked_until")) return this.db.attempts.get(v[0]) ?? null;
     if (q.startsWith("SELECT locked_until")) return this.db.attempts.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id FROM products WHERE slug = ?")) {
+      return [...this.db.products.values()].find((item) => item.slug === v[0] && (!v[1] || item.id !== v[1])) ?? null;
+    }
+    if (q.startsWith("SELECT id, slug, name, description, category, audience, status")) return this.db.products.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id FROM products WHERE id = ?")) return this.db.products.get(v[0]) ?? null;
+    if (q.startsWith("SELECT (SELECT COUNT(*)")) return { published_products: 0, draft_products: this.db.products.size, new_enquiries: 0, pending_orders: 0, rental_requests: 0 };
     if (q.startsWith("SELECT 1 AS ok")) return { ok: 1 };
     throw new Error("Unexpected first query: " + q);
+  }
+  async all() {
+    const q = this.sql;
+    const v = this.values;
+    if (q.startsWith("SELECT id, slug, name, description, category, audience, status FROM products")) {
+      const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
+      return { success: true, results: rows };
+    }
+    throw new Error("Unexpected all query: " + q);
   }
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO products")) {
+      const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa] = v;
+      this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE products SET slug")) {
+      const [slug, name, description, category, audience, status, retail, wholesale, updated, id] = v;
+      const row = this.db.products.get(id);
+      if (row) Object.assign(row, { slug, name, description, category, audience, status, retail_price_paisa: retail, wholesale_price_paisa: wholesale, updated_at: updated });
+      return { success: true, meta: { changes: row ? 1 : 0 } };
+    }
+    if (q.startsWith("UPDATE products SET status = 'archived'")) {
+      const row = this.db.products.get(v[1]);
+      if (row) Object.assign(row, { status: "archived", updated_at: v[0] });
+      return { success: true, meta: { changes: row ? 1 : 0 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs")) {
+      this.db.audits.push(v);
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO admin_users")) {
       if (this.db.admins.size) return { success: true, meta: { changes: 0 } };
       const row = { id: v[0], email: v[1], password_hash: v[2], role: "owner", is_active: 1, last_login_at: null };
@@ -68,7 +103,14 @@ class FakeD1 {
   admins = new Map();
   sessions = new Map();
   attempts = new Map();
+  products = new Map();
+  audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
+  async batch(statements) {
+    const results = [];
+    for (const statement of statements) results.push(await statement.run());
+    return results;
+  }
 }
 
 const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, ADMIN_BOOTSTRAP_TOKEN: token });
@@ -136,4 +178,34 @@ test("five incorrect passwords trigger a fifteen-minute login lockout", async ()
   for (let attempt = 0; attempt < 4; attempt += 1) assert.equal((await login(db, "incorrect-password")).status, 401);
   assert.equal((await login(db, "incorrect-password")).status, 429);
   assert.equal((await login(db, "A-strong-password-2026")).status, 429);
+});
+
+test("owner can create, edit, publish and archive products with an audit entry", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const created = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Everyday Hoodie", category: "hoodies", audience: "unisex", retail_price_paisa: 250000,
+  }, headers), env(db));
+  assert.equal(created.status, 201);
+  const createdBody = await created.json();
+  const id = createdBody.id;
+  assert.equal(createdBody.product.slug, "everyday-hoodie");
+  assert.equal(db.audits.length, 1);
+
+  const updated = await handleRequest(request("/api/admin/products/" + id, "PATCH", {
+    name: "Everyday Premium Hoodie", status: "published",
+  }, headers), env(db));
+  assert.equal(updated.status, 200);
+  assert.equal((await updated.json()).product.status, "published");
+
+  const listed = await handleRequest(new Request(origin + "/api/admin/products?status=published", { headers: { cookie } }), env(db));
+  assert.equal(listed.status, 200);
+  assert.equal((await listed.json()).products.length, 1);
+
+  const archived = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
+  assert.equal(archived.status, 200);
+  assert.equal(db.products.get(id).status, "archived");
+  assert.equal(db.audits.length, 3);
 });
