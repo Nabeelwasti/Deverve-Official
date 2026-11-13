@@ -47,7 +47,7 @@ Free-tier quotas and provider terms apply. Paid services will not be enabled wit
 1. Establish the responsive storefront and design system. (In progress / first pass committed.)
 2. Establish the backend API and D1 schema foundation. (Source scaffold committed; deployment pending.)
 3. Add product catalogue management, product details, cart and checkout request flow.
-4. Add COD order handling and secure admin authentication.
+4. Add COD order handling and complete the secure admin dashboard and role-authorized management APIs. (Authentication API foundation implemented; deployment and runtime security tests pending.)
 5. Add wholesale enquiries, inventory and quotations.
 6. Add vehicle catalogue and rental enquiry/management workflows.
 7. Add WhatsApp links, CRM and customer communication tools.
@@ -56,7 +56,7 @@ Free-tier quotas and provider terms apply. Paid services will not be enabled wit
 
 ## Current status
 
-The responsive storefront includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. The customer enquiry form and published-product catalogue use the shared API handler. The installable PWA shell now includes a web manifest, app icons, service-worker caching that deliberately excludes API/customer data, and install guidance for supported browsers. A Cloudflare D1 database named `deverve-production` has been created in APAC and the initial schema migration has been applied; its tables have been read back successfully. Cloudflare Pages project creation is currently blocked by a Cloudflare GitHub installation error, so the site and API are not yet deployed. Product management, cart persistence, COD order creation, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet.
+The responsive storefront includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. The customer enquiry form and published-product catalogue use the shared API handler. The installable PWA shell now includes a web manifest, app icons, service-worker caching that deliberately excludes API/customer data, and install guidance for supported browsers. A Cloudflare D1 database named `deverve-production` has been created in APAC and the initial schema migration has been applied; its tables have been read back successfully. Cloudflare Pages project creation is currently blocked by a Cloudflare GitHub installation error, so the site and API are not yet deployed. The secure admin authentication API foundation (first-owner bootstrap, password verification, throttling, hashed server-side sessions and logout) is now in source and passes CI type/build/schema checks. The admin dashboard, staff invitations, role-enforced management APIs, product management, cart persistence, COD order creation, live inventory, rental availability management and payment processing are not implemented yet. The new authentication migration has not been applied to production D1 and the Worker is not deployed.
 
 ## Local development
 
