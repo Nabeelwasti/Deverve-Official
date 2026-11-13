@@ -1,6 +1,6 @@
 # De VERVE backend foundation
 
-This stage adds a Cloudflare Worker API and the first D1 schema migration. It is source code only: it has not been deployed and no Cloudflare resources have been created.
+This document records the current Worker API and D1 state. The Worker source is in GitHub but is not deployed. The Cloudflare D1 database `deverve-production` exists in APAC and all three migrations are applied. Cloudflare Pages and Worker deployment are not yet configured.
 
 ## API contract
 
@@ -29,7 +29,7 @@ Allowed enquiry types: `retail`, `wholesale`, `rental`, `general`. The optional 
 
 ## D1 schema
 
-Apply `migrations/0001_initial.sql` to a new D1 database. It creates catalogue, variants, enquiries, COD order, wholesale quotation, vehicle, rental request, admin-user and audit-log tables.
+Repository migrations `0001_initial.sql`, `0002_commerce_os_foundation.sql` and `0003_admin_auth_throttling.sql` are applied to the production D1 database. They create 25 application tables covering catalogue, variants, enquiries, orders, wholesale, vehicles/rentals, admin authentication, CMS, media metadata, inventory movements and channel integration state. Live verification returned no foreign-key violations. No real business records have been inserted.
 
 Money values are integer paisa, never floating-point rupees. Product and vehicle records start unpublished/draft. Do not insert fabricated products, stock, prices, vehicles or orders.
 
@@ -47,7 +47,7 @@ Do not paste credentials into GitHub files or chat. Do not connect a personal Cl
 
 ## Important security boundary
 
-The current Worker intentionally has no admin routes and no checkout/order-creation endpoint. The `admin_users` table is only a schema placeholder; authentication, session management, role enforcement, password hashing, CSRF controls and audit enforcement must be implemented before any admin interface is exposed. The public enquiry API must not be used as an order or booking confirmation system.
+The Worker has admin authentication and a limited role-protected product management API, but there is no admin dashboard UI and no order/checkout creation endpoint. Do not expose the admin setup route until the deployment secret is configured and the production runtime is verified. The public enquiry API must not be used as an order or booking confirmation system.
 
 ## Admin authentication foundation (source implemented; deployment pending)
 
@@ -69,7 +69,7 @@ Security controls in this foundation:
 
 ### One-time deployment configuration
 
-Before the first owner setup, create a high-entropy secret named `ADMIN_BOOTSTRAP_TOKEN` in the Worker environment. Use a password manager to generate at least 32 random characters. Never commit it to Git or place it in frontend configuration. The bootstrap token is a one-time setup gate; remove/rotate it after owner creation. Cloudflare configuration and production deployment have deliberately not been attempted while the account login issue is unresolved.
+Before the first owner setup, create a high-entropy secret named `ADMIN_BOOTSTRAP_TOKEN` in the Worker environment. Use a password manager to generate at least 32 random characters. Never commit it to Git or place it in frontend configuration. The bootstrap token is a one-time setup gate; remove/rotate it after owner creation. Cloudflare Pages/Worker deployment remains pending until the GitHub App is connected. The D1 schema migrations have been applied and verified separately.
 
 ### Current boundary
 
