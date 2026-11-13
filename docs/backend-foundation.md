@@ -48,3 +48,29 @@ Do not paste credentials into GitHub files or chat. Do not connect a personal Cl
 ## Important security boundary
 
 The current Worker intentionally has no admin routes and no checkout/order-creation endpoint. The `admin_users` table is only a schema placeholder; authentication, session management, role enforcement, password hashing, CSRF controls and audit enforcement must be implemented before any admin interface is exposed. The public enquiry API must not be used as an order or booking confirmation system.
+
+## Admin authentication foundation (source implemented; deployment pending)
+
+The Worker now defines these same-origin admin endpoints:
+
+- `POST /api/admin/bootstrap`: creates the first and only owner account. It requires the server-side `ADMIN_BOOTSTRAP_TOKEN`, a valid email and a password of 12–128 characters. The database insert is conditional on there being no existing admin account, so concurrent bootstrap requests cannot create multiple owners.
+- `POST /api/admin/login`: verifies the password and issues a 12-hour session.
+- `GET /api/admin/me`: returns the current authenticated account and role.
+- `POST /api/admin/logout`: revokes the current session.
+
+Security controls in this foundation:
+
+- Passwords use PBKDF2-HMAC-SHA-256 with a random 128-bit salt and 210,000 iterations.
+- Session bearer tokens are 256-bit random values. Only SHA-256 token digests are stored in D1.
+- Session cookies are `HttpOnly`, `Secure`, `SameSite=Strict`, host-only (`__Host-`) and scoped to `/`.
+- Mutating auth requests require an exact same-origin `Origin` header and reject cross-site fetch metadata.
+- Login failures are throttled per normalized email and Cloudflare client IP using a persistent digest key; after five failures the key is locked for 15 minutes. Raw IP addresses are not stored.
+- Auth responses are always `no-store`; password hashes and session tokens are never returned.
+
+### One-time deployment configuration
+
+Before the first owner setup, create a high-entropy secret named `ADMIN_BOOTSTRAP_TOKEN` in the Worker environment. Use a password manager to generate at least 32 random characters. Never commit it to Git or place it in frontend configuration. The bootstrap token is a one-time setup gate; remove/rotate it after owner creation. Cloudflare configuration and production deployment have deliberately not been attempted while the account login issue is unresolved.
+
+### Current boundary
+
+This is the authentication API foundation, not a finished admin dashboard. No product, order, CMS, inventory, rental or staff-management write endpoints are exposed yet. Every future admin mutation must call the server-side session check and enforce role permissions before touching D1. The admin UI must not be enabled until this and the full authorization layer have been tested against the deployed Worker.
