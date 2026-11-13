@@ -23,5 +23,7 @@ jobs:
         run: npm install
       - name: Type-check and build
         run: npm run check
+      - name: Test Worker authentication behavior
+        run: npm run test:worker
       - name: Validate D1 schema and constraints
         run: python scripts/verify_schema.py
