@@ -199,7 +199,7 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
   const rawSlug = has("slug") ? cleanText(body.slug, 120) : current?.slug ?? name;
   const slug = rawSlug.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120);
   const price = (key: string, existing: number | null | undefined): number | null | undefined => {
-    if (!has(key)) return existing;
+    if (!has(key)) return existing ?? null;
     const value = body[key];
     if (value === null || value === "") return null;
     return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
