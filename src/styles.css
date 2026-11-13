@@ -238,3 +238,29 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 
 .enquiry-form{max-width:760px;margin:54px auto 0;padding:30px;background:#f5f8fc;border:1px solid #dce5ef;text-align:left}.enquiry-form h3{margin:0 0 22px;font:700 20px Manrope;color:var(--deep-blue)}.enquiry-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px}.enquiry-fields label{display:flex;flex-direction:column;gap:7px;color:#50657e;font-size:10px;font-weight:700}.enquiry-fields input,.enquiry-fields select,.enquiry-fields textarea{width:100%;min-height:43px;padding:11px 12px;border:1px solid #d3deea;border-radius:0;background:#fff;color:var(--ink);font:12px "DM Sans",sans-serif;outline-color:var(--bright-blue)}.enquiry-fields textarea{resize:vertical}.enquiry-message{grid-column:1/-1}.form-trap{position:absolute!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important}.enquiry-submit{display:flex;align-items:center;gap:18px;margin-top:18px;flex-wrap:wrap}.enquiry-submit button:disabled{opacity:.6;cursor:wait}.enquiry-submit p{margin:0;color:#315e8d;font-size:11px;line-height:1.5}.contact-section>small{display:block;margin:24px auto 0;max-width:650px;color:#8796a7;font-size:9px;line-height:1.7;text-align:center}
 @media(max-width:560px){.enquiry-form{padding:20px 16px;margin-top:38px}.enquiry-fields{grid-template-columns:1fr}.enquiry-message{grid-column:auto}.enquiry-submit{align-items:flex-start;flex-direction:column}}
+
+
+/* Live catalogue — only displays products returned by the published-products API */
+.live-catalogue{margin:58px 0 0;padding-top:34px;border-top:1px solid #dfe7f0}
+.live-catalogue-heading{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:22px}
+.live-catalogue-heading .eyebrow{margin:0 0 8px}
+.live-catalogue-heading h3{margin:0;color:var(--deep-blue);font:700 clamp(22px,3vw,32px) Manrope;letter-spacing:-.05em}
+.live-catalogue-heading>span{color:#7b8da3;font-size:8px;font-weight:700;letter-spacing:.15em}
+.catalogue-feedback{padding:26px 18px;border:1px dashed #cbd8e6;background:#f7f9fc;color:#60748d;text-align:center;font-size:12px;line-height:1.7}
+.product-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.product-card{min-width:0;border:1px solid #e1e8f0;background:#fff}
+.product-visual{height:210px;position:relative;display:grid;place-items:center;overflow:hidden;background:linear-gradient(145deg,#eff4fa,#d8e4f1)}
+.product-visual>span{position:absolute;top:14px;left:15px;color:#7388a1;font-size:7px;font-weight:800;letter-spacing:.18em}
+.product-visual>small{position:absolute;right:14px;bottom:12px;color:#71859d;font-size:8px;text-transform:uppercase;letter-spacing:.12em}
+.product-garment{width:105px;height:140px;position:relative;filter:drop-shadow(0 14px 12px rgba(6,35,79,.17))}
+.product-garment:before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,#0a2d59,#3975b6);clip-path:polygon(25% 0,39% 9%,61% 9%,75% 0,100% 20%,83% 43%,72% 34%,72% 100%,28% 100%,28% 34%,17% 43%,0 20%)}
+.product-garment i{position:absolute;top:12%;left:49%;height:75%;border-left:1px solid rgba(255,255,255,.25)}
+.product-info{padding:16px}
+.product-audience{color:#71859d;font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:.12em}
+.product-info h4{margin:8px 0;color:var(--deep-blue);font:700 15px Manrope}
+.product-info>p{min-height:38px;margin:0;color:#728198;font-size:10px;line-height:1.6}
+.product-buy-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;padding-top:13px;border-top:1px solid #edf1f6}
+.product-buy-row strong{color:var(--deep-blue);font-size:11px}
+.product-buy-row a{color:#1b5a9a;font-size:10px;font-weight:800;text-decoration:none}
+@media(max-width:800px){.product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.live-catalogue-heading{align-items:flex-start;flex-direction:column}.product-grid{grid-template-columns:1fr}.product-visual{height:235px}}
