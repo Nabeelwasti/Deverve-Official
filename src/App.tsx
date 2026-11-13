@@ -1,125 +1,136 @@
 import { useState } from "react";
 
-const collections = [
-  { name: "Everyday essentials", note: "Easy-to-wear pieces for every day", tag: "01", tone: "sand" },
-  { name: "Streetwear layers", note: "Hoodies, sweatshirts and relaxed fits", tag: "02", tone: "blue" },
-  { name: "The finishing edit", note: "Small details that complete the look", tag: "03", tone: "ice" },
+const categories = [
+  { number: "01", name: "T-shirts", detail: "Everyday staples", visual: "tee" },
+  { number: "02", name: "Hoodies & sweatshirts", detail: "Layers for every season", visual: "hoodie" },
+  { number: "03", name: "Trousers & pants", detail: "Comfort in motion", visual: "trouser" },
+  { number: "04", name: "Jackets & zippers", detail: "The finishing layer", visual: "jacket" },
+  { number: "05", name: "Socks & essentials", detail: "The details matter", visual: "socks" },
+  { number: "06", name: "Kidswear", detail: "Everyday looks for little ones", visual: "kids" },
 ];
+
+function GarmentVisual({ kind }: { kind: string }) {
+  return <div className={`garment-art garment-${kind}`} aria-hidden="true">
+    <span className="garment-shape" />
+    <span className="garment-highlight" />
+    <span className="garment-code">DV / EDIT</span>
+  </div>;
+}
 
 function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
-
   const closeMenu = () => setMenuOpen(false);
 
   return (
     <div className="site-shell">
       <div className="announcement">
-        <span>DE VERVE · JHELUM</span>
-        <span>Fashion for every day. Confidence in every detail.</span>
-        <a href="#contact">Get in touch <span aria-hidden="true">↗</span></a>
+        <span>DE VERVE · JHELUM, PAKISTAN</span>
+        <span>FASHION · RETAIL · WHOLESALE · CAR RENTALS</span>
+        <a href="#contact">Connect with us <span aria-hidden="true">↗</span></a>
       </div>
 
       <header className="site-header">
-        <a className="wordmark" href="#home" aria-label="De VERVE home" onClick={closeMenu}>
-          <span>DE</span> VERVE<span className="wordmark-dot">.</span>
-          <small>FASHION & MOBILITY</small>
+        <a className="brand-lockup" href="#home" aria-label="De VERVE home" onClick={closeMenu}>
+          <img src="/brand/de-verve-logo.svg" alt="De VERVE" />
+          <span><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </a>
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
         <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation">
-          <a href="#collections" onClick={closeMenu}>Collections</a>
+          <a href="#collections" onClick={closeMenu}>Fashion</a>
           <a href="#wholesale" onClick={closeMenu}>Wholesale</a>
           <a href="#mobility" onClick={closeMenu}>Car rental</a>
-          <a href="#about" onClick={closeMenu}>Our story</a>
+          <a href="#about" onClick={closeMenu}>About</a>
         </nav>
-        <a className="header-cta" href="#contact">Let's talk <span aria-hidden="true">↗</span></a>
+        <a className="header-cta" href="#contact">Get in touch <span aria-hidden="true">↗</span></a>
       </header>
 
       <main id="home">
         <section className="hero">
           <div className="hero-copy">
-            <p className="eyebrow"><span className="eyebrow-line" /> THE DE VERVE EDIT · JHELUM, PAKISTAN</p>
-            <h1>Own your<br /><em>everyday.</em></h1>
-            <p className="hero-description">A considered collection of everyday fashion, made for your pace, your plans and your point of view.</p>
+            <p className="eyebrow"><span className="eyebrow-line" /> STYLE THAT MOVES WITH YOU · JHELUM</p>
+            <h1>Wear your<br /><em>better self.</em></h1>
+            <p className="hero-description">Discover everyday fashion for men, women and kids — from relaxed essentials to statement layers. Shop retail or connect with us for wholesale enquiries.</p>
             <div className="hero-actions">
-              <a className="button button-primary" href="#collections">Explore the edit <span aria-hidden="true">↗</span></a>
-              <a className="text-link" href="#wholesale">Shop wholesale <span aria-hidden="true">→</span></a>
+              <a className="button button-primary" href="#collections">Explore fashion <span aria-hidden="true">↗</span></a>
+              <a className="text-link" href="#wholesale">Wholesale enquiries <span aria-hidden="true">→</span></a>
             </div>
-            <div className="hero-footnote"><span className="blue-dot" /> RETAIL · WHOLESALE · JHELUM</div>
+            <div className="hero-footnote"><span className="blue-dot" /> FASHION FOR EVERY DAY · JHELUM, PAKISTAN</div>
           </div>
-          <div className="hero-art" aria-label="Abstract blue fashion editorial artwork">
-            <div className="art-orbit orbit-one" />
-            <div className="art-orbit orbit-two" />
-            <div className="art-panel panel-back"><span>VERVE</span></div>
-            <div className="art-panel panel-front"><span className="panel-index">DV / 001</span><span className="panel-title">THE<br /><i>NEW</i><br />EVERYDAY</span><span className="panel-caption">A DIFFERENT KIND OF ENERGY.</span></div>
-            <div className="art-stamp">D<br />V</div>
-            <span className="art-side-label">STYLE IN MOTION — 2026</span>
+          <div className="hero-art" aria-label="Original De VERVE fashion artwork">
+            <div className="hero-disc"><img src="/brand/de-verve-logo.svg" alt="" /></div>
+            <div className="hero-ribbon"><span>FASHION</span><span>COMFORT</span><span>CONFIDENCE</span></div>
+            <div className="hero-side-note">THE EVERYDAY EDIT — DV / 01</div>
+            <div className="hero-mini-card"><span>YOUR STYLE.</span><strong>YOUR VERVE.</strong><small>EST. JHELUM · PAKISTAN</small></div>
           </div>
-          <div className="hero-bottom"><span>01 / 03</span><span>DISCOVER A MORE VERSATILE WARDROBE</span><span>SCROLL TO EXPLORE ↓</span></div>
+          <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · LIFESTYLE · MOBILITY</span><a href="#collections">SCROLL TO EXPLORE ↓</a></div>
         </section>
 
         <section className="intro-strip" id="about">
-          <p>MORE THAN A LOOK.<br /><strong>A WAY TO MOVE.</strong></p>
-          <p>De VERVE brings fashion and everyday mobility together through a customer-first experience rooted in Jhelum.</p>
+          <p>MORE THAN A LOOK.<br /><strong>YOUR EVERYDAY VERVE.</strong></p>
+          <p>De VERVE brings fashion and mobility together with a simple promise: a better experience, clear communication and style for everyday life.</p>
           <span className="intro-mark">DV<span>.</span></span>
         </section>
 
         <section className="section collections-section" id="collections">
           <div className="section-heading">
-            <div><p className="eyebrow">01 — FIND YOUR VERVE</p><h2>Made for your<br /><em>everyday rhythm.</em></h2></div>
-            <p className="section-aside">Versatile styles. Thoughtful choices.<br />A fresh point of view on everyday wear.</p>
+            <div><p className="eyebrow">01 — THE FASHION EDIT</p><h2>Find your<br /><em>everyday favourite.</em></h2></div>
+            <p className="section-aside">For men, women and kids.<br />Explore the categories and ask our team about availability.</p>
           </div>
           <div className="collection-grid">
-            {collections.map((item) => (
-              <article className={`collection-card ${item.tone}`} key={item.tag}>
-                <div className="collection-visual">
-                  <span className="collection-number">{item.tag} / 03</span>
-                  <span className="visual-word">{item.name === "Everyday essentials" ? "FORM" : item.name === "Streetwear layers" ? "MOVE" : "DETAIL"}</span>
-                  <span className="visual-symbol" aria-hidden="true">{item.tag === "01" ? "◒" : item.tag === "02" ? "✳" : "＋"}</span>
-                </div>
-                <div className="collection-meta"><div><h3>{item.name}</h3><p>{item.note}</p></div><a href="#contact" aria-label={`Enquire about ${item.name}`}>↗</a></div>
+            {categories.map((item) => (
+              <article className="collection-card" key={item.number}>
+                <GarmentVisual kind={item.visual} />
+                <div className="collection-meta"><div><span className="category-number">{item.number} / 06</span><h3>{item.name}</h3><p>{item.detail}</p></div><a href="#contact" aria-label={`Enquire about ${item.name}`}>↗</a></div>
               </article>
             ))}
           </div>
-          <p className="catalogue-note">A preview of the De VERVE direction. Product photos, sizes, prices and live stock will be added after the catalogue is confirmed.</p>
+          <p className="catalogue-note">Illustrative category artwork. Product photos, sizes, prices and live stock will appear when the verified catalogue is added.</p>
         </section>
 
         <section className="wholesale-section" id="wholesale">
-          <div className="wholesale-art"><span className="wholesale-big">D/V</span><span className="wholesale-caption">BUILT FOR BUSINESS<br />AND EVERYDAY STYLE</span></div>
+          <div className="wholesale-art">
+            <img src="/brand/de-verve-logo.svg" alt="" />
+            <span className="wholesale-caption">YOUR STORE. YOUR STYLE.<br />YOUR BUSINESS PARTNER.</span>
+          </div>
           <div className="wholesale-copy">
-            <p className="eyebrow">02 — FOR EVERY KIND OF CUSTOMER</p>
-            <h2>One destination.<br /><em>More ways to shop.</em></h2>
+            <p className="eyebrow">02 — RETAIL & WHOLESALE</p>
+            <h2>Shop your way.<br /><em>Grow your business.</em></h2>
             <div className="shopping-tabs" role="tablist" aria-label="Shopping options">
               <button type="button" role="tab" aria-selected={activeTab === "retail"} className={activeTab === "retail" ? "active" : ""} onClick={() => setActiveTab("retail")}>Retail</button>
               <button type="button" role="tab" aria-selected={activeTab === "wholesale"} className={activeTab === "wholesale" ? "active" : ""} onClick={() => setActiveTab("wholesale")}>Wholesale</button>
             </div>
             {activeTab === "retail" ? (
-              <div className="tab-panel"><h3>Your style, your way.</h3><p>Explore the collection, discover your fit and send an order enquiry. Our team will confirm availability and delivery details with you.</p><a className="text-link" href="#contact">Ask about an item →</a></div>
+              <div className="tab-panel"><h3>Find the right look.</h3><p>Browse our fashion categories and contact the team about a product, size or current availability. We’ll confirm the details before an order is placed.</p><a className="text-link" href="#contact">Ask about a product →</a></div>
             ) : (
-              <div className="tab-panel"><h3>Stock up with confidence.</h3><p>Looking for garments in quantity? Tell us what you need and our team will help with available styles, quantity options and a wholesale quotation.</p><a className="text-link" href="#contact">Request wholesale details →</a></div>
+              <div className="tab-panel"><h3>Buying for your business?</h3><p>Tell us the garment types and quantities you are looking for. Our team can discuss available lots, wholesale options and a quotation.</p><a className="text-link" href="#contact">Request a wholesale enquiry →</a></div>
             )}
           </div>
         </section>
 
         <section className="mobility-section" id="mobility">
-          <div><p className="eyebrow">03 — THE JOURNEY, YOUR WAY</p><h2>Fashion meets<br /><em>the freedom to move.</em></h2></div>
-          <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Need a ride? Explore De VERVE car rental enquiries alongside our fashion offering. Vehicle options, availability and rental terms will be confirmed directly by our team.</p><a className="button button-light" href="#contact">Enquire about rentals <span aria-hidden="true">↗</span></a></div>
+          <div><p className="eyebrow">03 — DE VERVE MOBILITY</p><h2>Make room for<br /><em>the journey.</em></h2></div>
+          <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Alongside fashion, De VERVE also handles car rental enquiries. Contact our team to discuss your journey, vehicle requirements and rental details. Availability and terms are confirmed directly.</p><a className="button button-light" href="#contact">Ask about car rentals <span aria-hidden="true">↗</span></a></div>
         </section>
 
         <section className="contact-section" id="contact">
-          <p className="eyebrow">04 — START A CONVERSATION</p>
-          <h2>Good things<br />start with <em>hello.</em></h2>
-          <p>For product availability, wholesale enquiries or car rentals, get in touch with De VERVE.</p>
-          <a className="button button-primary" href="#contact">Contact our team <span aria-hidden="true">↗</span></a>
-          <small>Official WhatsApp link will be connected once the business number is confirmed.</small>
+          <p className="eyebrow">04 — VISIT OR CONTACT</p>
+          <h2>Let's make it<br /><em>happen.</em></h2>
+          <p>For fashion, wholesale or car rental enquiries, connect with De VERVE in Jhelum.</p>
+          <div className="contact-details">
+            <div><span>FIND US</span><strong>Kachahri Road, near Khawateen College,<br />opposite Ali Mobile, basement of Ali Plaza,<br />Jhelum, Pakistan</strong></div>
+            <div><span>WHAT WE DO</span><strong>Fashion retail · Wholesale · Car rentals</strong></div>
+          </div>
+          <a className="button button-primary" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span aria-hidden="true">↗</span></a>
+          <small>Product availability, pricing, delivery and rental terms are confirmed by the De VERVE team.</small>
         </section>
       </main>
 
       <footer className="site-footer">
-        <a className="footer-wordmark" href="#home">DE VERVE<span>.</span></a>
-        <p>Jhelum, Pakistan · Fashion & Mobility</p>
+        <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
+        <p>Elevate Your Style · Jhelum, Pakistan</p>
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
       </footer>
     </div>
