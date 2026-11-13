@@ -14,7 +14,7 @@ required_tables = {
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "admin_sessions",
-    "admin_invites", "sales_channels", "channel_listings", "channel_sync_events",
+    "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions",
 }
 actual_tables = {
@@ -64,12 +64,20 @@ assert db.execute("SELECT status FROM enquiries WHERE id = 'e1'").fetchone()[0] 
 assert db.execute("SELECT section_type FROM site_page_sections WHERE id = 'section1'").fetchone()[0] == "hero"
 assert db.execute("SELECT SUM(quantity_delta) FROM inventory_movements WHERE variant_id = 'v1'").fetchone()[0] == 5
 
+# Authentication throttling uses a digest key; raw email and IP values are not stored.
+db.execute(
+    "INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at) VALUES (?, ?, ?)",
+    ("digest-only", 1, "2026-11-14T00:00:00.000Z"),
+)
+assert db.execute("SELECT failure_count FROM admin_login_attempts WHERE key_hash = ?", ("digest-only",)).fetchone()[0] == 1
+
 for statement, values in [
     ("INSERT INTO product_variants (id, product_id, stock_on_hand) VALUES (?, ?, ?)", ("bad", "p1", -1)),
     ("INSERT INTO products (id, slug, name, category, audience) VALUES (?, ?, ?, ?, ?)", ("bad", "bad", "Bad", "other", "aliens")),
     ("INSERT INTO enquiries (id, enquiry_type, customer_name, phone, message) VALUES (?, ?, ?, ?, ?)", ("bad", "unknown", "Name", "12345678", "Hello there")),
     ("INSERT INTO sales_channels (id, channel_key, display_name) VALUES (?, ?, ?)", ("bad-channel", "unknown-marketplace", "Unknown")),
     ("INSERT INTO site_page_sections (id, page_id, section_type, position) VALUES (?, ?, ?, ?)", ("bad-section", "page1", "raw_html", 1)),
+    ("INSERT INTO admin_login_attempts (key_hash, failure_count, window_started_at) VALUES (?, ?, ?)", ("bad-attempt", -1, "2026-11-14T00:00:00.000Z")),
 ]:
     try:
         db.execute(statement, values)
