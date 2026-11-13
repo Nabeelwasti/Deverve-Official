@@ -12,7 +12,7 @@ interface D1PreparedStatement {
 interface D1Database {
   prepare(query: string): D1PreparedStatement;
 }
-interface Env {
+export interface Env {
   DB: D1Database;
 }
 interface ProductRow {
@@ -46,7 +46,7 @@ function validPhone(value: string): boolean {
   return /^\+?[0-9 ()-]{8,20}$/.test(value);
 }
 
-async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
