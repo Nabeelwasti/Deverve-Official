@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -17,6 +17,30 @@ function App() {
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
+  const [sending, setSending] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState("");
+
+  const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSending(true);
+    setSubmitMessage("");
+    try {
+      const response = await fetch("/api/enquiries", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(enquiry),
+      });
+      const result = await response.json() as { accepted?: boolean; error?: string };
+      if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");
+      setSubmitMessage("Thank you. Your enquiry has been received.");
+      setEnquiry({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
+    } catch (error) {
+      setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
+    } finally {
+      setSending(false);
+    }
+  };
 
   const visibleCategories = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -148,6 +172,18 @@ function App() {
             <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">Chat on WhatsApp <span>↗</span></a>
             <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span>↗</span></a>
           </div>
+          <form className="enquiry-form" onSubmit={submitEnquiry}>
+            <h3>Send us an enquiry</h3>
+            <div className="enquiry-fields">
+              <label>Your name<input required minLength={2} maxLength={100} autoComplete="name" value={enquiry.name} onChange={(event) => setEnquiry({ ...enquiry, name: event.target.value })} /></label>
+              <label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={enquiry.phone} onChange={(event) => setEnquiry({ ...enquiry, phone: event.target.value })} /></label>
+              <label>Email (optional)<input type="email" maxLength={160} autoComplete="email" value={enquiry.email} onChange={(event) => setEnquiry({ ...enquiry, email: event.target.value })} /></label>
+              <label>Enquiry type<select value={enquiry.enquiryType} onChange={(event) => setEnquiry({ ...enquiry, enquiryType: event.target.value })}><option value="general">General</option><option value="retail">Retail fashion</option><option value="wholesale">Wholesale</option><option value="rental">Car rental</option></select></label>
+              <label className="enquiry-message">How can we help?<textarea required minLength={5} maxLength={3000} rows={4} value={enquiry.message} onChange={(event) => setEnquiry({ ...enquiry, message: event.target.value })} /></label>
+              <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={enquiry.website} onChange={(event) => setEnquiry({ ...enquiry, website: event.target.value })} /></label>
+            </div>
+            <div className="enquiry-submit"><button className="button button-primary" type="submit" disabled={sending}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
+          </form>
           <small>Prices, product availability, delivery, payment and rental terms are confirmed directly by the De VERVE team.</small>
         </section>
       </main>
