@@ -1,4 +1,4 @@
-# De VERVE — Digital Business Platform
+# DeVERVE — Digital Business Platform
 
 A mobile-first digital platform for De VERVE, Jhelum, Pakistan.
 
