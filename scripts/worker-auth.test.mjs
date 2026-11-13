@@ -30,7 +30,7 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
-    if (q.startsWith("SELECT id, slug, name, description, category, audience, status FROM products")) {
+    if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
       return { success: true, results: rows };
     }
