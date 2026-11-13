@@ -55,7 +55,7 @@ Free-tier quotas and provider terms apply. Paid services will not be enabled wit
 
 ## Current status
 
-The initial responsive storefront foundation has been added to the repository. The current interface uses clearly illustrative graphic placeholders, not real product photography, live inventory or confirmed business information. No live deployment, payment processing, external integrations or production credentials are configured yet.
+The responsive storefront now includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. These are front-end enquiry experiences only. Product listings, cart persistence, checkout/order storage, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet. No live deployment or production integrations are configured.
 
 ## Local development
 
@@ -74,7 +74,7 @@ npm run build
 
 ## Business details still to be confirmed
 
-Before enabling real checkout or rental bookings, confirm the official business phone/WhatsApp number, shop address and hours, delivery coverage/charges, COD rules, return/exchange policy, wholesale minimum quantities, product prices/stock, and vehicle fleet/rental terms.
+The working shop address is Kachahri Road, near Khawateen College, opposite Ali Mobile, basement of Ali Plaza, Jhelum, Pakistan. Contact numbers used in earlier De VERVE campaign materials are +92 329 8684517 and +92 319 7553705; verify both before launching paid campaigns or accepting customer orders. Before enabling checkout or rental bookings, confirm business hours, delivery coverage/charges, COD rules, return/exchange policy, wholesale minimum quantities, product prices/stock, and vehicle fleet/rental terms.
 
 ## Safe operating rules
 
