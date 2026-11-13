@@ -23,5 +23,5 @@ jobs:
         run: npm install
       - name: Type-check and build
         run: npm run check
-      - name: Validate D1 migration SQL
-        run: python -c "import pathlib, sqlite3; db=sqlite3.connect(':memory:'); db.executescript(pathlib.Path('migrations/0001_initial.sql').read_text()); print('D1 migration SQL is valid')"
+      - name: Validate D1 schema and constraints
+        run: python scripts/verify_schema.py
