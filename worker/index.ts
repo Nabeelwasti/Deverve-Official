@@ -197,7 +197,7 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
   const audience = has("audience") ? cleanText(body.audience, 12) : current?.audience ?? "";
   const status = has("status") ? cleanText(body.status, 12) : current?.status ?? "draft";
   const rawSlug = has("slug") ? cleanText(body.slug, 120) : current?.slug ?? name;
-  const slug = rawSlug.toLowerCase().normalize("NFKD").replace(/[\\u0300-\\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120);
+  const slug = rawSlug.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120);
   const price = (key: string, existing: number | null | undefined): number | null | undefined => {
     if (!has(key)) return existing;
     const value = body[key];
@@ -221,7 +221,7 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
 async function adminProductRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   const isCollection = path === "/api/admin/products";
-  const productMatch = path.match(/^\\/api\\/admin\\/products\\/([a-f0-9-]{36})$/i);
+  const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";\n  const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
   const isOverview = path === "/api/admin/overview";
   if (!isCollection && !productMatch && !isOverview) return null;
 
@@ -286,7 +286,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   }
 
   if (productMatch && request.method === "PATCH") {
-    const id = productMatch[1];
+    const id = productMatch;
     const body = await readJson(request);
     if (!body) return error("Please submit valid product details", 400);
     try {
