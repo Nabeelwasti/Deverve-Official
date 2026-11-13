@@ -24,7 +24,7 @@ One connected system for:
 
 ## Technology direction
 
-- **Web app:** React + TypeScript + Vite (progressive-web-app-ready)
+- **Web app:** React + TypeScript + Vite, installable Progressive Web App (PWA) with offline shell
 - **Backend:** Cloudflare Workers
 - **Database:** Cloudflare D1 with migrations
 - **Product media:** Cloudflare R2
@@ -56,7 +56,7 @@ Free-tier quotas and provider terms apply. Paid services will not be enabled wit
 
 ## Current status
 
-The responsive storefront includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. A customer enquiry form now calls the Worker API. The backend foundation includes a D1 schema migration, public published-product read endpoint, enquiry persistence endpoint, health endpoint and schema smoke checks. The Worker and database are source-only and have not been deployed or connected to a live D1 database. Product management, cart persistence, COD order creation, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet.
+The responsive storefront includes a brand-led homepage, custom CSS apparel artwork, category search/filtering, retail/wholesale information tabs, WhatsApp enquiry links, car-rental enquiries, shop location and contact details. The customer enquiry form and published-product catalogue use the shared API handler. The installable PWA shell now includes a web manifest, app icons, service-worker caching that deliberately excludes API/customer data, and install guidance for supported browsers. A Cloudflare D1 database named `deverve-production` has been created in APAC and the initial schema migration has been applied; its tables have been read back successfully. Cloudflare Pages project creation is currently blocked by a Cloudflare GitHub installation error, so the site and API are not yet deployed. Product management, cart persistence, COD order creation, live inventory, staff/admin authentication, rental availability management and payment processing are not implemented yet.
 
 ## Local development
 
