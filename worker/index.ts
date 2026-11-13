@@ -312,6 +312,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   }
 
   if (productMatch && request.method === "DELETE") {
+    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive products", 403);
     const id = productMatch;
     try {
       const current = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(id).first<{ id: string }>();
