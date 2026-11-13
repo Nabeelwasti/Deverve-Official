@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { handleRequest } from "../.test-dist/worker/index.js";
 
 class FakeStatement {
-  constructor(db, sql) { this.db = db; this.sql = sql.replace(/\\s+/g, " ").trim(); this.values = []; }
+  constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }
   async first() {
     const q = this.sql;
@@ -112,7 +112,7 @@ test("bootstrap rejects cross-origin requests and missing server configuration",
     body: JSON.stringify({ bootstrapToken: "test-bootstrap-token-with-more-than-32-characters", email: "owner@deverve.example", password: "A-strong-password-2026" }),
   });
   assert.equal((await handleRequest(crossOrigin, env(db))).status, 403);
-  assert.equal((await handleRequest(request("/api/admin/bootstrap", "POST", {}), env(db, undefined))).status, 503);
+  assert.equal((await handleRequest(request("/api/admin/bootstrap", "POST", {}), { DB: db })).status, 503);
 });
 
 test("login, current-session lookup and logout use a revocable server-side session", async () => {
