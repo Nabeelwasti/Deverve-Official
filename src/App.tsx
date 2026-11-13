@@ -112,7 +112,7 @@ function App() {
           <p className="eyebrow">04 — START A CONVERSATION</p>
           <h2>Good things<br />start with <em>hello.</em></h2>
           <p>For product availability, wholesale enquiries or car rentals, get in touch with De VERVE.</p>
-          <a className="button button-primary" href="https://wa.me/" target="_blank" rel="noreferrer">Connect on WhatsApp <span aria-hidden="true">↗</span></a>
+          <a className="button button-primary" href="#contact">Contact our team <span aria-hidden="true">↗</span></a>
           <small>Official WhatsApp link will be connected once the business number is confirmed.</small>
         </section>
       </main>
