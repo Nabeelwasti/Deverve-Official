@@ -264,3 +264,12 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .product-buy-row a{color:#1b5a9a;font-size:10px;font-weight:800;text-decoration:none}
 @media(max-width:800px){.product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.live-catalogue-heading{align-items:flex-start;flex-direction:column}.product-grid{grid-template-columns:1fr}.product-visual{height:235px}}
+
+
+.install-app{position:fixed;z-index:20;left:18px;bottom:18px;display:flex;align-items:center;gap:16px;max-width:min(520px,calc(100vw - 36px));padding:13px 16px;background:#fff;border:1px solid #d9e4f0;box-shadow:0 12px 38px rgba(6,35,79,.14);border-radius:12px}
+.install-app-copy{display:flex;flex-direction:column;gap:4px}
+.install-app-copy strong{font-size:11px;color:#06234f}
+.install-app-copy span,.install-app-copy p{margin:0;color:#687b92;font-size:10px;line-height:1.5}
+.install-app-copy p{max-width:330px;padding-top:5px}
+.install-app button{flex:none;border:0;background:#06234f;color:#fff;padding:10px 13px;border-radius:6px;font-size:10px;font-weight:700;cursor:pointer}
+@media(max-width:520px){.install-app{left:10px;bottom:10px;max-width:calc(100vw - 20px);padding:11px;gap:10px}.install-app-copy span{max-width:180px}.install-app button{font-size:9px;padding:9px 10px}}
