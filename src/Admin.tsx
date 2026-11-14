@@ -9,6 +9,7 @@ type Product = {
 };
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
+type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -36,6 +37,7 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [overview, setOverview] = useState<Overview>({ published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 });
   const [form, setForm] = useState({ ...emptyProduct });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
@@ -44,6 +46,10 @@ export default function Admin() {
   const loadProducts = async () => {
     const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
     setProducts(result.products);
+  };
+  const loadOverview = async () => {
+    const result = await api<{ overview: Overview }>("/api/admin/overview");
+    setOverview(result.overview);
   };
 
   useEffect(() => {
@@ -56,7 +62,9 @@ export default function Admin() {
   }, []);
 
   useEffect(() => {
-    if (admin) void loadProducts().catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load products."));
+    if (admin) {
+      void Promise.all([loadProducts(), loadOverview()]).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
+    }
   }, [admin]);
 
   const submitAuth = async (event: FormEvent<HTMLFormElement>) => {
@@ -131,7 +139,7 @@ export default function Admin() {
       </header>
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>Overview</h1><p className="admin-muted">Manage your catalogue and keep your storefront up to date.</p></div><button className="admin-primary" onClick={startNew}>＋ Add product</button></div>
-        <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{products.filter((p) => p.status === "published").length}</strong></article><article><span>DRAFTS</span><strong>{products.filter((p) => p.status === "draft").length}</strong></article></div>
+        <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
         <section className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Add products now; photos and stock controls will be added in the next module.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p><button className="admin-primary" onClick={startNew}>Add your first product</button></div> :
