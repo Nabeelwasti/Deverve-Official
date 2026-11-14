@@ -654,18 +654,25 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
   const body = await readJson(request);
   const nextStatus = cleanText(body?.status, 20);
   const adminNote = cleanText(body?.admin_note, 500);
+  const requestedVehicle = body?.vehicle_id;
   if (!["reviewing", "confirmed", "active", "completed", "cancelled"].includes(nextStatus)) return error("Choose a valid rental status", 400);
+  if (requestedVehicle !== undefined && requestedVehicle !== null && (typeof requestedVehicle !== "string" || !/^[a-f0-9-]{36}$/i.test(requestedVehicle))) return error("Choose a valid vehicle", 400);
   try {
     const current = await env.DB.prepare("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; vehicle_id: string | null; pickup_at: string; return_at: string; status: string }>();
     if (!current) return error("Rental request not found", 404);
     const allowed: Record<string, string[]> = {
       requested: ["reviewing", "cancelled"], reviewing: ["confirmed", "cancelled"],
-      confirmed: ["active", "cancelled"], active: ["completed"], completed: [], cancelled: [],
+      confirmed: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [],
     };
     if (!allowed[current.status]?.includes(nextStatus)) return error("That rental status change is not allowed", 409);
+    const targetVehicleId = requestedVehicle === undefined ? current.vehicle_id : requestedVehicle;
+    if (targetVehicleId) {
+      const vehicle = await env.DB.prepare("SELECT id, status FROM vehicles WHERE id = ? LIMIT 1").bind(targetVehicleId).first<{ id: string; status: string }>();
+      if (!vehicle || (nextStatus === "confirmed" && vehicle.status !== "available")) return error("Choose a vehicle that is currently available", 409);
+    }
     const now = new Date().toISOString();
-    const result = await env.DB.prepare("UPDATE rental_requests SET status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (vehicle_id IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = rental_requests.vehicle_id AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = rental_requests.vehicle_id AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
-      .bind(nextStatus, adminNote, now, match[1], current.status, nextStatus).run();
+    const result = await env.DB.prepare("UPDATE rental_requests SET vehicle_id = ?, status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (vehicle_id IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = ? AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
+      .bind(targetVehicleId, nextStatus, adminNote, now, match[1], current.status, nextStatus, targetVehicleId, targetVehicleId).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("The vehicle is unavailable for these dates, or the request changed. Refresh and try again.", 409);
     await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'rental.status_changed', 'rental_request', ?, ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ from: current.status, to: nextStatus })).run();
