@@ -650,10 +650,15 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
       const acceptedItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
       return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: acceptedItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
     }
+    if (["declined", "expired"].includes(quote.status)) {
+      const closedItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
+      return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: closedItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city } });
+    }
     if (quote.status !== "sent") return error("This quotation is not open for approval", 409);
     if (quote.valid_until && Date.parse(quote.valid_until) <= Date.now()) {
       await env.DB.prepare("UPDATE wholesale_quotes SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'sent'").bind(new Date().toISOString(), quote.id).run();
-      return error("This quotation has expired. Please contact De VERVE.", 410);
+      const expiredItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
+      return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: expiredItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: "expired", valid_until: quote.valid_until, city: quote.city } });
     }
     const items = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
     if (!action && request.method !== "GET") return error("Method not allowed", 405);
