@@ -439,7 +439,8 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending" }, 201);
-  } catch {
+  } catch (caught) {
+    console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
     try {
       const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
         .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
