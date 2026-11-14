@@ -96,7 +96,9 @@ async function sha256(value: string): Promise<string> {
 }
 
 async function passwordHash(password: string): Promise<string> {
-  const iterations = 210_000;
+  // Cloudflare Workers currently rejects PBKDF2 calls above 100,000 iterations.
+  // Keep the verifier's accepted minimum aligned with this platform maximum.
+  const iterations = 100_000;
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
