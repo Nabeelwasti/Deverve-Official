@@ -11,6 +11,7 @@ type Product = {
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
+type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -38,7 +39,7 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);\n  const [variantProduct, setVariantProduct] = useState<Product | null>(null);\n  const [variants, setVariants] = useState<Variant[]>([]);\n  const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });\n  const [stockTarget, setStockTarget] = useState<Variant | null>(null);\n  const [stockForm, setStockForm] = useState({ movement_type: "received", quantity_delta: "", note: "" });
   const [overview, setOverview] = useState<Overview>({ published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 });
   const [form, setForm] = useState({ ...emptyProduct });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -109,6 +110,40 @@ export default function Admin() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product could not be saved."); }
     finally { setBusy(false); }
   };
+  const openVariants = async (product: Product) => {
+    setBusy(true); setMessage("");
+    try {
+      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`);
+      setVariantProduct(product); setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" });
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Variants could not be loaded."); }
+    finally { setBusy(false); }
+  };
+
+  const createVariant = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!variantProduct) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify({ ...variantForm, initial_stock: Number(variantForm.initial_stock) }) });
+      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
+      setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" }); setMessage("Product variant added.");
+      await loadProducts();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Variant could not be added."); }
+    finally { setBusy(false); }
+  };
+
+  const recordStock = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!stockTarget || !variantProduct) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/variants/${stockTarget.id}/stock`, { method: "POST", body: JSON.stringify({ movement_type: stockForm.movement_type, quantity_delta: Number(stockForm.quantity_delta), note: stockForm.note }) });
+      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
+      setVariants(result.variants); setStockTarget(null); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); setMessage("Stock movement recorded.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Stock could not be updated."); }
+    finally { setBusy(false); }
+  };
+
   const updateEnquiryStatus = async (enquiry: Enquiry, status: Enquiry["status"]) => {
     if (status === enquiry.status) return;
     setBusy(true); setMessage("");
@@ -175,8 +210,31 @@ export default function Admin() {
         <section className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Add products now; photos and stock controls will be added in the next module.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
-            <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions">{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
+            <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
+        {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); }} aria-label="Close">×</button></div>
+          <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
+            <div><strong>{variant.sku || "No SKU"}</strong><span>{[variant.size, variant.color].filter(Boolean).join(" · ") || "General option"}</span><small>{variant.is_active ? "Active" : "Inactive"}</small></div>
+            <div className="admin-variant-stock"><strong>{variant.stock_on_hand}</strong><span>in stock</span></div>
+            {["owner", "manager", "orders"].includes(admin.role) && <button type="button" disabled={busy || !variant.is_active} onClick={() => { setStockTarget(variant); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); }}>Adjust stock</button>}
+          </article>)}</div>
+          {["owner", "manager", "catalogue"].includes(admin.role) && <form className="admin-form admin-variant-form" onSubmit={createVariant}>
+            <h3>Add variant</h3><div className="admin-variant-fields">
+              <label>SKU (optional)<input maxLength={64} placeholder="e.g. DV-HOOD-BLK-M" value={variantForm.sku} onChange={(e) => setVariantForm({ ...variantForm, sku: e.target.value })} /></label>
+              <label>Size<input maxLength={32} placeholder="e.g. M, L, XL" value={variantForm.size} onChange={(e) => setVariantForm({ ...variantForm, size: e.target.value })} /></label>
+              <label>Colour<input maxLength={32} placeholder="e.g. Black" value={variantForm.color} onChange={(e) => setVariantForm({ ...variantForm, color: e.target.value })} /></label>
+              <label>Opening stock<input type="number" min="0" max="1000000" step="1" value={variantForm.initial_stock} onChange={(e) => setVariantForm({ ...variantForm, initial_stock: e.target.value })} /></label>
+            </div><button className="admin-primary" disabled={busy}>Add variant</button>
+          </form>}
+          {stockTarget && <form className="admin-form admin-stock-form" onSubmit={recordStock}>
+            <h3>Stock movement · {stockTarget.sku || [stockTarget.size, stockTarget.color].filter(Boolean).join(" / ")}</h3>
+            <label>Movement type<select value={stockForm.movement_type} onChange={(e) => setStockForm({ ...stockForm, movement_type: e.target.value })}><option value="received">Stock received</option><option value="customer_return">Customer return</option><option value="adjustment">Stock adjustment</option></select></label>
+            <label>Quantity change<input type="number" required min={stockForm.movement_type === "adjustment" ? -1000000 : 1} max="1000000" step="1" value={stockForm.quantity_delta} onChange={(e) => setStockForm({ ...stockForm, quantity_delta: e.target.value })} placeholder="Use a negative number for stock reduction" /></label>
+            <label>Reason / note<input required minLength={3} maxLength={500} value={stockForm.note} onChange={(e) => setStockForm({ ...stockForm, note: e.target.value })} placeholder="e.g. Received supplier delivery" /></label>
+            <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setStockTarget(null)}>Cancel</button><button className="admin-primary" disabled={busy}>Save stock movement</button></div>
+          </form>}
+        </section></div>}
         {showEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="product-editor-title"><div className="admin-panel-heading"><div><p className="admin-eyebrow">CATALOGUE MANAGEMENT</p><h2 id="product-editor-title">{editingId ? "Edit product" : "Add a product"}</h2></div><button type="button" className="admin-close" onClick={() => setShowEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={saveProduct}>
             <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
