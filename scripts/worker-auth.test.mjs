@@ -85,6 +85,9 @@ class FakeStatement {
         const variant = this.db.variants.get(expectedId);
         if (!variant || variant.stock_on_hand !== expectedStock) return { success: true, meta: { changes: 0 } };
         this.db.movements.push({ id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id, created_at: new Date().toISOString() });
+      } else if (q.includes("'opening'")) {
+        const [id, variant_id, quantity_delta, note, actor_admin_id] = v;
+        this.db.movements.push({ id, variant_id, movement_type: "opening", quantity_delta, reference_type: "manual", reference_id: null, note, actor_admin_id, created_at: new Date().toISOString() });
       } else {
         const [id, variant_id, movement_type, quantity_delta, reference_type, note, actor_admin_id] = v;
         this.db.movements.push({ id, variant_id, movement_type, quantity_delta, reference_type, reference_id: null, note, actor_admin_id, created_at: new Date().toISOString() });
