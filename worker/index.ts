@@ -653,6 +653,7 @@ interface AdminVariantRow {
   size: string;
   color: string;
   stock_on_hand: number;
+  reserved_quantity: number;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -688,9 +689,9 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     try {
       const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string }>();
       if (!product) return error("Product not found", 404);
-      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
+      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
         .bind(productId).all<AdminVariantRow>();
-      return json({ variants: rows.results ?? [] });
+      return json({ variants: (rows.results ?? []).map((variant) => ({ ...variant, available_quantity: Math.max(0, variant.stock_on_hand - variant.reserved_quantity) })) });
     } catch { return error("Product variants could not be loaded", 503); }
   }
 
