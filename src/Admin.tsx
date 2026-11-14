@@ -10,6 +10,7 @@ type Product = {
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
+type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -37,6 +38,7 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [overview, setOverview] = useState<Overview>({ published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 });
   const [form, setForm] = useState({ ...emptyProduct });
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -51,6 +53,10 @@ export default function Admin() {
     const result = await api<{ overview: Overview }>("/api/admin/overview");
     setOverview(result.overview);
   };
+  const loadEnquiries = async () => {
+    const result = await api<{ enquiries: Enquiry[] }>("/api/admin/enquiries?limit=50");
+    setEnquiries(result.enquiries);
+  };
 
   useEffect(() => {
     let active = true;
@@ -63,7 +69,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (admin) {
-      void Promise.all([loadProducts(), loadOverview()]).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
+      void Promise.all([loadProducts(), loadOverview(), loadEnquiries()]).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
 
@@ -101,6 +107,17 @@ export default function Admin() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product could not be saved."); }
     finally { setBusy(false); }
   };
+  const updateEnquiryStatus = async (enquiry: Enquiry, status: Enquiry["status"]) => {
+    if (status === enquiry.status) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/enquiries/${enquiry.id}`, { method: "PATCH", body: JSON.stringify({ status }) });
+      setEnquiries((current) => current.map((item) => item.id === enquiry.id ? { ...item, status } : item));
+      setMessage("Enquiry status updated.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Enquiry could not be updated."); }
+    finally { setBusy(false); }
+  };
+
   const archiveProduct = async (product: Product) => {
     if (!window.confirm(`Archive “${product.name}”? It will no longer appear in the public catalogue.`)) return;
     setBusy(true); setMessage("");
@@ -140,6 +157,16 @@ export default function Admin() {
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>Overview</h1><p className="admin-muted">Manage your catalogue and keep your storefront up to date.</p></div><button className="admin-primary" onClick={startNew}>＋ Add product</button></div>
         <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
+        <section className="admin-panel admin-enquiry-panel">
+          <div className="admin-panel-heading"><div><h2>Customer enquiries</h2><p className="admin-muted">Review retail, wholesale, rental and general enquiries received from your website.</p></div><span className="admin-enquiry-count">{enquiries.length} recent</span></div>
+          {enquiries.length === 0 ? <div className="admin-empty"><strong>No enquiries yet</strong><p>New customer messages submitted through the website will appear here.</p></div> :
+            <div className="admin-enquiry-list">{enquiries.map((enquiry) => <article className="admin-enquiry-row" key={enquiry.id}>
+              <div className="admin-enquiry-main"><div className="admin-enquiry-title"><strong>{enquiry.customer_name}</strong><span className="admin-enquiry-type">{enquiry.enquiry_type}</span><span className={`admin-enquiry-status status-${enquiry.status}`}>{enquiry.status}</span></div>
+                <p>{enquiry.message}</p><div className="admin-enquiry-contact"><a href={`tel:${enquiry.phone}`}>{enquiry.phone}</a>{enquiry.email && <a href={`mailto:${enquiry.email}`}>{enquiry.email}</a>}<time dateTime={enquiry.created_at}>{new Date(enquiry.created_at).toLocaleString()}</time></div>
+              </div>
+              <label className="admin-enquiry-action">Status<select value={enquiry.status} disabled={busy || !["owner", "manager", "orders", "rental"].includes(admin.role) || (admin.role === "rental" && enquiry.enquiry_type !== "rental")} onChange={(event) => void updateEnquiryStatus(enquiry, event.target.value as Enquiry["status"])}><option value="new">New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label>
+            </article>)}</div>}
+        </section>
         <section className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Add products now; photos and stock controls will be added in the next module.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p><button className="admin-primary" onClick={startNew}>Add your first product</button></div> :
