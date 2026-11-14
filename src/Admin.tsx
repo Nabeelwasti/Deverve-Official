@@ -242,14 +242,14 @@ export default function Admin() {
       const selected = products.find((product) => product.id === productId);
       const result = productId ? await api<{ variants: Variant[] }>(`/api/admin/products/${productId}/variants`) : { variants: [] };
       const available = result.variants.filter((variant) => variant.is_active);
-      setQuoteLines((current) => current.map((line, i) => i === index ? { ...line, product_id: productId, variant_id: available[0]?.id ?? "", variants: available, unit_price: selected?.wholesale_price_paisa !== null && selected?.wholesale_price_paisa !== undefined ? String(selected.wholesale_price_paisa / 100) : selected?.retail_price_paisa !== null && selected?.retail_price_paisa !== undefined ? String(selected.retail_price_paisa / 100) : "" } : line));
+      setQuoteLines((current) => current.map((line, i) => i === index ? { ...line, product_id: productId, variant_id: available[0]?.id ?? "", variants: available, unit_price: selected?.wholesale_price_paisa !== null && selected?.wholesale_price_paisa !== undefined ? String(selected.wholesale_price_paisa / 100) : "" } : line));
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product options could not be loaded."); }
     finally { setBusy(false); }
   };
   const submitWholesaleQuote = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setMessage("");
     const items = quoteLines.map((line) => ({ variant_id: line.variant_id, quantity: Number(line.quantity), unit_price_paisa: Math.round(Number(line.unit_price) * 100) }));
-    if (items.some((item) => !item.variant_id || !Number.isInteger(item.quantity) || item.quantity < 1 || !Number.isSafeInteger(item.unit_price_paisa) || item.unit_price_paisa < 0)) {
+    if (quoteLines.some((line) => !line.unit_price.trim()) || items.some((item) => !item.variant_id || !Number.isInteger(item.quantity) || item.quantity < 1 || !Number.isSafeInteger(item.unit_price_paisa) || item.unit_price_paisa < 0)) {
       setMessage("Choose a product option, quantity and valid wholesale price for every line."); setBusy(false); return;
     }
     try {
