@@ -29,6 +29,11 @@ variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_varia
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
 assert "checkout_token" in order_columns, "Checkout idempotency column is missing"
+quote_columns = {row[1] for row in db.execute("PRAGMA table_info(wholesale_quotes)")}
+assert {"approval_token", "delivery_address", "city", "converted_order_id"} <= quote_columns, "Wholesale approval fields are missing"
+assert "source_quote_id" in order_columns, "Wholesale order link is missing"
+assert "wholesale_quote_items" in actual_tables, "Wholesale quote item table is missing"
+
 unique_indexes = {
     row[1] for row in db.execute("PRAGMA index_list(orders)") if row[2] == 1
 }
