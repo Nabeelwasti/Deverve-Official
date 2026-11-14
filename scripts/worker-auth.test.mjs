@@ -13,6 +13,15 @@ class FakeStatement {
       const admin = session && this.db.admins.get(session.admin_user_id);
       return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
     }
+    if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token")) {
+      return [...this.db.orders.values()].find((row) => row.checkout_token === v[0]) ?? null;
+    }
+    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.retail_price_paisa")) {
+      const variant = this.db.variants.get(v[0]);
+      const product = variant && this.db.products.get(variant.product_id);
+      return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, retail_price_paisa: product.retail_price_paisa } : null;
+    }
+    if (q.startsWith("SELECT id, order_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, role, is_active, password_hash FROM admin_users")) {
       return [...this.db.admins.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     }
@@ -35,6 +44,20 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {
+      const ids = new Set(v);
+      return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+    }
+    if (q.startsWith("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa")) {
+      return { success: true, results: [...this.db.orders.values()].slice(0, v[0]) };
+    }
+    if (q.startsWith("SELECT id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) {
+      const ids = new Set(v);
+      return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) };
+    }
+    if (q.startsWith("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?")) {
+      return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]) };
+    }
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
     }
@@ -54,6 +77,63 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO orders")) {
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token] = v;
+      if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
+      const checks = v.slice(12);
+      for (let i = 0; i < checks.length; i += 2) {
+        const variant = this.db.variants.get(checks[i]);
+        if (!variant || variant.is_active !== 1 || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } };
+      }
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?")) {
+      const row = this.db.variants.get(v[2]);
+      if (!row || row.stock_on_hand - (row.reserved_quantity ?? 0) < v[3] || !this.db.orders.has(v[4])) return { success: true, meta: { changes: 0 } };
+      row.reserved_quantity = (row.reserved_quantity ?? 0) + v[0];
+      row.updated_at = v[1];
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO order_items")) {
+      const [id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa] = v;
+      if (!this.db.orders.has(order_id)) return { success: true, meta: { changes: 0 } };
+      this.db.orderItems.push({ id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE orders SET order_status = ?")) {
+      const [status, updated_at, id, expected] = v;
+      const order = this.db.orders.get(id);
+      if (!order || order.order_status !== expected) return { success: true, meta: { changes: 0 } };
+      const items = this.db.orderItems.filter((item) => item.order_id === id);
+      if (status === "cancelled" && items.some((item) => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) < item.quantity)) return { success: true, meta: { changes: 0 } };
+      if (status === "dispatched" && items.some((item) => { const variant = this.db.variants.get(item.variant_id); return !variant || variant.stock_on_hand < item.quantity || (variant.reserved_quantity ?? 0) < item.quantity; })) return { success: true, meta: { changes: 0 } };
+      Object.assign(order, { order_status: status, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?")) {
+      const [quantity, updated_at, id, expected, orderId] = v;
+      const row = this.db.variants.get(id);
+      if (!row || (row.reserved_quantity ?? 0) < expected || this.db.orders.get(orderId)?.order_status !== "cancelled") return { success: true, meta: { changes: 0 } };
+      row.reserved_quantity -= quantity; row.updated_at = updated_at;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE product_variants SET stock_on_hand = stock_on_hand - ?")) {
+      const [quantity, reserve, updated_at, id, stockCheck, reserveCheck, orderId] = v;
+      const row = this.db.variants.get(id);
+      if (!row || row.stock_on_hand < stockCheck || (row.reserved_quantity ?? 0) < reserveCheck || this.db.orders.get(orderId)?.order_status !== "dispatched") return { success: true, meta: { changes: 0 } };
+      row.stock_on_hand -= quantity; row.reserved_quantity -= reserve; row.updated_at = updated_at;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO inventory_movements") && q.includes("'sold'")) {
+      const [id, variant_id, quantity_delta, reference_id, actor_admin_id] = v;
+      this.db.movements.push({ id, variant_id, movement_type: "sold", quantity_delta, reference_type: "order", reference_id, note: "COD order dispatched", actor_admin_id, created_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("FROM orders")) {
+      this.db.audits.push(v);
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO products")) {
       const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa] = v;
       this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at: new Date().toISOString() });
@@ -62,7 +142,7 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO product_variants")) {
       const [id, product_id, sku, size, color, stock_on_hand] = v;
       if (sku && [...this.db.variants.values()].some((row) => row.sku === sku)) throw new Error("UNIQUE constraint failed: product_variants.sku");
-      this.db.variants.set(id, { id, product_id, sku, size, color, stock_on_hand, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      this.db.variants.set(id, { id, product_id, sku, size, color, stock_on_hand, reserved_quantity: 0, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?")) {
