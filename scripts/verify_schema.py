@@ -33,6 +33,11 @@ quote_columns = {row[1] for row in db.execute("PRAGMA table_info(wholesale_quote
 assert {"approval_token", "delivery_address", "city", "converted_order_id"} <= quote_columns, "Wholesale approval fields are missing"
 assert "source_quote_id" in order_columns, "Wholesale order link is missing"
 assert "wholesale_quote_items" in actual_tables, "Wholesale quote item table is missing"
+vehicle_columns = {row[1] for row in db.execute("PRAGMA table_info(vehicles)")}
+rental_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
+assert "description" in vehicle_columns, "Vehicle description column is missing"
+assert {"reference_code", "email", "customer_note", "admin_note", "updated_at"} <= rental_columns, "Rental request management fields are missing"
+
 
 unique_indexes = {
     row[1] for row in db.execute("PRAGMA index_list(orders)") if row[2] == 1
