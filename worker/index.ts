@@ -589,12 +589,12 @@ async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): 
         const quantity = Number(item.quantity);
         const unitPrice = Number(item.unit_price_paisa);
         if (!/^[a-f0-9-]{36}$/i.test(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) return error("Check each item, quantity and wholesale price", 400);
-        quantities.set(variantId, (quantities.get(variantId) ?? 0) + quantity);
+        if (quantities.has(variantId)) return error("Combine repeated product options into a single quotation line", 400);\n        quantities.set(variantId, quantity);
         if ((quantities.get(variantId) ?? 0) > 10000) return error("Combined quantity for an item is too high", 400);
       }
       for (const [variantId, quantity] of quantities) {
         const variant = await env.DB.prepare("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.wholesale_price_paisa, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1").bind(variantId).first<WholesaleVariantRow>();
-        if (!variant) return error("A selected product option is no longer available", 409);
+        if (!variant) return error("A selected product option is no longer available", 409);\n        if (variant.stock_on_hand - variant.reserved_quantity < quantity) return error("There is not enough available stock for one of the requested quantities", 409);
         const supplied = (body.items as Array<Record<string, unknown>>).find((x) => cleanText(x?.variant_id, 64) === variantId);
         const unitPrice = Number(supplied?.unit_price_paisa);
         if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) return error("A wholesale price is invalid", 400);
@@ -654,7 +654,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
       return error("This quotation has expired. Please contact De VERVE.", 410);
     }
     const items = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
-    if (!action) return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: items.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city } });
+    if (!action && request.method !== "GET") return error("Method not allowed", 405);\n    if (!action) return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: items.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city } });
     if (request.method !== "POST") return error("Method not allowed", 405);
     if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
     if (action === "decline") {
