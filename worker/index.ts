@@ -332,6 +332,173 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   return error("Method not allowed", 405);
 }
 
+interface AdminVariantRow {
+  id: string;
+  product_id: string;
+  sku: string | null;
+  size: string;
+  color: string;
+  stock_on_hand: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface AdminInventoryMovementRow {
+  id: string;
+  movement_type: string;
+  quantity_delta: number;
+  reference_type: string;
+  reference_id: string | null;
+  note: string;
+  created_at: string;
+}
+
+async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const productVariants = path.match(/^\/api\/admin\/products\/([a-f0-9-]{36})\/variants$/i);
+  const variantResource = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})$/i);
+  const variantStock = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})\/stock$/i);
+  const variantMovements = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})\/movements$/i);
+  if (!productVariants && !variantResource && !variantStock && !variantMovements) return null;
+
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Inventory service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+
+  const productId = productVariants?.[1] ?? null;
+  const variantId = variantResource?.[1] ?? variantStock?.[1] ?? variantMovements?.[1] ?? null;
+
+  if (productVariants && request.method === "GET") {
+    try {
+      const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string }>();
+      if (!product) return error("Product not found", 404);
+      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
+        .bind(productId).all<AdminVariantRow>();
+      return json({ variants: rows.results ?? [] });
+    } catch { return error("Product variants could not be loaded", 503); }
+  }
+
+  if (productVariants && request.method === "POST") {
+    if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to create product variants", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request);
+    if (!body) return error("Please submit valid variant details", 400);
+    const skuText = cleanText(body.sku, 64).toUpperCase();
+    const sku = skuText || null;
+    const size = cleanText(body.size, 32);
+    const color = cleanText(body.color, 32);
+    const initialStock = body.initial_stock === undefined ? 0 : body.initial_stock;
+    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || size.length > 32 || color.length > 32 || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || (!size && !color && !sku)) {
+      return error("Enter a valid SKU, size or colour and a non-negative opening quantity", 400);
+    }
+    try {
+      const product = await env.DB.prepare("SELECT id, status FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string; status: string }>();
+      if (!product) return error("Product not found", 404);
+      if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
+      const id = crypto.randomUUID();
+      const statements = [
+        env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(id, productId, sku, size, color, Number(initialStock)),
+      ];
+      if (Number(initialStock) > 0) {
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, note, actor_admin_id) VALUES (?, ?, 'opening', ?, 'manual', ?, ?)")
+          .bind(crypto.randomUUID(), id, Number(initialStock), "Opening stock", admin.admin_user_id));
+      }
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, "variant.created", "product_variant", id, JSON.stringify({ product_id: productId, sku, size, color, initial_stock: Number(initialStock) })));
+      await env.DB.batch(statements);
+      const created = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1").bind(id).first<AdminVariantRow>();
+      return json({ created: true, variant: created }, 201);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (/unique|constraint/i.test(message)) return error("That SKU is already in use", 409);
+      return error("Variant could not be created", 503);
+    }
+  }
+
+  if (variantMovements && request.method === "GET") {
+    try {
+      const variant = await env.DB.prepare("SELECT id FROM product_variants WHERE id = ? LIMIT 1").bind(variantId).first<{ id: string }>();
+      if (!variant) return error("Variant not found", 404);
+      const rows = await env.DB.prepare("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ? ORDER BY created_at DESC LIMIT 100")
+        .bind(variantId).all<AdminInventoryMovementRow>();
+      return json({ movements: rows.results ?? [] });
+    } catch { return error("Stock history could not be loaded", 503); }
+  }
+
+  if (variantResource && request.method === "PATCH") {
+    if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to edit variants", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request);
+    if (!body) return error("Please submit valid variant details", 400);
+    const skuText = Object.prototype.hasOwnProperty.call(body, "sku") ? cleanText(body.sku, 64).toUpperCase() : undefined;
+    const sku = skuText === "" ? null : skuText;
+    const size = Object.prototype.hasOwnProperty.call(body, "size") ? cleanText(body.size, 32) : undefined;
+    const color = Object.prototype.hasOwnProperty.call(body, "color") ? cleanText(body.color, 32) : undefined;
+    const active = Object.prototype.hasOwnProperty.call(body, "is_active") ? body.is_active : undefined;
+    if ((sku !== undefined && sku !== null && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (active !== undefined && active !== 0 && active !== 1 && active !== false && active !== true)) return error("Enter valid variant details", 400);
+    try {
+      const current = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1")
+        .bind(variantId).first<AdminVariantRow>();
+      if (!current) return error("Variant not found", 404);
+      const nextActive = active === undefined ? current.is_active : (active === true || active === 1 ? 1 : 0);
+      if (nextActive === 0 && current.stock_on_hand > 0) return error("Move or adjust the remaining stock before deactivating this variant", 409);
+      const nextSku = sku === undefined ? current.sku : sku;
+      const nextSize = size === undefined ? current.size : size;
+      const nextColor = color === undefined ? current.color : color;
+      if (!nextSku && !nextSize && !nextColor) return error("A variant must have a SKU, size or colour", 400);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE product_variants SET sku = ?, size = ?, color = ?, is_active = ?, updated_at = ? WHERE id = ?")
+          .bind(nextSku, nextSize, nextColor, nextActive, new Date().toISOString(), variantId),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, "variant.updated", "product_variant", variantId, JSON.stringify({ sku: nextSku, size: nextSize, color: nextColor, is_active: nextActive })),
+      ]);
+      return json({ updated: true, id: variantId });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (/unique|constraint/i.test(message)) return error("That SKU is already in use", 409);
+      return error("Variant could not be updated", 503);
+    }
+  }
+
+  if (variantStock && request.method === "POST") {
+    if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to change stock", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request);
+    if (!body) return error("Please submit a valid stock movement", 400);
+    const movementType = cleanText(body.movement_type, 24);
+    const quantityDelta = body.quantity_delta;
+    const note = cleanText(body.note, 500);
+    const referenceId = cleanText(body.reference_id, 120) || null;
+    const referenceType = movementType === "received" ? "purchase" : movementType === "customer_return" ? "return" : "count";
+    if (!["received", "customer_return", "adjustment"].includes(movementType) || !Number.isSafeInteger(quantityDelta) || Number(quantityDelta) === 0 || Math.abs(Number(quantityDelta)) > 1_000_000 || ((movementType === "received" || movementType === "customer_return") && Number(quantityDelta) < 0) || note.length < 3) {
+      return error("Choose a valid stock movement, non-zero quantity and a short note", 400);
+    }
+    try {
+      const current = await env.DB.prepare("SELECT id, stock_on_hand, is_active FROM product_variants WHERE id = ? LIMIT 1").bind(variantId).first<{ id: string; stock_on_hand: number; is_active: number }>();
+      if (!current) return error("Variant not found", 404);
+      if (current.is_active !== 1) return error("Inactive variants cannot receive stock movements", 409);
+      const nextStock = current.stock_on_hand + Number(quantityDelta);
+      if (nextStock < 0) return error("This movement would make stock negative", 409);
+      const movementId = crypto.randomUUID();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand + ? >= 0")
+          .bind(Number(quantityDelta), new Date().toISOString(), variantId, Number(quantityDelta)),
+        env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM product_variants WHERE id = ? AND stock_on_hand = ?)")
+          .bind(movementId, variantId, movementType, Number(quantityDelta), referenceType, referenceId, note, admin.admin_user_id, variantId, nextStock),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM inventory_movements WHERE id = ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, "inventory.movement_recorded", "product_variant", variantId, JSON.stringify({ movement_type: movementType, quantity_delta: Number(quantityDelta), reference_id: referenceId }), movementId),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were saving. Refresh and try again.", 409);
+      return json({ recorded: true, id: movementId, stock_on_hand: nextStock });
+    } catch { return error("Stock movement could not be recorded", 503); }
+  }
+
+  return error("Method not allowed", 405);
+}
+
 interface AdminEnquiryRow {
   id: string;
   enquiry_type: string;
@@ -501,6 +668,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       return error("Sign-out could not be completed", 503);
     }
   }
+
+  const inventoryResponse = await adminInventoryRoutes(request, env, url);
+  if (inventoryResponse) return inventoryResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
