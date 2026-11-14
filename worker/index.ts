@@ -484,8 +484,8 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       if (nextStock < 0) return error("This movement would make stock negative", 409);
       const movementId = crypto.randomUUID();
       const results = await env.DB.batch([
-        env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand + ? >= 0")
-          .bind(Number(quantityDelta), new Date().toISOString(), variantId, Number(quantityDelta)),
+        env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand = ? AND stock_on_hand + ? >= 0")
+          .bind(Number(quantityDelta), new Date().toISOString(), variantId, current.stock_on_hand, Number(quantityDelta)),
         env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM product_variants WHERE id = ? AND stock_on_hand = ?)")
           .bind(movementId, variantId, movementType, Number(quantityDelta), referenceType, referenceId, note, admin.admin_user_id, variantId, nextStock),
         env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM inventory_movements WHERE id = ?)")
