@@ -128,7 +128,8 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO orders") && q.includes("source_quote_id")) {
       const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id] = v;
       const quote = this.db.wholesaleQuotes.get(source_quote_id);
-      if (!quote || quote.status !== "sent" || [...this.db.orders.values()].some((row) => row.source_quote_id === source_quote_id)) return { success: true, meta: { changes: 0 } };
+      const guardQuoteId = v[12]; const guardNow = v[13];
+      if (!quote || quote.status !== "sent" || guardQuoteId !== source_quote_id || Date.parse(quote.valid_until) <= Date.parse(guardNow) || [...this.db.orders.values()].some((row) => row.source_quote_id === source_quote_id)) return { success: true, meta: { changes: 0 } };
       const checks = v.slice(14);
       for (let i = 0; i < checks.length; i += 2) { const variant = this.db.variants.get(checks[i]); if (!variant || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } }; }
       this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id, payment_method: "cod", payment_status: "pending", order_status: "pending", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
