@@ -17,6 +17,8 @@ class FakeStatement {
       const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, wholesale_price_paisa: product.wholesale_price_paisa, retail_price_paisa: product.retail_price_paisa } : null;
     }
+    if (q.startsWith("SELECT id, status FROM vehicles WHERE id = ?")) { const row = this.db.vehicles.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
+    if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token")) {
@@ -54,6 +56,11 @@ class FakeStatement {
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {
       const ids = new Set(v);
       return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+    }
+    if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available'")) return { success: true, results: [...this.db.vehicles.values()].filter((row) => row.status === "available") };
+    if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles")) return { success: true, results: [...this.db.vehicles.values()] };
+    if (q.startsWith("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.created_at, r.updated_at, v.name AS vehicle_name")) {
+      return { success: true, results: [...this.db.rentalRequests.values()].map((row) => ({ ...row, vehicle_name: row.vehicle_id ? this.db.vehicles.get(row.vehicle_id)?.name ?? null : null, vehicle_type: row.vehicle_id ? this.db.vehicles.get(row.vehicle_id)?.vehicle_type ?? null : null })) };
     }
     if (q.startsWith("SELECT id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status, valid_until, delivery_address, city, customer_note, approval_token, converted_order_id, created_at, updated_at FROM wholesale_quotes")) {
       return { success: true, results: [...this.db.wholesaleQuotes.values()].slice(0, 100) };
@@ -102,6 +109,42 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO vehicles")) {
+      const [id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description] = v;
+      this.db.vehicles.set(id, { id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE vehicles SET name")) {
+      const [name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, updated_at, id] = v;
+      const row = this.db.vehicles.get(id);
+      if (!row) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO rental_requests")) {
+      const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at] = v;
+      const guardVehicle = v[14];
+      if (guardVehicle !== vehicle_id) return { success: true, meta: { changes: 0 } };
+      if (vehicle_id) {
+        const vehicle = this.db.vehicles.get(vehicle_id);
+        const overlap = [...this.db.rentalRequests.values()].some((row) => row.vehicle_id === vehicle_id && ["confirmed", "active"].includes(row.status) && row.pickup_at < return_at && row.return_at > pickup_at);
+        if (!vehicle || vehicle.status !== "available" || overlap) return { success: true, meta: { changes: 0 } };
+      }
+      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE rental_requests SET vehicle_id = ?")) {
+      const [vehicle_id, status, admin_note, updated_at, id, expected, guardStatus, guardVehicle, existsVehicle, overlapVehicle] = v;
+      const row = this.db.rentalRequests.get(id);
+      if (!row || row.status !== expected) return { success: true, meta: { changes: 0 } };
+      if (status === "confirmed") {
+        const vehicle = this.db.vehicles.get(vehicle_id);
+        const overlap = [...this.db.rentalRequests.values()].some((other) => other.id !== id && other.vehicle_id === vehicle_id && ["confirmed", "active"].includes(other.status) && other.pickup_at < row.return_at && other.return_at > row.pickup_at);
+        if (guardStatus !== "confirmed" || guardVehicle !== vehicle_id || existsVehicle !== vehicle_id || overlapVehicle !== vehicle_id || !vehicle || vehicle.status !== "available" || overlap) return { success: true, meta: { changes: 0 } };
+      }
+      Object.assign(row, { vehicle_id, status, admin_note, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO wholesale_quotes")) {
       const [id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, valid_until, delivery_address, city, customer_note, approval_token, updated_at] = v;
       this.db.wholesaleQuotes.set(id, { id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status: "prepared", valid_until, delivery_address, city, customer_note, approval_token, converted_order_id: null, created_at: updated_at, updated_at });
@@ -320,6 +363,8 @@ class FakeD1 {
   orderItems = [];
   wholesaleQuotes = new Map();
   wholesaleQuoteItems = [];
+  vehicles = new Map();
+  rentalRequests = new Map();
   audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
@@ -701,4 +746,49 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal((await duplicate.json()).accepted, true);
   assert.equal(db.orders.size, 1);
   assert.equal(db.variants.get(variantId).reserved_quantity, 12);
+});
+
+test("rental requests can be assigned and confirmed only when the vehicle has no overlapping confirmed booking", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const createVehicle = async (name) => {
+    const response = await handleRequest(request("/api/admin/vehicles", "POST", {
+      name, vehicle_type: "Sedan", transmission: "Automatic", seats: 5, fuel_type: "Petrol",
+      daily_rate_paisa: 850000, status: "available", description: "Test fleet vehicle",
+    }, headers), env(db));
+    assert.equal(response.status, 201);
+    return (await response.json()).vehicle_id;
+  };
+  const vehicleOne = await createVehicle("Fleet Sedan One");
+  const vehicleTwo = await createVehicle("Fleet Sedan Two");
+  const fleet = await handleRequest(new Request(origin + "/api/vehicles"), env(db));
+  assert.equal(fleet.status, 200);
+  assert.equal((await fleet.json()).vehicles.length, 2);
+  const pickup = new Date(Date.now() + 2 * 86400000).toISOString();
+  const returning = new Date(Date.now() + 3 * 86400000).toISOString();
+  const requestBody = {
+    vehicle_id: vehicleOne, customer_name: "Rental Customer", phone: "+923001234567",
+    email: "renter@example.com", pickup_location: "Jhelum", destination: "Islamabad",
+    pickup_at: pickup, return_at: returning, driver_option: "with_driver",
+  };
+  const first = await handleRequest(request("/api/rentals", "POST", requestBody), env(db));
+  assert.equal(first.status, 201);
+  const firstId = [...db.rentalRequests.keys()][0];
+  const second = await handleRequest(request("/api/rentals", "POST", { ...requestBody, vehicle_id: null, customer_name: "Second Customer" }), env(db));
+  assert.equal(second.status, 201);
+  const secondId = [...db.rentalRequests.keys()][1];
+  const reviewingFirst = await handleRequest(request("/api/admin/rentals/" + firstId, "PATCH", { status: "reviewing", vehicle_id: vehicleOne }, headers), env(db));
+  assert.equal(reviewingFirst.status, 200);
+  const confirmedFirst = await handleRequest(request("/api/admin/rentals/" + firstId, "PATCH", { status: "confirmed", vehicle_id: vehicleOne }, headers), env(db));
+  assert.equal(confirmedFirst.status, 200);
+  await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", { status: "reviewing", vehicle_id: vehicleOne }, headers), env(db));
+  const conflict = await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", { status: "confirmed", vehicle_id: vehicleOne }, headers), env(db));
+  assert.equal(conflict.status, 409);
+  const reassigned = await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", { status: "confirmed", vehicle_id: vehicleTwo }, headers), env(db));
+  assert.equal(reassigned.status, 200);
+  assert.equal(db.rentalRequests.get(firstId).status, "confirmed");
+  assert.equal(db.rentalRequests.get(secondId).vehicle_id, vehicleTwo);
+  assert.equal(db.rentalRequests.get(secondId).status, "confirmed");
 });
