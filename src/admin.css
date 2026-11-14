@@ -33,3 +33,10 @@
 .admin-order-footer label{display:grid;gap:4px;font-size:10px;font-weight:800;color:#718197;text-transform:uppercase;letter-spacing:.08em}
 .admin-order-footer select{padding:8px 10px;border:1px solid #dbe4ef;border-radius:8px;background:#f8fafd;color:#173b63;font-weight:700;text-transform:capitalize}
 @media(max-width:520px){.admin-order-footer{align-items:flex-end}.admin-order-items>div{align-items:flex-start}.admin-order-items>div span{max-width:70%}}
+
+.admin-quote-list{display:grid;gap:12px}.admin-quote-card{padding:15px;border:1px solid #e2eaf2;border-radius:13px;background:#fff}
+.admin-quote-lines{display:grid;gap:7px;padding:12px 0;border-bottom:1px solid #edf1f5}.admin-quote-lines>div{display:flex;justify-content:space-between;gap:12px;font-size:12px;color:#536b84}.admin-quote-lines strong{white-space:nowrap;color:#173b63}
+.admin-quote-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px}.admin-quote-footer>strong{font-size:17px;color:#173b63}.admin-quote-footer>div{display:flex;gap:8px;align-items:center}.admin-quote-footer button{border:1px solid #cddceb;border-radius:8px;background:#f5f9fd;color:#1d5f99;padding:9px 12px;font-weight:750;cursor:pointer}.admin-quote-footer span{font-size:11px;color:#27805d;font-weight:750}.admin-quote-expiry{display:block;margin-top:8px;color:#8794a5;font-size:10px}
+.admin-quote-line-editor{display:grid;gap:12px;padding:14px;border:1px solid #e1e8f1;border-radius:12px;background:#f8fafd}.admin-quote-line-editor>.admin-panel-heading{margin:0}.admin-quote-line-editor h3{margin:0;font-size:15px;color:#173b63}
+.admin-quote-draft-line{display:grid;grid-template-columns:1.2fr 1.5fr .6fr .8fr;gap:10px;padding:12px;background:#fff;border:1px solid #e3eaf2;border-radius:10px}.admin-quote-draft-line label{min-width:0}.admin-quote-draft-line select,.admin-quote-draft-line input{width:100%;min-width:0}
+@media(max-width:760px){.admin-quote-draft-line{grid-template-columns:1fr 1fr}.admin-quote-draft-line .admin-danger-button{grid-column:1/-1}.admin-quote-footer{align-items:flex-start;flex-direction:column}}
