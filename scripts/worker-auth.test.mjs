@@ -487,3 +487,93 @@ test("catalogue staff cannot change stock quantities", async () => {
   assert.equal(denied.status, 403);
   assert.equal(db.variants.get(variantId).stock_on_hand, 0);
 });
+
+
+test("COD checkout verifies live price, reserves stock once, and fulfils orders through the admin workflow", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const productResponse = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Checkout Hoodie", category: "hoodies", audience: "unisex", retail_price_paisa: 250000,
+  }, headers), env(db));
+  const productId = (await productResponse.json()).id;
+  await handleRequest(request("/api/admin/products/" + productId, "PATCH", { status: "published" }, headers), env(db));
+  const variantResponse = await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", {
+    sku: "DV-CHECKOUT-M", size: "M", color: "Navy", initial_stock: 5,
+  }, headers), env(db));
+  const variantId = (await variantResponse.json()).variant.id;
+
+  const catalogue = await handleRequest(new Request(origin + "/api/products?limit=12"), env(db));
+  assert.equal(catalogue.status, 200);
+  assert.equal((await catalogue.json()).products[0].variants[0].available_quantity, 5);
+
+  const payload = {
+    checkout_token: "123e4567-e89b-42d3-a456-426614174000",
+    customer_name: "Test Buyer", phone: "+923001234567", email: "buyer@example.com",
+    delivery_address: "House 10, Street 2, Model Town", city: "Jhelum", customer_note: "",
+    items: [{ variant_id: variantId, quantity: 2 }],
+  };
+  const placed = await handleRequest(request("/api/orders", "POST", payload), env(db));
+  assert.equal(placed.status, 201);
+  const placedBody = await placed.json();
+  assert.match(placedBody.order_number, /^DV-/);
+  assert.equal(placedBody.total_paisa, 500000);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 5);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 2);
+  assert.equal(db.orders.size, 1);
+
+  const duplicate = await handleRequest(request("/api/orders", "POST", payload), env(db));
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).duplicate, true);
+  assert.equal(db.orders.size, 1);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 2);
+
+  const unavailable = await handleRequest(request("/api/orders", "POST", {
+    ...payload, checkout_token: "123e4567-e89b-42d3-a456-426614174001", items: [{ variant_id: variantId, quantity: 10 }],
+  }), env(db));
+  assert.equal(unavailable.status, 409);
+  assert.equal(db.orders.size, 1);
+
+  const listed = await handleRequest(new Request(origin + "/api/admin/orders", { headers: { cookie } }), env(db));
+  assert.equal(listed.status, 200);
+  const order = (await listed.json()).orders[0];
+  assert.equal(order.items.length, 1);
+  assert.equal(order.items[0].quantity, 2);
+
+  for (const status of ["confirmed", "processing", "dispatched", "delivered"]) {
+    const updated = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: status }, headers), env(db));
+    assert.equal(updated.status, 200);
+  }
+  assert.equal(db.variants.get(variantId).stock_on_hand, 3);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  assert.equal(db.movements.at(-1).movement_type, "sold");
+  assert.equal(db.movements.at(-1).quantity_delta, -2);
+});
+
+test("cancelling a COD order releases its reservation without changing physical stock", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const product = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Cancel Test Tee", category: "t-shirts", audience: "unisex", retail_price_paisa: 120000,
+  }, headers), env(db));
+  const productId = (await product.json()).id;
+  await handleRequest(request("/api/admin/products/" + productId, "PATCH", { status: "published" }, headers), env(db));
+  const variant = await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", {
+    sku: "DV-CANCEL-L", size: "L", color: "White", initial_stock: 4,
+  }, headers), env(db));
+  const variantId = (await variant.json()).variant.id;
+  const placed = await handleRequest(request("/api/orders", "POST", {
+    checkout_token: "123e4567-e89b-42d3-a456-426614174002",
+    customer_name: "Cancel Buyer", phone: "+923001234567", delivery_address: "House 10, Street 2", city: "Jhelum",
+    items: [{ variant_id: variantId, quantity: 3 }],
+  }), env(db));
+  assert.equal(placed.status, 201);
+  const orderId = [...db.orders.keys()][0];
+  const cancelled = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
+  assert.equal(cancelled.status, 200);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 4);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+});
