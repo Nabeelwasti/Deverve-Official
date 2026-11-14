@@ -13,6 +13,12 @@ class FakeStatement {
       const admin = session && this.db.admins.get(session.admin_user_id);
       return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
     }
+    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.wholesale_price_paisa")) {
+      const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
+      return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, wholesale_price_paisa: product.wholesale_price_paisa, retail_price_paisa: product.retail_price_paisa } : null;
+    }
+    if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token")) {
       return [...this.db.orders.values()].find((row) => row.checkout_token === v[0]) ?? null;
     }
@@ -47,6 +53,18 @@ class FakeStatement {
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {
       const ids = new Set(v);
       return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+    }
+    if (q.startsWith("SELECT id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status, valid_until, delivery_address, city, customer_note, approval_token, converted_order_id, created_at, updated_at FROM wholesale_quotes")) {
+      return { success: true, results: [...this.db.wholesaleQuotes.values()].slice(0, 100) };
+    }
+    if (q.startsWith("SELECT id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id IN")) {
+      const ids = new Set(v); return { success: true, results: this.db.wholesaleQuoteItems.filter((row) => ids.has(row.quote_id)) };
+    }
+    if (q.startsWith("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ?")) {
+      return { success: true, results: this.db.wholesaleQuoteItems.filter((row) => row.quote_id === v[0]).map(({ product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa }) => ({ product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa })) };
+    }
+    if (q.startsWith("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ?")) {
+      return { success: true, results: this.db.wholesaleQuoteItems.filter((row) => row.quote_id === v[0]) };
     }
     if (q.startsWith("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa")) {
       return { success: true, results: [...this.db.orders.values()].slice(0, v[0]) };
@@ -83,6 +101,48 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO wholesale_quotes")) {
+      const [id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, valid_until, delivery_address, city, customer_note, approval_token, updated_at] = v;
+      this.db.wholesaleQuotes.set(id, { id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status: "prepared", valid_until, delivery_address, city, customer_note, approval_token, converted_order_id: null, created_at: updated_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO wholesale_quote_items")) {
+      const [id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa] = v;
+      if (!this.db.wholesaleQuotes.has(quote_id)) return { success: true, meta: { changes: 0 } };
+      this.db.wholesaleQuoteItems.push({ id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE wholesale_quotes SET status = ?")) {
+      const row = this.db.wholesaleQuotes.get(v[2]);
+      if (!row || row.status !== v[3]) return { success: true, meta: { changes: 0 } };
+      row.status = v[0]; row.updated_at = v[1];
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE wholesale_quotes SET status = 'declined'")) {
+      const row = this.db.wholesaleQuotes.get(v[1]);
+      if (!row || row.status !== "sent") return { success: true, meta: { changes: 0 } };
+      row.status = "declined"; row.updated_at = v[0];
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO orders") && q.includes("source_quote_id")) {
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id] = v;
+      const quote = this.db.wholesaleQuotes.get(source_quote_id);
+      if (!quote || quote.status !== "sent" || [...this.db.orders.values()].some((row) => row.source_quote_id === source_quote_id)) return { success: true, meta: { changes: 0 } };
+      const checks = v.slice(12, -2);
+      for (let i = 0; i < checks.length; i += 2) { const variant = this.db.variants.get(checks[i]); if (!variant || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } }; }
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id, payment_method: "cod", payment_status: "pending", order_status: "pending", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE wholesale_quotes SET status = 'accepted'")) {
+      const [converted_order_id, updated_at, id, orderId] = v;
+      const row = this.db.wholesaleQuotes.get(id);
+      if (!row || row.status !== "sent" || !this.db.orders.has(orderId)) return { success: true, meta: { changes: 0 } };
+      row.status = "accepted"; row.converted_order_id = converted_order_id; row.updated_at = updated_at;
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'wholesale_quote.accepted'")) {
+      this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO orders")) {
       const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token] = v;
       if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
@@ -584,4 +644,57 @@ test("cancelling a COD order releases its reservation without changing physical 
   assert.equal(cancelled.status, 200);
   assert.equal(db.variants.get(variantId).stock_on_hand, 4);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+});
+
+test("wholesale quotation can be sent, customer-approved and converted once into a stock-reserved COD order", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const productResponse = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Wholesale Hoodie", category: "hoodies", audience: "unisex", status: "published",
+    retail_price_paisa: 300000, wholesale_price_paisa: 200000,
+  }, headers), env(db));
+  const productId = (await productResponse.json()).id;
+  await handleRequest(request("/api/admin/products/" + productId, "PATCH", { status: "published" }, headers), env(db));
+  const variantResponse = await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", {
+    sku: "DV-WHOLESALE-M", size: "M", color: "Navy", initial_stock: 30,
+  }, headers), env(db));
+  const variantId = (await variantResponse.json()).variant.id;
+  const created = await handleRequest(request("/api/admin/wholesale-quotes", "POST", {
+    business_name: "Test Retail Store", contact_name: "Wholesale Buyer", phone: "+923001234567",
+    email: "buyer@example.com", delivery_address: "Shop 12, Main Market", city: "Jhelum",
+    valid_until: new Date(Date.now() + 7 * 86400000).toISOString(),
+    items: [{ variant_id: variantId, quantity: 12, unit_price_paisa: 185000 }],
+  }, headers), env(db));
+  assert.equal(created.status, 201);
+  const createdBody = await created.json();
+  const quoteId = createdBody.quote_id;
+  const quote = db.wholesaleQuotes.get(quoteId);
+  assert.equal(quote.quoted_total_paisa, 2220000);
+  assert.equal(quote.status, "prepared");
+  assert.equal(db.wholesaleQuoteItems.length, 1);
+  const sent = await handleRequest(request("/api/admin/wholesale-quotes/" + quoteId, "PATCH", { status: "sent" }, headers), env(db));
+  assert.equal(sent.status, 200);
+  const publicUrl = "/api/wholesale-quotes/" + quote.approval_token;
+  const view = await handleRequest(new Request(origin + publicUrl), env(db));
+  assert.equal(view.status, 200);
+  assert.equal((await view.json()).quote.items[0].quantity, 12);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(accepted.status, 201);
+  const acceptedBody = await accepted.json();
+  assert.match(acceptedBody.order.order_number, /^DV-W-/);
+  assert.equal(db.orders.size, 1);
+  assert.equal(db.wholesaleQuotes.get(quoteId).status, "accepted");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 12);
+  const order = [...db.orders.values()][0];
+  assert.equal(order.phone, "+923001234567");
+  assert.equal(order.delivery_address, "Shop 12, Main Market");
+  assert.equal(order.total_paisa, 2220000);
+  const duplicate = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).accepted, true);
+  assert.equal(db.orders.size, 1);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 12);
 });
