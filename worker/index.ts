@@ -258,7 +258,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
         ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
-        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
+        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
       return json({ products: rows.results ?? [] });
     } catch {
       return error("Product management is temporarily unavailable", 503);
