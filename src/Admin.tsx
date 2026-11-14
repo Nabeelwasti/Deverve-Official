@@ -11,7 +11,8 @@ type Product = {
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
-type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };\ntype InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
+type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };
+type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -41,7 +42,9 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
-  const [variants, setVariants] = useState<Variant[]>([]);\n  const [movementTarget, setMovementTarget] = useState<Variant | null>(null);\n  const [movements, setMovements] = useState<InventoryMovement[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
+  const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
   const [stockForm, setStockForm] = useState({ movement_type: "received", quantity_delta: "", note: "" });
