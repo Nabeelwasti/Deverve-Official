@@ -10,6 +10,7 @@ type Product = {
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
+type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; payment_method: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
@@ -41,7 +42,7 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);\n  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
@@ -67,6 +68,10 @@ export default function Admin() {
     const result = await api<{ overview: Overview }>("/api/admin/overview");
     setOverview(result.overview);
   };
+  const loadOrders = async () => {
+    const result = await api<{ orders: AdminOrder[] }>("/api/admin/orders?limit=50");
+    setOrders(result.orders);
+  };
   const loadEnquiries = async () => {
     const result = await api<{ enquiries: Enquiry[] }>("/api/admin/enquiries?limit=50");
     setEnquiries(result.enquiries);
@@ -84,7 +89,7 @@ export default function Admin() {
   useEffect(() => {
     if (admin) {
       const tasks = [loadProducts(), loadOverview()];
-      if (admin.role !== "catalogue") tasks.push(loadEnquiries());
+      if (admin.role !== "catalogue") tasks.push(loadEnquiries());\n      if (["owner", "manager", "orders"].includes(admin.role)) tasks.push(loadOrders());
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
@@ -202,6 +207,17 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+  const updateOrderStatus = async (order: AdminOrder, order_status: AdminOrder["order_status"]) => {
+    if (order_status === order.order_status) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/orders/${order.id}`, { method: "PATCH", body: JSON.stringify({ order_status }) });
+      await Promise.all([loadOrders(), loadOverview()]);
+      setMessage(`Order ${order.order_number} updated to ${order_status}.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Order could not be updated."); }
+    finally { setBusy(false); }
+  };
+
   const updateEnquiryStatus = async (enquiry: Enquiry, status: Enquiry["status"]) => {
     if (status === enquiry.status) return;
     setBusy(true); setMessage("");
@@ -253,6 +269,18 @@ export default function Admin() {
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>Overview</h1><p className="admin-muted">Manage your catalogue and keep your storefront up to date.</p></div>{canEditProducts && <button className="admin-primary" onClick={startNew}>＋ Add product</button>}</div>
         <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
+        {["owner", "manager", "orders"].includes(admin.role) && <section className="admin-panel admin-orders-panel">
+          <div className="admin-panel-heading"><div><h2>Customer orders</h2><p className="admin-muted">Review COD orders, contact customers and move each order through fulfilment.</p></div><span className="admin-enquiry-count">{orders.length} recent</span></div>
+          {orders.length === 0 ? <div className="admin-empty"><strong>No orders yet</strong><p>New website checkout requests will appear here.</p></div> : <div className="admin-order-list">{orders.map((order) => {
+            const next: AdminOrder["order_status"][] = order.order_status === "pending" ? ["confirmed", "cancelled"] : order.order_status === "confirmed" ? ["processing", "cancelled"] : order.order_status === "processing" ? ["dispatched", "cancelled"] : order.order_status === "dispatched" ? ["delivered"] : [];
+            return <article className="admin-order-card" key={order.id}>
+              <div className="admin-order-heading"><div><strong>{order.order_number}</strong><span>{new Date(order.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${order.order_status}`}>{order.order_status}</span></div>
+              <div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
+              <div className="admin-order-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
+              <div className="admin-order-footer"><div><span>COD · {order.payment_status}</span><strong>Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}</strong></div><label>Status<select value={order.order_status} disabled={busy || !next.length} onChange={(event) => void updateOrderStatus(order, event.target.value as AdminOrder["order_status"])}><option value={order.order_status}>{order.order_status}</option>{next.map((status) => <option value={status} key={status}>{status}</option>)}</select></label></div>
+            </article>;
+          })}</div>}
+        </section>}
         {admin.role !== "catalogue" && (
         <section className="admin-panel admin-enquiry-panel">
           <div className="admin-panel-heading"><div><h2>Customer enquiries</h2><p className="admin-muted">Review retail, wholesale, rental and general enquiries received from your website.</p></div><span className="admin-enquiry-count">{enquiries.length} recent</span></div>
