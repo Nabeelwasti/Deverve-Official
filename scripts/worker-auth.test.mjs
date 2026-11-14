@@ -317,6 +317,8 @@ class FakeD1 {
   enquiries = new Map();
   orders = new Map();
   orderItems = [];
+  wholesaleQuotes = new Map();
+  wholesaleQuoteItems = [];
   audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
