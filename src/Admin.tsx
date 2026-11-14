@@ -16,6 +16,8 @@ type Variant = { id: string; product_id: string; sku: string | null; size: strin
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
 type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string };
 type QuoteLineDraft = { product_id: string; variant_id: string; quantity: string; unit_price: string; variants: Variant[] };
+type Vehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; status: "draft" | "available" | "maintenance" | "retired"; image_key: string | null; description: string };
+type RentalRequest = { id: string; vehicle_id: string | null; vehicle_name: string | null; vehicle_type: string | null; customer_name: string; phone: string; email: string | null; pickup_location: string; destination: string | null; pickup_at: string; return_at: string; driver_option: "self_drive" | "with_driver"; status: "requested" | "reviewing" | "confirmed" | "active" | "completed" | "cancelled"; customer_note: string; admin_note: string; reference_code: string; created_at: string };
 type WholesaleQuote = { id: string; business_name: string; contact_name: string; phone: string; email: string | null; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string | null; converted_order_id: string | null; approval_url: string | null; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 
 const emptyProduct: ProductForm = {
@@ -46,7 +48,7 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
+  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);\n  const [vehicles, setVehicles] = useState<Vehicle[]>([]);\n  const [rentals, setRentals] = useState<RentalRequest[]>([]);\n  const [showVehicleEditor, setShowVehicleEditor] = useState(false);\n  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);\n  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft" as Vehicle["status"], description: "" });
   const [showQuoteEditor, setShowQuoteEditor] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
   const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
@@ -83,6 +85,14 @@ export default function Admin() {
     const result = await api<{ quotes: WholesaleQuote[] }>("/api/admin/wholesale-quotes");
     setWholesaleQuotes(result.quotes);
   };
+  const loadVehicles = async () => {
+    const result = await api<{ vehicles: Vehicle[] }>("/api/admin/vehicles");
+    setVehicles(result.vehicles);
+  };
+  const loadRentals = async () => {
+    const result = await api<{ rentals: RentalRequest[] }>("/api/admin/rentals");
+    setRentals(result.rentals);
+  };
   const loadEnquiries = async () => {
     const result = await api<{ enquiries: Enquiry[] }>("/api/admin/enquiries?limit=50");
     setEnquiries(result.enquiries);
@@ -101,7 +111,7 @@ export default function Admin() {
     if (admin) {
       const tasks = [loadProducts(), loadOverview()];
       if (admin.role !== "catalogue") tasks.push(loadEnquiries());
-      if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadOrders()); tasks.push(loadWholesaleQuotes()); }
+      if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadOrders()); tasks.push(loadWholesaleQuotes()); }\n      if (["owner", "manager", "rental"].includes(admin.role)) { tasks.push(loadVehicles()); tasks.push(loadRentals()); }
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
@@ -274,6 +284,32 @@ export default function Admin() {
     catch { setMessage("Copy was blocked by the browser. Open the approval link and copy it from the address bar."); }
   };
 
+
+  const startVehicleEditor = (vehicle?: Vehicle) => {
+    setEditingVehicleId(vehicle?.id ?? null);
+    setVehicleForm(vehicle ? { name: vehicle.name, vehicle_type: vehicle.vehicle_type, transmission: vehicle.transmission, seats: String(vehicle.seats), fuel_type: vehicle.fuel_type, daily_rate: vehicle.daily_rate_paisa === null ? "" : String(vehicle.daily_rate_paisa / 100), status: vehicle.status, description: vehicle.description } : { name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft", description: "" });
+    setShowVehicleEditor(true); setMessage("");
+  };
+  const saveVehicle = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setMessage("");
+    const rate = vehicleForm.daily_rate.trim() === "" ? null : Math.round(Number(vehicleForm.daily_rate) * 100);
+    if (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) { setMessage("Enter a valid daily rate."); setBusy(false); return; }
+    try {
+      await api(editingVehicleId ? `/api/admin/vehicles/${editingVehicleId}` : "/api/admin/vehicles", { method: editingVehicleId ? "PATCH" : "POST", body: JSON.stringify({ ...vehicleForm, seats: Number(vehicleForm.seats), daily_rate_paisa: rate }) });
+      await loadVehicles(); setShowVehicleEditor(false); setMessage("Vehicle saved.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Vehicle could not be saved."); }
+    finally { setBusy(false); }
+  };
+  const updateRentalStatus = async (rental: RentalRequest, status: RentalRequest["status"]) => {
+    if (status === rental.status) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/rentals/${rental.id}`, { method: "PATCH", body: JSON.stringify({ status, admin_note: rental.admin_note }) });
+      await loadRentals(); await loadOverview(); setMessage(`Rental request ${rental.reference_code} updated to ${status}.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Rental request could not be updated."); }
+    finally { setBusy(false); }
+  };
+
   const updateEnquiryStatus = async (enquiry: Enquiry, status: Enquiry["status"]) => {
     if (status === enquiry.status) return;
     setBusy(true); setMessage("");
@@ -337,6 +373,28 @@ export default function Admin() {
             </article>;
           })}</div>}
         </section>}
+        {["owner", "manager", "rental"].includes(admin.role) && <section className="admin-panel admin-fleet-panel">
+          <div className="admin-panel-heading"><div><h2>Vehicle fleet</h2><p className="admin-muted">Manage rental vehicles, daily rates and public availability.</p></div>{["owner", "manager"].includes(admin.role) && <button type="button" className="admin-primary" onClick={() => startVehicleEditor()}>＋ Add vehicle</button>}</div>
+          {vehicles.length === 0 ? <div className="admin-empty"><strong>No vehicles added yet</strong><p>Add a vehicle before customers can request it from the rental section.</p></div> : <div className="admin-vehicle-list">{vehicles.map((vehicle) => <article className="admin-vehicle-card" key={vehicle.id}>
+            <div><strong>{vehicle.name}</strong><span>{vehicle.vehicle_type} · {vehicle.seats} seats · {vehicle.transmission} · {vehicle.fuel_type}</span><small>{vehicle.description || "No description added."}</small></div>
+            <div className="admin-vehicle-meta"><strong>{vehicle.daily_rate_paisa === null ? "Rate on request" : `Rs. ${Math.round(vehicle.daily_rate_paisa / 100).toLocaleString("en-PK")} / day`}</strong><span className={`admin-enquiry-status status-${vehicle.status}`}>{vehicle.status}</span></div>
+            {["owner", "manager"].includes(admin.role) && <button type="button" className="admin-secondary" onClick={() => startVehicleEditor(vehicle)}>Edit</button>}
+          </article>)}</div>}
+        </section>}
+        {["owner", "manager", "rental"].includes(admin.role) && <section className="admin-panel admin-rentals-panel">
+          <div className="admin-panel-heading"><div><h2>Rental requests</h2><p className="admin-muted">Review date ranges, contact customers and confirm only when the vehicle is free.</p></div><span className="admin-enquiry-count">{rentals.length} recent</span></div>
+          {rentals.length === 0 ? <div className="admin-empty"><strong>No rental requests yet</strong><p>Customer booking requests will appear here.</p></div> : <div className="admin-rental-list">{rentals.map((rental) => {
+            const next: RentalRequest["status"][] = rental.status === "requested" ? ["reviewing", "cancelled"] : rental.status === "reviewing" ? ["confirmed", "cancelled"] : rental.status === "confirmed" ? ["active", "cancelled"] : rental.status === "active" ? ["completed"] : [];
+            return <article className="admin-rental-card" key={rental.id}>
+              <div className="admin-order-heading"><div><strong>{rental.reference_code}</strong><span>{new Date(rental.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${rental.status}`}>{rental.status}</span></div>
+              <div className="admin-order-customer"><strong>{rental.customer_name}</strong><a href={`tel:${rental.phone}`}>{rental.phone}</a>{rental.email && <a href={`mailto:${rental.email}`}>{rental.email}</a>}<span>{rental.vehicle_name || "Any available vehicle"} · {rental.vehicle_type || "Vehicle preference not specified"}</span></div>
+              <div className="admin-rental-dates"><div><span>PICKUP</span><strong>{new Date(rental.pickup_at).toLocaleString()}</strong><small>{rental.pickup_location}</small></div><div><span>RETURN</span><strong>{new Date(rental.return_at).toLocaleString()}</strong><small>{rental.destination || "Destination not specified"}</small></div></div>
+              <p className="admin-muted">{rental.driver_option.replace("_", " ")}{rental.customer_note ? ` · ${rental.customer_note}` : ""}</p>
+              {["owner", "manager"].includes(admin.role) && <label className="admin-rental-note">Internal note<input value={rental.admin_note} maxLength={500} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, admin_note: e.target.value } : item))} /></label>}
+              <label className="admin-enquiry-action">Update status<select value={rental.status} disabled={busy || !next.length} onChange={(e) => void updateRentalStatus(rental, e.target.value as RentalRequest["status"])}><option value={rental.status}>{rental.status}</option>{next.map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
+            </article>;
+          })}</div>}
+        </section>}
         {["owner", "manager", "orders"].includes(admin.role) && <section className="admin-panel admin-wholesale-panel">
           <div className="admin-panel-heading"><div><h2>Wholesale quotations</h2><p className="admin-muted">Prepare itemised business quotes, share secure approval links and convert accepted quotes into COD orders.</p></div><button type="button" className="admin-primary" onClick={() => openQuoteEditor()}>＋ Prepare quotation</button></div>
           {wholesaleQuotes.length === 0 ? <div className="admin-empty"><strong>No wholesale quotations yet</strong><p>Create a quotation for a retailer or bulk buyer. Customer approval will create an order and reserve stock.</p></div> : <div className="admin-quote-list">{wholesaleQuotes.map((quote) => <article className="admin-quote-card" key={quote.id}>
@@ -363,6 +421,20 @@ export default function Admin() {
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openMediaLibrary(product)}>Images</button><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
+        {showVehicleEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="vehicle-editor-title">
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">DE VERVE MOBILITY</p><h2 id="vehicle-editor-title">{editingVehicleId ? "Edit vehicle" : "Add vehicle"}</h2></div><button type="button" className="admin-close" onClick={() => setShowVehicleEditor(false)} aria-label="Close">×</button></div>
+          <form className="admin-form admin-product-form" onSubmit={saveVehicle}>
+            <label>Vehicle name<input required minLength={2} maxLength={100} value={vehicleForm.name} onChange={(e) => setVehicleForm({ ...vehicleForm, name: e.target.value })} placeholder="e.g. Toyota Corolla 2022" /></label>
+            <label>Vehicle type<input required maxLength={60} value={vehicleForm.vehicle_type} onChange={(e) => setVehicleForm({ ...vehicleForm, vehicle_type: e.target.value })} placeholder="Sedan, SUV, Van" /></label>
+            <label>Transmission<select value={vehicleForm.transmission} onChange={(e) => setVehicleForm({ ...vehicleForm, transmission: e.target.value })}><option>Automatic</option><option>Manual</option><option>Unspecified</option></select></label>
+            <label>Fuel type<select value={vehicleForm.fuel_type} onChange={(e) => setVehicleForm({ ...vehicleForm, fuel_type: e.target.value })}><option>Petrol</option><option>Diesel</option><option>Hybrid</option><option>Electric</option><option>Unspecified</option></select></label>
+            <label>Seats<input type="number" required min="1" max="30" step="1" value={vehicleForm.seats} onChange={(e) => setVehicleForm({ ...vehicleForm, seats: e.target.value })} /></label>
+            <label>Daily rate (PKR, optional)<input type="number" min="0" step="1" value={vehicleForm.daily_rate} onChange={(e) => setVehicleForm({ ...vehicleForm, daily_rate: e.target.value })} /></label>
+            <label>Status<select value={vehicleForm.status} onChange={(e) => setVehicleForm({ ...vehicleForm, status: e.target.value as Vehicle["status"] })}><option value="draft">Draft</option><option value="available">Available</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option></select></label>
+            <label className="admin-full">Description<textarea rows={3} maxLength={1000} value={vehicleForm.description} onChange={(e) => setVehicleForm({ ...vehicleForm, description: e.target.value })} /></label>
+            <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowVehicleEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save vehicle"}</button></div>
+          </form>
+        </section></div>}
         {showQuoteEditor && <div className="admin-modal-backdrop"><section className="admin-editor admin-quote-editor" role="dialog" aria-modal="true" aria-labelledby="quote-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">WHOLESALE SALES</p><h2 id="quote-editor-title">Prepare a quotation</h2><p className="admin-muted">Set the buyer details and agreed per-piece prices. Customer approval will reserve stock.</p></div><button type="button" className="admin-close" onClick={() => setShowQuoteEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={submitWholesaleQuote}>
