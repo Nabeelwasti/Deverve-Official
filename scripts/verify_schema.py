@@ -25,6 +25,16 @@ actual_tables = {
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
 
+variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
+order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
+assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
+assert "checkout_token" in order_columns, "Checkout idempotency column is missing"
+unique_indexes = {
+    row[1] for row in db.execute("PRAGMA index_list(orders)") if row[2] == 1
+}
+assert "idx_orders_checkout_token" in unique_indexes, "Checkout token must be unique"
+
+
 db.execute(
     "INSERT INTO products (id, slug, name, category, audience) VALUES (?, ?, ?, ?, ?)",
     ("p1", "sample-tee", "Sample T-shirt", "t-shirts", "unisex"),
