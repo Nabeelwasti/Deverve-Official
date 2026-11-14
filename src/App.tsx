@@ -333,6 +333,27 @@ function Storefront() {
         </section>
       </main>
 
+      {rentalOpen && <div className="checkout-backdrop"><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title">
+        <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p>Submit your preferred dates. Our team will confirm vehicle availability, price and rental terms.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close">×</button></div>
+        {rentalReference ? <div className="rental-success"><strong>Request received</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
+          <div className="checkout-fields">
+            <label>Vehicle<select value={rentalForm.vehicle_id} onChange={(e) => setRentalForm({ ...rentalForm, vehicle_id: e.target.value })}><option value="">Any available vehicle</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.vehicle_type}</option>)}</select></label>
+            <label>Your name<input required minLength={2} maxLength={100} autoComplete="name" value={rentalForm.customer_name} onChange={(e) => setRentalForm({ ...rentalForm, customer_name: e.target.value })} /></label>
+            <label>Phone / WhatsApp<input required type="tel" maxLength={24} autoComplete="tel" value={rentalForm.phone} onChange={(e) => setRentalForm({ ...rentalForm, phone: e.target.value })} /></label>
+            <label>Email (optional)<input type="email" maxLength={160} value={rentalForm.email} onChange={(e) => setRentalForm({ ...rentalForm, email: e.target.value })} /></label>
+            <label>Pickup location<input required minLength={2} maxLength={160} value={rentalForm.pickup_location} onChange={(e) => setRentalForm({ ...rentalForm, pickup_location: e.target.value })} /></label>
+            <label>Destination (optional)<input maxLength={160} value={rentalForm.destination} onChange={(e) => setRentalForm({ ...rentalForm, destination: e.target.value })} /></label>
+            <label>Pickup date & time<input type="datetime-local" required min={localDateTime(new Date())} value={rentalForm.pickup_at} onChange={(e) => setRentalForm({ ...rentalForm, pickup_at: e.target.value })} /></label>
+            <label>Return date & time<input type="datetime-local" required min={rentalForm.pickup_at} value={rentalForm.return_at} onChange={(e) => setRentalForm({ ...rentalForm, return_at: e.target.value })} /></label>
+            <label>Driver option<select value={rentalForm.driver_option} onChange={(e) => setRentalForm({ ...rentalForm, driver_option: e.target.value })}><option value="with_driver">With driver</option><option value="self_drive">Self drive (subject to approval)</option></select></label>
+            <label className="checkout-address">Additional details<textarea rows={2} maxLength={500} value={rentalForm.customer_note} onChange={(e) => setRentalForm({ ...rentalForm, customer_note: e.target.value })} /></label>
+            <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={rentalForm.website} onChange={(e) => setRentalForm({ ...rentalForm, website: e.target.value })} /></label>
+          </div>
+          {rentalMessage && <p className="checkout-message" role="alert">{rentalMessage}</p>}
+          <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will contact you to confirm availability, documents, price and terms.</p>
+          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy}>{rentalBusy ? "Sending request…" : "Send rental request"} <span>↗</span></button>
+        </form>}
+      </section></div>}
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
