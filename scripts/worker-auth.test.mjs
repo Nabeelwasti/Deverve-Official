@@ -22,6 +22,10 @@ class FakeStatement {
       return [...this.db.products.values()].find((item) => item.slug === v[0] && (!v[1] || item.id !== v[1])) ?? null;
     }
     if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) return this.db.enquiries.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, status FROM products WHERE id = ?")) { const row = this.db.products.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, stock_on_hand, is_active FROM product_variants WHERE id = ?")) { const row = this.db.variants.get(v[0]); return row ? { id: row.id, stock_on_hand: row.stock_on_hand, is_active: row.is_active } : null; }
+    if (q.startsWith("SELECT id FROM product_variants WHERE id = ?")) { const row = this.db.variants.get(v[0]); return row ? { id: row.id } : null; }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status")) return this.db.products.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM products WHERE id = ?")) return this.db.products.get(v[0]) ?? null;
     if (q.startsWith("SELECT (SELECT COUNT(*)")) return { published_products: 0, draft_products: this.db.products.size, new_enquiries: 0, pending_orders: 0, rental_requests: 0 };
@@ -31,6 +35,12 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
+      return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
+    }
+    if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
+      return { success: true, results: this.db.movements.filter((row) => row.variant_id === v[0]).slice(0, 100) };
+    }
     if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries")) {
       const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
       return { success: true, results: rows.slice(0, v[0]) };
@@ -47,6 +57,44 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO products")) {
       const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa] = v;
       this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO product_variants")) {
+      const [id, product_id, sku, size, color, stock_on_hand] = v;
+      if (sku && [...this.db.variants.values()].some((row) => row.sku === sku)) throw new Error("UNIQUE constraint failed: product_variants.sku");
+      this.db.variants.set(id, { id, product_id, sku, size, color, stock_on_hand, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?")) {
+      const row = this.db.variants.get(v[2]);
+      if (!row || row.is_active !== 1 || row.stock_on_hand !== v[3] || row.stock_on_hand + v[0] < 0) return { success: true, meta: { changes: 0 } };
+      row.stock_on_hand += v[0];
+      row.updated_at = v[1];
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE product_variants SET sku = ?")) {
+      const row = this.db.variants.get(v[5]);
+      if (!row) return { success: true, meta: { changes: 0 } };
+      if (v[0] && [...this.db.variants.values()].some((item) => item.id !== row.id && item.sku === v[0])) throw new Error("UNIQUE constraint failed: product_variants.sku");
+      Object.assign(row, { sku: v[0], size: v[1], color: v[2], is_active: v[3], updated_at: v[4] });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO inventory_movements")) {
+      if (q.includes(" SELECT ")) {
+        const [id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id, expectedId, expectedStock] = v;
+        const variant = this.db.variants.get(expectedId);
+        if (!variant || variant.stock_on_hand !== expectedStock) return { success: true, meta: { changes: 0 } };
+        this.db.movements.push({ id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id, created_at: new Date().toISOString() });
+      } else {
+        const [id, variant_id, movement_type, quantity_delta, reference_type, note, actor_admin_id] = v;
+        this.db.movements.push({ id, variant_id, movement_type, quantity_delta, reference_type, reference_id: null, note, actor_admin_id, created_at: new Date().toISOString() });
+      }
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes(" SELECT ")) {
+      const [id, actor, action, entity, entityId, metadata, movementId] = v;
+      if (!this.db.movements.some((row) => row.id === movementId)) return { success: true, meta: { changes: 0 } };
+      this.db.audits.push([id, actor, action, entity, entityId, metadata]);
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE enquiries SET status = ?")) {
@@ -296,4 +344,58 @@ test("rental staff can only update rental enquiries and viewers cannot update en
   [...db.admins.values()][0].role = "viewer";
   const viewer = await handleRequest(request("/api/admin/enquiries/" + id, "PATCH", { status: "closed" }, headers), env(db));
   assert.equal(viewer.status, 403);
+});
+
+test("owner can create variants and record stock movements without allowing negative inventory", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const productResponse = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Stretch Hoodie", category: "hoodies", audience: "unisex",
+  }, headers), env(db));
+  const productId = (await productResponse.json()).id;
+
+  const created = await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", {
+    sku: "dv-hood-blk-m", size: "M", color: "Black", initial_stock: 10,
+  }, headers), env(db));
+  assert.equal(created.status, 201);
+  const variant = (await created.json()).variant;
+  assert.equal(variant.sku, "DV-HOOD-BLK-M");
+  assert.equal(db.variants.get(variant.id).stock_on_hand, 10);
+  assert.equal(db.movements[0].movement_type, "opening");
+
+  const received = await handleRequest(request("/api/admin/variants/" + variant.id + "/stock", "POST", {
+    movement_type: "received", quantity_delta: 5, note: "Supplier delivery",
+  }, headers), env(db));
+  assert.equal(received.status, 200);
+  assert.equal((await received.json()).stock_on_hand, 15);
+
+  const adjustment = await handleRequest(request("/api/admin/variants/" + variant.id + "/stock", "POST", {
+    movement_type: "adjustment", quantity_delta: -3, note: "Damaged items removed",
+  }, headers), env(db));
+  assert.equal(adjustment.status, 200);
+  assert.equal((await adjustment.json()).stock_on_hand, 12);
+
+  const negative = await handleRequest(request("/api/admin/variants/" + variant.id + "/stock", "POST", {
+    movement_type: "adjustment", quantity_delta: -20, note: "Invalid count",
+  }, headers), env(db));
+  assert.equal(negative.status, 409);
+  assert.equal(db.variants.get(variant.id).stock_on_hand, 12);
+  assert.equal(db.movements.length, 3);
+});
+
+test("catalogue staff cannot change stock quantities", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const product = await handleRequest(request("/api/admin/products", "POST", { name: "Basic Tee", category: "t-shirts", audience: "unisex" }, headers), env(db));
+  const productId = (await product.json()).id;
+  const created = await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", { size: "L", color: "White" }, headers), env(db));
+  const variantId = (await created.json()).variant.id;
+  [...db.admins.values()][0].role = "catalogue";
+  const denied = await handleRequest(request("/api/admin/variants/" + variantId + "/stock", "POST", { movement_type: "received", quantity_delta: 3, note: "Supplier delivery" }, headers), env(db));
+  assert.equal(denied.status, 403);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 0);
 });
