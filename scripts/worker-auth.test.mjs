@@ -162,6 +162,8 @@ class FakeD1 {
   sessions = new Map();
   attempts = new Map();
   products = new Map();
+  variants = new Map();
+  movements = [];
   enquiries = new Map();
   audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
