@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
-import Admin from "./Admin";\nimport WholesaleQuote from "./WholesaleQuote";
+import Admin from "./Admin";
+import WholesaleQuote from "./WholesaleQuote";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
