@@ -21,6 +21,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id FROM products WHERE slug = ?")) {
       return [...this.db.products.values()].find((item) => item.slug === v[0] && (!v[1] || item.id !== v[1])) ?? null;
     }
+    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) return this.db.enquiries.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status")) return this.db.products.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM products WHERE id = ?")) return this.db.products.get(v[0]) ?? null;
     if (q.startsWith("SELECT (SELECT COUNT(*)")) return { published_products: 0, draft_products: this.db.products.size, new_enquiries: 0, pending_orders: 0, rental_requests: 0 };
@@ -30,6 +31,9 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY")) {
+      return { success: true, results: [...this.db.enquiries.values()].slice(0, v[0]) };
+    }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
       return { success: true, results: rows };
@@ -43,6 +47,11 @@ class FakeStatement {
       const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa] = v;
       this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE enquiries SET status = ?")) {
+      const row = this.db.enquiries.get(v[1]);
+      if (row) row.status = v[0];
+      return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("UPDATE products SET slug")) {
       const [slug, name, description, category, audience, status, retail, wholesale, updated, id] = v;
@@ -104,6 +113,7 @@ class FakeD1 {
   sessions = new Map();
   attempts = new Map();
   products = new Map();
+  enquiries = new Map();
   audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
@@ -240,4 +250,43 @@ test("duplicate product slugs are rejected without a second insert", async () =>
   const duplicate = await handleRequest(request("/api/admin/products", "POST", payload, headers), env(db));
   assert.equal(duplicate.status, 409);
   assert.equal(db.products.size, 1);
+});
+
+test("owner can review enquiries and change status with an audit trail", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const enquiry = {
+    id: "e2f4a6b8-1234-4abc-9def-123456789abc",
+    enquiry_type: "wholesale", customer_name: "Test Buyer", phone: "+923001234567",
+    email: "buyer@example.com", message: "Please share your wholesale rates.",
+    status: "new", source: "website", created_at: new Date().toISOString(),
+  };
+  db.enquiries.set(enquiry.id, { ...enquiry });
+
+  const listed = await handleRequest(new Request(origin + "/api/admin/enquiries?limit=50", { headers: { cookie } }), env(db));
+  assert.equal(listed.status, 200);
+  assert.equal((await listed.json()).enquiries[0].customer_name, "Test Buyer");
+
+  const updated = await handleRequest(request("/api/admin/enquiries/" + enquiry.id, "PATCH", { status: "contacted" }, headers), env(db));
+  assert.equal(updated.status, 200);
+  assert.equal(db.enquiries.get(enquiry.id).status, "contacted");
+  assert.equal(db.audits.length, 1);
+});
+
+test("rental staff can only update rental enquiries and viewers cannot update enquiries", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const id = "a2f4a6b8-1234-4abc-9def-123456789abc";
+  db.enquiries.set(id, { id, enquiry_type: "wholesale", status: "new" });
+  [...db.admins.values()][0].role = "rental";
+
+  const blocked = await handleRequest(request("/api/admin/enquiries/" + id, "PATCH", { status: "contacted" }, headers), env(db));
+  assert.equal(blocked.status, 403);
+  [...db.admins.values()][0].role = "viewer";
+  const viewer = await handleRequest(request("/api/admin/enquiries/" + id, "PATCH", { status: "closed" }, headers), env(db));
+  assert.equal(viewer.status, 403);
 });
