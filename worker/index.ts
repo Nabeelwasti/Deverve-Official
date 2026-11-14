@@ -583,6 +583,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   return error("Not found", 404);
 }
 
+export { handleRequest };
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     return handleRequest(request, env);
