@@ -45,7 +45,11 @@ export default function Admin() {
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
-  const [orders, setOrders] = useState<AdminOrder[]>([]);\n  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);\n  const [showQuoteEditor, setShowQuoteEditor] = useState(false);\n  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);\n  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
+  const [showQuoteEditor, setShowQuoteEditor] = useState(false);
+  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
+  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
