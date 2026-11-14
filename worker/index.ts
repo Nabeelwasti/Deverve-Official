@@ -30,6 +30,7 @@ interface ProductRow {
   retail_price_paisa: number | null;
   image_key: string | null;
 }
+interface PublicVariantRow { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; }
 interface AdminRow {
   id: string;
   email: string;
@@ -259,7 +260,18 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const rows = status && ["draft", "published", "archived"].includes(status)
         ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
         : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
-      return json({ products: rows.results ?? [] });
+      const productRows = rows.results ?? [];
+      if (!productRows.length) return json({ products: [] });
+      const productIds = productRows.map((product) => product.id);
+      const placeholders = productIds.map(() => "?").join(",");
+      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500").bind(...productIds).all<PublicVariantRow>();
+      const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
+      for (const variant of variantRows.results ?? []) {
+        const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
+        if (available < 1) continue;
+        variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
+      }
+      return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })) });
     } catch {
       return error("Product management is temporarily unavailable", 503);
     }
