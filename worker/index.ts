@@ -335,46 +335,129 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   return error("Method not allowed", 405);
 }
 
-interface MediaAssetRow { id: string; object_key: string; file_name: string; content_type: string; size_bytes: number; created_at: string; }
+interface MediaAssetRow {
+  id: string; object_key: string; media_type: string; mime_type: string; byte_size: number;
+  alt_text: string; caption: string; status: string; created_at: string;
+}
 
 async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
-  const match = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})$/i);
-  if (path !== "/api/admin/media" && !match) return null;
+  const fileMatch = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})\/file$/i);
+  const assetMatch = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})$/i);
+  const collection = path === "/api/admin/media";
+  if (!collection && !assetMatch && !fileMatch) return null;
   let admin: SessionRow | null;
-  try { admin = await currentAdmin(request, env.DB); } catch { return error("Media service is temporarily unavailable", 503); }
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Media service is temporarily unavailable", 503); }
   if (!admin) return error("Authentication required", 401);
-  const canUpload = ["owner", "manager", "catalogue"].includes(admin.role);
-  if (request.method === "GET" && path === "/api/admin/media") {
-    try { const rows = await env.DB.prepare("SELECT id, file_name, content_type, size_bytes, created_at FROM media_assets WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 100").all<MediaAssetRow>(); return json({ media: rows.results ?? [] }); }
-    catch { return error("Media library could not be loaded", 503); }
+  const canManage = ["owner", "manager", "catalogue"].includes(admin.role);
+
+  if (collection && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT id, media_type, mime_type, byte_size, alt_text, caption, status, created_at FROM media_assets WHERE status <> 'archived' ORDER BY created_at DESC LIMIT 100").all<MediaAssetRow>();
+      return json({ media: (rows.results ?? []).map(({ id, media_type, mime_type, byte_size, alt_text, caption, status, created_at }) => ({ id, media_type, mime_type, byte_size, alt_text, caption, status, created_at, url: "/api/admin/media/" + id + "/file" })) });
+    } catch { return error("Media library could not be loaded", 503); }
   }
-  if (!canUpload) return error("You do not have permission to manage media", 403);
+
+  if (fileMatch && request.method === "GET") {
+    try {
+      const asset = await env.DB.prepare("SELECT object_key, mime_type, status FROM media_assets WHERE id = ? LIMIT 1").bind(fileMatch[1]).first<{ object_key: string; mime_type: string; status: string }>();
+      if (!asset || asset.status === "archived") return error("Media not found", 404);
+      const object = await env.MEDIA.get(asset.object_key);
+      if (!object) return error("Media not found", 404);
+      return new Response(object.body, { headers: { "content-type": asset.mime_type, "cache-control": "private, max-age=300", "x-content-type-options": "nosniff", "content-disposition": "inline" } });
+    } catch { return error("Media file could not be loaded", 503); }
+  }
+
+  if (!canManage) return error("You do not have permission to manage media", 403);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
-  if (path === "/api/admin/media" && request.method === "POST") {
+
+  if (collection && request.method === "POST") {
     const length = Number(request.headers.get("content-length") || 0);
-    if (length > 5500000) return error("Image is too large. Maximum size is 5 MB.", 413);
-    let form: FormData; try { form = await request.formData(); } catch { return error("Upload a valid image file", 400); }
+    if (length > 5_500_000) return error("Image is too large. Maximum size is 5 MB.", 413);
+    let form: FormData;
+    try { form = await request.formData(); } catch { return error("Upload a valid image file", 400); }
     const file = form.get("file");
-    if (!(file instanceof File) || file.size < 1 || file.size > 5000000) return error("Choose an image up to 5 MB", 400);
-    const extensions: Record<string,string> = { "image/jpeg":"jpg", "image/png":"png", "image/webp":"webp", "image/gif":"gif" };
-    const ext = extensions[file.type]; if (!ext) return error("Only JPG, PNG, WebP and GIF images are supported", 415);
-    const bytes = await file.arrayBuffer(); const b = new Uint8Array(bytes);
-    const signature = (file.type === "image/jpeg" && b[0] === 255 && b[1] === 216 && b[2] === 255) || (file.type === "image/png" && b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71) || (file.type === "image/webp" && String.fromCharCode(...b.slice(8,12)) === "WEBP") || (file.type === "image/gif" && String.fromCharCode(...b.slice(0,3)) === "GIF");
+    if (!(file instanceof File) || file.size < 1 || file.size > 5_000_000) return error("Choose an image up to 5 MB", 400);
+    const extensions: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+    const ext = extensions[file.type];
+    if (!ext) return error("Only JPG, PNG and WebP images are supported", 415);
+    const bytes = await file.arrayBuffer();
+    const b = new Uint8Array(bytes);
+    const signature = (file.type === "image/jpeg" && b[0] === 255 && b[1] === 216 && b[2] === 255)
+      || (file.type === "image/png" && b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71)
+      || (file.type === "image/webp" && String.fromCharCode(...b.slice(8, 12)) === "WEBP");
     if (!signature) return error("The file content does not match its image type", 415);
-    const id = crypto.randomUUID(); const key = "catalogue/" + id + "." + ext; const name = cleanText(file.name, 180) || ("image." + ext);
+    const id = crypto.randomUUID();
+    const key = "catalogue/" + id + "." + ext;
+    const altText = cleanText(form.get("alt_text"), 240);
+    const caption = cleanText(form.get("caption"), 500);
     try {
       await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: file.type }, customMetadata: { assetId: id } });
-      await env.DB.prepare("INSERT INTO media_assets (id, object_key, file_name, content_type, size_bytes, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)").bind(id, key, name, file.type, file.size, admin.admin_user_id).run();
-      return json({ uploaded: true, media: { id, file_name: name, content_type: file.type, size_bytes: file.size, url: "/media/" + id } }, 201);
-    } catch { try { await env.MEDIA.delete(key); } catch { /* best effort cleanup */ } return error("Image could not be saved. Please try again.", 503); }
+      await env.DB.prepare("INSERT INTO media_assets (id, object_key, media_type, mime_type, byte_size, alt_text, caption, status, uploaded_by) VALUES (?, ?, 'image', ?, ?, ?, ?, 'ready', ?)")
+        .bind(id, key, file.type, file.size, altText, caption, admin.admin_user_id).run();
+      await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, "media.uploaded", "media_asset", id, JSON.stringify({ mime_type: file.type, byte_size: file.size })).run();
+      return json({ uploaded: true, media: { id, media_type: "image", mime_type: file.type, byte_size: file.size, alt_text: altText, caption, status: "ready", url: "/api/admin/media/" + id + "/file" } }, 201);
+    } catch {
+      try { await env.MEDIA.delete(key); } catch { /* best-effort cleanup */ }
+      return error("Image could not be saved. Please try again.", 503);
+    }
   }
-  if (match && request.method === "DELETE") {
+
+  if (assetMatch && request.method === "PATCH") {
+    const body = await readJson(request);
+    if (!body) return error("Submit valid media details", 400);
+    const altText = cleanText(body.alt_text, 240);
+    const caption = cleanText(body.caption, 500);
+    try {
+      const result = await env.DB.prepare("UPDATE media_assets SET alt_text = ?, caption = ?, updated_at = ? WHERE id = ? AND status <> 'archived'")
+        .bind(altText, caption, new Date().toISOString(), assetMatch[1]).run();
+      if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404);
+      await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, "media.updated", "media_asset", assetMatch[1], JSON.stringify({ alt_text: altText, caption })).run();
+      return json({ updated: true });
+    } catch { return error("Media details could not be updated", 503); }
+  }
+
+  if (assetMatch && request.method === "DELETE") {
     if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive media", 403);
-    try { const result = await env.DB.prepare("UPDATE media_assets SET archived_at = ? WHERE id = ? AND archived_at IS NULL").bind(new Date().toISOString(), match[1]).run(); if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404); await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "media.archived", "media_asset", match[1], "{}").run(); return json({ archived: true }); }
-    catch { return error("Media item could not be archived", 503); }
+    try {
+      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? LIMIT 1").bind(assetMatch[1]).first<{ id: string }>();
+      if (used) return error("This image is assigned to a product. Remove it from the product before archiving.", 409);
+      const result = await env.DB.prepare("UPDATE media_assets SET status = 'archived', updated_at = ? WHERE id = ? AND status <> 'archived'").bind(new Date().toISOString(), assetMatch[1]).run();
+      if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404);
+      await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "media.archived", "media_asset", assetMatch[1], "{}").run();
+      return json({ archived: true });
+    } catch { return error("Media item could not be archived", 503); }
   }
   return error("Method not allowed", 405);
+}
+
+async function adminProductImageRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\/api\/admin\/products\/([a-f0-9-]{36})\/image$/i);
+  if (!match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Product image service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to change product images", 403);
+  if (request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request);
+  if (!body || (body.image_id !== null && (typeof body.image_id !== "string" || !/^[a-f0-9-]{36}$/i.test(body.image_id)))) return error("Choose a valid image", 400);
+  try {
+    const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string }>();
+    if (!product) return error("Product not found", 404);
+    if (body.image_id) {
+      const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(body.image_id).first<{ id: string }>();
+      if (!media) return error("Image not found or unavailable", 404);
+    }
+    await env.DB.batch([
+      env.DB.prepare("UPDATE products SET image_key = ?, updated_at = ? WHERE id = ?").bind(body.image_id, new Date().toISOString(), match[1]),
+      env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "product.image_changed", "product", match[1], JSON.stringify({ image_id: body.image_id })),
+    ]);
+    return json({ updated: true, image_key: body.image_id });
+  } catch { return error("Product image could not be updated", 503); }
 }
 
 interface AdminVariantRow {
@@ -717,8 +800,20 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const mediaResponse = await adminMediaRoutes(request, env, url);
   if (mediaResponse) return mediaResponse;
 
+  const mediaResponse = await adminMediaRoutes(request, env, url);
+  if (mediaResponse) return mediaResponse;
+
+  const productImageResponse = await adminProductImageRoutes(request, env, url);
+  if (productImageResponse) return productImageResponse;
+
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
+
+  const mediaResponse = await adminMediaRoutes(request, env, url);
+  if (mediaResponse) return mediaResponse;
+
+  const productImageResponse = await adminProductImageRoutes(request, env, url);
+  if (productImageResponse) return productImageResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
@@ -757,7 +852,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const publicMedia = url.pathname.match(/^\/media\/([a-f0-9-]{36})$/i);
   if (publicMedia && request.method === "GET") {
     try {
-      const asset = await env.DB.prepare("SELECT m.object_key, m.content_type FROM media_assets m JOIN products p ON p.image_key = m.id WHERE m.id = ? AND m.archived_at IS NULL AND p.status = 'published' LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
+      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m JOIN products p ON p.image_key = m.id WHERE m.id = ? AND m.status = 'ready' AND p.status = 'published' LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
       if (!asset) return error("Media not found", 404);
       const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
       return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
