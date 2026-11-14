@@ -14,9 +14,11 @@ const categories = [
 
 const phone = "923298684517";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
+const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
 type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; variants: StoreVariant[] };
+type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; image_key: string | null; image_url: string | null; description: string };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
 
 function Storefront() {
@@ -28,6 +30,12 @@ function Storefront() {
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
+  const [rentalOpen, setRentalOpen] = useState(false);
+  const [rentalBusy, setRentalBusy] = useState(false);
+  const [rentalMessage, setRentalMessage] = useState("");
+  const [rentalReference, setRentalReference] = useState("");
+  const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_location: "Jhelum", destination: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<CartLine[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -55,6 +63,15 @@ function Storefront() {
       }
     };
     void loadProducts();
+    const loadVehicles = async () => {
+      try {
+        const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
+        if (!response.ok) return;
+        const payload = await response.json() as { vehicles?: StoreVehicle[] };
+        if (active && Array.isArray(payload.vehicles)) setVehicles(payload.vehicles);
+      } catch { /* Rental enquiry remains available if fleet data is offline. */ }
+    };
+    void loadVehicles();
     return () => { active = false; };
   }, []);
 
