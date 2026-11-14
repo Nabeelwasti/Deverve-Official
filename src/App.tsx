@@ -297,7 +297,11 @@ function Storefront() {
 
         <section className="mobility-section" id="mobility">
           <div><p className="eyebrow">03 — DE VERVE MOBILITY</p><h2>Make room for<br /><em>the journey.</em></h2></div>
-          <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Need a car for your next trip? Contact De VERVE about self-drive or chauffeur-driven rental options. Vehicle availability, rates, documents and rental terms are confirmed by our team.</p><a className="button button-light" href={whatsapp("Assalamu Alaikum, I would like information about De VERVE car rentals. Please share available vehicles, rates and terms.")} target="_blank" rel="noreferrer">Enquire about a rental <span>↗</span></a></div>
+          <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Browse the available fleet or send a date-based rental request. Availability, rates, documents and rental terms are confirmed by our team before any booking is accepted.</p><button type="button" className="button button-light" onClick={() => openRentalRequest()}>Request a rental <span>↗</span></button></div>
+          {vehicles.length > 0 && <div className="mobility-fleet"><div className="mobility-fleet-heading"><span>AVAILABLE FLEET</span><p>Choose a vehicle to start your request.</p></div><div className="mobility-vehicle-grid">{vehicles.map((vehicle) => <article className="mobility-vehicle-card" key={vehicle.id}>
+            {vehicle.image_url ? <img src={vehicle.image_url} alt={vehicle.name} loading="lazy" /> : <div className="mobility-vehicle-placeholder">DV<span>.</span></div>}
+            <div><small>{vehicle.vehicle_type} · {vehicle.seats} seats</small><h3>{vehicle.name}</h3><p>{vehicle.description || [vehicle.transmission, vehicle.fuel_type].filter(Boolean).join(" · ")}</p><strong>{vehicle.daily_rate_paisa === null ? "Rate on request" : formatPrice(vehicle.daily_rate_paisa) + " / day"}</strong><button type="button" onClick={() => openRentalRequest(vehicle.id)}>Request this vehicle ↗</button></div>
+          </article>)}</div></div>}
         </section>
 
         <section className="contact-section" id="contact">
