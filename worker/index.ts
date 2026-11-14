@@ -521,6 +521,173 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
   } catch { return error("Order status could not be updated", 503); }
 }
 
+
+interface WholesaleQuoteRow {
+  id: string; enquiry_id: string | null; business_name: string; contact_name: string; phone: string;
+  email: string | null; requested_items: string; quoted_total_paisa: number | null; status: string;
+  valid_until: string | null; delivery_address: string; city: string; customer_note: string;
+  approval_token: string | null; converted_order_id: string | null; created_at: string; updated_at: string;
+}
+interface WholesaleQuoteItemRow {
+  id: string; quote_id: string; variant_id: string | null; product_name_snapshot: string;
+  sku_snapshot: string | null; size_snapshot: string; color_snapshot: string;
+  quantity: number; unit_price_paisa: number; line_total_paisa: number;
+}
+interface WholesaleVariantRow {
+  id: string; product_id: string; name: string; sku: string | null; size: string; color: string;
+  wholesale_price_paisa: number | null; retail_price_paisa: number | null; stock_on_hand: number; reserved_quantity: number;
+}
+
+async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/wholesale-quotes";
+  const match = url.pathname.match(/^\\/api\\/admin\\/wholesale-quotes\\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Wholesale quotations are temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to manage wholesale quotations", 403);
+
+  if (collection && request.method === "GET") {
+    try {
+      const result = await env.DB.prepare("SELECT id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status, valid_until, delivery_address, city, customer_note, approval_token, converted_order_id, created_at, updated_at FROM wholesale_quotes ORDER BY created_at DESC LIMIT 100").all<WholesaleQuoteRow>();
+      const quotes = result.results ?? [];
+      if (!quotes.length) return json({ quotes: [] });
+      const ids = quotes.map((quote) => quote.id);
+      const items = await env.DB.prepare("SELECT id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id IN (" + ids.map(() => "?").join(",") + ") ORDER BY rowid").bind(...ids).all<WholesaleQuoteItemRow>();
+      const grouped = new Map<string, WholesaleQuoteItemRow[]>();
+      for (const item of items.results ?? []) grouped.set(item.quote_id, [...(grouped.get(item.quote_id) ?? []), item]);
+      return json({ quotes: quotes.map((quote) => ({ ...quote, items: grouped.get(quote.id) ?? [], approval_url: quote.approval_token ? "/wholesale/quote/" + quote.approval_token : null })) });
+    } catch { return error("Wholesale quotations could not be loaded", 503); }
+  }
+
+  if (collection && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 20_000);
+    if (!body || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 30) return error("Add between 1 and 30 quotation items", 400);
+    const businessName = cleanText(body.business_name, 120);
+    const contactName = cleanText(body.contact_name, 100);
+    const phone = cleanText(body.phone, 24);
+    const email = cleanText(body.email, 160).toLowerCase();
+    const address = cleanText(body.delivery_address, 300);
+    const city = cleanText(body.city, 80);
+    const note = cleanText(body.customer_note, 500);
+    const enquiryId = cleanText(body.enquiry_id, 64) || null;
+    if (businessName.length < 2 || contactName.length < 2 || !validPhone(phone) || address.length < 8 || city.length < 2) return error("Check the business, contact, phone, delivery address and city details", 400);
+    if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return error("Enter a valid email address", 400);
+    if (enquiryId && !/^[a-f0-9-]{36}$/i.test(enquiryId)) return error("Choose a valid enquiry", 400);
+    const validUntil = cleanText(body.valid_until, 32) || new Date(Date.now() + 7 * 86400000).toISOString();
+    if (!Number.isFinite(Date.parse(validUntil)) || Date.parse(validUntil) <= Date.now()) return error("Quotation expiry must be a future date", 400);
+    const lines: Array<{ variant: WholesaleVariantRow; quantity: number; unitPrice: number; lineTotal: number }> = [];
+    const quantities = new Map<string, number>();
+    let total = 0;
+    try {
+      for (const raw of body.items) {
+        if (!raw || typeof raw !== "object") return error("A quotation item is invalid", 400);
+        const item = raw as Record<string, unknown>;
+        const variantId = cleanText(item.variant_id, 64);
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.unit_price_paisa);
+        if (!/^[a-f0-9-]{36}$/i.test(variantId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 10000 || !Number.isSafeInteger(unitPrice) || unitPrice < 0) return error("Check each item, quantity and wholesale price", 400);
+        quantities.set(variantId, (quantities.get(variantId) ?? 0) + quantity);
+        if ((quantities.get(variantId) ?? 0) > 10000) return error("Combined quantity for an item is too high", 400);
+      }
+      for (const [variantId, quantity] of quantities) {
+        const variant = await env.DB.prepare("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.wholesale_price_paisa, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1").bind(variantId).first<WholesaleVariantRow>();
+        if (!variant) return error("A selected product option is no longer available", 409);
+        const supplied = (body.items as Array<Record<string, unknown>>).find((x) => cleanText(x?.variant_id, 64) === variantId);
+        const unitPrice = Number(supplied?.unit_price_paisa);
+        if (!Number.isSafeInteger(unitPrice) || unitPrice < 0) return error("A wholesale price is invalid", 400);
+        const lineTotal = unitPrice * quantity;
+        if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(total + lineTotal)) return error("Quotation total is outside the supported range", 400);
+        total += lineTotal;
+        lines.push({ variant, quantity, unitPrice, lineTotal });
+      }
+      const id = crypto.randomUUID();
+      const token = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const statements = [
+        env.DB.prepare("INSERT INTO wholesale_quotes (id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status, valid_until, delivery_address, city, customer_note, approval_token, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?)")
+          .bind(id, enquiryId, businessName, contactName, phone, email || null, JSON.stringify(lines.map((line) => ({ product: line.variant.name, sku: line.variant.sku, size: line.variant.size, color: line.variant.color, quantity: line.quantity }))), total, validUntil, address, city, note, token, now),
+      ];
+      for (const line of lines) statements.push(env.DB.prepare("INSERT INTO wholesale_quote_items (id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ?)").bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.unitPrice, line.lineTotal, id));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'wholesale_quote.created', 'wholesale_quote', ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ item_count: lines.length, total_paisa: total })));
+      const results = await env.DB.batch(statements);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Quotation could not be saved", 409);
+      return json({ created: true, quote_id: id, status: "prepared", quoted_total_paisa: total, approval_url: "/wholesale/quote/" + token }, 201);
+    } catch { return error("Wholesale quotation could not be saved", 503); }
+  }
+
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request);
+  const nextStatus = cleanText(body?.status, 20);
+  if (!["sent", "expired"].includes(nextStatus)) return error("Only prepared quotations can be sent or expired", 400);
+  try {
+    const current = await env.DB.prepare("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; status: string; valid_until: string | null; approval_token: string | null }>();
+    if (!current) return error("Quotation not found", 404);
+    if (nextStatus === "sent" && (current.status !== "prepared" || !current.approval_token || (current.valid_until && Date.parse(current.valid_until) <= Date.now()))) return error("This quotation cannot be sent. Check its status and expiry.", 409);
+    if (nextStatus === "expired" && !["prepared", "sent"].includes(current.status)) return error("This quotation cannot be expired", 409);
+    const result = await env.DB.prepare("UPDATE wholesale_quotes SET status = ?, updated_at = ? WHERE id = ? AND status = ?").bind(nextStatus, new Date().toISOString(), match[1], current.status).run();
+    if ((result.meta?.changes ?? 0) !== 1) return error("Quotation changed. Refresh and try again.", 409);
+    await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'wholesale_quote.status_changed', 'wholesale_quote', ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ from: current.status, to: nextStatus })).run();
+    return json({ updated: true, status: nextStatus, approval_url: "/wholesale/quote/" + current.approval_token });
+  } catch { return error("Quotation status could not be updated", 503); }
+}
+
+async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\\/api\\/wholesale-quotes\\/([a-f0-9-]{36})(?:\\/(accept|decline))?$/i);
+  if (!match) return null;
+  const token = match[1];
+  const action = match[2] ?? null;
+  try {
+    const quote = await env.DB.prepare("SELECT id, business_name, contact_name, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ? LIMIT 1").bind(token).first<{ id: string; business_name: string; contact_name: string; requested_items: string; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string; converted_order_id: string | null }>();
+    if (!quote) return error("Quotation not found", 404);
+    if (quote.status === "accepted" && quote.converted_order_id) {
+      const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, requested_items: quote.requested_items, quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
+    }
+    if (quote.status !== "sent") return error("This quotation is not open for approval", 409);
+    if (quote.valid_until && Date.parse(quote.valid_until) <= Date.now()) {
+      await env.DB.prepare("UPDATE wholesale_quotes SET status = 'expired', updated_at = ? WHERE id = ? AND status = 'sent'").bind(new Date().toISOString(), quote.id).run();
+      return error("This quotation has expired. Please contact De VERVE.", 410);
+    }
+    const items = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
+    if (!action) return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: items.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city } });
+    if (request.method !== "POST") return error("Method not allowed", 405);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    if (action === "decline") {
+      const result = await env.DB.prepare("UPDATE wholesale_quotes SET status = 'declined', updated_at = ? WHERE id = ? AND status = 'sent'").bind(new Date().toISOString(), quote.id).run();
+      if ((result.meta?.changes ?? 0) !== 1) return error("Quotation status changed. Refresh and try again.", 409);
+      return json({ declined: true });
+    }
+    if (action !== "accept") return error("Unsupported action", 404);
+    const lines = await env.DB.prepare("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<WholesaleQuoteItemRow>();
+    const quoteLines = lines.results ?? [];
+    if (!quoteLines.length || quoteLines.some((line) => !line.variant_id)) return error("Some quoted items are no longer available. Please contact De VERVE.", 409);
+    const orderId = crypto.randomUUID();
+    const orderNumber = "DV-W-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
+    const now = new Date().toISOString();
+    const conditions = quoteLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
+    const values: unknown[] = [orderId, orderNumber, quote.contact_name, "", null, "", quote.city, quote.quoted_total_paisa ?? 0, 0, quote.quoted_total_paisa ?? 0, "Wholesale quotation accepted: " + quote.id, quote.id];
+    for (const line of quoteLines) values.push(line.variant_id, line.quantity);
+    const statements = [env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'sent' AND (valid_until IS NULL OR valid_until > ?)) AND " + conditions).bind(...values, quote.id, now)];
+    for (const line of quoteLines) {
+      statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(line.quantity, now, line.variant_id, line.quantity, orderId, quote.id));
+      statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(crypto.randomUUID(), orderId, line.variant_id, line.product_name_snapshot, line.sku_snapshot, line.size_snapshot, line.color_snapshot, line.quantity, line.unit_price_paisa, line.line_total_paisa, orderId, quote.id));
+    }
+    statements.push(env.DB.prepare("UPDATE wholesale_quotes SET status = 'accepted', converted_order_id = ?, updated_at = ? WHERE id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(orderId, now, quote.id, orderId, quote.id));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'wholesale_quote.accepted', 'wholesale_quote', ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'accepted')").bind(crypto.randomUUID(), quote.id, JSON.stringify({ order_id: orderId, order_number: orderNumber }), quote.id));
+    const results = await env.DB.batch(statements);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) {
+      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ? LIMIT 1").bind(quote.id).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      if (existing) return json({ accepted: true, duplicate: true, order: existing });
+      return error("Stock changed or this quotation is no longer open. Please contact De VERVE.", 409);
+    }
+    return json({ accepted: true, order: { order_number: orderNumber, total_paisa: quote.quoted_total_paisa ?? 0, order_status: "pending" } }, 201);
+  } catch { return error("Quotation approval could not be processed. Please contact De VERVE.", 503); }
+}
+
 interface MediaAssetRow {
   id: string; object_key: string; media_type: string; mime_type: string; byte_size: number;
   alt_text: string; caption: string; status: string; created_at: string;
@@ -996,7 +1163,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
 
-  const enquiryResponse = await adminEnquiryRoutes(request, env, url);
+  const wholesaleAdminResponse = await adminWholesaleQuoteRoutes(request, env, url);\n  if (wholesaleAdminResponse) return wholesaleAdminResponse;\n\n  const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
 
   const productResponse = await adminProductRoutes(request, env, url);
@@ -1071,7 +1238,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
   }
 
-  const publicOrderResponse = await publicOrderRoutes(request, env, url);
+  const publicWholesaleResponse = await publicWholesaleQuoteRoutes(request, env, url);\n  if (publicWholesaleResponse) return publicWholesaleResponse;\n\n  const publicOrderResponse = await publicOrderRoutes(request, env, url);
   if (publicOrderResponse) return publicOrderResponse;
 
   if (url.pathname === "/api/enquiries" && request.method === "POST") {
