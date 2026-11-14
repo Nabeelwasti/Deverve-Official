@@ -79,6 +79,10 @@ export default function Admin() {
     const result = await api<{ orders: AdminOrder[] }>("/api/admin/orders?limit=50");
     setOrders(result.orders);
   };
+  const loadWholesaleQuotes = async () => {
+    const result = await api<{ quotes: WholesaleQuote[] }>("/api/admin/wholesale-quotes");
+    setWholesaleQuotes(result.quotes);
+  };
   const loadEnquiries = async () => {
     const result = await api<{ enquiries: Enquiry[] }>("/api/admin/enquiries?limit=50");
     setEnquiries(result.enquiries);
