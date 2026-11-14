@@ -49,7 +49,7 @@ export default function Admin() {
   const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
   const [showQuoteEditor, setShowQuoteEditor] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
-  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
@@ -231,8 +231,8 @@ export default function Admin() {
   };
 
 
-  const openQuoteEditor = () => {
-    setQuoteForm({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+  const openQuoteEditor = (enquiry?: Enquiry) => {
+    setQuoteForm({ business_name: "", contact_name: enquiry?.customer_name ?? "", phone: enquiry?.phone ?? "", email: enquiry?.email ?? "", delivery_address: "", city: "Jhelum", customer_note: enquiry?.message ?? "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: enquiry?.id ?? "" });
     setQuoteLines([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
     setShowQuoteEditor(true); setMessage("");
   };
@@ -354,7 +354,7 @@ export default function Admin() {
               <div className="admin-enquiry-main"><div className="admin-enquiry-title"><strong>{enquiry.customer_name}</strong><span className="admin-enquiry-type">{enquiry.enquiry_type}</span><span className={`admin-enquiry-status status-${enquiry.status}`}>{enquiry.status}</span></div>
                 <p>{enquiry.message}</p><div className="admin-enquiry-contact"><a href={`tel:${enquiry.phone}`}>{enquiry.phone}</a>{enquiry.email && <a href={`mailto:${enquiry.email}`}>{enquiry.email}</a>}<time dateTime={enquiry.created_at}>{new Date(enquiry.created_at).toLocaleString()}</time></div>
               </div>
-              <label className="admin-enquiry-action">Status<select value={enquiry.status} disabled={busy || !["owner", "manager", "orders", "rental"].includes(admin.role) || (admin.role === "rental" && enquiry.enquiry_type !== "rental")} onChange={(event) => void updateEnquiryStatus(enquiry, event.target.value as Enquiry["status"])}><option value="new">New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label>
+              <label className="admin-enquiry-action">Status<select value={enquiry.status} disabled={busy || !["owner", "manager", "orders", "rental"].includes(admin.role) || (admin.role === "rental" && enquiry.enquiry_type !== "rental")} onChange={(event) => void updateEnquiryStatus(enquiry, event.target.value as Enquiry["status"])}><option value="new">New</option><option value="contacted">Contacted</option><option value="qualified">Qualified</option><option value="closed">Closed</option><option value="spam">Spam</option></select></label>{enquiry.enquiry_type === "wholesale" && ["owner", "manager", "orders"].includes(admin.role) && <button type="button" className="admin-secondary" onClick={() => openQuoteEditor(enquiry)}>Prepare quote</button>}
             </article>)}</div>}
         </section>
         )}
