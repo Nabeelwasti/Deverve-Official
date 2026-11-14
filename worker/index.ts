@@ -346,17 +346,33 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 128) {
       return error("Use a valid email and a password between 12 and 128 characters", 400);
     }
+    let setupStage = "password_hash";
     try {
       const hash = await passwordHash(password);
       const id = crypto.randomUUID();
-      const inserted = await env.DB.prepare(
-        "INSERT INTO admin_users (id, email, password_hash, role) SELECT ?, ?, ?, 'owner' WHERE NOT EXISTS (SELECT 1 FROM admin_users)",
-      ).bind(id, email, hash).run();
-      if ((inserted.meta?.changes ?? 0) !== 1) return error("Owner setup has already been completed", 409);
-      const session = await createSession(env.DB, id);
-      return json({ authenticated: true, admin: { id, email, role: "owner" } }, 201, { "set-cookie": sessionCookie(session.token, 12 * 60 * 60) });
-    } catch {
-      return error("Owner setup could not be completed", 503);
+      setupStage = "database_batch";
+      const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      const tokenHash = await sha256(token);
+      const results = await env.DB.batch([
+        env.DB.prepare(
+          "INSERT INTO admin_users (id, email, password_hash, role) SELECT ?, ?, ?, 'owner' WHERE NOT EXISTS (SELECT 1 FROM admin_users)",
+        ).bind(id, email, hash),
+        env.DB.prepare(
+          "INSERT INTO admin_sessions (id, admin_user_id, token_hash, expires_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM admin_users WHERE id = ?)",
+        ).bind(crypto.randomUUID(), id, tokenHash, expiresAt, id),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Owner setup has already been completed", 409);
+      if ((results[1]?.meta?.changes ?? 0) !== 1) {
+        console.error("[admin-bootstrap] atomic session insert did not complete");
+        return error("Owner setup could not be completed (SETUP-DB-02)", 503);
+      }
+      return json({ authenticated: true, admin: { id, email, role: "owner" } }, 201, { "set-cookie": sessionCookie(token, 12 * 60 * 60) });
+    } catch (caught) {
+      const failure = caught instanceof Error ? caught : new Error("Unknown setup failure");
+      console.error("[admin-bootstrap] failed", { stage: setupStage, name: failure.name, message: failure.message });
+      const code = setupStage === "password_hash" ? "SETUP-CRYPTO-01" : "SETUP-DB-01";
+      return error(`Owner setup could not be completed (${code})`, 503);
     }
   }
 
