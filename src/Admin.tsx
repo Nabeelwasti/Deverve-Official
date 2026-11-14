@@ -15,6 +15,8 @@ type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
 type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string };
+type QuoteLineDraft = { product_id: string; variant_id: string; quantity: string; unit_price: string; variants: Variant[] };
+type WholesaleQuote = { id: string; business_name: string; contact_name: string; phone: string; email: string | null; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string | null; converted_order_id: string | null; approval_url: string | null; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -43,7 +45,7 @@ export default function Admin() {
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
-  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);\n  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);\n  const [showQuoteEditor, setShowQuoteEditor] = useState(false);\n  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);\n  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
@@ -91,7 +93,7 @@ export default function Admin() {
     if (admin) {
       const tasks = [loadProducts(), loadOverview()];
       if (admin.role !== "catalogue") tasks.push(loadEnquiries());
-      if (["owner", "manager", "orders"].includes(admin.role)) tasks.push(loadOrders());
+      if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadOrders()); tasks.push(loadWholesaleQuotes()); }
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
@@ -220,6 +222,50 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+
+  const openQuoteEditor = () => {
+    setQuoteForm({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10) });
+    setQuoteLines([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
+    setShowQuoteEditor(true); setMessage("");
+  };
+  const changeQuoteProduct = async (index: number, productId: string) => {
+    setBusy(true); setMessage("");
+    try {
+      const selected = products.find((product) => product.id === productId);
+      const result = productId ? await api<{ variants: Variant[] }>(`/api/admin/products/${productId}/variants`) : { variants: [] };
+      const available = result.variants.filter((variant) => variant.is_active);
+      setQuoteLines((current) => current.map((line, i) => i === index ? { ...line, product_id: productId, variant_id: available[0]?.id ?? "", variants: available, unit_price: selected?.wholesale_price_paisa !== null && selected?.wholesale_price_paisa !== undefined ? String(selected.wholesale_price_paisa / 100) : selected?.retail_price_paisa !== null && selected?.retail_price_paisa !== undefined ? String(selected.retail_price_paisa / 100) : "" } : line));
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Product options could not be loaded."); }
+    finally { setBusy(false); }
+  };
+  const submitWholesaleQuote = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setBusy(true); setMessage("");
+    const items = quoteLines.map((line) => ({ variant_id: line.variant_id, quantity: Number(line.quantity), unit_price_paisa: Math.round(Number(line.unit_price) * 100) }));
+    if (items.some((item) => !item.variant_id || !Number.isInteger(item.quantity) || item.quantity < 1 || !Number.isSafeInteger(item.unit_price_paisa) || item.unit_price_paisa < 0)) {
+      setMessage("Choose a product option, quantity and valid wholesale price for every line."); setBusy(false); return;
+    }
+    try {
+      await api("/api/admin/wholesale-quotes", { method: "POST", body: JSON.stringify({ ...quoteForm, valid_until: new Date(quoteForm.valid_until + "T23:59:59").toISOString(), items }) });
+      await loadWholesaleQuotes(); setShowQuoteEditor(false);
+      setMessage("Quotation prepared. Send its secure approval link to the customer from the quotation list.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Quotation could not be prepared."); }
+    finally { setBusy(false); }
+  };
+  const sendWholesaleQuote = async (quote: WholesaleQuote) => {
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/wholesale-quotes/${quote.id}`, { method: "PATCH", body: JSON.stringify({ status: "sent" }) });
+      await loadWholesaleQuotes();
+      setMessage("Quotation marked as sent. Copy its customer approval link.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Quotation could not be sent."); }
+    finally { setBusy(false); }
+  };
+  const copyQuoteLink = async (quote: WholesaleQuote) => {
+    if (!quote.approval_url) return;
+    try { await navigator.clipboard.writeText(window.location.origin + quote.approval_url); setMessage("Customer approval link copied."); }
+    catch { setMessage("Copy was blocked by the browser. Open the approval link and copy it from the address bar."); }
+  };
+
   const updateEnquiryStatus = async (enquiry: Enquiry, status: Enquiry["status"]) => {
     if (status === enquiry.status) return;
     setBusy(true); setMessage("");
@@ -283,6 +329,15 @@ export default function Admin() {
             </article>;
           })}</div>}
         </section>}
+        {["owner", "manager", "orders"].includes(admin.role) && <section className="admin-panel admin-wholesale-panel">
+          <div className="admin-panel-heading"><div><h2>Wholesale quotations</h2><p className="admin-muted">Prepare itemised business quotes, share secure approval links and convert accepted quotes into COD orders.</p></div><button type="button" className="admin-primary" onClick={openQuoteEditor}>＋ Prepare quotation</button></div>
+          {wholesaleQuotes.length === 0 ? <div className="admin-empty"><strong>No wholesale quotations yet</strong><p>Create a quotation for a retailer or bulk buyer. Customer approval will create an order and reserve stock.</p></div> : <div className="admin-quote-list">{wholesaleQuotes.map((quote) => <article className="admin-quote-card" key={quote.id}>
+            <div className="admin-order-heading"><div><strong>{quote.business_name}</strong><span>{quote.contact_name} · {quote.phone} · {new Date(quote.created_at).toLocaleDateString()}</span></div><span className={`admin-enquiry-status status-${quote.status}`}>{quote.status}</span></div>
+            <div className="admin-quote-lines">{quote.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
+            <div className="admin-quote-footer"><strong>Rs. {Math.round((quote.quoted_total_paisa ?? 0) / 100).toLocaleString("en-PK")}</strong><div>{quote.status === "prepared" && <button type="button" disabled={busy} onClick={() => void sendWholesaleQuote(quote)}>Mark as sent</button>}{quote.status === "sent" && <button type="button" disabled={busy} onClick={() => void copyQuoteLink(quote)}>Copy approval link</button>}{quote.status === "accepted" && <span>Converted to order{quote.converted_order_id ? ` · ${quote.converted_order_id.slice(0, 8)}` : ""}</span>}</div></div>
+            {quote.valid_until && <small className="admin-quote-expiry">Valid until {new Date(quote.valid_until).toLocaleDateString()} · {quote.city}</small>}
+          </article>)}</div>}
+        </section>}
         {admin.role !== "catalogue" && (
         <section className="admin-panel admin-enquiry-panel">
           <div className="admin-panel-heading"><div><h2>Customer enquiries</h2><p className="admin-muted">Review retail, wholesale, rental and general enquiries received from your website.</p></div><span className="admin-enquiry-count">{enquiries.length} recent</span></div>
@@ -300,6 +355,29 @@ export default function Admin() {
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openMediaLibrary(product)}>Images</button><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
+        {showQuoteEditor && <div className="admin-modal-backdrop"><section className="admin-editor admin-quote-editor" role="dialog" aria-modal="true" aria-labelledby="quote-editor-title">
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">WHOLESALE SALES</p><h2 id="quote-editor-title">Prepare a quotation</h2><p className="admin-muted">Set the buyer details and agreed per-piece prices. Customer approval will reserve stock.</p></div><button type="button" className="admin-close" onClick={() => setShowQuoteEditor(false)} aria-label="Close">×</button></div>
+          <form className="admin-form admin-product-form" onSubmit={submitWholesaleQuote}>
+            <label>Business / shop name<input required minLength={2} maxLength={120} value={quoteForm.business_name} onChange={(e) => setQuoteForm({ ...quoteForm, business_name: e.target.value })} /></label>
+            <label>Contact person<input required minLength={2} maxLength={100} value={quoteForm.contact_name} onChange={(e) => setQuoteForm({ ...quoteForm, contact_name: e.target.value })} /></label>
+            <label>Phone / WhatsApp<input required maxLength={24} value={quoteForm.phone} onChange={(e) => setQuoteForm({ ...quoteForm, phone: e.target.value })} /></label>
+            <label>Email (optional)<input type="email" maxLength={160} value={quoteForm.email} onChange={(e) => setQuoteForm({ ...quoteForm, email: e.target.value })} /></label>
+            <label>Delivery city<input required maxLength={80} value={quoteForm.city} onChange={(e) => setQuoteForm({ ...quoteForm, city: e.target.value })} /></label>
+            <label>Valid until<input type="date" required min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} value={quoteForm.valid_until} onChange={(e) => setQuoteForm({ ...quoteForm, valid_until: e.target.value })} /></label>
+            <label className="admin-full">Delivery address<input required minLength={8} maxLength={300} value={quoteForm.delivery_address} onChange={(e) => setQuoteForm({ ...quoteForm, delivery_address: e.target.value })} /></label>
+            <label className="admin-full">Notes (optional)<textarea rows={2} maxLength={500} value={quoteForm.customer_note} onChange={(e) => setQuoteForm({ ...quoteForm, customer_note: e.target.value })} /></label>
+            <div className="admin-full admin-quote-line-editor"><div className="admin-panel-heading"><h3>Quoted products</h3><button type="button" className="admin-secondary" onClick={() => setQuoteLines((current) => [...current, { product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }])}>＋ Add line</button></div>
+              {quoteLines.map((line, index) => <div className="admin-quote-draft-line" key={index}>
+                <label>Published product<select required value={line.product_id} onChange={(e) => void changeQuoteProduct(index, e.target.value)}><option value="">Choose product</option>{products.filter((product) => product.status === "published").map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}</select></label>
+                <label>Size / colour / SKU<select required value={line.variant_id} onChange={(e) => setQuoteLines((current) => current.map((item, i) => i === index ? { ...item, variant_id: e.target.value } : item))}><option value="">Choose option</option>{line.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color, variant.sku].filter(Boolean).join(" · ") || "Standard"} · available {variant.available_quantity}</option>)}</select></label>
+                <label>Quantity<input required type="number" min="1" max="10000" step="1" value={line.quantity} onChange={(e) => setQuoteLines((current) => current.map((item, i) => i === index ? { ...item, quantity: e.target.value } : item))} /></label>
+                <label>Unit price (PKR)<input required type="number" min="0" step="0.01" value={line.unit_price} onChange={(e) => setQuoteLines((current) => current.map((item, i) => i === index ? { ...item, unit_price: e.target.value } : item))} /></label>
+                {quoteLines.length > 1 && <button type="button" className="admin-danger-button" onClick={() => setQuoteLines((current) => current.filter((_, i) => i !== index))}>Remove line</button>}
+              </div>)}
+            </div>
+            <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowQuoteEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save quotation"}</button></div>
+          </form>
+        </section></div>}
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Upload a product photo or choose an image already in your library.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
