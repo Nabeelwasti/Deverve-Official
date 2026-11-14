@@ -695,7 +695,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
       return error("Stock changed or this quotation is no longer open. Please contact De VERVE.", 409);
     }
     return json({ accepted: true, order: { order_number: orderNumber, total_paisa: quote.quoted_total_paisa ?? 0, order_status: "pending" } }, 201);
-  } catch { return error("Quotation approval could not be processed. Please contact De VERVE.", 503); }
+  } catch (caught) { console.error("[wholesale_quote_approval] failed", caught instanceof Error ? caught.message : "unknown error"); return error("Quotation approval could not be processed. Please contact De VERVE.", 503); }
 }
 
 interface MediaAssetRow {
