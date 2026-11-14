@@ -11,7 +11,7 @@ type Product = {
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
-type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };
+type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };\ntype InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -41,7 +41,7 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
-  const [variants, setVariants] = useState<Variant[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);\n  const [movementTarget, setMovementTarget] = useState<Variant | null>(null);\n  const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
   const [stockForm, setStockForm] = useState({ movement_type: "received", quantity_delta: "", note: "" });
@@ -121,6 +121,15 @@ export default function Admin() {
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`);
       setVariantProduct(product); setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Variants could not be loaded."); }
+    finally { setBusy(false); }
+  };
+
+  const openMovementHistory = async (variant: Variant) => {
+    setBusy(true); setMessage("");
+    try {
+      const result = await api<{ movements: InventoryMovement[] }>(`/api/admin/variants/${variant.id}/movements`);
+      setMovementTarget(variant); setMovements(result.movements);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Stock history could not be loaded."); }
     finally { setBusy(false); }
   };
 
@@ -218,12 +227,15 @@ export default function Admin() {
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
         {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
-          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); }} aria-label="Close">×</button></div>
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); }} aria-label="Close">×</button></div>
           <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
             <div><strong>{variant.sku || "No SKU"}</strong><span>{[variant.size, variant.color].filter(Boolean).join(" · ") || "General option"}</span><small>{variant.is_active ? "Active" : "Inactive"}</small></div>
             <div className="admin-variant-stock"><strong>{variant.stock_on_hand}</strong><span>in stock</span></div>
-            {["owner", "manager", "orders"].includes(admin.role) && <button type="button" disabled={busy || !variant.is_active} onClick={() => { setStockTarget(variant); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); }}>Adjust stock</button>}
+            <button type="button" disabled={busy} onClick={() => void openMovementHistory(variant)}>History</button>{["owner", "manager", "orders"].includes(admin.role) && <button type="button" disabled={busy || !variant.is_active} onClick={() => { setStockTarget(variant); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); }}>Adjust stock</button>}
           </article>)}</div>
+          {movementTarget && <section className="admin-movement-history"><div className="admin-panel-heading"><div><h3>Stock history</h3><p className="admin-muted">{movementTarget.sku || [movementTarget.size, movementTarget.color].filter(Boolean).join(" / ")}</p></div><button type="button" className="admin-secondary" onClick={() => setMovementTarget(null)}>Close history</button></div>
+            {movements.length === 0 ? <p className="admin-muted">No stock movements recorded.</p> : <div className="admin-movement-list">{movements.map((movement) => <article key={movement.id}><div><strong>{movement.movement_type.replaceAll("_", " ")}</strong><span>{movement.note}</span><small>{movement.reference_type}{movement.reference_id ? ` · ${movement.reference_id}` : ""}</small></div><b className={movement.quantity_delta < 0 ? "movement-negative" : "movement-positive"}>{movement.quantity_delta > 0 ? "+" : ""}{movement.quantity_delta}</b><time dateTime={movement.created_at}>{new Date(movement.created_at).toLocaleString()}</time></article>)}</div>}
+          </section>}
           {["owner", "manager", "catalogue"].includes(admin.role) && <form className="admin-form admin-variant-form" onSubmit={createVariant}>
             <h3>Add variant</h3><div className="admin-variant-fields">
               <label>SKU (optional)<input maxLength={64} placeholder="e.g. DV-HOOD-BLK-M" value={variantForm.sku} onChange={(e) => setVariantForm({ ...variantForm, sku: e.target.value })} /></label>
