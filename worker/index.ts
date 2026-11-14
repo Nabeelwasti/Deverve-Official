@@ -577,7 +577,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
 
 async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/vehicles";
-  const match = url.pathname.match(/^\\/api\\/admin\\/vehicles\\/([a-f0-9-]{36})$/i);
+  const match = url.pathname.match(/^\/api\/admin\/vehicles\/([a-f0-9-]{36})$/i);
   if (!collection && !match) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
@@ -636,7 +636,7 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
 
 async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/rentals";
-  const match = url.pathname.match(/^\\/api\\/admin\\/rentals\\/([a-f0-9-]{36})$/i);
+  const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})$/i);
   if (!collection && !match) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
