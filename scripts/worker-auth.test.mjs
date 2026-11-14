@@ -31,8 +31,9 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
-    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY")) {
-      return { success: true, results: [...this.db.enquiries.values()].slice(0, v[0]) };
+    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries")) {
+      const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
+      return { success: true, results: rows.slice(0, v[0]) };
     }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
@@ -282,7 +283,13 @@ test("rental staff can only update rental enquiries and viewers cannot update en
   const headers = { cookie, "sec-fetch-site": "same-origin" };
   const id = "a2f4a6b8-1234-4abc-9def-123456789abc";
   db.enquiries.set(id, { id, enquiry_type: "wholesale", status: "new" });
+  const rentalId = "b2f4a6b8-1234-4abc-9def-123456789abc";
+  db.enquiries.set(rentalId, { id: rentalId, enquiry_type: "rental", status: "new" });
   [...db.admins.values()][0].role = "rental";
+
+  const rentalList = await handleRequest(new Request(origin + "/api/admin/enquiries", { headers: { cookie } }), env(db));
+  assert.equal(rentalList.status, 200);
+  assert.deepEqual((await rentalList.json()).enquiries.map((item) => item.id), [rentalId]);
 
   const blocked = await handleRequest(request("/api/admin/enquiries/" + id, "PATCH", { status: "contacted" }, headers), env(db));
   assert.equal(blocked.status, 403);
