@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
-import Admin from "./Admin";
+import Admin from "./Admin";\nimport WholesaleQuote from "./WholesaleQuote";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -307,6 +307,6 @@ function Storefront() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/admin") ? <Admin /> : <Storefront />;
+  return window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : <Storefront />;
 }
 
