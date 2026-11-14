@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
+import Admin from "./Admin";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -13,7 +14,7 @@ const categories = [
 const phone = "923298684517";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 
-function App() {
+function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
@@ -250,4 +251,7 @@ function App() {
   );
 }
 
-export default App;
+export default function App() {
+  return window.location.pathname.startsWith("/admin") ? <Admin /> : <Storefront />;
+}
+
