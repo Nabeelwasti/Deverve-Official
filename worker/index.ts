@@ -332,6 +332,70 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   return error("Method not allowed", 405);
 }
 
+interface AdminEnquiryRow {
+  id: string;
+  enquiry_type: string;
+  customer_name: string;
+  phone: string;
+  email: string | null;
+  message: string;
+  status: "new" | "contacted" | "qualified" | "closed" | "spam";
+  source: string;
+  created_at: string;
+}
+
+async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const isCollection = path === "/api/admin/enquiries";
+  const rawId = path.startsWith("/api/admin/enquiries/") ? path.slice("/api/admin/enquiries/".length) : "";
+  const enquiryId = /^[a-f0-9-]{36}$/i.test(rawId) ? rawId : null;
+  if (!isCollection && !enquiryId) return null;
+
+  let admin: SessionRow | null;
+  try {
+    admin = await currentAdmin(request, env.DB);
+  } catch {
+    return error("Enquiry service is temporarily unavailable", 503);
+  }
+  if (!admin) return error("Authentication required", 401);
+
+  if (isCollection && request.method === "GET") {
+    try {
+      const limitValue = Number(url.searchParams.get("limit") ?? "50");
+      const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
+      const rows = await env.DB.prepare(
+        "SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY created_at DESC LIMIT ?",
+      ).bind(limit).all<AdminEnquiryRow>();
+      return json({ enquiries: rows.results ?? [] });
+    } catch {
+      return error("Enquiries could not be loaded", 503);
+    }
+  }
+
+  if (!enquiryId || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (!["owner", "manager", "orders", "rental"].includes(admin.role)) return error("You do not have permission to update enquiries", 403);
+
+  const body = await readJson(request);
+  const status = cleanText(body?.status, 12);
+  if (!["new", "contacted", "qualified", "closed", "spam"].includes(status)) return error("Choose a valid enquiry status", 400);
+  try {
+    const current = await env.DB.prepare(
+      "SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ? LIMIT 1",
+    ).bind(enquiryId).first<AdminEnquiryRow>();
+    if (!current) return error("Enquiry not found", 404);
+    if (admin.role === "rental" && current.enquiry_type !== "rental") return error("Rental staff can only update rental enquiries", 403);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, enquiryId),
+      env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, "enquiry.status_changed", "enquiry", enquiryId, JSON.stringify({ from: current.status, to: status })),
+    ]);
+    return json({ updated: true, id: enquiryId, status });
+  } catch {
+    return error("Enquiry could not be updated", 503);
+  }
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
@@ -435,6 +499,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       return error("Sign-out could not be completed", 503);
     }
   }
+
+  const enquiryResponse = await adminEnquiryRoutes(request, env, url);
+  if (enquiryResponse) return enquiryResponse;
 
   const productResponse = await adminProductRoutes(request, env, url);
   if (productResponse) return productResponse;
