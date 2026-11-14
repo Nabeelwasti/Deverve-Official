@@ -58,7 +58,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?")) {
       return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]) };
     }
-    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
     }
     if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
