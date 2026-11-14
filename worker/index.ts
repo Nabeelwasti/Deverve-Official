@@ -460,7 +460,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       if (attempt?.locked_until && attempt.locked_until > now) return error("Too many attempts. Please try again later.", 429);
       const admin = await env.DB.prepare("SELECT id, email, role, is_active, password_hash FROM admin_users WHERE email = ? COLLATE NOCASE LIMIT 1")
         .bind(email).first<AdminRow>();
-      const dummyHash = "pbkdf2-sha256$210000$MDEyMzQ1Njc4OWFiY2RlZg$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+      const dummyHash = "pbkdf2-sha256$100000$MDEyMzQ1Njc4OWFiY2RlZg$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
       const passwordMatches = await verifyPassword(password, admin?.password_hash ?? dummyHash);
       if (!admin || admin.is_active !== 1 || !passwordMatches) {
         await env.DB.prepare(
@@ -520,6 +520,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
+
+  const enquiryResponse = await adminEnquiryRoutes(request, env, url);
+  if (enquiryResponse) return enquiryResponse;
+
+  const productResponse = await adminProductRoutes(request, env, url);
+  if (productResponse) return productResponse;
 
   if (url.pathname === "/api/health" && request.method === "GET") {
     try {
