@@ -48,6 +48,7 @@ interface AdminProductRow {
   retail_price_paisa: number | null;
   wholesale_price_paisa: number | null;
   updated_at: string;
+  image_key: string | null;
 }
 interface SessionRow {
   id: string;
@@ -256,7 +257,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
-        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
         : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
       return json({ products: rows.results ?? [] });
     } catch {
@@ -800,20 +801,11 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const mediaResponse = await adminMediaRoutes(request, env, url);
   if (mediaResponse) return mediaResponse;
 
-  const mediaResponse = await adminMediaRoutes(request, env, url);
-  if (mediaResponse) return mediaResponse;
-
   const productImageResponse = await adminProductImageRoutes(request, env, url);
   if (productImageResponse) return productImageResponse;
 
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
-
-  const mediaResponse = await adminMediaRoutes(request, env, url);
-  if (mediaResponse) return mediaResponse;
-
-  const productImageResponse = await adminProductImageRoutes(request, env, url);
-  if (productImageResponse) return productImageResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
