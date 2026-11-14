@@ -304,7 +304,7 @@ export default function Admin() {
     if (status === rental.status) return;
     setBusy(true); setMessage("");
     try {
-      await api(`/api/admin/rentals/${rental.id}`, { method: "PATCH", body: JSON.stringify({ status, admin_note: rental.admin_note }) });
+      await api(`/api/admin/rentals/${rental.id}`, { method: "PATCH", body: JSON.stringify({ status, admin_note: rental.admin_note, vehicle_id: rental.vehicle_id }) });
       await loadRentals(); await loadOverview(); setMessage(`Rental request ${rental.reference_code} updated to ${status}.`);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Rental request could not be updated."); }
     finally { setBusy(false); }
@@ -389,6 +389,7 @@ export default function Admin() {
               <div className="admin-order-heading"><div><strong>{rental.reference_code}</strong><span>{new Date(rental.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${rental.status}`}>{rental.status}</span></div>
               <div className="admin-order-customer"><strong>{rental.customer_name}</strong><a href={`tel:${rental.phone}`}>{rental.phone}</a>{rental.email && <a href={`mailto:${rental.email}`}>{rental.email}</a>}<span>{rental.vehicle_name || "Any available vehicle"} · {rental.vehicle_type || "Vehicle preference not specified"}</span></div>
               <div className="admin-rental-dates"><div><span>PICKUP</span><strong>{new Date(rental.pickup_at).toLocaleString()}</strong><small>{rental.pickup_location}</small></div><div><span>RETURN</span><strong>{new Date(rental.return_at).toLocaleString()}</strong><small>{rental.destination || "Destination not specified"}</small></div></div>
+              <label className="admin-rental-note">Assign vehicle<select value={rental.vehicle_id ?? ""} disabled={busy} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, vehicle_id: e.target.value || null, vehicle_name: vehicles.find((vehicle) => vehicle.id === e.target.value)?.name ?? null } : item))}><option value="">Any / not assigned</option>{vehicles.filter((vehicle) => vehicle.status === "available").map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label>
               <p className="admin-muted">{rental.driver_option.replace("_", " ")}{rental.customer_note ? ` · ${rental.customer_note}` : ""}</p>
               {["owner", "manager"].includes(admin.role) && <label className="admin-rental-note">Internal note<input value={rental.admin_note} maxLength={500} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, admin_note: e.target.value } : item))} /></label>}
               <label className="admin-enquiry-action">Update status<select value={rental.status} disabled={busy || !next.length} onChange={(e) => void updateRentalStatus(rental, e.target.value as RentalRequest["status"])}><option value={rental.status}>{rental.status}</option>{next.map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
