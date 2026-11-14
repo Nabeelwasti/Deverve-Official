@@ -641,7 +641,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
   const token = match[1];
   const action = match[2] ?? null;
   try {
-    const quote = await env.DB.prepare("SELECT id, business_name, contact_name, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ? LIMIT 1").bind(token).first<{ id: string; business_name: string; contact_name: string; requested_items: string; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string; converted_order_id: string | null }>();
+    const quote = await env.DB.prepare("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ? LIMIT 1").bind(token).first<{ id: string; business_name: string; contact_name: string; phone: string; email: string | null; delivery_address: string; requested_items: string; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string; converted_order_id: string | null }>();
     if (!quote) return error("Quotation not found", 404);
     if (quote.status === "accepted" && quote.converted_order_id) {
       const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string }>();
@@ -669,7 +669,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     const orderNumber = "DV-W-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const now = new Date().toISOString();
     const conditions = quoteLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const values: unknown[] = [orderId, orderNumber, quote.contact_name, "", null, "", quote.city, quote.quoted_total_paisa ?? 0, 0, quote.quoted_total_paisa ?? 0, "Wholesale quotation accepted: " + quote.id, quote.id];
+    const values: unknown[] = [orderId, orderNumber, quote.contact_name, quote.phone, quote.email, quote.delivery_address, quote.city, quote.quoted_total_paisa ?? 0, 0, quote.quoted_total_paisa ?? 0, "Wholesale quotation accepted: " + quote.id, quote.id];
     for (const line of quoteLines) values.push(line.variant_id, line.quantity);
     const statements = [env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'sent' AND (valid_until IS NULL OR valid_until > ?)) AND " + conditions).bind(...values, quote.id, now)];
     for (const line of quoteLines) {
