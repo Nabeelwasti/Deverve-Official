@@ -363,9 +363,10 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
     try {
       const limitValue = Number(url.searchParams.get("limit") ?? "50");
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
-      const rows = await env.DB.prepare(
-        "SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY created_at DESC LIMIT ?",
-      ).bind(limit).all<AdminEnquiryRow>();
+      if (admin.role === "catalogue") return error("You do not have permission to view customer enquiries", 403);
+      const rows = admin.role === "rental"
+        ? await env.DB.prepare("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE enquiry_type = 'rental' ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>()
+        : await env.DB.prepare("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>();
       return json({ enquiries: rows.results ?? [] });
     } catch {
       return error("Enquiries could not be loaded", 503);
@@ -385,6 +386,7 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
     ).bind(enquiryId).first<AdminEnquiryRow>();
     if (!current) return error("Enquiry not found", 404);
     if (admin.role === "rental" && current.enquiry_type !== "rental") return error("Rental staff can only update rental enquiries", 403);
+    if (admin.role === "orders" && current.enquiry_type === "rental") return error("Orders staff cannot update rental enquiries", 403);
     await env.DB.batch([
       env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, enquiryId),
       env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
