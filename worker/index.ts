@@ -671,8 +671,8 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
       if (!vehicle || (nextStatus === "confirmed" && vehicle.status !== "available")) return error("Choose a vehicle that is currently available", 409);
     }
     const now = new Date().toISOString();
-    const result = await env.DB.prepare("UPDATE rental_requests SET vehicle_id = ?, status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (vehicle_id IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = ? AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
-      .bind(targetVehicleId, nextStatus, adminNote, now, match[1], current.status, nextStatus, targetVehicleId, targetVehicleId).run();
+    const result = await env.DB.prepare("UPDATE rental_requests SET vehicle_id = ?, status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = ? AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
+      .bind(targetVehicleId, nextStatus, adminNote, now, match[1], current.status, nextStatus, targetVehicleId, targetVehicleId, targetVehicleId).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("The vehicle is unavailable for these dates, or the request changed. Refresh and try again.", 409);
     await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'rental.status_changed', 'rental_request', ?, ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ from: current.status, to: nextStatus })).run();
