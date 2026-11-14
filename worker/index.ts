@@ -522,6 +522,157 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
 }
 
 
+
+interface VehicleRow {
+  id: string; name: string; vehicle_type: string; transmission: string; seats: number;
+  fuel_type: string; daily_rate_paisa: number | null; status: string; image_key: string | null;
+  description: string; created_at: string; updated_at: string;
+}
+interface RentalRequestRow {
+  id: string; vehicle_id: string | null; customer_name: string; phone: string; email: string | null;
+  pickup_location: string; destination: string | null; pickup_at: string; return_at: string;
+  driver_option: string; status: string; customer_note: string; admin_note: string;
+  reference_code: string; created_at: string; updated_at: string;
+}
+
+async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/vehicles" || request.method !== "GET") return null;
+  try {
+    const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available' ORDER BY vehicle_type, name LIMIT 50").all<VehicleRow>();
+    return json({ vehicles: (result.results ?? []).map((vehicle) => ({ ...vehicle, image_url: vehicle.image_key ? "/media/" + vehicle.image_key : null })) });
+  } catch { return error("Vehicle catalogue is temporarily unavailable", 503); }
+}
+
+async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/rentals" || request.method !== "POST") return null;
+  const body = await readJson(request, 12_000);
+  if (!body) return error("Please submit valid rental request details", 400);
+  if (cleanText(body.website, 120)) return json({ accepted: true });
+  const name = cleanText(body.customer_name, 100);
+  const phone = cleanText(body.phone, 24);
+  const email = cleanText(body.email, 160).toLowerCase();
+  const vehicleId = cleanText(body.vehicle_id, 64) || null;
+  const pickup = cleanText(body.pickup_location, 160);
+  const destination = cleanText(body.destination, 160);
+  const pickupAt = cleanText(body.pickup_at, 40);
+  const returnAt = cleanText(body.return_at, 40);
+  const driver = cleanText(body.driver_option, 20);
+  const note = cleanText(body.customer_note, 500);
+  const pickupTime = Date.parse(pickupAt);
+  const returnTime = Date.parse(returnAt);
+  if (name.length < 2 || !validPhone(phone) || pickup.length < 2 || !["self_drive", "with_driver"].includes(driver)) return error("Check your name, phone, pickup location and driver option", 400);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Enter a valid email address", 400);
+  if (!Number.isFinite(pickupTime) || !Number.isFinite(returnTime) || pickupTime <= Date.now() || returnTime <= pickupTime || returnTime - pickupTime > 60 * 86400000) return error("Choose a future pickup and a return time within 60 days", 400);
+  if (vehicleId && !/^[a-f0-9-]{36}$/i.test(vehicleId)) return error("Choose a valid vehicle", 400);
+  const id = crypto.randomUUID();
+  const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
+  const now = new Date().toISOString();
+  try {
+    const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
+      .bind(id, vehicleId, name, phone, pickup, destination || null, pickupAt, returnAt, driver, email || null, note, reference, now, vehicleId, vehicleId, vehicleId, returnAt, pickupAt).run();
+    if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
+    return json({ accepted: true, reference_code: reference, message: "Your rental request has been received. Availability and terms will be confirmed by De VERVE." }, 201);
+  } catch { return error("Rental request could not be submitted. Please contact De VERVE.", 503); }
+}
+
+async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/vehicles";
+  const match = url.pathname.match(/^\\/api\\/admin\\/vehicles\\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Fleet management is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to view the fleet", 403);
+  if (collection && request.method === "GET") {
+    try {
+      const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles ORDER BY created_at DESC LIMIT 100").all<VehicleRow>();
+      return json({ vehicles: result.results ?? [] });
+    } catch { return error("Fleet could not be loaded", 503); }
+  }
+  if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can change fleet records", 403);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request);
+  if (!body) return error("Submit valid vehicle details", 400);
+  const name = cleanText(body.name, 100);
+  const type = cleanText(body.vehicle_type, 60);
+  const transmission = cleanText(body.transmission, 30) || "unspecified";
+  const fuel = cleanText(body.fuel_type, 30) || "unspecified";
+  const seats = Number(body.seats);
+  const rate = body.daily_rate_paisa === null || body.daily_rate_paisa === "" ? null : Number(body.daily_rate_paisa);
+  const status = cleanText(body.status, 20) || "draft";
+  const description = cleanText(body.description, 1000);
+  const imageId = body.image_key ? cleanText(body.image_key, 64) : null;
+  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, daily rate and status", 400);
+  if (imageId && !/^[a-f0-9-]{36}$/i.test(imageId)) return error("Choose a valid vehicle image", 400);
+  if (request.method === "POST" && collection) {
+    const id = crypto.randomUUID();
+    try {
+      if (imageId) {
+        const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
+        if (!media) return error("Vehicle image not found", 404);
+      }
+      await env.DB.prepare("INSERT INTO vehicles (id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(id, name, type, transmission, seats, fuel, rate, status, imageId, description).run();
+      await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.created', 'vehicle', ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ status, vehicle_type: type })).run();
+      return json({ created: true, vehicle_id: id }, 201);
+    } catch { return error("Vehicle could not be saved", 503); }
+  }
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  try {
+    if (imageId) {
+      const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
+      if (!media) return error("Vehicle image not found", 404);
+    }
+    const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ?")
+      .bind(name, type, transmission, seats, fuel, rate, status, imageId, description, new Date().toISOString(), match[1]).run();
+    if ((result.meta?.changes ?? 0) !== 1) return error("Vehicle not found", 404);
+    await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.updated', 'vehicle', ?, ?)")
+      .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ status, vehicle_type: type })).run();
+    return json({ updated: true });
+  } catch { return error("Vehicle could not be updated", 503); }
+}
+
+async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/rentals";
+  const match = url.pathname.match(/^\\/api\\/admin\\/rentals\\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Rental management is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to manage rentals", 403);
+  if (collection && request.method === "GET") {
+    try {
+      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.created_at, r.updated_at, v.name AS vehicle_name, v.vehicle_type FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
+      return json({ rentals: result.results ?? [] });
+    } catch { return error("Rental requests could not be loaded", 503); }
+  }
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request);
+  const nextStatus = cleanText(body?.status, 20);
+  const adminNote = cleanText(body?.admin_note, 500);
+  if (!["reviewing", "confirmed", "active", "completed", "cancelled"].includes(nextStatus)) return error("Choose a valid rental status", 400);
+  try {
+    const current = await env.DB.prepare("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; vehicle_id: string | null; pickup_at: string; return_at: string; status: string }>();
+    if (!current) return error("Rental request not found", 404);
+    const allowed: Record<string, string[]> = {
+      requested: ["reviewing", "cancelled"], reviewing: ["confirmed", "cancelled"],
+      confirmed: ["active", "cancelled"], active: ["completed"], completed: [], cancelled: [],
+    };
+    if (!allowed[current.status]?.includes(nextStatus)) return error("That rental status change is not allowed", 409);
+    const now = new Date().toISOString();
+    const result = await env.DB.prepare("UPDATE rental_requests SET status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (vehicle_id IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = rental_requests.vehicle_id AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = rental_requests.vehicle_id AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
+      .bind(nextStatus, adminNote, now, match[1], current.status, nextStatus).run();
+    if ((result.meta?.changes ?? 0) !== 1) return error("The vehicle is unavailable for these dates, or the request changed. Refresh and try again.", 409);
+    await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'rental.status_changed', 'rental_request', ?, ?)")
+      .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ from: current.status, to: nextStatus })).run();
+    return json({ updated: true, status: nextStatus });
+  } catch { return error("Rental status could not be updated", 503); }
+}
+
 interface WholesaleQuoteRow {
   id: string; enquiry_id: string | null; business_name: string; contact_name: string; phone: string;
   email: string | null; requested_items: string; quoted_total_paisa: number | null; status: string;
@@ -1173,6 +1324,12 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
 
+  const vehicleAdminResponse = await adminVehicleRoutes(request, env, url);
+  if (vehicleAdminResponse) return vehicleAdminResponse;
+
+  const rentalAdminResponse = await adminRentalRoutes(request, env, url);
+  if (rentalAdminResponse) return rentalAdminResponse;
+
   const wholesaleAdminResponse = await adminWholesaleQuoteRoutes(request, env, url);
   if (wholesaleAdminResponse) return wholesaleAdminResponse;
 
@@ -1213,7 +1370,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const publicMedia = url.pathname.match(/^\/media\/([a-f0-9-]{36})$/i);
   if (publicMedia && request.method === "GET") {
     try {
-      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m JOIN products p ON p.image_key = m.id WHERE m.id = ? AND m.status = 'ready' AND p.status = 'published' LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
+      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available')) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
       if (!asset) return error("Media not found", 404);
       const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
       return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
@@ -1250,6 +1407,12 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       return error("Catalogue is temporarily unavailable", 503);
     }
   }
+
+  const publicVehicles = await publicVehicleRoutes(request, env, url);
+  if (publicVehicles) return publicVehicles;
+
+  const publicRental = await publicRentalRoutes(request, env, url);
+  if (publicRental) return publicRental;
 
   const publicWholesaleResponse = await publicWholesaleQuoteRoutes(request, env, url);
   if (publicWholesaleResponse) return publicWholesaleResponse;
