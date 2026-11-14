@@ -387,7 +387,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   if (customerName.length < 2 || !validPhone(phone) || address.length < 8 || city.length < 2) {
     return error("Please check your name, phone number, delivery address and city", 400);
   }
-  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
   if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) return error("Your cart must contain between 1 and 20 items", 400);
 
   const quantities = new Map<string, number>();
@@ -451,7 +451,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
 
 async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/orders";
-  const match = url.pathname.match(/^\\/api\\/admin\\/orders\\/([a-f0-9-]{36})$/i);
+  const match = url.pathname.match(/^\/api\/admin\/orders\/([a-f0-9-]{36})$/i);
   if (!collection && !match) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
@@ -982,7 +982,10 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     }
   }
 
-  const orderResponse = await adminOrderRoutes(request, env, url);\n  if (orderResponse) return orderResponse;\n\n  const mediaResponse = await adminMediaRoutes(request, env, url);
+  const orderResponse = await adminOrderRoutes(request, env, url);
+  if (orderResponse) return orderResponse;
+
+  const mediaResponse = await adminMediaRoutes(request, env, url);
   if (mediaResponse) return mediaResponse;
 
   const productImageResponse = await adminProductImageRoutes(request, env, url);
@@ -1053,7 +1056,10 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
   }
 
-  const publicOrderResponse = await publicOrderRoutes(request, env, url);\n  if (publicOrderResponse) return publicOrderResponse;\n\n  if (url.pathname === "/api/enquiries" && request.method === "POST") {
+  const publicOrderResponse = await publicOrderRoutes(request, env, url);
+  if (publicOrderResponse) return publicOrderResponse;
+
+  if (url.pathname === "/api/enquiries" && request.method === "POST") {
     const body = await readJson(request, 12_000);
     if (!body) return error("Please submit valid form details", 400);
 
