@@ -383,6 +383,9 @@ test("owner can create variants and record stock movements without allowing nega
   assert.equal(negative.status, 409);
   assert.equal(db.variants.get(variant.id).stock_on_hand, 12);
   assert.equal(db.movements.length, 3);
+  const history = await handleRequest(new Request(origin + "/api/admin/variants/" + variant.id + "/movements", { headers: { cookie } }), env(db));
+  assert.equal(history.status, 200);
+  assert.equal((await history.json()).movements.length, 3);
 });
 
 test("catalogue staff cannot change stock quantities", async () => {
