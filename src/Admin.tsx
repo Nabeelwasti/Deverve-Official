@@ -42,7 +42,8 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
-  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);\n  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
@@ -89,7 +90,8 @@ export default function Admin() {
   useEffect(() => {
     if (admin) {
       const tasks = [loadProducts(), loadOverview()];
-      if (admin.role !== "catalogue") tasks.push(loadEnquiries());\n      if (["owner", "manager", "orders"].includes(admin.role)) tasks.push(loadOrders());
+      if (admin.role !== "catalogue") tasks.push(loadEnquiries());
+      if (["owner", "manager", "orders"].includes(admin.role)) tasks.push(loadOrders());
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
