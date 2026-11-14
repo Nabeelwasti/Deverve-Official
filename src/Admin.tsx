@@ -8,7 +8,9 @@ type Product = {
   retail_price_paisa: number | null; wholesale_price_paisa: number | null;
 };
 
-const emptyProduct = {
+type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
+
+const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
   status: "draft" as const, retail_price_paisa: "", wholesale_price_paisa: "",
 };
