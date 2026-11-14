@@ -625,9 +625,9 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
       const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
       if (!media) return error("Vehicle image not found", 404);
     }
-    const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ?")
-      .bind(name, type, transmission, seats, fuel, rate, status, imageId, description, new Date().toISOString(), match[1]).run();
-    if ((result.meta?.changes ?? 0) !== 1) return error("Vehicle not found", 404);
+    const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ? AND (? = 'available' OR NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = vehicles.id AND status IN ('confirmed','active')))")
+      .bind(name, type, transmission, seats, fuel, rate, status, imageId, description, new Date().toISOString(), match[1], status).run();
+    if ((result.meta?.changes ?? 0) !== 1) return error("Vehicle not found or it has a confirmed or active rental and cannot be taken out of service.", 409);
     await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.updated', 'vehicle', ?, ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ status, vehicle_type: type })).run();
     return json({ updated: true });
