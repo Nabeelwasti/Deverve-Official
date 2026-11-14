@@ -1,3 +1,5 @@
+interface R2ObjectBody { body: ReadableStream<Uint8Array>; size: number; }
+interface R2Bucket { put(key: string, value: ArrayBuffer | ReadableStream | string, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>; get(key: string): Promise<R2ObjectBody | null>; delete(key: string): Promise<void>; }
 interface D1Result<T = Record<string, unknown>> {
   success: boolean;
   results?: T[];
@@ -15,6 +17,7 @@ interface D1Database {
 }
 export interface Env {
   DB: D1Database;
+  MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
 }
 interface ProductRow {
@@ -328,6 +331,48 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     } catch {
       return error("Product could not be archived", 503);
     }
+  }
+  return error("Method not allowed", 405);
+}
+
+interface MediaAssetRow { id: string; object_key: string; file_name: string; content_type: string; size_bytes: number; created_at: string; }
+
+async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const match = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})$/i);
+  if (path !== "/api/admin/media" && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Media service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  const canUpload = ["owner", "manager", "catalogue"].includes(admin.role);
+  if (request.method === "GET" && path === "/api/admin/media") {
+    try { const rows = await env.DB.prepare("SELECT id, file_name, content_type, size_bytes, created_at FROM media_assets WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT 100").all<MediaAssetRow>(); return json({ media: rows.results ?? [] }); }
+    catch { return error("Media library could not be loaded", 503); }
+  }
+  if (!canUpload) return error("You do not have permission to manage media", 403);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (path === "/api/admin/media" && request.method === "POST") {
+    const length = Number(request.headers.get("content-length") || 0);
+    if (length > 5500000) return error("Image is too large. Maximum size is 5 MB.", 413);
+    let form: FormData; try { form = await request.formData(); } catch { return error("Upload a valid image file", 400); }
+    const file = form.get("file");
+    if (!(file instanceof File) || file.size < 1 || file.size > 5000000) return error("Choose an image up to 5 MB", 400);
+    const extensions: Record<string,string> = { "image/jpeg":"jpg", "image/png":"png", "image/webp":"webp", "image/gif":"gif" };
+    const ext = extensions[file.type]; if (!ext) return error("Only JPG, PNG, WebP and GIF images are supported", 415);
+    const bytes = await file.arrayBuffer(); const b = new Uint8Array(bytes);
+    const signature = (file.type === "image/jpeg" && b[0] === 255 && b[1] === 216 && b[2] === 255) || (file.type === "image/png" && b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71) || (file.type === "image/webp" && String.fromCharCode(...b.slice(8,12)) === "WEBP") || (file.type === "image/gif" && String.fromCharCode(...b.slice(0,3)) === "GIF");
+    if (!signature) return error("The file content does not match its image type", 415);
+    const id = crypto.randomUUID(); const key = "catalogue/" + id + "." + ext; const name = cleanText(file.name, 180) || ("image." + ext);
+    try {
+      await env.MEDIA.put(key, bytes, { httpMetadata: { contentType: file.type }, customMetadata: { assetId: id } });
+      await env.DB.prepare("INSERT INTO media_assets (id, object_key, file_name, content_type, size_bytes, uploaded_by) VALUES (?, ?, ?, ?, ?, ?)").bind(id, key, name, file.type, file.size, admin.admin_user_id).run();
+      return json({ uploaded: true, media: { id, file_name: name, content_type: file.type, size_bytes: file.size, url: "/media/" + id } }, 201);
+    } catch { try { await env.MEDIA.delete(key); } catch { /* best effort cleanup */ } return error("Image could not be saved. Please try again.", 503); }
+  }
+  if (match && request.method === "DELETE") {
+    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive media", 403);
+    try { const result = await env.DB.prepare("UPDATE media_assets SET archived_at = ? WHERE id = ? AND archived_at IS NULL").bind(new Date().toISOString(), match[1]).run(); if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404); await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "media.archived", "media_asset", match[1], "{}").run(); return json({ archived: true }); }
+    catch { return error("Media item could not be archived", 503); }
   }
   return error("Method not allowed", 405);
 }
@@ -669,6 +714,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     }
   }
 
+  const mediaResponse = await adminMediaRoutes(request, env, url);
+  if (mediaResponse) return mediaResponse;
+
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
 
@@ -704,6 +752,16 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     } catch {
       return error("Service temporarily unavailable", 503);
     }
+  }
+
+  const publicMedia = url.pathname.match(/^\/media\/([a-f0-9-]{36})$/i);
+  if (publicMedia && request.method === "GET") {
+    try {
+      const asset = await env.DB.prepare("SELECT m.object_key, m.content_type FROM media_assets m JOIN products p ON p.image_key = m.id WHERE m.id = ? AND m.archived_at IS NULL AND p.status = 'published' LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
+      if (!asset) return error("Media not found", 404);
+      const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
+      return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
+    } catch { return error("Media is temporarily unavailable", 503); }
   }
 
   if (url.pathname === "/api/products" && request.method === "GET") {
