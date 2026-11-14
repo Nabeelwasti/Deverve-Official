@@ -48,7 +48,12 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
-  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);\n  const [vehicles, setVehicles] = useState<Vehicle[]>([]);\n  const [rentals, setRentals] = useState<RentalRequest[]>([]);\n  const [showVehicleEditor, setShowVehicleEditor] = useState(false);\n  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);\n  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft" as Vehicle["status"], description: "" });
+  const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [rentals, setRentals] = useState<RentalRequest[]>([]);
+  const [showVehicleEditor, setShowVehicleEditor] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
+  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft" as Vehicle["status"], description: "" });
   const [showQuoteEditor, setShowQuoteEditor] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
   const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
@@ -111,7 +116,8 @@ export default function Admin() {
     if (admin) {
       const tasks = [loadProducts(), loadOverview()];
       if (admin.role !== "catalogue") tasks.push(loadEnquiries());
-      if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadOrders()); tasks.push(loadWholesaleQuotes()); }\n      if (["owner", "manager", "rental"].includes(admin.role)) { tasks.push(loadVehicles()); tasks.push(loadRentals()); }
+      if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadOrders()); tasks.push(loadWholesaleQuotes()); }
+      if (["owner", "manager", "rental"].includes(admin.role)) { tasks.push(loadVehicles()); tasks.push(loadRentals()); }
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
