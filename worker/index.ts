@@ -336,6 +336,178 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   return error("Method not allowed", 405);
 }
 
+
+interface CheckoutVariantRow {
+  id: string; product_id: string; name: string; sku: string | null; size: string; color: string;
+  retail_price_paisa: number | null; stock_on_hand: number; reserved_quantity: number;
+}
+interface OrderRow {
+  id: string; order_number: string; customer_name: string; phone: string; email: string | null;
+  delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number;
+  total_paisa: number; payment_method: string; payment_status: string; order_status: string;
+  customer_note: string; created_at: string; updated_at: string;
+}
+interface OrderItemRow {
+  id: string; order_id: string; variant_id: string | null; product_name_snapshot: string;
+  sku_snapshot: string | null; size_snapshot: string; color_snapshot: string;
+  quantity: number; unit_price_paisa: number; line_total_paisa: number;
+}
+
+async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/orders" || request.method !== "POST") return null;
+  const body = await readJson(request, 12_000);
+  if (!body) return error("Please submit valid checkout details", 400);
+  if (cleanText(body.website, 120)) return json({ accepted: true });
+  const token = cleanText(body.checkout_token, 64);
+  if (!/^[a-f0-9-]{36}$/i.test(token)) return error("Refresh checkout and try again", 400);
+  try {
+    const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
+      .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
+    if (existing) return json({ accepted: true, duplicate: true, ...existing });
+  } catch { return error("Checkout is temporarily unavailable", 503); }
+
+  const customerName = cleanText(body.customer_name, 100);
+  const phone = cleanText(body.phone, 24);
+  const email = cleanText(body.email, 160).toLowerCase();
+  const address = cleanText(body.delivery_address, 300);
+  const city = cleanText(body.city, 80);
+  const note = cleanText(body.customer_note, 500);
+  if (customerName.length < 2 || !validPhone(phone) || address.length < 8 || city.length < 2) {
+    return error("Please check your name, phone number, delivery address and city", 400);
+  }
+  if (email && !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
+  if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) return error("Your cart must contain between 1 and 20 items", 400);
+
+  const quantities = new Map<string, number>();
+  for (const item of body.items) {
+    if (!item || typeof item !== "object") return error("Your cart contains an invalid item", 400);
+    const variantId = cleanText((item as Record<string, unknown>).variant_id, 64);
+    const quantity = (item as Record<string, unknown>).quantity;
+    if (!/^[a-f0-9-]{36}$/i.test(variantId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 10) {
+      return error("Check the selected product options and quantities", 400);
+    }
+    quantities.set(variantId, (quantities.get(variantId) ?? 0) + Number(quantity));
+  }
+  if (quantities.size > 20 || [...quantities.values()].some((quantity) => quantity > 10)) return error("Each product option is limited to 10 pieces per order", 400);
+
+  const lines: Array<{ variant: CheckoutVariantRow; quantity: number; lineTotal: number }> = [];
+  let subtotal = 0;
+  try {
+    for (const [variantId, quantity] of quantities) {
+      const variant = await env.DB.prepare(
+        "SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1",
+      ).bind(variantId).first<CheckoutVariantRow>();
+      if (!variant || variant.retail_price_paisa === null || !Number.isSafeInteger(variant.retail_price_paisa) || variant.retail_price_paisa < 0) {
+        return error("A product in your cart is no longer available for online checkout", 409);
+      }
+      if (variant.stock_on_hand - variant.reserved_quantity < quantity) return error("A selected size or colour no longer has enough stock. Please update your cart.", 409);
+      const lineTotal = variant.retail_price_paisa * quantity;
+      if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) return error("Order total is outside the supported range", 400);
+      subtotal += lineTotal;
+      lines.push({ variant, quantity, lineTotal });
+    }
+    const deliveryFee = 0;
+    const total = subtotal + deliveryFee;
+    const id = crypto.randomUUID();
+    const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
+    const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
+    const now = new Date().toISOString();
+    const conditions = lines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token];
+    for (const line of lines) orderValues.push(line.variant.id, line.quantity);
+    const statements = [
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
+    ];
+    for (const line of lines) {
+      statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
+        .bind(line.quantity, now, line.variant.id, line.quantity, id));
+      statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
+        .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
+    }
+    const results = await env.DB.batch(statements);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
+    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending" }, 201);
+  } catch {
+    try {
+      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
+        .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      if (existing) return json({ accepted: true, duplicate: true, ...existing });
+    } catch { /* report the original safe error */ }
+    return error("Your order could not be placed. Please try again or contact us on WhatsApp.", 503);
+  }
+}
+
+async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/orders";
+  const match = url.pathname.match(/^\\/api\\/admin\\/orders\\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Order management is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to manage orders", 403);
+
+  if (collection && request.method === "GET") {
+    const limitValue = Number(url.searchParams.get("limit") ?? "50");
+    const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
+    try {
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+        .bind(limit).all<OrderRow>();
+      const orders = result.results ?? [];
+      if (!orders.length) return json({ orders: [] });
+      const ids = orders.map((order) => order.id);
+      const placeholders = ids.map(() => "?").join(",");
+      const itemResult = await env.DB.prepare("SELECT id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN (" + placeholders + ") ORDER BY rowid").bind(...ids).all<OrderItemRow>();
+      const grouped = new Map<string, OrderItemRow[]>();
+      for (const item of itemResult.results ?? []) grouped.set(item.order_id, [...(grouped.get(item.order_id) ?? []), item]);
+      return json({ orders: orders.map((order) => ({ ...order, items: grouped.get(order.id) ?? [] })) });
+    } catch { return error("Orders could not be loaded", 503); }
+  }
+
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request);
+  const nextStatus = cleanText(body?.order_status, 20);
+  if (!["confirmed", "processing", "dispatched", "delivered", "cancelled"].includes(nextStatus)) return error("Choose a valid order status", 400);
+  const id = match[1];
+  try {
+    const current = await env.DB.prepare("SELECT id, order_status FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string }>();
+    if (!current) return error("Order not found", 404);
+    const allowed: Record<string, string[]> = {
+      pending: ["confirmed", "cancelled"], confirmed: ["processing", "cancelled"],
+      processing: ["dispatched", "cancelled"], dispatched: ["delivered"], delivered: [], cancelled: [],
+    };
+    if (!allowed[current.order_status]?.includes(nextStatus)) return error("That order status change is not allowed", 409);
+    const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(id).all<{ id: string; variant_id: string | null; quantity: number }>();
+    const lines = items.results ?? [];
+    if (!lines.length) return error("This order has no valid line items", 409);
+    const guard = nextStatus === "dispatched"
+      ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
+      : nextStatus === "cancelled"
+        ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
+        : "1 = 1";
+    const now = new Date().toISOString();
+    const statements = [env.DB.prepare("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ? AND order_status = ? AND " + guard).bind(nextStatus, now, id, current.order_status)];
+    if (nextStatus === "cancelled") {
+      for (const item of lines) statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled')")
+        .bind(item.quantity, now, item.variant_id, item.quantity, id));
+    }
+    if (nextStatus === "dispatched") {
+      for (const item of lines) {
+        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand - ?, reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')")
+          .bind(item.quantity, item.quantity, now, item.variant_id, item.quantity, item.quantity, id));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, 'sold', ?, 'order', ?, 'COD order dispatched', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')")
+          .bind(crypto.randomUUID(), item.variant_id, -item.quantity, id, admin.admin_user_id, id));
+      }
+    }
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, ?, 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = ?)")
+      .bind(crypto.randomUUID(), admin.admin_user_id, "order.status_changed", id, JSON.stringify({ from: current.order_status, to: nextStatus }), id, nextStatus));
+    const results = await env.DB.batch(statements);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Order or reserved stock changed. Refresh the order and try again.", 409);
+    return json({ updated: true, order_status: nextStatus });
+  } catch { return error("Order status could not be updated", 503); }
+}
+
 interface MediaAssetRow {
   id: string; object_key: string; media_type: string; mime_type: string; byte_size: number;
   alt_text: string; caption: string; status: string; created_at: string;
@@ -798,7 +970,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     }
   }
 
-  const mediaResponse = await adminMediaRoutes(request, env, url);
+  const orderResponse = await adminOrderRoutes(request, env, url);\n  if (orderResponse) return orderResponse;\n\n  const mediaResponse = await adminMediaRoutes(request, env, url);
   if (mediaResponse) return mediaResponse;
 
   const productImageResponse = await adminProductImageRoutes(request, env, url);
@@ -869,7 +1041,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     }
   }
 
-  if (url.pathname === "/api/enquiries" && request.method === "POST") {
+  const publicOrderResponse = await publicOrderRoutes(request, env, url);\n  if (publicOrderResponse) return publicOrderResponse;\n\n  if (url.pathname === "/api/enquiries" && request.method === "POST") {
     const body = await readJson(request, 12_000);
     if (!body) return error("Please submit valid form details", 400);
 
