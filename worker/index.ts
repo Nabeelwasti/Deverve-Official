@@ -645,7 +645,8 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     if (!quote) return error("Quotation not found", 404);
     if (quote.status === "accepted" && quote.converted_order_id) {
       const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string }>();
-      return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, requested_items: quote.requested_items, quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
+      const acceptedItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
+      return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: acceptedItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
     }
     if (quote.status !== "sent") return error("This quotation is not open for approval", 409);
     if (quote.valid_until && Date.parse(quote.valid_until) <= Date.now()) {
