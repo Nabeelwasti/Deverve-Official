@@ -5,7 +5,7 @@ type AdminUser = { id: string; email: string; role: string };
 type Product = {
   id: string; slug: string; name: string; description: string; category: string;
   audience: "men" | "women" | "kids" | "unisex"; status: "draft" | "published" | "archived";
-  retail_price_paisa: number | null; wholesale_price_paisa: number | null;
+  retail_price_paisa: number | null; wholesale_price_paisa: number | null; image_key: string | null;
 };
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
@@ -13,6 +13,7 @@ type Overview = { published_products: number; draft_products: number; new_enquir
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
+type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string };
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
@@ -44,6 +45,10 @@ export default function Admin() {
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
+  const [mediaProduct, setMediaProduct] = useState<Product | null>(null);
+  const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaAlt, setMediaAlt] = useState("");
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
@@ -124,6 +129,42 @@ export default function Admin() {
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`);
       setVariantProduct(product); setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Variants could not be loaded."); }
+    finally { setBusy(false); }
+  };
+
+  const openMediaLibrary = async (product: Product) => {
+    setBusy(true); setMessage("");
+    try {
+      const result = await api<{ media: MediaAsset[] }>("/api/admin/media");
+      setMediaAssets(result.media); setMediaProduct(product); setMediaFile(null); setMediaAlt("");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Media library could not be loaded."); }
+    finally { setBusy(false); }
+  };
+
+  const uploadMedia = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!mediaFile || !mediaProduct) return;
+    setBusy(true); setMessage("");
+    try {
+      const data = new FormData(); data.append("file", mediaFile); data.append("alt_text", mediaAlt);
+      const response = await fetch("/api/admin/media", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body: data });
+      const result = await response.json() as { error?: string; media?: MediaAsset };
+      if (!response.ok || !result.media) throw new Error(result.error || "Image upload failed.");
+      setMediaAssets((current) => [result.media!, ...current]); setMediaFile(null); setMediaAlt("");
+      setMessage("Image uploaded. Select it to attach it to this product.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Image could not be uploaded."); }
+    finally { setBusy(false); }
+  };
+
+  const attachMedia = async (asset: MediaAsset | null) => {
+    if (!mediaProduct) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/products/${mediaProduct.id}/image`, { method: "PATCH", body: JSON.stringify({ image_id: asset?.id ?? null }) });
+      await loadProducts();
+      setMediaProduct(null);
+      setMessage(asset ? "Product image updated." : "Product image removed.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Product image could not be updated."); }
     finally { setBusy(false); }
   };
 
@@ -225,10 +266,26 @@ export default function Admin() {
         </section>
         )}
         <section className="admin-panel">
-          <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Add products now; photos and stock controls will be added in the next module.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
+          <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, images and stock from one place.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
-            <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
+            <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openMediaLibrary(product)}>Images</button><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
+        {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Upload a product photo or choose an image already in your library.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
+          <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
+            <label>Choose image (JPG, PNG or WebP, max 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+            <label>Image description (alt text)<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
+            <button className="admin-primary" disabled={busy || !mediaFile}>{busy ? "Please wait…" : "Upload image"}</button>
+          </form>
+          <div className="admin-media-grid">
+            {mediaAssets.length === 0 ? <div className="admin-empty"><strong>No images uploaded yet</strong><p>Upload a clear product photo to start your media library.</p></div> : mediaAssets.map((asset) => <article className={mediaProduct.image_key === asset.id ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
+              <img src={asset.url} alt={asset.alt_text || "Uploaded product media"} loading="lazy" />
+              <div><span>{asset.alt_text || "Untitled image"}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB</small></div>
+              <button type="button" disabled={busy} className="admin-secondary" onClick={() => void attachMedia(asset)}>{mediaProduct.image_key === asset.id ? "Currently selected" : "Use for this product"}</button>
+            </article>)}
+          </div>
+          {mediaProduct.image_key && <button type="button" className="admin-danger-button" disabled={busy} onClick={() => void attachMedia(null)}>Remove product image</button>}
+        </section></div>}
         {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); }} aria-label="Close">×</button></div>
           <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
