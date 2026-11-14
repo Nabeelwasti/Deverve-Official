@@ -254,6 +254,8 @@ class FakeD1 {
   variants = new Map();
   movements = [];
   enquiries = new Map();
+  orders = new Map();
+  orderItems = [];
   audits = [];
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
