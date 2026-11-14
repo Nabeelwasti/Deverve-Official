@@ -14,6 +14,10 @@ const categories = [
 const phone = "923298684517";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 
+type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
+type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; variants: StoreVariant[] };
+type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
@@ -22,10 +26,15 @@ function Storefront() {
   const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
-  const [products, setProducts] = useState<Array<{
-    id: string; slug: string; name: string; description: string; category: string;
-    audience: string; retail_price_paisa: number | null; image_key: string | null;
-  }>>([]);
+  const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+  const [cart, setCart] = useState<CartLine[]>([]);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [checkoutMessage, setCheckoutMessage] = useState("");
+  const [checkoutResult, setCheckoutResult] = useState("");
+  const [checkoutToken, setCheckoutToken] = useState(() => crypto.randomUUID());
+  const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => {
@@ -38,6 +47,7 @@ function Storefront() {
         if (!Array.isArray(payload.products)) throw new Error("Invalid catalogue response");
         if (!active) return;
         setProducts(payload.products);
+        setSelectedVariants(Object.fromEntries(payload.products.map((product) => [product.id, product.variants[0]?.id ?? ""])));
         setCatalogueState(payload.products.length ? "ready" : "empty");
       } catch {
         if (active) setCatalogueState("error");
@@ -50,6 +60,31 @@ function Storefront() {
   const formatPrice = (paisa: number | null) => paisa === null
     ? "Ask for price"
     : new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(paisa / 100);
+
+  const cartSubtotal = cart.reduce((sum, item) => sum + item.unit_price_paisa * item.quantity, 0);
+  const addToCart = (product: StoreProduct) => {
+    const variantId = selectedVariants[product.id] || product.variants[0]?.id;
+    const variant = product.variants.find((item) => item.id === variantId);
+    if (!variant || product.retail_price_paisa === null) return;
+    setCart((current) => {
+      const existing = current.find((item) => item.variant_id === variant.id);
+      if (existing) return current.map((item) => item.variant_id === variant.id ? { ...item, quantity: Math.min(item.quantity + 1, variant.available_quantity) } : item);
+      return [...current, { variant_id: variant.id, product_id: product.id, name: product.name, sku: variant.sku, size: variant.size, color: variant.color, quantity: 1, unit_price_paisa: product.retail_price_paisa!, available_quantity: variant.available_quantity }];
+    });
+  };
+  const changeCartQuantity = (variantId: string, quantity: number) => setCart((current) => current.map((item) => item.variant_id === variantId ? { ...item, quantity: Math.max(1, Math.min(item.available_quantity, quantity)) } : item));
+  const removeCartItem = (variantId: string) => setCart((current) => current.filter((item) => item.variant_id !== variantId));
+  const submitCheckout = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setCheckoutBusy(true); setCheckoutMessage(""); setCheckoutResult("");
+    try {
+      const response = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...checkoutForm, checkout_token: checkoutToken, items: cart.map((item) => ({ variant_id: item.variant_id, quantity: item.quantity })) }) });
+      const result = await response.json() as { accepted?: boolean; error?: string; order_number?: string };
+      if (!response.ok || !result.accepted || !result.order_number) throw new Error(result.error || "Your order could not be placed.");
+      setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID());
+      setCheckoutMessage("Your COD order request has been received. Our team will contact you to confirm delivery details.");
+    } catch (error) { setCheckoutMessage(error instanceof Error ? error.message : "Checkout is unavailable. Please try again."); }
+    finally { setCheckoutBusy(false); }
+  };
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -165,7 +200,7 @@ function Storefront() {
           <div className="live-catalogue" aria-live="polite">
             <div className="live-catalogue-heading">
               <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>Featured pieces</h3></div>
-              <span>REAL LISTINGS · UPDATED BY OUR TEAM</span>
+              <div className="live-catalogue-actions"><span>REAL LISTINGS · UPDATED BY OUR TEAM</span><button type="button" className="cart-open-button" disabled={!cart.length} onClick={() => { setCheckoutOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)}) · {formatPrice(cartSubtotal)}</button></div>
             </div>
             {catalogueState === "loading" && <p className="catalogue-feedback">Loading available listings…</p>}
             {catalogueState === "error" && <p className="catalogue-feedback">The live catalogue is not connected yet. Please contact our team for current collections.</p>}
@@ -178,13 +213,33 @@ function Storefront() {
                     <span className="product-audience">{product.audience} · {product.category}</span>
                     <h4>{product.name}</h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
-                    <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><a href={whatsapp(`Assalamu Alaikum, I am interested in ${product.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">Enquire ↗</a></div>
+                    {product.variants.length ? <label className="product-variant-select"><span>SIZE / COLOUR</span><select value={selectedVariants[product.id] || product.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [product.id]: event.target.value }))}>{product.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <span className="product-stock-note">Contact us for current availability</span>}
+                    <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong>{product.variants.length && product.retail_price_paisa !== null ? <button type="button" onClick={() => addToCart(product)}>Add to cart +</button> : <a href={whatsapp(`Assalamu Alaikum, I am interested in ${product.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">Enquire ↗</a>}</div>
                   </div>
                 </article>
               ))}
             </div>}
           </div>
         </section>
+
+        {checkoutOpen && <div className="checkout-backdrop"><section className="checkout-panel" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
+          <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Cash on delivery</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
+          {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p><button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
+            <div className="checkout-items">{cart.map((item) => <div className="checkout-item" key={item.variant_id}><div><strong>{item.name}</strong><span>{[item.size, item.color].filter(Boolean).join(" / ") || item.sku || "Standard"}</span><small>{formatPrice(item.unit_price_paisa)} each</small></div><div className="checkout-quantity"><button type="button" aria-label="Decrease quantity" onClick={() => item.quantity === 1 ? removeCartItem(item.variant_id) : changeCartQuantity(item.variant_id, item.quantity - 1)}>−</button><span>{item.quantity}</span><button type="button" aria-label="Increase quantity" disabled={item.quantity >= item.available_quantity} onClick={() => changeCartQuantity(item.variant_id, item.quantity + 1)}>+</button></div><strong>{formatPrice(item.unit_price_paisa * item.quantity)}</strong></div>)}</div>
+            <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong><span>Delivery fee</span><strong>Confirmed by our team</strong><span>Payment</span><strong>Cash on delivery</strong></div>
+            <div className="checkout-fields">
+              <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={checkoutForm.customer_name} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_name: event.target.value })} /></label>
+              <label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={checkoutForm.phone} onChange={(event) => setCheckoutForm({ ...checkoutForm, phone: event.target.value })} /></label>
+              <label>Email (optional)<input type="email" maxLength={160} autoComplete="email" value={checkoutForm.email} onChange={(event) => setCheckoutForm({ ...checkoutForm, email: event.target.value })} /></label>
+              <label>City<input required minLength={2} maxLength={80} autoComplete="address-level2" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /></label>
+              <label className="checkout-address">Complete delivery address<textarea required minLength={8} maxLength={300} rows={3} autoComplete="street-address" value={checkoutForm.delivery_address} onChange={(event) => setCheckoutForm({ ...checkoutForm, delivery_address: event.target.value })} /></label>
+              <label className="checkout-address">Order note (optional)<textarea maxLength={500} rows={2} value={checkoutForm.customer_note} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_note: event.target.value })} /></label>
+            </div>
+            <p className="checkout-disclaimer">No online payment is collected. Delivery charges and final availability are confirmed by De VERVE before dispatch.</p>
+            {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
+            <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length}>{checkoutBusy ? "Placing order…" : "Place COD order"} <span>↗</span></button>
+          </form>}
+        </section></div>}
 
         <section className="wholesale-section" id="wholesale">
           <div className="wholesale-art">
