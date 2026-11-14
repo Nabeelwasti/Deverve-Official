@@ -68,6 +68,12 @@ class FakeStatement {
       const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
       return { success: true, results: rows.slice(0, v[0]) };
     }
+    if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key FROM products")) {
+      const category = q.includes("category = ?") ? v[0] : null;
+      const limit = v[v.length - 1];
+      const rows = [...this.db.products.values()].filter((row) => row.status === "published" && (!category || row.category === category));
+      return { success: true, results: rows.slice(0, limit) };
+    }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
       return { success: true, results: rows };
