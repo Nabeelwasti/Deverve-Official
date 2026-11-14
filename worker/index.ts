@@ -1051,7 +1051,20 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         : await env.DB.prepare(
             "SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key FROM products WHERE status = 'published' ORDER BY created_at DESC LIMIT ?",
           ).bind(limit).all<ProductRow>();
-      return json({ products: rows.results ?? [] });
+      const products = rows.results ?? [];
+      if (!products.length) return json({ products: [] });
+      const productIds = products.map((product) => product.id);
+      const placeholders = productIds.map(() => "?").join(",");
+      const variants = await env.DB.prepare(
+        "SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500",
+      ).bind(...productIds).all<PublicVariantRow>();
+      const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
+      for (const variant of variants.results ?? []) {
+        const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
+        if (available < 1) continue;
+        variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
+      }
+      return json({ products: products.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })) });
     } catch {
       return error("Catalogue is temporarily unavailable", 503);
     }
