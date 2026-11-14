@@ -104,6 +104,22 @@ function Storefront() {
     finally { setCheckoutBusy(false); }
   };
 
+  const openRentalRequest = (vehicleId = "") => {
+    setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", destination: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
+    setRentalMessage(""); setRentalReference(""); setRentalOpen(true);
+  };
+  const submitRentalRequest = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); setRentalBusy(true); setRentalMessage(""); setRentalReference("");
+    try {
+      const response = await fetch("/api/rentals", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...rentalForm, pickup_at: new Date(rentalForm.pickup_at).toISOString(), return_at: new Date(rentalForm.return_at).toISOString() }) });
+      const result = await response.json() as { accepted?: boolean; reference_code?: string; message?: string; error?: string };
+      if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
+      setRentalReference(result.reference_code ?? "");
+      setRentalMessage(result.message || "Your rental request has been received. Our team will confirm availability and terms.");
+    } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
+    finally { setRentalBusy(false); }
+  };
+
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSending(true);
