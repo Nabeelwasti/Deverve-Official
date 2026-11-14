@@ -173,7 +173,7 @@ function Storefront() {
             {catalogueState === "ready" && <div className="product-grid">
               {products.map((product) => (
                 <article className="product-card" key={product.id}>
-                  <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>
+                  {product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
                     <span className="product-audience">{product.audience} · {product.category}</span>
                     <h4>{product.name}</h4>
