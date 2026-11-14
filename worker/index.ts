@@ -617,7 +617,7 @@ async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): 
       const results = await env.DB.batch(statements);
       if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Quotation could not be saved", 409);
       return json({ created: true, quote_id: id, status: "prepared", quoted_total_paisa: total, approval_url: "/wholesale/quote/" + token }, 201);
-    } catch { return error("Wholesale quotation could not be saved", 503); }
+    } catch (caught) { console.error("[wholesale_quote_create] failed", caught instanceof Error ? caught.message : "unknown error"); return error("Wholesale quotation could not be saved", 503); }
   }
 
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
