@@ -1215,9 +1215,99 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
   }
 }
 
+
+type StaffRole = "manager" | "catalogue" | "orders" | "rental" | "viewer";
+async function adminStaffRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const collection = path === "/api/admin/staff";
+  const match = path.match(/^\/api\/admin\/staff\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Staff service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (admin.role !== "owner") return error("Only the owner can manage staff access", 403);
+  if (request.method === "GET" && collection) {
+    try {
+      const users = await env.DB.prepare("SELECT id, email, role, is_active, created_at, last_login_at FROM admin_users ORDER BY created_at ASC").all<{id:string;email:string;role:string;is_active:number;created_at:string;last_login_at:string|null}>();
+      const invites = await env.DB.prepare("SELECT id, email, role, expires_at, created_at FROM admin_invites WHERE accepted_at IS NULL AND expires_at > ? ORDER BY created_at DESC LIMIT 50").bind(new Date().toISOString()).all<{id:string;email:string;role:string;expires_at:string;created_at:string}>();
+      return json({ users: users.results ?? [], invites: invites.results ?? [] });
+    } catch { return error("Staff list could not be loaded", 503); }
+  }
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (collection && request.method === "POST") {
+    const body = await readJson(request);
+    const email = cleanText(body?.email, 160).toLowerCase();
+    const role = cleanText(body?.role, 24) as StaffRole;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !["manager", "catalogue", "orders", "rental", "viewer"].includes(role)) return error("Enter a valid staff email and role", 400);
+    try {
+      const existing = await env.DB.prepare("SELECT id FROM admin_users WHERE email = ? COLLATE NOCASE LIMIT 1").bind(email).first<{id:string}>();
+      if (existing) return error("This email already has a staff account", 409);
+      const pending = await env.DB.prepare("SELECT id FROM admin_invites WHERE email = ? COLLATE NOCASE AND accepted_at IS NULL AND expires_at > ? LIMIT 1").bind(email, new Date().toISOString()).first<{id:string}>();
+      if (pending) return error("A valid invitation already exists for this email", 409);
+      const id = crypto.randomUUID();
+      const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const expires = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO admin_invites (id,email,role,token_hash,invited_by,expires_at) VALUES (?,?,?,?,?,?)").bind(id,email,role,await sha256(token),admin.admin_user_id,expires),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'staff.invited','admin_invite',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({email,role,expires_at:expires})),
+      ]);
+      return json({ created:true, invite:{id,email,role,expires_at:expires,invite_url:"/admin/invite/"+token } },201);
+    } catch { return error("Staff invitation could not be created",503); }
+  }
+  if (match && request.method === "PATCH") {
+    const targetId = match[1];
+    if (targetId === admin.admin_user_id) return error("You cannot change your own role or access here", 409);
+    const body = await readJson(request);
+    if (!body || (body.role !== undefined && !["manager","catalogue","orders","rental","viewer"].includes(String(body.role))) || (body.is_active !== undefined && ![0,1,true,false].includes(body.is_active as boolean))) return error("Choose a valid role or account status",400);
+    try {
+      const target = await env.DB.prepare("SELECT id,email,role,is_active FROM admin_users WHERE id = ? LIMIT 1").bind(targetId).first<{id:string;email:string;role:string;is_active:number}>();
+      if (!target) return error("Staff account not found",404);
+      if (target.role === "owner") return error("Owner access cannot be changed from staff management",403);
+      const role = body.role === undefined ? target.role : String(body.role);
+      const active = body.is_active === undefined ? target.is_active : (body.is_active === true || body.is_active === 1 ? 1 : 0);
+      const now = new Date().toISOString();
+      await env.DB.batch([
+        env.DB.prepare("UPDATE admin_users SET role = ?, is_active = ? WHERE id = ? AND role <> 'owner'").bind(role,active,targetId),
+        env.DB.prepare("UPDATE admin_sessions SET revoked_at = ? WHERE admin_user_id = ? AND revoked_at IS NULL AND ? = 0").bind(now,targetId,active),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'staff.access_updated','admin_user',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,targetId,JSON.stringify({email:target.email,from_role:target.role,to_role:role,from_active:target.is_active,to_active:active})),
+      ]);
+      return json({updated:true,id:targetId,role,is_active:active});
+    } catch { return error("Staff access could not be updated",503); }
+  }
+  return error("Method not allowed",405);
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
+
+
+  if (path === "/api/admin/invites/accept" && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified",403);
+    const body = await readJson(request);
+    const token = cleanText(body?.token,100);
+    const password = typeof body?.password === "string" ? body.password : "";
+    if (!/^[A-Za-z0-9_-]{40,50}$/.test(token) || password.length < 12 || password.length > 128) return error("Use a valid invitation and a password of at least 12 characters",400);
+    try {
+      const tokenHash = await sha256(token);
+      const invite = await env.DB.prepare("SELECT id,email,role,expires_at,accepted_at FROM admin_invites WHERE token_hash = ? LIMIT 1").bind(tokenHash).first<{id:string;email:string;role:string;expires_at:string;accepted_at:string|null}>();
+      if (!invite || invite.accepted_at || invite.expires_at <= new Date().toISOString()) return error("This invitation is invalid or has expired",410);
+      const existing = await env.DB.prepare("SELECT id FROM admin_users WHERE email = ? COLLATE NOCASE LIMIT 1").bind(invite.email).first<{id:string}>();
+      if (existing) return error("An account already exists for this invitation email",409);
+      const userId = crypto.randomUUID();
+      const sessionToken = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
+      const hash = await passwordHash(password);
+      const results = await env.DB.batch([
+        env.DB.prepare("INSERT INTO admin_users (id,email,password_hash,role) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM admin_invites WHERE id = ? AND token_hash = ? AND accepted_at IS NULL AND expires_at > ?) AND NOT EXISTS (SELECT 1 FROM admin_users WHERE email = ? COLLATE NOCASE)").bind(userId,invite.email,hash,invite.role,invite.id,tokenHash,new Date().toISOString(),invite.email),
+        env.DB.prepare("INSERT INTO admin_sessions (id,admin_user_id,token_hash,expires_at) SELECT ?,?,?,? WHERE EXISTS (SELECT 1 FROM admin_users WHERE id = ?)").bind(crypto.randomUUID(),userId,await sha256(sessionToken),expiresAt,userId),
+        env.DB.prepare("UPDATE admin_invites SET accepted_at = ? WHERE id = ? AND accepted_at IS NULL AND EXISTS (SELECT 1 FROM admin_users WHERE id = ?)").bind(new Date().toISOString(),invite.id,userId),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'staff.invite_accepted','admin_user',?,? WHERE EXISTS (SELECT 1 FROM admin_users WHERE id = ?)").bind(crypto.randomUUID(),null,userId,JSON.stringify({email:invite.email,role:invite.role}),userId),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) return error("Invitation could not be accepted. It may already have been used.",409);
+      return json({authenticated:true,admin:{id:userId,email:invite.email,role:invite.role}},201,{"set-cookie":sessionCookie(sessionToken,12*60*60)});
+    } catch { return error("Invitation acceptance could not be completed",503); }
+  }
 
   if (path === "/api/admin/bootstrap" && request.method === "POST") {
     if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
@@ -1318,6 +1408,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       return error("Sign-out could not be completed", 503);
     }
   }
+
+  const staffResponse = await adminStaffRoutes(request, env, url);
+  if (staffResponse) return staffResponse;
 
   const orderResponse = await adminOrderRoutes(request, env, url);
   if (orderResponse) return orderResponse;
