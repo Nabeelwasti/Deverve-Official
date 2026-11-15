@@ -210,12 +210,16 @@ test("customer order history only returns orders owned by the authenticated acco
   const firstId = (await first.json()).customer.id;
   const secondId = (await second.json()).customer.id;
   db.orders.set("order-first", { id: "order-first", customer_id: firstId, order_number: "DV-OWNED-001", city: "Jhelum", subtotal_paisa: 10000, delivery_fee_paisa: 0, total_paisa: 10000, payment_method: "cod", payment_status: "pending", order_status: "pending", delivery_fee_status: "pending_quote", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  db.orderStatusEvents.push({ id: "event-first", order_id: "order-first", from_status: null, to_status: "pending", actor_type: "system", note: "Order received", created_at: new Date().toISOString() });
   const firstCookie = first.headers.get("set-cookie").split(";")[0];
   const secondCookie = second.headers.get("set-cookie").split(";")[0];
   const firstOrders = await handleRequest(new Request(origin + "/api/customer/orders", { headers: { cookie: firstCookie } }), env(db));
   const secondOrders = await handleRequest(new Request(origin + "/api/customer/orders", { headers: { cookie: secondCookie } }), env(db));
-  assert.equal((await firstOrders.json()).orders.length, 1);
-  assert.equal((await secondOrders.json()).orders.length, 0);
+  const firstPayload = await firstOrders.json();
+  const secondPayload = await secondOrders.json();
+  assert.equal(firstPayload.orders.length, 1);
+  assert.equal(firstPayload.orders[0].events.length, 1);
+  assert.equal(secondPayload.orders.length, 0);
   assert.notEqual(firstId, secondId);
 });
 
@@ -294,6 +298,7 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, order_id, from_status, to_status, actor_type, note, created_at FROM order_status_events WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderStatusEvents.filter((row) => ids.has(row.order_id)) }; }
     if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) }; }
     if (q.startsWith("SELECT id, reference_code, vehicle_id, customer_name, pickup_city, pickup_address, destination_city, destination_address, pickup_at, return_at, driver_option, status, created_at FROM rental_requests WHERE customer_id = ?")) return { success: true, results: [...this.db.rentalRequests.values()].filter((row) => row.customer_id === v[0]) };
@@ -356,6 +361,7 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO order_status_events")) { const id = v[0], order_id = v[1], from_status = v[2], to_status = v[3]; const actor_type = q.includes("'admin'") ? "admin" : "system"; const actor_id = actor_type === "admin" ? v[4] : null; const note = actor_type === "admin" ? v[5] : "Order received"; this.db.orderStatusEvents.push({ id, order_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() }); return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO customers")) {
       const [id, email, password_hash, full_name, phone] = v;
       if ([...this.db.customers.values()].some((row) => row.email.toLowerCase() === email.toLowerCase())) throw new Error("UNIQUE constraint failed: customers.email");
@@ -656,6 +662,7 @@ class FakeStatement {
 class FakeD1 {
   customers = new Map();
   customerSessions = new Map();
+  orderStatusEvents = [];
   admins = new Map();
   sessions = new Map();
   attempts = new Map();
