@@ -15,7 +15,7 @@ required_tables = {
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
-    "store_settings", "content_revisions",
+    "store_settings", "content_revisions", "product_media_assets",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -32,6 +32,9 @@ assert "checkout_token" in order_columns, "Checkout idempotency column is missin
 quote_columns = {row[1] for row in db.execute("PRAGMA table_info(wholesale_quotes)")}
 assert {"approval_token", "delivery_address", "city", "converted_order_id"} <= quote_columns, "Wholesale approval fields are missing"
 assert "source_quote_id" in order_columns, "Wholesale order link is missing"
+media_gallery_columns = {row[1] for row in db.execute("PRAGMA table_info(product_media_assets)")}
+assert {"product_id", "media_asset_id", "position", "is_primary"} <= media_gallery_columns, "Product media gallery fields are missing"
+assert any(row[1] == "idx_product_media_one_primary" and row[2] == 1 for row in db.execute("PRAGMA index_list(product_media_assets)")), "Each product must have at most one primary media item"
 assert "wholesale_quote_items" in actual_tables, "Wholesale quote item table is missing"
 vehicle_columns = {row[1] for row in db.execute("PRAGMA table_info(vehicles)")}
 rental_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
