@@ -30,9 +30,12 @@ export interface Env {
 }
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
-  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim(),to=env.OWNER_NOTIFICATION_EMAIL?.trim();
-  if(!apiKey||!from||!to||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
-  const now=new Date().toISOString();
+  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();
+  if(!apiKey||!from||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))return;
+  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
+  try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
+  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)):[];
+  if(!to.length)return;
   let rows:Record<string,unknown>[]=[];
   try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
   for(const row of rows){
@@ -53,7 +56,7 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
       const textBody=template==="owner_payment_succeeded"?"Safepay confirmed an online payment. Review the order and reconciliation record in the owner panel.":template==="owner_rental_created"?"A new vehicle rental request was submitted. Review the requested dates and vehicle in the owner panel.":"A new website order was submitted. Review the order, delivery quotation and payment status in the owner panel.";
       const safeSubject=subject.replace(/[&<>"]/g,"");
       const html="<div style='font-family:Arial,sans-serif;color:#12345a'><h2>"+safeSubject+"</h2><p>"+textBody+"</p><p><strong>Reference:</strong> "+reference.replace(/[&<>"]/g,"")+"</p><p><a href='https://deverve-official.pages.dev/admin'>Open De VERVE owner panel</a></p></div>";
-      const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to:[to],subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
+      const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
       const payload=await response.json().catch(()=>({})) as {id?:string};
       if(!response.ok)throw new Error("resend_http_"+response.status);
       await env.DB.batch([
@@ -1822,7 +1825,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key='cnic_uploads_enabled'").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false,notification_emails:{primary:"deverve61@gmail.com",secondary:[],enabled:true}};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -1830,8 +1833,11 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   const hasLinks=body?.social_links!==undefined;
   const hasBrand=body?.brand_assets!==undefined;
   const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
-  if(!hasLinks&&!hasBrand&&!hasCnicUploads)return error("Submit website settings to save",400);
+  const hasNotificationEmails=body?.notification_emails!==undefined;
+  if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
+  let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
+  if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid primary email, up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(address))return error("One of the secondary email addresses is invalid",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
   const statements: D1PreparedStatement[]=[];
   const now=new Date().toISOString();
   let links:SocialLinks|undefined;
@@ -1844,6 +1850,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})));
   }
+  if(hasNotificationEmails&&notificationEmails){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('notification_emails',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(notificationEmails),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.notification_emails_updated','store_settings','notification_emails',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({primary:notificationEmails.primary,secondary_count:notificationEmails.secondary.length,enabled:notificationEmails.enabled})));}
   if(hasCnicUploads){
     const enabled=body?.cnic_uploads_enabled===true;
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('cnic_uploads_enabled',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(enabled),admin.admin_user_id,now));
@@ -1865,7 +1872,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
