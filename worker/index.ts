@@ -762,7 +762,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
       if (!current) return error("Order not found", 404);
       if (!["pending", "confirmed"].includes(current.order_status)) return error("A delivery quotation can only be prepared before fulfilment begins.", 409);
       if (current.free_delivery === 1) return error("This order already qualifies for its single free-delivery offer. No additional delivery charge can be added.", 409);
-      const total = current.subtotal_paisa - current.discount_amount_paisa + Number(deliveryFee);
+      const total = current.subtotal_paisa - (current.discount_amount_paisa ?? 0) + Number(deliveryFee);
       if (!Number.isSafeInteger(total)) return error("The final order total is outside the supported range.", 400);
       const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
       const tokenHash = await sha256(token);
