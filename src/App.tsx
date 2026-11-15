@@ -58,6 +58,8 @@ function Storefront() {
     if(!brandAssets.favicon_id)return;
     const icon=document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if(icon){icon.href="/media/"+brandAssets.favicon_id;icon.type="";}
+    const touchIcon=document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+    if(touchIcon)touchIcon.href="/media/"+brandAssets.favicon_id;
   },[brandAssets.favicon_id]);
 
   useEffect(() => {
