@@ -399,3 +399,5 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .catalogue-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 0 4px;color:#667b90;font-size:12px}
 .catalogue-pagination .button{min-height:40px}
 @media(max-width:520px){.catalogue-pagination{align-items:stretch;flex-direction:column}.catalogue-pagination .button{width:100%}}
+
+.footer-social-links a{display:inline-flex;align-items:center;gap:7px}.footer-social-icon{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid currentColor;border-radius:50%;font-size:12px;font-weight:800;line-height:1}.footer-social-label{text-transform:capitalize}.site-credit{display:block;margin-top:10px;color:#aebdd0;font-size:11px;letter-spacing:.04em}.site-credit strong{color:#fff}
