@@ -1416,13 +1416,13 @@ test("owner notifications are private, readable and can be marked as read", asyn
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const unauthenticated = await handleRequest(new Request(origin + "/api/admin/notifications"), env(db));
   assert.equal(unauthenticated.status, 401);
-  db.notifications.set("notice-1", { id:"notice-1", event_type:"order.created", title:"New order DV-TEST", body:"Review order status.", entity_type:"order", entity_id:"order-1", is_read:0, created_at:new Date().toISOString(), read_at:null });
+  db.notifications.set("123e4567-e89b-42d3-a456-426614174000", { id:"123e4567-e89b-42d3-a456-426614174000", event_type:"order.created", title:"New order DV-TEST", body:"Review order status.", entity_type:"order", entity_id:"order-1", is_read:0, created_at:new Date().toISOString(), read_at:null });
   const list = await handleRequest(new Request(origin + "/api/admin/notifications", { headers:{cookie} }), env(db));
   assert.equal(list.status, 200);
   assert.equal((await list.json()).unread, 1);
   const read = await handleRequest(request("/api/admin/notifications/notice-1/read","PATCH",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(read.status,200);
-  assert.equal(db.notifications.get("notice-1").is_read,1);
+  assert.equal(db.notifications.get("123e4567-e89b-42d3-a456-426614174000").is_read,1);
   const all = await handleRequest(request("/api/admin/notifications/read-all","POST",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(all.status,200);
 });
