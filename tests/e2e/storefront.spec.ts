@@ -96,3 +96,13 @@ test("rental request form validates and submits without creating a real booking"
   expect(submitted?.pickup_at).toEqual(expect.any(String));
   expect(submitted?.return_at).toEqual(expect.any(String));
 });
+
+test("bilingual customer policies are accessible from the storefront", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Policies", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /clear by design/i })).toBeVisible();
+  await expect(page.getByText("Returns, exchanges & complaints")).toBeVisible();
+  await expect(page.getByText("واپسی، تبدیلی اور شکایات")).toBeVisible();
+  await expect(page.getByText(/CNIC documents/i)).toBeVisible();
+});
