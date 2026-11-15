@@ -141,7 +141,7 @@ test("CNIC document uploads stay disabled until a retention policy is approved",
   const response = await handleRequest(request("/api/rentals/DV-R-20261115-ABC123/documents", "POST", {}), env(db));
   assert.equal(response.status, 503);
   const payload = await response.json();
-  assert.match(payload.error, /retention policy/i);
+  assert.match(payload.error, /disabled/i);
 });
 
 class FakeStatement {
@@ -150,6 +150,7 @@ class FakeStatement {
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) return this.db.storeSettings.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
       const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
@@ -270,6 +271,7 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO store_settings")) { const key = q.includes("cnic_uploads_enabled") ? "cnic_uploads_enabled" : v[0]; const value = q.includes("cnic_uploads_enabled") ? v[0] : v[1]; this.db.storeSettings.set(key, { setting_value_json: value }); return { success:true, meta:{changes:1} }; }
     if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
       const [fee, total, tokenHash, expiresAt, quotedAt, updatedAt, id] = v;
       const row = this.db.orders.get(id);
@@ -563,6 +565,7 @@ class FakeD1 {
   vehicles = new Map();
   rentalRequests = new Map();
   audits = [];
+  storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
     const results = [];
