@@ -23,6 +23,8 @@ type CartLine = { variant_id: string; product_id: string; name: string; sku: str
 
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeScreen, setActiveScreen] = useState<"home" | "fashion" | "wholesale" | "mobility" | "contact" | "favourites">("home");
+  const [favourites, setFavourites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("deverve-favourites") || "[]") as string[]; } catch { return []; } });
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -46,6 +48,8 @@ function Storefront() {
   const [checkoutToken, setCheckoutToken] = useState(() => crypto.randomUUID());
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+
+  useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
 
   useEffect(() => {
     let active = true;
@@ -151,6 +155,8 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
+  const navigate = (screen: typeof activeScreen) => { setActiveScreen(screen); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const toggleFavourite = (productId: string) => setFavourites((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
 
   return (
     <div className="site-shell">
@@ -161,32 +167,26 @@ function Storefront() {
       </div>
 
       <header className="site-header">
-        <a className="brand-lockup" href="#home" aria-label="De VERVE home" onClick={closeMenu}>
+        <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
           <span className="brand-symbol">DV</span>
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
-        </a>
+        </button>
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
-        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation">
-          <a href="#collections" onClick={closeMenu}>Fashion</a>
-          <a href="#wholesale" onClick={closeMenu}>Wholesale</a>
-          <a href="#mobility" onClick={closeMenu}>Car rental</a>
-          <a href="#about" onClick={closeMenu}>Our story</a>
-          <a href="#contact" onClick={closeMenu}>Contact</a>
-        </nav>
-        <a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Let's talk <span>↗</span></a>
+        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button></nav>
+        <div className="header-actions"><button className="header-cart" type="button" onClick={() => { setCheckoutOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
       </header>
 
-      <main id="home">
+      <main id="home" className="store-main" data-screen={activeScreen}>
         <section className="hero">
           <div className="hero-copy">
             <p className="eyebrow"><span className="eyebrow-line" /> FASHION · LIFESTYLE · MOBILITY</p>
             <h1>Elevate<br /><em>your style.</em></h1>
             <p className="hero-description">Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.</p>
             <div className="hero-actions">
-              <a className="button button-primary" href="#collections">Explore fashion <span>↗</span></a>
-              <a className="text-link" href="#wholesale">Wholesale enquiries →</a>
+              <button className="button button-primary" type="button" onClick={() => navigate("fashion")}>Explore fashion <span>↗</span></button>
+              <button className="text-link" type="button" onClick={() => navigate("wholesale")}>Wholesale enquiries →</button>
             </div>
             <div className="hero-footnote"><span className="blue-dot" /> YOUR EVERYDAY VERVE · JHELUM, PAKISTAN</div>
           </div>
@@ -199,7 +199,7 @@ function Storefront() {
             <div className="hero-art-label"><strong>THE EVERYDAY EDIT</strong><span>FASHION / COMFORT / CONFIDENCE</span></div>
             <div className="hero-art-index">DV — 001</div>
           </div>
-          <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><a href="#collections">SCROLL TO EXPLORE ↓</a></div>
+          <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><button type="button" onClick={() => navigate("fashion")}>EXPLORE COLLECTIONS ↗</button></div>
         </section>
 
         <section className="intro-strip" id="about">
@@ -245,6 +245,7 @@ function Storefront() {
                 <article className="product-card" key={product.id}>
                   {product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
+                    <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
                     <span className="product-audience">{product.audience} · {product.category}</span>
                     <h4>{product.name}</h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
@@ -265,6 +266,7 @@ function Storefront() {
           {detailProduct.variants.length > 0 ? <label className="product-variant-select"><span>AVAILABLE SIZE / COLOUR</span><select value={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: event.target.value }))}>{detailProduct.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}
           <div className="product-detail-actions">{detailProduct.variants.length > 0 && detailProduct.retail_price_paisa !== null && <button type="button" className="button button-primary" onClick={() => { addToCart(detailProduct); setDetailProduct(null); }}>Add to cart</button>}<a className="button button-outline" href={whatsapp(`Assalamu Alaikum, I am interested in ${detailProduct.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">WhatsApp enquiry</a><a className="button button-outline" href="mailto:deverve61@gmail.com?subject=Product%20Enquiry">Email enquiry</a></div>
         </section></div>}
+        {activeScreen === "favourites" && <section className="section favourites-section"><div className="section-heading"><div><p className="eyebrow">YOUR SAVED EDIT</p><h2>Favourites</h2></div><button type="button" className="text-link" onClick={() => navigate("fashion")}>Continue shopping →</button></div>{products.filter((product) => favourites.includes(product.id)).length === 0 ? <div className="catalogue-feedback">You have not saved any products yet. Browse the collection and tap Save on anything you like.</div> : <div className="product-grid">{products.filter((product) => favourites.includes(product.id)).map((product) => <article className="product-card" key={product.id}><div className="product-visual product-photo">{product.image_key ? <img src={"/media/" + product.image_key} alt={product.name} loading="lazy"/> : <span>DE VERVE</span>}</div><div className="product-info"><span className="product-audience">{product.audience} · {product.category}</span><h4>{product.name}</h4><strong>{formatPrice(product.retail_price_paisa)}</strong><div className="product-buy-row"><button type="button" onClick={() => setDetailProduct(product)}>View details</button><button type="button" className="favourite-toggle is-saved" onClick={() => toggleFavourite(product.id)}>♥ Remove</button></div></div></article>)}</div></section>}
         {checkoutOpen && <div className="checkout-backdrop"><section className="checkout-panel" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Cash on delivery</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
           {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p><button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
@@ -371,6 +373,7 @@ function Storefront() {
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
+      <nav className="mobile-dock" aria-label="Quick navigation"><button type="button" className={activeScreen === "home" ? "active" : ""} onClick={() => navigate("home")}><span>⌂</span>Home</button><button type="button" className={activeScreen === "fashion" ? "active" : ""} onClick={() => navigate("fashion")}><span>◇</span>Shop</button><button type="button" onClick={() => { setCheckoutOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}><span>▣</span>Cart <i>{cart.reduce((sum,item)=>sum+item.quantity,0)}</i></button><button type="button" className={activeScreen === "favourites" ? "active" : ""} onClick={() => navigate("favourites")}><span>♡</span>Saved</button><button type="button" className={activeScreen === "mobility" ? "active" : ""} onClick={() => navigate("mobility")}><span>↗</span>Rent</button></nav>
       <InstallPrompt />
       <a className="floating-whatsapp" href={whatsapp("Assalamu Alaikum, I would like to enquire about De VERVE.")} target="_blank" rel="noreferrer" aria-label="Chat with De VERVE on WhatsApp">✆</a>
     </div>
