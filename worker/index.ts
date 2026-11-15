@@ -1352,22 +1352,49 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
-  const body=await readJson(request);const raw=body?.social_links;
-  if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid social account links",400);
-  const links:SocialLinks={};
-  for(const platform of socialPlatforms){const value=cleanText((raw as Record<string,unknown>)[platform],500);if(!value)continue;try{const parsed=new URL(value);if(parsed.protocol!=="https:"||!parsed.hostname.includes("."))return error("Social links must be valid HTTPS URLs",400);links[platform]=parsed.toString();}catch{return error("One of the social links is invalid",400);}}
+  const body=await readJson(request);
+  const hasLinks=body?.social_links!==undefined;
+  const hasBrand=body?.brand_assets!==undefined;
+  if(!hasLinks&&!hasBrand)return error("Submit website settings to save",400);
+  const statements: D1PreparedStatement[]=[];
+  const now=new Date().toISOString();
+  let links:SocialLinks|undefined;
+  let brandAssets:{logo_id:string|null;favicon_id:string|null}|undefined;
+  if(hasLinks){
+    const raw=body?.social_links;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid social account links",400);
+    links={};
+    for(const platform of socialPlatforms){const value=cleanText((raw as Record<string,unknown>)[platform],500);if(!value)continue;try{const parsed=new URL(value);if(parsed.protocol!=="https:"||!parsed.hostname.includes("."))return error("Social links must be valid HTTPS URLs",400);links[platform]=parsed.toString();}catch{return error("One of the social links is invalid",400);}}
+    statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})));
+  }
+  if(hasBrand){
+    const raw=body?.brand_assets;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid brand asset settings",400);
+    const source=raw as Record<string,unknown>;
+    const logoId=source.logo_id===null||source.logo_id===""?null:cleanText(source.logo_id,64);
+    const faviconId=source.favicon_id===null||source.favicon_id===""?null:cleanText(source.favicon_id,64);
+    for(const id of [logoId,faviconId]){
+      if(id&&!/^[a-f0-9-]{36}$/i.test(id))return error("Choose a valid logo or favicon image",400);
+      if(id){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(!media)return error("A selected brand image is unavailable",404);}
+    }
+    brandAssets={logo_id:logoId,favicon_id:faviconId};
+    statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('brand_assets',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(brandAssets),admin.admin_user_id,now));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.brand_assets_updated','store_settings','brand_assets',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({logo_set:Boolean(logoId),favicon_set:Boolean(faviconId)})));
+  }
   try{
-    const now=new Date().toISOString();
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now),
-      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})),
-    ]);
-    return json({updated:true,social_links:links});
-  }catch{return error("Social links could not be saved",503);}
+    await env.DB.batch(statements);
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{})});
+  }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
-    try{const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='social_links' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();let links:SocialLinks={};if(row){try{links=JSON.parse(row.setting_value_json) as SocialLinks;}catch{}}return json({social_links:links});}catch{return error("Store settings are temporarily unavailable",503);}
+    try{
+      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets')").all<{setting_key:string;setting_value_json:string}>();
+      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null}};
+      for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
+      return json(settings);
+    }catch{return error("Store settings are temporarily unavailable",503);}
   }
   return null;
 }
@@ -1577,7 +1604,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const publicMedia = url.pathname.match(/^\/media\/([a-f0-9-]{36})$/i);
   if (publicMedia && request.method === "GET") {
     try {
-      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM product_media_assets pm JOIN products p ON p.id = pm.product_id WHERE pm.media_asset_id = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available')) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
+      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM product_media_assets pm JOIN products p ON p.id = pm.product_id WHERE pm.media_asset_id = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM store_settings s WHERE s.setting_key='brand_assets' AND s.is_public=1 AND (json_extract(s.setting_value_json,'$.logo_id')=m.id OR json_extract(s.setting_value_json,'$.favicon_id')=m.id))) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
       if (!asset) return error("Media not found", 404);
       const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
       return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
