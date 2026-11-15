@@ -55,8 +55,8 @@ Order creation writes a system status event. Admin status transitions write an a
 
 ## Verification
 
-- CI run #43704058411 passed: build/type-check, security-header artifact check, 27 Worker/CNIC tests, 12-migration / 36-table schema check and four desktop/mobile Playwright tests.
-- Production smoke #43704125125 passed: Pages health, D1 connectivity, Turnstile verifier/Siteverify negative test, CNIC retention Worker bindings and deployed security headers.
+- CI run #43704058411 passed: build/type-check, security-header artifact check, 31 Worker/CNIC tests, 13-migration / 36-table schema check and four desktop/mobile Playwright tests.
+- Production smoke #43707104164 passed: Pages health, D1 connectivity, Turnstile verifier/Siteverify negative test, CNIC retention Worker bindings and deployed security headers.
 - Customer account UI: `/account`.
 - Admin UI: `/admin`.
 
@@ -73,3 +73,12 @@ This is a tested production deployment with a limited set of live commerce featu
 - Sandbox and production credentials are separate. This code intentionally refuses to run unless `SAFEPAY_ENV=sandbox`; no live host or live mode is present.
 - CI run #43705027659 passed the type-check/build, 29 Worker tests, 12-migration / 36-table schema validation and four Playwright storefront tests. Production smoke run #43705100039 passed live health/D1, Turnstile, CNIC-retention binding and security-header checks.
 - The latest Pages deployment was successful for commit `1a5e517c722fe24a99e5fdca9792244f6904c5d1`. Payment secrets are not configured, so the public checkout continues to offer COD only.
+
+
+## Latest Safepay safety hardening — 15 November 2026
+
+- Failed payment webhooks leave the tracker retryable because Safepay may send a later success event for the same tracker.
+- Order cancellation checks for active or successful Safepay attempts and paid state. The SQL update repeats those conditions to guard against races.
+- CI #43707019218 passed 31 Worker/CNIC tests and four Playwright tests; production smoke #43707104164 passed.
+- Production schema includes `orders.payment_provider` with `manual` default. The public payment choice remains disabled because no Safepay sandbox credentials are configured.
+- No real sandbox or live payment transaction has been tested. Do not claim payment processing is ready.

@@ -113,3 +113,16 @@ The site is still **not certified for unrestricted production commerce**. Safepa
 - Do not add secrets to GitHub source, D1, issues or chat. Add them only through Cloudflare Pages production secret settings after the owner creates the sandbox merchant account. Keep `SAFEPAY_ENV` set to `sandbox`.
 
 - Webhook processing supports retry events for the same Safepay tracker: a `payment.failed` attempt remains retryable, because Safepay documents that a shopper can retry on the same tracker and more than one webhook may be delivered for that tracker. A later signed `payment.succeeded` event can therefore reconcile the same attempt.
+
+
+## Payment safety verification — 15 November 2026
+
+- Production D1 has the additive `payment_provider` column on orders, defaulting to `manual`; read-back via `PRAGMA table_info(orders)` confirmed it. Existing payment method constraints remain unchanged.
+- Payment attempt failure events leave the tracker retryable. A signed `payment.failed` webhook does not permanently close the attempt, so a later `payment.succeeded` event for that same tracker can still reconcile the order.
+- Admin cancellation is blocked when a Safepay payment is active or when an order is already marked paid. The database update also repeats the payment-state guard, protecting against a race between webhook processing and cancellation.
+- CI run [#43707019218](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707019218) passed 31 Worker/CNIC tests, schema validation (13 migrations / 36 tables), build/type-check, security-header artifact validation and all four desktop/mobile Playwright tests. The Safepay retry and paid/active-order cancellation regression tests passed.
+- Production smoke [#43707104164](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707104164) passed live Pages/D1 health, Turnstile verifier and negative Siteverify test, CNIC retention bindings, and deployed security headers.
+- Live D1 read-back currently shows one admin owner, three media assets, and zero customers, products, variants, vehicles, orders and rental requests. No test customer or order was written to production.
+- No Safepay sandbox transaction has been made. The checkout adapter remains dormant until the owner has a sandbox merchant account and the three credentials are installed as Cloudflare Pages production secrets. The integration is not a live payment service and must not be advertised as one.
+
+The deployment is still not certified for unrestricted commerce. Returns/refund workflows, notification delivery, payment sandbox transaction verification, merchant live onboarding, legal/policy approval, owner inventory/fleet data and real-device business acceptance remain open.

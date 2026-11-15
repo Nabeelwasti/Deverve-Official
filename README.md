@@ -118,3 +118,13 @@ Customer registration/sign-in, account profile, password change, order/rental hi
 - Order creation and admin status transitions create immutable status-event records; the customer account displays the event timeline.
 - Email verification and password-reset email flows are not enabled because no transactional email provider is configured. Customers can change a password only while signed in.
 - CI run #43704058411 passed 27 Worker/CNIC tests, schema validation and four desktop/mobile storefront browser tests. Production smoke run #43704125125 passed.
+
+
+## Latest payment safety and production verification — 15 November 2026
+
+- Safepay sandbox adapter is server-side and hard-locked to the Safepay sandbox host. It remains hidden in checkout unless the explicit sandbox flag and all three server-side secrets are configured.
+- A signed-in customer can request online payment only after approving the final delivery fee. The amount is read from the order record, never accepted from the browser.
+- Signed webhook processing deduplicates event tokens and checks tracker state, PKR currency and exact order amount. Failed attempts remain retryable on the same tracker. Paid orders and active online-payment sessions cannot be cancelled through the admin workflow.
+- No Safepay credentials or card transactions are configured. COD remains the only available payment method in production.
+- CI [#43707019218](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707019218) passed 31 Worker/CNIC tests, 13-migration / 36-table schema verification and four desktop/mobile browser tests.
+- Production smoke [#43707104164](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707104164) passed. Production D1 read-back: 1 owner admin, 3 media assets, and no customer/product/vehicle/order/rental records.
