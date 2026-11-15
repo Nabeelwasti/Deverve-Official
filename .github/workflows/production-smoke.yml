@@ -1,0 +1,64 @@
+name: Production deployment smoke checks
+
+on:
+  workflow_run:
+    workflows: ["Build and type-check"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Wait for production health and verify database connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://deverve-official.pages.dev"
+          healthy=false
+          for attempt in $(seq 1 30); do
+            if body="$(curl --fail --silent --show-error --max-time 10 "$base/api/health" 2>/dev/null)"; then
+              if [[ "$body" == *'"status":"ok"'* && "$body" == *'"database":"connected"'* ]]; then
+                echo "Production health check passed: $body"
+                healthy=true
+                break
+              fi
+            fi
+            echo "Waiting for Pages deployment and healthy D1 binding (attempt $attempt/30)..."
+            sleep 10
+          done
+          if [[ "$healthy" != true ]]; then
+            echo "Production health check did not become healthy within five minutes."
+            exit 1
+          fi
+
+      - name: Verify deployed security response headers
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://deverve-official.pages.dev"
+          headers="$(curl --fail --silent --show-error --head --max-time 15 "$base/" | tr -d '\r')"
+          required=(
+            "X-Content-Type-Options: nosniff"
+            "Referrer-Policy: strict-origin-when-cross-origin"
+            "X-Frame-Options: DENY"
+            "Permissions-Policy: camera=(), microphone=(), geolocation=()"
+            "Strict-Transport-Security: max-age=31536000"
+          )
+          for header in "${required[@]}"; do
+            if ! grep -qiF "$header" <<<"$headers"; then
+              echo "Missing deployed security header: $header"
+              printf '%s\n' "$headers"
+              exit 1
+            fi
+          done
+          if ! grep -qiF "Content-Security-Policy: default-src 'self'" <<<"$headers"; then
+            echo "Missing expected Content-Security-Policy."
+            printf '%s\n' "$headers"
+            exit 1
+          fi
+          echo "All expected security response headers are present."
