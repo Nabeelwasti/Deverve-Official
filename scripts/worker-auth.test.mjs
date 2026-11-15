@@ -96,6 +96,25 @@ test("customers can request a return only for their delivered order within seven
   assert.equal(duplicate.status, 409);
 });
 
+test("return requests reject undelivered orders and orders outside the seven-day window", async () => {
+  const db = new FakeD1();
+  const registered = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Return Window Customer", phone: "+923001234567", email: "window@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.91", "sec-fetch-site": "same-origin" }), env(db));
+  const cookie = registered.headers.get("set-cookie").split(";")[0];
+  const customerId = (await registered.json()).customer.id;
+  const recentOrderId = crypto.randomUUID(), oldOrderId = crypto.randomUUID();
+  db.orders.set(recentOrderId, { id: recentOrderId, customer_id: customerId, order_status: "processing", updated_at: new Date().toISOString(), order_number: "DV-RETURN-UNDELIVERED" });
+  db.orders.set(oldOrderId, { id: oldOrderId, customer_id: customerId, order_status: "delivered", updated_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(), order_number: "DV-RETURN-EXPIRED" });
+  const payload = { reason: "other", details: "The product did not meet my expectations.", items: [{ order_item_id: crypto.randomUUID(), quantity: 1 }] };
+  const undelivered = await handleRequest(request("/api/customer/orders/" + recentOrderId + "/returns", "POST", payload, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(undelivered.status, 409);
+  const expired = await handleRequest(request("/api/customer/orders/" + oldOrderId + "/returns", "POST", payload, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(expired.status, 409);
+  assert.equal(db.returnRequests.size, 0);
+});
+
 test("return requests can only be refunded after approval and receipt with a manual refund reference", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
