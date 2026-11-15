@@ -502,6 +502,16 @@ interface OrderItemRow {
   quantity: number; unit_price_paisa: number; line_total_paisa: number;
 }
 
+export interface OrderPromotion { code: string; label: string; discountPercent: number; discountAmountPaisa: number; freeDelivery: boolean; }
+export function selectOrderPromotion(subtotalPaisa: number, advancePayment: boolean): OrderPromotion {
+  if (!Number.isSafeInteger(subtotalPaisa) || subtotalPaisa < 0) throw new Error("Invalid order subtotal");
+  if (subtotalPaisa > 4_000_000) return { code: "ORDER_45", label: "45% order discount", discountPercent: 45, discountAmountPaisa: Math.floor(subtotalPaisa * 0.45), freeDelivery: false };
+  if (advancePayment) return { code: "ADVANCE_40", label: "40% advance payment discount", discountPercent: 40, discountAmountPaisa: Math.floor(subtotalPaisa * 0.40), freeDelivery: false };
+  if (subtotalPaisa > 2_000_000) return { code: "ORDER_30", label: "30% order discount", discountPercent: 30, discountAmountPaisa: Math.floor(subtotalPaisa * 0.30), freeDelivery: false };
+  if (subtotalPaisa > 500_000) return { code: "FREE_DELIVERY", label: "Free delivery", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: true };
+  return { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false };
+}
+
 async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/orders" || request.method !== "POST") return null;
   const limited = await enforcePublicRateLimit(request, env, "checkout", 5);
@@ -563,17 +573,19 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       subtotal += lineTotal;
       lines.push({ variant, quantity, lineTotal });
     }
+    const advancePayment = requestedPaymentProvider !== "manual" && env.SAFEPAY_ENV === "production";
+    const promotion = selectOrderPromotion(subtotal, advancePayment);
     const deliveryFee = 0;
-    const total = subtotal + deliveryFee;
+    const total = subtotal - promotion.discountAmountPaisa + deliveryFee;
     const id = crypto.randomUUID();
     const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
     const now = new Date().toISOString();
     const conditions = lines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token, "pending_quote"];
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, promotion.code, promotion.label, promotion.discountAmountPaisa, promotion.freeDelivery ? 1 : 0, note, token, promotion.freeDelivery ? "accepted" : "pending_quote"];
     for (const line of lines) orderValues.push(line.variant.id, line.quantity);
     const statements = [
-      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
     ];
     for (const line of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
