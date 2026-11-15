@@ -126,14 +126,14 @@ class FakeStatement {
     }
     if (q.startsWith("INSERT INTO rental_requests")) {
       const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at] = v;
-      const guardVehicle = v[14];
+      const guardVehicle = v[19];
       if (guardVehicle !== vehicle_id) return { success: true, meta: { changes: 0 } };
       if (vehicle_id) {
         const vehicle = this.db.vehicles.get(vehicle_id);
         const overlap = [...this.db.rentalRequests.values()].some((row) => row.vehicle_id === vehicle_id && ["confirmed", "active"].includes(row.status) && row.pickup_at < return_at && row.return_at > pickup_at);
         if (!vehicle || vehicle.status !== "available" || overlap) return { success: true, meta: { changes: 0 } };
       }
-      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
+      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_city: v[13], pickup_address: v[14], destination_city: v[15], destination_address: v[16], document_upload_token_hash: v[17], document_upload_expires_at: v[18], pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE rental_requests SET vehicle_id = ?")) {
@@ -773,7 +773,8 @@ test("rental requests can be assigned and confirmed only when the vehicle has no
   const returning = new Date(Date.now() + 3 * 86400000).toISOString();
   const requestBody = {
     vehicle_id: vehicleOne, customer_name: "Rental Customer", phone: "+923001234567",
-    email: "renter@example.com", pickup_location: "Jhelum", destination: "Islamabad",
+    email: "renter@example.com", pickup_city: "Jhelum", pickup_address: "House 10, Main Road, Satellite Town",
+    destination_city: "Islamabad", destination_address: "Blue Area, Islamabad",
     pickup_at: pickup, return_at: returning, driver_option: "with_driver",
   };
   const first = await handleRequest(request("/api/rentals", "POST", requestBody), env(db));
