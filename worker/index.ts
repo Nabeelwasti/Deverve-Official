@@ -19,6 +19,7 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  CNIC_UPLOADS_ENABLED?: string;
 }
 interface ProductRow {
   id: string;
@@ -680,6 +681,7 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
   const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
   if (!match || request.method !== "POST") return null;
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (env.CNIC_UPLOADS_ENABLED !== "true") return error("Secure CNIC uploads are temporarily disabled until De VERVE approves and publishes its document-retention policy. Please contact our rental team.", 503);
   const limited = await enforcePublicRateLimit(request, env, "rental-documents", 3);
   if (limited) return limited;
   const length = Number(request.headers.get("content-length") || 0);
@@ -774,14 +776,22 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const id = crypto.randomUUID();
   const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
   const now = new Date().toISOString();
-  const uploadToken = base64Url(crypto.getRandomValues(new Uint8Array(32)));
-  const uploadTokenHash = await sha256(uploadToken);
-  const uploadExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+  const documentUploadsEnabled = env.CNIC_UPLOADS_ENABLED === "true";
+  const uploadToken = documentUploadsEnabled ? base64Url(crypto.getRandomValues(new Uint8Array(32))) : "";
+  const uploadTokenHash = documentUploadsEnabled ? await sha256(uploadToken) : null;
+  const uploadExpiresAt = documentUploadsEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
   try {
     const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
       .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
-    return json({ accepted: true, reference_code: reference, document_upload_token: uploadToken, message: "Your rental request has been received. Availability and terms will be confirmed by De VERVE. You may securely upload CNIC front and back now if requested." }, 201);
+    return json({
+      accepted: true,
+      reference_code: reference,
+      ...(documentUploadsEnabled ? { document_upload_token: uploadToken } : {}),
+      message: documentUploadsEnabled
+        ? "Your rental request has been received. Availability and terms will be confirmed by De VERVE. Upload CNIC images only if our rental team requests them."
+        : "Your rental request has been received. Availability and terms will be confirmed by De VERVE. Please do not send CNIC documents yet; secure uploads are temporarily disabled while our document-retention policy is finalized.",
+    }, 201);
   } catch { return error("Rental request could not be submitted. Please contact De VERVE.", 503); }
 }
 

@@ -55,7 +55,7 @@ These are deliberate boundaries, not fake features:
 - Admin sessions are hashed, HttpOnly, Secure and SameSite=Strict.
 - Product/order stock is checked on the server; the browser is never trusted for final price or stock.
 - R2 is private. Public media delivery checks that the media is assigned to a published product, available vehicle or selected public brand setting.
-- Rental CNIC documents are stored under a private object prefix, use one-time upload tokens, and are accessible only to authorized rental roles. Owners/managers can delete them. **Do not collect real CNIC documents until the business approves and publishes a retention/deletion policy.** Automated expiry/purge is not yet configured.
+- CNIC uploads are **disabled by default**. The rental API does not issue upload tokens unless the Cloudflare Pages environment flag `CNIC_UPLOADS_ENABLED=true` is explicitly configured. Do not enable it until the business approves and publishes a retention/deletion policy and an automated expiry/purge process. When enabled, documents use private R2 storage and one-time upload tokens.
 - Public enquiries, checkout, rental requests and CNIC uploads have atomic D1-backed per-IP rate limits. Raw client IP addresses are not persisted. These limits are a baseline control, not a substitute for Turnstile or bot mitigation against distributed traffic.
 - Do not store payment card data. Keep secrets out of source control.
 - Never invent products, prices, stock, reviews, vehicle availability, brand-authenticity claims or customer records.

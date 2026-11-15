@@ -99,6 +99,14 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   assert.equal(repeat.status, 410);
 });
 
+test("CNIC document uploads stay disabled until a retention policy is approved", async () => {
+  const db = new FakeD1();
+  const response = await handleRequest(request("/api/rentals/DV-R-20261115-ABC123/documents", "POST", {}), env(db));
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.match(payload.error, /retention policy/i);
+});
+
 class FakeStatement {
   constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }
@@ -929,6 +937,9 @@ test("rental requests can be assigned and confirmed only when the vehicle has no
   };
   const first = await handleRequest(request("/api/rentals", "POST", requestBody), env(db));
   assert.equal(first.status, 201);
+  const firstPayload = await first.json();
+  assert.equal(firstPayload.document_upload_token, undefined);
+  assert.match(firstPayload.message, /temporarily disabled/i);
   const firstId = [...db.rentalRequests.keys()][0];
   const second = await handleRequest(request("/api/rentals", "POST", { ...requestBody, vehicle_id: null, customer_name: "Second Customer" }), env(db));
   assert.equal(second.status, 201);
