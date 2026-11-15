@@ -61,7 +61,7 @@ test("delivery fee must be customer-approved before dispatch and acceptance pres
   const accepted = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.55" }), env(db));
   assert.equal(accepted.status, 200);
   assert.equal(db.orders.get(orderId).delivery_fee_status, "accepted");
-  assert.equal(db.audits.some((entry) => entry[2] === "order.delivery_fee_accepted"), true);
+  assert.equal(db.audits.some((entry) => entry.action === "order.delivery_fee_accepted"), true);
   const processing = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "processing" }, adminHeaders), env(db));
   assert.equal(processing.status, 200);
   const dispatched = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "dispatched" }, adminHeaders), env(db));
@@ -95,7 +95,7 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   assert.equal(declined.status, 200);
   assert.equal(db.orders.get(orderId).order_status, "cancelled");
   assert.equal(db.orders.get(orderId).delivery_fee_status, "declined");
-  assert.equal(db.audits.some((entry) => entry[2] === "order.delivery_fee_declined"), true);
+  assert.equal(db.audits.some((entry) => entry.action === "order.delivery_fee_declined"), true);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   const repeat = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(repeat.status, 410);
@@ -259,8 +259,11 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_quoted'")) {
       this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
     }
-    if (q.startsWith("INSERT INTO audit_logs") && (q.includes("'order.delivery_fee_accepted'") || q.includes("'order.delivery_fee_declined'"))) {
-      this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_accepted'")) {
+      this.db.audits.push({ action: "order.delivery_fee_accepted", values: v }); return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_declined'")) {
+      this.db.audits.push({ action: "order.delivery_fee_declined", values: v }); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO enquiries")) {
       const [id, enquiry_type, customer_name, phone, email, message] = v;
