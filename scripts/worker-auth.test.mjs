@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, handleRequest, parseRentalDateTime, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, handleRequest, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -1453,4 +1453,18 @@ test("Safepay checkout URL always matches the selected merchant environment", ()
   assert.equal(new URL(live).searchParams.get("environment"), "production");
   assert.equal(new URL(live).hostname, "api.getsafepay.com");
   assert.equal(new URL(live).searchParams.get("redirect_url"), "https://deverve.example/account?payment=return");
+});
+
+
+test("order promotion selection grants exactly one offer and respects strict spend thresholds", () => {
+  assert.deepEqual(selectOrderPromotion(500000, false), { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false });
+  assert.equal(selectOrderPromotion(500001, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2000000, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2000001, false).code, "ORDER_30");
+  assert.equal(selectOrderPromotion(2000001, true).code, "ADVANCE_40");
+  assert.equal(selectOrderPromotion(4000000, true).code, "ADVANCE_40");
+  assert.equal(selectOrderPromotion(4000001, true).code, "ORDER_45");
+  const advance = selectOrderPromotion(2500000, true);
+  assert.equal(advance.discountAmountPaisa, 1000000);
+  assert.equal(advance.freeDelivery, false);
 });
