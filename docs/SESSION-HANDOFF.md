@@ -127,3 +127,27 @@ After setting them, redeploy the Pages project and verify the owner panel shows 
 7. Confirm the owner-approved rental document retention policy and observe scheduled private-R2 deletion before enabling CNIC uploads.
 8. Add real products, product variants, actual stock, product photos and rental fleet data; run real-device end-to-end acceptance.
 
+
+
+## Latest verified deployment — 15 November 2026
+
+- Latest application code commit deployed: `68873fd34306e10a9c85a5aa9dd242cc021f62d6`.
+- Cloudflare Pages production deployment: `b86d989e` — build and deploy stages succeeded.
+- Build/type-check/Worker tests/schema/browser tests: run #43723279304 succeeded.
+- Expanded production smoke checks: run #43723400580 succeeded. It verified public product catalogue response, missing/unpublished CMS page returns 404, CMS/navigation/owner-notification admin routes reject unauthenticated requests with 401, dynamic `/sitemap.xml`, Turnstile, CNIC retention bindings, database connectivity and security headers.
+- Production D1 additive schema updates were applied and read back successfully: migration 0015 product SEO columns/index; migration 0016 owner notification inbox table/index. Current live D1 still has zero product, order, rental or owner-notification records.
+- Dynamic sitemap includes published products and CMS pages. Product detail routes add canonical/Open Graph metadata and Product JSON-LD. Product metadata is client-rendered after hydration; server-side rendered product HTML is not implemented.
+- CMS is a secure block-based editor, not yet a full freeform drag-and-drop design canvas. Dedicated data-bound gallery/video/product-grid/FAQ block renderers and media-picker UX remain future improvements.
+- Resend email queue and delivery worker are deployed, but Cloudflare Pages production currently has no `RESEND_API_KEY`, `RESEND_FROM_EMAIL` or `OWNER_NOTIFICATION_EMAIL` configured. In-app owner alerts work; email delivery is inactive until these are configured.
+- Safepay production support is deployed behind `SAFEPAY_LIVE_ENABLED=true`, but merchant credentials are not configured in the current Pages environment. COD is the only confirmed active checkout option. JazzCash, Easypaisa and bank transfer are not integrated/active.
+- Rental form already has separate CNIC front/back upload controls, consent and Turnstile. Keep upload disabled until owner-approved retention policy and live deletion verification are complete.
+- Footer developer credit for Syed Nabeel Wasti is styled in dark navy blue.
+
+## Next actions requiring owner inputs
+
+1. Confirm which merchant accounts De VERVE actually has (Safepay, JazzCash, Easypaisa, bank transfer) before implementing/enabling those methods.
+2. Provide a verified Resend sender domain, API key and owner notification inbox through Cloudflare secrets/variables — never paste API keys into GitHub or chat.
+3. Provide real product names, variants, stock, prices, media and actual vehicle/fleet data.
+4. Approve business policies, rental CNIC retention duration and the precise circumstances in which staff may request CNIC documents.
+5. Complete real-world end-to-end payment tests and manual bank reconciliation before enabling any live payment provider.
+
