@@ -2,7 +2,7 @@ import {useEffect,useState} from "react";
 type Section={id:string;section_type:string;content:Record<string,string>;position:number};
 type Page={slug:string;title:string;seo_title:string;seo_description:string;sections:Section[]};
 export default function PublicPage(){const slug=decodeURIComponent(window.location.pathname.replace(/^\/pages\//,"")).slice(0,80);const [page,setPage]=useState<Page|null>(null);const [error,setError]=useState(false);
- useEffect(()=>{let active=true;void fetch("/api/pages/"+encodeURIComponent(slug),{headers:{accept:"application/json"}}).then(async r=>{if(!r.ok)throw new Error("not found");return await r.json() as {page:Page}}).then(d=>{if(active)setPage(d.page);}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[slug]);
+ useEffect(()=>{let active=true;void fetch("/api/pages/"+encodeURIComponent(slug),{headers:{accept:"application/json"}}).then(async r=>{if(!r.ok)throw new Error("not found");return await r.json() as {page:Omit<Page,"sections">;sections:Section[]}}).then(d=>{if(active)setPage({...d.page,sections:d.sections});}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[slug]);
  useEffect(()=>{if(!page)return;document.title=page.seo_title||page.title;let description=document.querySelector<HTMLMetaElement>('meta[name="description"]');if(!description){description=document.createElement("meta");description.name="description";document.head.appendChild(description);}description.content=page.seo_description||"";},[page]);
  if(error)return <main className="public-page"><a href="/">De VERVE</a><h1>Page not found</h1><p>This page may be unpublished or no longer available.</p></main>;
  if(!page)return <main className="public-page"><p>Loading page…</p></main>;
