@@ -1112,7 +1112,7 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
   if (assetMatch && request.method === "DELETE") {
     if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive media", 403);
     try {
-      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? UNION ALL SELECT product_id AS id FROM product_media_assets WHERE media_asset_id = ? LIMIT 1").bind(assetMatch[1], assetMatch[1]).first<{ id: string }>();
+      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? UNION ALL SELECT product_id AS id FROM product_media_assets WHERE media_asset_id = ? UNION ALL SELECT id FROM vehicles WHERE image_key = ? LIMIT 1").bind(assetMatch[1], assetMatch[1], assetMatch[1]).first<{ id: string }>();
       if (used) return error("This media item is assigned to a product. Remove it from the product gallery before archiving.", 409);
       const result = await env.DB.prepare("UPDATE media_assets SET status = 'archived', updated_at = ? WHERE id = ? AND status <> 'archived'").bind(new Date().toISOString(), assetMatch[1]).run();
       if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404);
@@ -1141,10 +1141,12 @@ async function adminProductImageRoutes(request: Request, env: Env, url: URL): Pr
       const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(body.image_id).first<{ id: string }>();
       if (!media) return error("Image not found or unavailable", 404);
     }
-    await env.DB.batch([
-      env.DB.prepare("UPDATE products SET image_key = ?, updated_at = ? WHERE id = ?").bind(body.image_id, new Date().toISOString(), match[1]),
-      env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "product.image_changed", "product", match[1], JSON.stringify({ image_id: body.image_id })),
-    ]);
+    const statements = [env.DB.prepare("UPDATE product_media_assets SET is_primary = 0 WHERE product_id = ?").bind(match[1])];
+    if (body.image_id) statements.push(env.DB.prepare("INSERT INTO product_media_assets (product_id, media_asset_id, position, is_primary) VALUES (?, ?, COALESCE((SELECT MAX(position)+1 FROM product_media_assets WHERE product_id=?),0), 1) ON CONFLICT(product_id,media_asset_id) DO UPDATE SET is_primary=1")
+      .bind(match[1], body.image_id, match[1]));
+    statements.push(env.DB.prepare("UPDATE products SET image_key = ?, updated_at = ? WHERE id = ?").bind(body.image_id, new Date().toISOString(), match[1]));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "product.image_changed", "product", match[1], JSON.stringify({ image_id: body.image_id })));
+    await env.DB.batch(statements);
     return json({ updated: true, image_key: body.image_id });
   } catch { return error("Product image could not be updated", 503); }
 }
