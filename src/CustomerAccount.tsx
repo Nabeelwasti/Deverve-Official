@@ -112,8 +112,11 @@ export default function CustomerAccount() {
     try {
       const result = await api<{ checkout_url?: string; paid?: boolean }>(`/api/customer/orders/${order.id}/payment`, { method: "POST", body: "{}" });
       if (result.paid) { await loadAccount(); setMessage("This order is already paid."); return; }
-      if (!result.checkout_url || !result.checkout_url.startsWith("https://sandbox.api.getsafepay.com/")) throw new Error("The payment provider returned an invalid checkout address.");
-      window.location.assign(result.checkout_url);
+      if (!result.checkout_url) throw new Error("The payment provider did not return a checkout address.");
+      let checkout: URL;
+      try { checkout = new URL(result.checkout_url); } catch { throw new Error("The payment provider returned an invalid checkout address."); }
+      if (checkout.protocol !== "https:" || !["sandbox.api.getsafepay.com", "api.getsafepay.com"].includes(checkout.hostname) || checkout.pathname !== "/embedded" || checkout.username || checkout.password || checkout.port) throw new Error("The payment provider returned an untrusted checkout address.");
+      window.location.assign(checkout.toString());
     } catch (error) { setMessage(error instanceof Error ? error.message : "Payment could not be started."); }
     finally { setPaymentBusyOrder(""); }
   };
