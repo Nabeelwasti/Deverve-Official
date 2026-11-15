@@ -42,7 +42,13 @@ function Storefront() {
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
   const [rentalReference, setRentalReference] = useState("");
-  const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_location: "Jhelum", destination: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
+  const [rentalDocumentToken, setRentalDocumentToken] = useState("");
+  const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
+  const [rentalBackFile, setRentalBackFile] = useState<File | null>(null);
+  const [rentalDocsConsent, setRentalDocsConsent] = useState(false);
+  const [rentalDocsBusy, setRentalDocsBusy] = useState(false);
+  const [rentalDocsMessage, setRentalDocsMessage] = useState("");
+  const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<CartLine[]>([]);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -122,19 +128,38 @@ function Storefront() {
   };
 
   const openRentalRequest = (vehicleId = "") => {
-    setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", destination: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
-    setRentalMessage(""); setRentalReference(""); setRentalOpen(true);
+    setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
+    setRentalMessage(""); setRentalReference(""); setRentalDocumentToken(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalOpen(true);
   };
   const submitRentalRequest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setRentalBusy(true); setRentalMessage(""); setRentalReference("");
     try {
-      const response = await fetch("/api/rentals", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...rentalForm, pickup_at: new Date(rentalForm.pickup_at).toISOString(), return_at: new Date(rentalForm.return_at).toISOString() }) });
-      const result = await response.json() as { accepted?: boolean; reference_code?: string; message?: string; error?: string };
+      const response = await fetch("/api/rentals", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...rentalForm, pickup_location: rentalForm.pickup_address + ", " + rentalForm.pickup_city, destination: rentalForm.destination_address + ", " + rentalForm.destination_city, pickup_at: new Date(rentalForm.pickup_at).toISOString(), return_at: new Date(rentalForm.return_at).toISOString() }) });
+      const result = await response.json() as { accepted?: boolean; reference_code?: string; document_upload_token?: string; message?: string; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
       setRentalReference(result.reference_code ?? "");
+      setRentalDocumentToken(result.document_upload_token ?? "");
       setRentalMessage(result.message || "Your rental request has been received. Our team will confirm availability and terms.");
     } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
     finally { setRentalBusy(false); }
+  };
+
+  const uploadRentalDocuments = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!rentalDocumentToken || !rentalReference || !rentalFrontFile || !rentalBackFile || !rentalDocsConsent) return;
+    setRentalDocsBusy(true); setRentalDocsMessage("");
+    try {
+      const data = new FormData();
+      data.append("upload_token", rentalDocumentToken);
+      data.append("cnic_front", rentalFrontFile);
+      data.append("cnic_back", rentalBackFile);
+      const response = await fetch("/api/rentals/" + encodeURIComponent(rentalReference) + "/documents", { method: "POST", body: data, headers: { accept: "application/json" } });
+      const result = await response.json() as { uploaded?: boolean; message?: string; error?: string };
+      if (!response.ok || !result.uploaded) throw new Error(result.error || "CNIC upload failed.");
+      setRentalDocumentToken(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false);
+      setRentalDocsMessage(result.message || "Both CNIC images were uploaded securely.");
+    } catch (error) { setRentalDocsMessage(error instanceof Error ? error.message : "CNIC upload failed. Please try again."); }
+    finally { setRentalDocsBusy(false); }
   };
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
@@ -366,14 +391,16 @@ function Storefront() {
 
       {rentalOpen && <div className="checkout-backdrop"><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title">
         <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p>Submit your preferred dates. Our team will confirm vehicle availability, price and rental terms.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close">×</button></div>
-        {rentalReference ? <div className="rental-success"><strong>Request received</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
+        {rentalReference ? <div className="rental-success"><strong>Request received</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p>{rentalDocumentToken && <div className="rental-documents-upload"><h3>Secure CNIC upload (optional)</h3><p>Only upload these documents if our rental team has requested them. Files are private and accessible only to authorized De VERVE rental staff. JPG, PNG or WebP; up to 4 MB each.</p><form className="checkout-form" onSubmit={uploadRentalDocuments}><label>CNIC front<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalFrontFile(e.target.files?.[0]??null)}/></label><label>CNIC back<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalBackFile(e.target.files?.[0]??null)}/></label><label className="rental-consent"><input type="checkbox" checked={rentalDocsConsent} onChange={(e)=>setRentalDocsConsent(e.target.checked)}/> I confirm these are my documents and consent to their secure storage for this rental request.</label><button type="submit" className="button button-primary" disabled={rentalDocsBusy||!rentalFrontFile||!rentalBackFile||!rentalDocsConsent}>{rentalDocsBusy?"Uploading securely…":"Upload both CNIC images"}</button></form></div>}{rentalDocsMessage&&<p className="checkout-message" role="status">{rentalDocsMessage}</p>}<button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
           <div className="checkout-fields">
             <label>Vehicle<select value={rentalForm.vehicle_id} onChange={(e) => setRentalForm({ ...rentalForm, vehicle_id: e.target.value })}><option value="">Any available vehicle</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.vehicle_type}</option>)}</select></label>
             <label>Your name<input required minLength={2} maxLength={100} autoComplete="name" value={rentalForm.customer_name} onChange={(e) => setRentalForm({ ...rentalForm, customer_name: e.target.value })} /></label>
             <label>Phone / WhatsApp<input required type="tel" maxLength={24} autoComplete="tel" value={rentalForm.phone} onChange={(e) => setRentalForm({ ...rentalForm, phone: e.target.value })} /></label>
             <label>Email (optional)<input type="email" maxLength={160} value={rentalForm.email} onChange={(e) => setRentalForm({ ...rentalForm, email: e.target.value })} /></label>
-            <label>Pickup location<input required minLength={2} maxLength={160} value={rentalForm.pickup_location} onChange={(e) => setRentalForm({ ...rentalForm, pickup_location: e.target.value })} /></label>
-            <label>Destination (optional)<input maxLength={160} value={rentalForm.destination} onChange={(e) => setRentalForm({ ...rentalForm, destination: e.target.value })} /></label>
+            <label>Pickup city<input required minLength={2} maxLength={80} value={rentalForm.pickup_city} onChange={(e) => setRentalForm({ ...rentalForm, pickup_city: e.target.value })} /></label>
+            <label>Pickup complete address<input required minLength={8} maxLength={300} autoComplete="street-address" placeholder="House, street, area or landmark" value={rentalForm.pickup_address} onChange={(e) => setRentalForm({ ...rentalForm, pickup_address: e.target.value })} /></label>
+            <label>Destination city<input required minLength={2} maxLength={80} value={rentalForm.destination_city} onChange={(e) => setRentalForm({ ...rentalForm, destination_city: e.target.value })} /></label>
+            <label>Destination complete address<input required minLength={5} maxLength={300} placeholder="Area, street or drop-off point" value={rentalForm.destination_address} onChange={(e) => setRentalForm({ ...rentalForm, destination_address: e.target.value })} /></label>
             <label>Pickup date & time<input type="datetime-local" required min={localDateTime(new Date())} value={rentalForm.pickup_at} onChange={(e) => setRentalForm({ ...rentalForm, pickup_at: e.target.value })} /></label>
             <label>Return date & time<input type="datetime-local" required min={rentalForm.pickup_at} value={rentalForm.return_at} onChange={(e) => setRentalForm({ ...rentalForm, return_at: e.target.value })} /></label>
             <label>Driver option<select value={rentalForm.driver_option} onChange={(e) => setRentalForm({ ...rentalForm, driver_option: e.target.value })}><option value="with_driver">With driver</option><option value="self_drive">Self drive (subject to approval)</option></select></label>
