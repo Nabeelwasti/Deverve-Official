@@ -701,7 +701,12 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
   const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
   if (!match || request.method !== "POST") return null;
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
-  if (env.CNIC_UPLOADS_ENABLED !== "true") return error("Secure CNIC uploads are temporarily disabled until De VERVE approves and publishes its document-retention policy. Please contact our rental team.", 503);
+  let documentUploadsEnabled = false;
+  try {
+    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
+    documentUploadsEnabled = setting?.setting_value_json === "true";
+  } catch { return error("Secure document settings are temporarily unavailable", 503); }
+  if (!documentUploadsEnabled) return error("Secure CNIC uploads are disabled. Our rental team will contact you if identity documents are required.", 503);
   const limited = await enforcePublicRateLimit(request, env, "rental-documents", 3);
   if (limited) return limited;
   const length = Number(request.headers.get("content-length") || 0);
@@ -731,7 +736,7 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
   const now = new Date().toISOString();
   let rental: { id: string } | null;
   try {
-    rental = await env.DB.prepare("SELECT id FROM rental_requests WHERE reference_code = ? AND document_upload_token_hash = ? AND document_upload_expires_at > ? LIMIT 1")
+    rental = await env.DB.prepare("SELECT id FROM rental_requests WHERE reference_code = ? AND document_upload_token_hash = ? AND document_upload_expires_at > ? AND status IN ('requested','reviewing','confirmed','active') LIMIT 1")
       .bind(match[1], tokenHash, now).first<{ id: string }>();
   } catch { return error("Secure document upload is temporarily unavailable", 503); }
   if (!rental) return error("This document upload link is invalid, expired or already used", 410);
@@ -798,7 +803,11 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const id = crypto.randomUUID();
   const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
   const now = new Date().toISOString();
-  const documentUploadsEnabled = env.CNIC_UPLOADS_ENABLED === "true";
+  let documentUploadsEnabled = false;
+  try {
+    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
+    documentUploadsEnabled = setting?.setting_value_json === "true";
+  } catch { return error("Rental document settings are temporarily unavailable", 503); }
   const uploadToken = documentUploadsEnabled ? base64Url(crypto.getRandomValues(new Uint8Array(32))) : "";
   const uploadTokenHash = documentUploadsEnabled ? await sha256(uploadToken) : null;
   const uploadExpiresAt = documentUploadsEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
@@ -1626,14 +1635,16 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key='cnic_uploads_enabled'").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
   const body=await readJson(request);
   const hasLinks=body?.social_links!==undefined;
   const hasBrand=body?.brand_assets!==undefined;
-  if(!hasLinks&&!hasBrand)return error("Submit website settings to save",400);
+  const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
+  if(!hasLinks&&!hasBrand&&!hasCnicUploads)return error("Submit website settings to save",400);
+  if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
   const statements: D1PreparedStatement[]=[];
   const now=new Date().toISOString();
   let links:SocialLinks|undefined;
@@ -1645,6 +1656,11 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     for(const platform of socialPlatforms){const value=cleanText((raw as Record<string,unknown>)[platform],500);if(!value)continue;try{const parsed=new URL(value);if(parsed.protocol!=="https:"||!parsed.hostname.includes("."))return error("Social links must be valid HTTPS URLs",400);links[platform]=parsed.toString();}catch{return error("One of the social links is invalid",400);}}
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})));
+  }
+  if(hasCnicUploads){
+    const enabled=body?.cnic_uploads_enabled===true;
+    statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('cnic_uploads_enabled',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(enabled),admin.admin_user_id,now));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.cnic_upload_setting_changed','store_settings','cnic_uploads_enabled',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({enabled})));
   }
   if(hasBrand){
     const raw=body?.brand_assets;
@@ -1662,7 +1678,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
