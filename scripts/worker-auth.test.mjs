@@ -534,6 +534,12 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO notification_outbox")) {
+      const [id, referenceId] = v;
+      const rental = q.includes("rental_request_id");
+      this.db.notificationOutbox.set(id, { id, order_id: rental ? null : referenceId, rental_request_id: rental ? referenceId : null, channel: "email", template_key: rental ? "owner_rental_created" : "owner_order_created", status: "queued", attempts: 0 });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO owner_notifications")) {
       if (q.includes("SELECT ?, 'order.created'")) {
         const [id, title, body, entity_id, orderId] = v;
@@ -940,6 +946,7 @@ class FakeD1 {
   rentalRequests = new Map();
   audits = [];
   notifications = new Map();
+  notificationOutbox = new Map();
   storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
