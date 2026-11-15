@@ -507,6 +507,11 @@ interface OrderItemRow {
 }
 
 export interface OrderPromotion { code: string; label: string; discountPercent: number; discountAmountPaisa: number; freeDelivery: boolean; }
+export function isWithinExchangeWindow(deliveredAt: string | null, now = Date.now()): boolean {
+  if (!deliveredAt) return false;
+  const timestamp = Date.parse(deliveredAt);
+  return Number.isFinite(timestamp) && Number.isFinite(now) && now >= timestamp && now - timestamp <= 7 * 24 * 60 * 60 * 1000;
+}
 export function selectOrderPromotion(subtotalPaisa: number, advancePayment: boolean): OrderPromotion {
   if (!Number.isSafeInteger(subtotalPaisa) || subtotalPaisa < 0) throw new Error("Invalid order subtotal");
   if (subtotalPaisa > 4_000_000) return { code: "ORDER_45", label: "45% order discount", discountPercent: 45, discountAmountPaisa: Math.floor(subtotalPaisa * 0.45), freeDelivery: false };
@@ -2585,12 +2590,14 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     const reason = cleanText(body.reason, 30);
     const details = cleanText(body.details, 1_000);
     if (!["wrong_item", "damaged", "size_issue", "other"].includes(reason) || details.length < 10) return error("Choose a reason and describe the exchange request in at least 10 characters.", 400);
-    let order: { id: string; order_number: string; order_status: string; updated_at: string } | null;
-    try { order = await env.DB.prepare("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ? LIMIT 1").bind(customerExchangeMatch[1], customer.customer_id).first<{ id: string; order_number: string; order_status: string; updated_at: string }>(); }
-    catch { return error("Your order could not be checked. Please try again.", 503); }
+    let order: { id: string; order_number: string; order_status: string } | null;
+    let deliveredEvent: { created_at: string } | null;
+    try {
+      order = await env.DB.prepare("SELECT id, order_number, order_status FROM orders WHERE id = ? AND customer_id = ? LIMIT 1").bind(customerExchangeMatch[1], customer.customer_id).first<{ id: string; order_number: string; order_status: string }>();
+      deliveredEvent = order ? await env.DB.prepare("SELECT created_at FROM order_status_events WHERE order_id = ? AND to_status = 'delivered' ORDER BY created_at DESC LIMIT 1").bind(order.id).first<{ created_at: string }>() : null;
+    } catch { return error("Your order could not be checked. Please try again.", 503); }
     if (!order) return error("Order not found in your account.", 404);
-    const deliveredAt = Date.parse(order.updated_at);
-    if (order.order_status !== "delivered" || !Number.isFinite(deliveredAt) || Date.now() < deliveredAt || Date.now() - deliveredAt > 7 * 24 * 60 * 60 * 1000) return error("Exchange requests are available only within 7 calendar days of delivery.", 409);
+    if (order.order_status !== "delivered" || !isWithinExchangeWindow(deliveredEvent?.created_at ?? null)) return error("Exchange requests are available only within 7 calendar days of delivery.", 409);
     const requestedItems: Array<{ order_item_id: string; quantity: number; requested_size: string; requested_color: string }> = [];
     for (const raw of body.items) {
       if (!raw || typeof raw !== "object") return error("One of the selected items is invalid.", 400);
@@ -2614,8 +2621,8 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
       const exchangeNumber = "DV-EX-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
       const now = new Date().toISOString();
       const statements: D1PreparedStatement[] = [
-        env.DB.prepare("INSERT INTO exchange_requests (id, order_id, customer_id, exchange_number, reason, details, status, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 'requested', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND customer_id = ? AND order_status = 'delivered' AND updated_at = ?) AND NOT EXISTS (SELECT 1 FROM exchange_requests WHERE order_id = ?)")
-          .bind(id, order.id, customer.customer_id, exchangeNumber, reason, details, now, now, order.id, customer.customer_id, order.updated_at, order.id),
+        env.DB.prepare("INSERT INTO exchange_requests (id, order_id, customer_id, exchange_number, reason, details, status, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 'requested', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND customer_id = ? AND order_status = 'delivered') AND EXISTS (SELECT 1 FROM order_status_events e WHERE e.order_id = ? AND e.to_status = 'delivered' AND e.created_at = ? AND NOT EXISTS (SELECT 1 FROM order_status_events newer WHERE newer.order_id = e.order_id AND newer.to_status = 'delivered' AND newer.created_at > e.created_at)) AND NOT EXISTS (SELECT 1 FROM exchange_requests WHERE order_id = ?)")
+          .bind(id, order.id, customer.customer_id, exchangeNumber, reason, details, now, now, order.id, customer.customer_id, order.id, deliveredEvent!.created_at, order.id),
       ];
       for (const item of requestedItems) {
         statements.push(env.DB.prepare("INSERT INTO exchange_request_items (id, exchange_request_id, order_item_id, quantity, requested_size, requested_color) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ? AND status = 'requested')")
