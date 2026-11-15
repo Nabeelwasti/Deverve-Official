@@ -2,6 +2,15 @@
 
 Audit baseline: 9e5ac6bfbc45e455d770405b016c17b395538a3a
 
+## Latest verified release snapshot
+
+- Application commit: `5c36ff79671dec5621ff52c952c33e73683313b0`
+- GitHub Actions run #243: passed build, type-check, Worker tests and D1 schema validation.
+- Cloudflare Pages production deployment: `488214ed-2b26-40c9-b4f8-9133b9bacf64`, all stages successful.
+- Production D1 migrations 0010 (public rate limits) and 0011 (delivery-fee approval) are applied.
+- Production data snapshot: 0 published products, 0 active variants, 0 available vehicles, 0 orders and 0 rental requests.
+- A live browser/customer journey could not be independently executed from the connected environment. CI and deployment success are not substitutes for real-device acceptance testing.
+
 Status: technically improved; not certified for unrestricted production commerce.
 
 ## Changes in this release
@@ -11,7 +20,7 @@ Status: technically improved; not certified for unrestricted production commerce
 - Cloudflare Pages security headers are defined in _headers, including CSP, frame restrictions, MIME sniffing protection, referrer policy, permissions policy, and HSTS suitable for the shared pages.dev host.
 - A minimal robots policy and canonical sitemap are included for the current production hostname.
 - Atomic D1-backed fixed-window limits protect public enquiries, COD checkout, rental requests and CNIC uploads. Only a SHA-256 digest of the Cloudflare client IP plus endpoint scope is stored; raw IP addresses are not persisted. Limits fail closed if the rate-limit store is unavailable. Local development without the Cloudflare edge IP header skips the limiter.
-- Retail COD orders start with a pending delivery quote. Staff can set the fee and create a 48-hour customer approval link. Customers can accept the final total or decline; declining cancels the order and releases stock reservations. Processing and dispatch are blocked until acceptance.
+- Retail COD orders start with a pending delivery quote. Staff can set the fee and create a 48-hour customer approval link. Customers can accept the final total or decline; declining cancels the order and releases stock reservations. Processing and dispatch are blocked until acceptance. Quote, acceptance and decline decisions are recorded in the order audit history.
 - README security and launch-gate statements are updated.
 
 ## Remaining release blockers
