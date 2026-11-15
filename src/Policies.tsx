@@ -6,6 +6,12 @@ const policies = [
     ur: "ویب سائٹ پر دیا گیا آرڈر اس وقت تک درخواست ہے جب تک ہماری ٹیم پروڈکٹ، سائز، رنگ، دستیابی اور حتمی رقم کی تصدیق نہ کر دے۔ کیش آن ڈیلیوری کی صورت میں ڈیلیوری چارجز اور مکمل قابلِ ادائیگی رقم روانگی سے پہلے آپ کو منظوری کے لیے بتائی جائے گی۔ ہم کبھی بھی کارڈ نمبر، پن یا پاس ورڈ نہیں مانگتے۔ آن لائن ادائیگی صرف اسی وقت دستیاب ہوگی جب چیک آؤٹ پر محفوظ ادائیگی کا آپشن دکھایا جائے۔",
   },
   {
+    title: "Promotions & discounts",
+    urduTitle: "آفرز اور رعایت",
+    en: "Only one promotional offer applies to an order; offers are not stacked. The applicable offer is selected automatically from the eligible options: orders above Rs. 40,000 receive 45% off; eligible full advance-payment orders receive 40% off unless the 45% order offer is better; orders above Rs. 20,000 receive 30% off when a higher offer does not apply; and orders above Rs. 5,000 may receive free delivery when no percentage discount applies. Thresholds are based on the merchandise subtotal before delivery charges. Advance-payment discounts apply only when the full amount is successfully collected through an enabled online payment method. Promotions cannot be combined with other coupons or negotiated offers unless De VERVE confirms otherwise in writing.",
+    ur: "ہر آرڈر پر صرف ایک پروموشنل آفر لاگو ہوگی؛ مختلف آفرز کو جمع نہیں کیا جائے گا۔ اہل آفر خودکار طور پر منتخب ہوگی: 40,000 روپے سے زیادہ کے آرڈر پر 45 فیصد رعایت؛ مکمل پیشگی آن لائن ادائیگی پر 40 فیصد رعایت، بشرطیکہ 45 فیصد والی آفر زیادہ بہتر نہ ہو؛ 20,000 روپے سے زیادہ کے آرڈر پر، اگر اس سے بہتر آفر لاگو نہ ہو، 30 فیصد رعایت؛ اور 5,000 روپے سے زیادہ کے آرڈر پر، جب کوئی فیصدی رعایت لاگو نہ ہو، مفت ڈیلیوری مل سکتی ہے۔ حد کا حساب ڈیلیوری چارجز سے پہلے مصنوعات کی کل قیمت پر ہوگا۔ پیشگی ادائیگی کی رعایت صرف اسی وقت لاگو ہوگی جب فعال آن لائن ادائیگی کے ذریعے مکمل رقم کامیابی سے وصول ہو جائے۔ De VERVE کی تحریری منظوری کے بغیر آفرز کو دوسرے کوپن یا خصوصی رعایت کے ساتھ جمع نہیں کیا جا سکتا۔",
+  },
+  {
     title: "Delivery",
     urduTitle: "ڈیلیوری",
     en: "Delivery areas, charges and estimated timelines are confirmed by our team before dispatch. Please provide a complete address and reachable phone number. Delivery estimates may change because of weather, courier operations, public holidays or other circumstances outside our reasonable control. A delivery is not confirmed until the order status is updated by De VERVE.",
