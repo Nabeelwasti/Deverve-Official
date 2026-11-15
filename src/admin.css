@@ -97,3 +97,6 @@
 .admin-social-form input{width:100%;min-width:0;padding:11px 12px;border:1px solid #cbd8e6;border-radius:9px;background:#fff;color:#193b5e;font:inherit}
 .admin-social-form .admin-full,.admin-social-form .admin-form-actions{grid-column:1/-1}
 @media(max-width:650px){.admin-social-form{grid-template-columns:1fr}}
+
+
+.admin-dashboard[data-admin-screen]:not([data-admin-screen="overview"]) .admin-stat-grid{display:none}
