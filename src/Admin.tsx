@@ -67,7 +67,8 @@ export default function Admin() {
   const [rentals, setRentals] = useState<RentalRequest[]>([]);
   const [showVehicleEditor, setShowVehicleEditor] = useState(false);
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
-  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft" as Vehicle["status"], description: "" });
+  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft" as Vehicle["status"], description: "", image_key: "" });
+  const [vehicleMediaAssets,setVehicleMediaAssets]=useState<MediaAsset[]>([]);
   const [showQuoteEditor, setShowQuoteEditor] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
   const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
@@ -363,10 +364,26 @@ export default function Admin() {
   };
 
 
-  const startVehicleEditor = (vehicle?: Vehicle) => {
+  const startVehicleEditor = async (vehicle?: Vehicle) => {
     setEditingVehicleId(vehicle?.id ?? null);
-    setVehicleForm(vehicle ? { name: vehicle.name, vehicle_type: vehicle.vehicle_type, transmission: vehicle.transmission, seats: String(vehicle.seats), fuel_type: vehicle.fuel_type, daily_rate: vehicle.daily_rate_paisa === null ? "" : String(vehicle.daily_rate_paisa / 100), status: vehicle.status, description: vehicle.description } : { name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft", description: "" });
+    setVehicleForm(vehicle ? { name: vehicle.name, vehicle_type: vehicle.vehicle_type, transmission: vehicle.transmission, seats: String(vehicle.seats), fuel_type: vehicle.fuel_type, daily_rate: vehicle.daily_rate_paisa === null ? "" : String(vehicle.daily_rate_paisa / 100), status: vehicle.status, description: vehicle.description, image_key: vehicle.image_key ?? "" } : { name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", status: "draft", description: "", image_key: "" });
     setShowVehicleEditor(true); setMessage("");
+    try { const result=await api<{media:MediaAsset[]}>("/api/admin/media"); setVehicleMediaAssets(result.media.filter((item)=>item.media_type==="image")); }
+    catch(error){setMessage(error instanceof Error?error.message:"Vehicle media library could not be loaded.");}
+  };
+  const uploadVehicleImage = async (file:File|null) => {
+    if(!file)return;
+    setBusy(true);setMessage("");
+    try{
+      const data=new FormData();data.append("file",file);data.append("alt_text",vehicleForm.name?vehicleForm.name+" vehicle photo":"De VERVE rental vehicle");
+      const response=await fetch("/api/admin/media",{method:"POST",credentials:"same-origin",headers:{accept:"application/json"},body:data});
+      const result=await response.json() as {error?:string;media?:MediaAsset};
+      if(!response.ok||!result.media)throw new Error(result.error||"Vehicle photo upload failed.");
+      setVehicleMediaAssets((current)=>[result.media!,...current]);
+      setVehicleForm((current)=>({...current,image_key:result.media!.id}));
+      setMessage("Vehicle photo uploaded and selected.");
+    }catch(error){setMessage(error instanceof Error?error.message:"Vehicle photo could not be uploaded.");}
+    finally{setBusy(false);}
   };
   const saveVehicle = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setMessage("");
@@ -526,6 +543,9 @@ export default function Admin() {
             <label>Daily rate (PKR, optional)<input type="number" min="0" step="1" value={vehicleForm.daily_rate} onChange={(e) => setVehicleForm({ ...vehicleForm, daily_rate: e.target.value })} /></label>
             <label>Status<select value={vehicleForm.status} onChange={(e) => setVehicleForm({ ...vehicleForm, status: e.target.value as Vehicle["status"] })}><option value="draft">Draft</option><option value="available">Available</option><option value="maintenance">Maintenance</option><option value="retired">Retired</option></select></label>
             <label className="admin-full">Description<textarea rows={3} maxLength={1000} value={vehicleForm.description} onChange={(e) => setVehicleForm({ ...vehicleForm, description: e.target.value })} /></label>
+            <label>Vehicle image from media library<select value={vehicleForm.image_key} onChange={(e)=>setVehicleForm({...vehicleForm,image_key:e.target.value})}><option value="">No image selected</option>{vehicleMediaAssets.map((asset)=><option key={asset.id} value={asset.id}>{asset.alt_text||asset.id.slice(0,8)}</option>)}</select></label>
+            <label>Upload vehicle photo (JPG, PNG or WebP, max 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={(e)=>void uploadVehicleImage(e.target.files?.[0]??null)}/></label>
+            {vehicleForm.image_key&&<img className="admin-vehicle-image-preview" src={"/api/admin/media/"+vehicleForm.image_key+"/file"} alt="Selected vehicle preview"/>}
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowVehicleEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save vehicle"}</button></div>
           </form>
         </section></div>}
