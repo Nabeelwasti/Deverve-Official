@@ -50,6 +50,6 @@ test("signed-in customer can submit and view a return request for a delivered or
   });
 
   await page.getByRole("button", { name: "My returns (1)" }).click();
-  await expect(page.getByText("DV-RET-E2E-001")).toBeVisible();
+  await expect(page.getByText("DV-RET-E2E-001", { exact: true })).toBeVisible();
   await expect(page.getByText("Estimated item refund")).toBeVisible();
 });
