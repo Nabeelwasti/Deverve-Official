@@ -226,10 +226,10 @@ class FakeStatement {
     const q = this.sql;
     const v = this.values;
     if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
-      const [fee, total, tokenHash, expiresAt, quotedAt, acceptedAt, updatedAt, id] = v;
+      const [fee, total, tokenHash, expiresAt, quotedAt, updatedAt, id] = v;
       const row = this.db.orders.get(id);
       if (!row || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
-      Object.assign(row, { delivery_fee_paisa: fee, total_paisa: total, delivery_fee_status: "awaiting_customer", delivery_fee_token_hash: tokenHash, delivery_fee_expires_at: expiresAt, delivery_fee_quote_sent_at: quotedAt, delivery_fee_accepted_at: acceptedAt, updated_at: updatedAt });
+      Object.assign(row, { delivery_fee_paisa: fee, total_paisa: total, delivery_fee_status: "awaiting_customer", delivery_fee_token_hash: tokenHash, delivery_fee_expires_at: expiresAt, delivery_fee_quote_sent_at: quotedAt, delivery_fee_accepted_at: null, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET delivery_fee_status = 'accepted'")) {

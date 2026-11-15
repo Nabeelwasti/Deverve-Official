@@ -483,10 +483,10 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
     const now = new Date().toISOString();
     const conditions = lines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token];
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token, "pending_quote"];
     for (const line of lines) orderValues.push(line.variant.id, line.quantity);
     const statements = [
-      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues, "pending_quote"),
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
     ];
     for (const line of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
@@ -539,7 +539,7 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
       ).bind(now, now, order.id, tokenHash, now).run();
       return (result.meta?.changes ?? 0) === 1 ? json({ accepted: true, message: "Thank you. Your final COD total is confirmed. De VERVE will contact you about delivery." }) : error("This quotation has already been used. Please contact De VERVE.", 409);
     }
-    const items = await env.DB.prepare("SELECT variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
+    const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
     const lines = items.results ?? [];
     if (!lines.length) return error("The order could not be cancelled safely. Please contact De VERVE.", 409);
     const statements = [
