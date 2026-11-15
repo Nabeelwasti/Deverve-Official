@@ -2265,6 +2265,7 @@ async function currentCustomer(request: Request, db: D1Database): Promise<Custom
 
 interface SafepayConfig {
   apiHost: string;
+  environment: "sandbox" | "production";
   merchantApiKey: string;
   secretKey: string;
   webhookSecret: string;
@@ -2275,10 +2276,21 @@ function getSafepayConfig(env: Env): SafepayConfig | null {
   if (!["sandbox", "production"].includes(environment ?? "") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
   return {
     apiHost: environment === "production" ? "https://api.getsafepay.com" : "https://sandbox.api.getsafepay.com",
+    environment,
     merchantApiKey: env.SAFEPAY_MERCHANT_API_KEY,
     secretKey: env.SAFEPAY_SECRET_KEY,
     webhookSecret: env.SAFEPAY_WEBHOOK_SECRET,
   };
+}
+
+export function buildSafepayCheckoutUrl(config: SafepayConfig, tracker: string, tbt: string, origin: string): string {
+  const checkout = new URL("/embedded", config.apiHost);
+  checkout.search = new URLSearchParams({
+    environment: config.environment, tracker, source: "hosted", tbt,
+    redirect_url: new URL("/account?payment=return", origin).toString(),
+    cancel_url: new URL("/account?payment=cancelled", origin).toString(),
+  }).toString();
+  return checkout.toString();
 }
 
 function constantTimeHexEqual(expected: string, received: string): boolean {
@@ -2479,8 +2491,8 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
 
       const attemptId = crypto.randomUUID();
       const idempotencyKey = crypto.randomUUID();
-      await env.DB.prepare("INSERT INTO payment_attempts (id, order_id, provider, environment, idempotency_key, amount_paisa, currency, status) VALUES (?, ?, 'safepay', 'sandbox', ?, ?, 'PKR', 'created')")
-        .bind(attemptId, order.id, idempotencyKey, order.total_paisa).run();
+      await env.DB.prepare("INSERT INTO payment_attempts (id, order_id, provider, environment, idempotency_key, amount_paisa, currency, status) VALUES (?, ?, 'safepay', ?, ?, ?, 'PKR', 'created')")
+        .bind(attemptId, order.id, config.environment, idempotencyKey, order.total_paisa).run();
       try {
         const trackerResponse = await safepayApi(config, "/order/payments/v3/", "POST", {
           merchant_api_key: config.merchantApiKey,
@@ -2500,17 +2512,12 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
         const passportData = passportResponse.data;
         const tbt = typeof passportData === "string" ? passportData : "";
         if (tbt.length < 20 || tbt.length > 1000) throw new Error("Safepay did not return a valid checkout token");
-        const checkout = new URL("/embedded", config.apiHost);
-        checkout.search = new URLSearchParams({
-          environment: "sandbox", tracker, source: "hosted", tbt,
-          redirect_url: url.origin + "/account?payment=return",
-          cancel_url: url.origin + "/account?payment=cancelled",
-        }).toString();
+        const checkoutUrl = buildSafepayCheckoutUrl(config, tracker, tbt, url.origin);
         const now = new Date().toISOString();
         const saved = await env.DB.prepare("UPDATE payment_attempts SET provider_reference = ?, checkout_url = ?, status = 'pending', updated_at = ? WHERE id = ? AND status = 'created'")
-          .bind(tracker, checkout.toString(), now, attemptId).run();
+          .bind(tracker, checkoutUrl, now, attemptId).run();
         if ((saved.meta?.changes ?? 0) !== 1) throw new Error("Payment attempt could not be saved");
-        return json({ checkout_url: checkout.toString(), environment: "sandbox" });
+        return json({ checkout_url: checkoutUrl, environment: config.environment });
       } catch (caught) {
         await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_error', updated_at = ? WHERE id = ? AND status = 'created'")
           .bind(new Date().toISOString(), attemptId).run();
