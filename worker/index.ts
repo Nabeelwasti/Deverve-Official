@@ -156,6 +156,24 @@ async function enforcePublicRateLimit(
   }
 }
 
+async function verifyTurnstile(request: Request, tokenValue: unknown): Promise<boolean> {
+  const token = cleanText(tokenValue, 2048);
+  if (!token) return false;
+  try {
+    const origin = request.headers.get("origin") || new URL(request.url).origin;
+    const response = await fetch("https://deverve-turnstile-verify.wastinabeel99.workers.dev", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin },
+      body: JSON.stringify({ token }),
+    });
+    if (!response.ok) return false;
+    const result = await response.json() as { success?: boolean };
+    return result.success === true;
+  } catch {
+    return false;
+  }
+}
+
 async function passwordHash(password: string): Promise<string> {
   // Cloudflare Workers currently rejects PBKDF2 calls above 100,000 iterations.
   // Keep the verifier's accepted minimum aligned with this platform maximum.
@@ -429,6 +447,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   const body = await readJson(request, 12_000);
   if (!body) return error("Please submit valid checkout details", 400);
   if (cleanText(body.website, 120)) return json({ accepted: true });
+  if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
   const token = cleanText(body.checkout_token, 64);
   if (!/^[a-f0-9-]{36}$/i.test(token)) return error("Refresh checkout and try again", 400);
   try {
@@ -690,6 +709,7 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
   let form: FormData;
   try { form = await request.formData(); } catch { return error("Upload both CNIC images using the secure form", 400); }
   const token = cleanText(form.get("upload_token"), 100);
+  if (!(await verifyTurnstile(request, form.get("turnstile_token")))) return error("Please complete the security check and try again.", 403);
   const front = form.get("cnic_front");
   const back = form.get("cnic_back");
   if (!/^[A-Za-z0-9_-]{40,50}$/.test(token) || !(front instanceof File) || !(back instanceof File)) return error("Upload both the front and back of the CNIC", 400);
@@ -754,6 +774,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const body = await readJson(request, 12_000);
   if (!body) return error("Please submit valid rental request details", 400);
   if (cleanText(body.website, 120)) return json({ accepted: true });
+  if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
   const name = cleanText(body.customer_name, 100);
   const phone = cleanText(body.phone, 24);
   const email = cleanText(body.email, 160).toLowerCase();
@@ -1934,6 +1955,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
     // Honeypot field: bots that fill hidden fields receive a neutral success response.
     if (cleanText(body.website, 120)) return json({ accepted: true });
+    if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
     const enquiryType = cleanText(body.enquiryType, 20);
     const customerName = cleanText(body.name, 100);
     const phone = cleanText(body.phone, 24);
