@@ -1886,13 +1886,15 @@ async function recordOwnerNotification(db:D1Database,event:{event_type:"order.cr
 async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<Response|null>{
   const path=url.pathname;
   const collection=path==="/api/admin/notifications";
+  const settings=path==="/api/admin/notification-settings";
   const readAll=path==="/api/admin/notifications/read-all";
   const readMatch=path.match(new RegExp("^/api/admin/notifications/([a-f0-9-]{36})/read$","i"));
-  if(!collection&&!readAll&&!readMatch)return null;
+  if(!collection&&!settings&&!readAll&&!readMatch)return null;
   let admin:SessionRow|null;
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can view business-wide notifications",403);
+  if(settings&&request.method==="GET")return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&env.OWNER_NOTIFICATION_EMAIL),provider:"Resend"});
   if(collection&&request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications ORDER BY created_at DESC LIMIT 100").all<Record<string,unknown>>();
