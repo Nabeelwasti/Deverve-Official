@@ -46,7 +46,7 @@ Order creation writes a system status event. Admin status transitions write an a
 
 ## Still not connected
 
-- Online payment provider: Safepay merchant onboarding, sandbox credentials, signed webhook processing, refunds and reconciliation remain to be completed. COD remains the only live payment option.
+- Safepay Express Checkout sandbox adapter is implemented in the Worker, including tracker creation, passport token, hosted checkout URL, HMAC-SHA512 webhook verification, duplicate-event protection and amount/currency/order reconciliation. The adapter is strictly sandbox-only and requires `SAFEPAY_ENV=sandbox`, `SAFEPAY_MERCHANT_API_KEY`, `SAFEPAY_SECRET_KEY` and `SAFEPAY_WEBHOOK_SECRET` as Cloudflare Pages secrets. None are currently configured, so COD remains the only available payment option. No real sandbox transaction has been completed. Live payment onboarding, live keys, refund support and end-to-end reconciliation remain open.
 - Transactional email: no sending domain/provider is configured. Email verification, password reset and notification delivery remain disabled.
 - SMS and WhatsApp Business Platform: no approved provider/account/templates are connected.
 - Returns/refunds automation and a complete customer support workflow remain outstanding.
@@ -61,3 +61,15 @@ Order creation writes a system status event. Admin status transitions write an a
 - Admin UI: `/admin`.
 
 This is a tested production deployment with a limited set of live commerce features, not a certification for unrestricted online commerce. Merchant/payment onboarding, notification providers, business policy sign-off, owner-supplied catalogue/fleet data and real-device acceptance remain required.
+
+
+## Safepay sandbox integration
+
+- `GET /api/storefront/payment-options` returns whether the sandbox option is available. It remains false until the three Safepay secrets and explicit sandbox environment flag exist.
+- A customer must be signed in and the delivery fee must be approved before the payment session endpoint will create a tracker.
+- The tracker amount is taken from the server-side order total in integer paisa. The client cannot supply or override the amount.
+- Webhook signature is verified over the exact raw body using HMAC-SHA512. The stable event token is used for idempotency. Successful payments require the final tracker state, PKR currency and exact amount match before updating the order.
+- Admin order processing and dispatch are blocked for Safepay orders until the payment status is paid.
+- Sandbox and production credentials are separate. This code intentionally refuses to run unless `SAFEPAY_ENV=sandbox`; no live host or live mode is present.
+- CI run #43705027659 passed the type-check/build, 29 Worker tests, 12-migration / 36-table schema validation and four Playwright storefront tests. Production smoke run #43705100039 passed live health/D1, Turnstile, CNIC-retention binding and security-header checks.
+- The latest Pages deployment was successful for commit `1a5e517c722fe24a99e5fdca9792244f6904c5d1`. Payment secrets are not configured, so the public checkout continues to offer COD only.

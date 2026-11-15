@@ -34,12 +34,12 @@ Status: technically improved; not certified for unrestricted production commerce
 | High | Real catalogue and fleet data | Production database currently has no published products/variants/stock or available vehicles. | Enter verified products, prices, sizes, colours, stock, vehicle data, rates, and real photos. |
 | High | Business identity and legal content | A logo asset and favicon are uploaded and selected, but the owner must confirm they are final approved versions. Verified contact details, returns/exchange terms, delivery coverage, wholesale terms, rental terms, business hours, and privacy notice still require owner confirmation. | Confirm and publish accurate business information and policies. |
 | Medium | End-to-end verification | Worker tests use a fake D1 implementation. Playwright covers public enquiry and rental form interactions on desktop and Pixel 7 emulation with mocked API responses; it does not yet verify real D1/R2, checkout, staff invitation, media, wholesale, or CNIC workflows. | Add isolated Cloudflare-compatible integration tests and complete real-device customer/admin acceptance checks. |
-| Medium | Customer lifecycle | Customer registration/sign-in, secure sessions, profile/password changes, account-scoped order/rental history and order-status timeline are implemented. Email verification, email-based password recovery, returns/refunds automation, payment gateway and transactional notifications are not connected. | Advertise only the working account and tracking functions. Do not claim email verification, password recovery, online payment or automated refunds. |
+| Medium | Customer lifecycle | Customer registration/sign-in, secure sessions, profile/password changes, account-scoped order/rental history and order-status timeline are implemented. Email verification, email-based password recovery, returns/refunds automation and transactional notifications are not connected. Safepay sandbox adapter code is present but disabled because no sandbox credentials are configured; no real payment has been tested. | Advertise only the working account and tracking functions. Do not claim email verification, password recovery, online payment or automated refunds. |
 | Medium | Domain and SEO | The site uses the shared Pages hostname. Product detail views are not dedicated indexable product URLs. | Connect the business domain and later add canonical product routes, structured data, and per-product metadata. |
 
 ## Explicit operating boundaries
 
-- Cash on Delivery is the only checkout method. No online payment provider is connected.
+- Cash on Delivery is the only currently available checkout method. A Safepay Express Checkout sandbox adapter, signed webhook verification and server-side amount reconciliation are implemented but remain dormant until all three sandbox secrets are configured. No real sandbox transaction has been completed; live payments are not enabled.
 - Social profile URLs are display links only. OAuth, publishing, inbox management, ads, and social analytics are not implemented.
 - No email sending domain or transactional notification provider is configured.
 - No products, vehicles, reviews, or business claims should be fabricated to make the storefront look populated.
@@ -70,7 +70,7 @@ Verdict: The code can be deployed and technically smoke-tested, but a 100% produ
 ### Remaining work and external dependencies
 
 - Email verification and secure password recovery require a transactional email provider; the current account flow clearly discloses that these are not active.
-- Payment gateway processing, refunds and reconciliation require merchant approval, sandbox/live credentials and signed webhook verification.
+- Safepay sandbox end-to-end verification requires an owner-controlled sandbox merchant account, test keys and webhook shared secret. Live payments still require Safepay merchant onboarding, live credentials, live webhook setup, refund handling and reconciliation.
 - A Pakistan-supported payment provider, merchant approval, sandbox/live credentials, signed webhooks, refunds and reconciliation.
 - Transactional email domain/provider and templates.
 - SMS provider and WhatsApp Business Platform account, approved templates and message pricing.
@@ -100,4 +100,14 @@ Verdict: The code can be deployed and technically smoke-tested, but a 100% produ
 - The follow-on order-status timeline commit `df2832b01a70a2b40cb03e910394b087e0df4fed` passed CI run [#43704058411](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704058411) and production smoke [#43704125125](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704125125).
 - Production still has one admin owner, zero customer accounts, zero products, zero vehicles, zero orders and zero rental requests. No real customer or business data was created for tests.
 
-The site is still **not certified for unrestricted production commerce**. Payment provider onboarding, email/SMS/WhatsApp delivery, refunds/returns operations, real-device business acceptance, legal/policy approval and owner-supplied inventory/fleet data remain open.
+The site is still **not certified for unrestricted production commerce**. Safepay sandbox credentials and end-to-end transaction tests, live merchant onboarding, email/SMS/WhatsApp delivery, refunds/returns operations, real-device business acceptance, legal/policy approval and owner-supplied inventory/fleet data remain open.
+
+
+## Safepay sandbox adapter — 15 November 2026
+
+- Added a server-side Safepay Express Checkout adapter restricted to the sandbox host `https://sandbox.api.getsafepay.com`.
+- The storefront asks the backend whether online payment is available. It only displays the sandbox option when `SAFEPAY_ENV=sandbox` and the three server-side secrets are present.
+- Online orders require a signed-in customer account. The payment attempt uses the server-calculated final PKR total, and can only start after the customer has approved the delivery-fee quotation.
+- Webhooks are verified against the exact raw request body using HMAC-SHA512 and `X-SFPY-SIGNATURE`. Event IDs are deduplicated. A payment is marked paid only when the signed event reports `payment.succeeded`, `TRACKER_ENDED`, PKR and an exact match to the stored order total. Admin fulfilment is blocked until the order is paid.
+- Production Pages currently has no Safepay secrets configured, so the option remains hidden and COD remains the only available method. No sandbox or live card transaction has been performed. The adapter has passed unit tests for signature verification, disabled-state behavior, build, Worker tests, schema validation and browser tests.
+- Do not add secrets to GitHub source, D1, issues or chat. Add them only through Cloudflare Pages production secret settings after the owner creates the sandbox merchant account. Keep `SAFEPAY_ENV` set to `sandbox`.

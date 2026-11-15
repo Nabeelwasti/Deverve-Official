@@ -38,7 +38,7 @@ Mobile-first storefront and admin system for De VERVE, Jhelum, Pakistan.
 
 These are deliberate boundaries, not fake features:
 
-- Checkout currently supports **Cash on Delivery only**. No payment gateway is connected. Online payments must wait for an approved merchant account, provider credentials, webhook configuration and reconciliation tests.
+- Checkout currently exposes **Cash on Delivery only**. A Safepay Express Checkout sandbox adapter and signed webhook reconciliation are implemented, but disabled because the production environment has no sandbox credentials. No real sandbox transaction has been completed. Do not enable live payments until merchant onboarding, live keys, webhooks, refunds and reconciliation are tested.
 - Retail COD delivery fees are prepared by staff and must be accepted through a 48-hour customer approval link before processing or dispatch. Declining the quote cancels the order and releases reserved stock.
 - Email notifications are not enabled. The Cloudflare account currently has no custom sending domain onboarded. The contact/enquiry and order records are saved in the admin database; customers can still use the website's email and WhatsApp links.
 - Social settings store public profile URLs only. OAuth account connections, automated publishing, inbox access, ad management, analytics imports and autonomous social actions are not implemented.
@@ -81,9 +81,9 @@ The GitHub Actions workflow runs the type-check/build, Worker behavior tests and
 2. Upload the official logo/favicon and configure the real social profile URLs.
 3. Confirm delivery, returns, privacy/retention and rental policies.
 4. Connect a custom domain and onboard its email-sending domain; then configure and test transactional notifications.
-5. Choose a Pakistan-supported payment provider and supply merchant credentials before enabling online payment.
+5. Complete Safepay sandbox onboarding and end-to-end test transactions before considering live payment onboarding. Configure secrets only in Cloudflare Pages, never in source code or chat.
 6. Complete browser/mobile end-to-end tests for product media, checkout, stock reservation, wholesale approval, staff invitations and rental CNIC access.
-7. Finish customer email verification/password recovery, payment integration, transactional notifications, returns/refunds workflows, order/rental operations and visual CMS. Reviews remain disabled until moderation rules are agreed.
+7. Finish customer email verification/password recovery, transactional notifications, returns/refunds workflows, order/rental operations and visual CMS. Reviews remain disabled until moderation rules are agreed.
 
 Paid services or external account connections must not be enabled without the owner's explicit approval.
 
@@ -97,7 +97,7 @@ Paid services or external account connections must not be enabled without the ow
 
 ## Still not connected
 
-Customer registration/sign-in, account profile, password change, order/rental history and order-status timeline are now available at /account. Email verification and email-based password recovery are not active. Payment gateway processing, refunds, transactional email, SMS and WhatsApp automation remain unconnected and must not be advertised as active. Social account management remains a separate project.
+Customer registration/sign-in, account profile, password change, order/rental history and order-status timeline are now available at /account. Email verification and email-based password recovery are not active. Safepay sandbox adapter code is present but disabled until sandbox credentials are configured and a real sandbox test is completed. Live payments, refunds, transactional email, SMS and WhatsApp automation remain unavailable and must not be advertised as active. Social account management remains a separate project.
 
 ## Verification notes — 15 November 2026
 
