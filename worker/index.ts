@@ -41,7 +41,7 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
   try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
   for(const row of rows){
     const id=String(row.id),template=String(row.template_key);
-    if(!["owner_order_created","owner_rental_created","owner_payment_succeeded"].includes(template))continue;
+    if(!["owner_order_created","owner_rental_created","owner_payment_succeeded","owner_exchange_created"].includes(template))continue;
     try{
       const claim=await env.DB.prepare("UPDATE notification_outbox SET status='processing',attempts=attempts+1 WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(id,now).run();
       if((claim.meta?.changes??0)!==1)continue;
@@ -50,11 +50,15 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
         const order=await env.DB.prepare("SELECT order_number FROM orders WHERE id=? LIMIT 1").bind(row.order_id).first<{order_number:string}>();
         reference=order?.order_number??String(row.order_id??"");
         subject=template==="owner_payment_succeeded"?"Payment confirmed · "+reference:"New website order · "+reference;
+      }else if(template==="owner_exchange_created"){
+        const exchange=await env.DB.prepare("SELECT exchange_number FROM exchange_requests WHERE order_id=? LIMIT 1").bind(row.order_id).first<{exchange_number:string}>();
+        reference=exchange?.exchange_number??String(row.order_id??"");
+        subject="New exchange request · "+reference;
       }else{
         const rental=await env.DB.prepare("SELECT reference_code FROM rental_requests WHERE id=? LIMIT 1").bind(row.rental_request_id).first<{reference_code:string}>();
         reference=rental?.reference_code??String(row.rental_request_id??"");subject="New vehicle rental request · "+reference;
       }
-      const textBody=template==="owner_payment_succeeded"?"Safepay confirmed an online payment. Review the order and reconciliation record in the owner panel.":template==="owner_rental_created"?"A new vehicle rental request was submitted. Review the requested dates and vehicle in the owner panel.":"A new website order was submitted. Review the order, delivery quotation and payment status in the owner panel.";
+      const textBody=template==="owner_payment_succeeded"?"Safepay confirmed an online payment. Review the order and reconciliation record in the owner panel.":template==="owner_exchange_created"?"A customer submitted an exchange request. Review the requested items and replacement details in the owner panel.":template==="owner_rental_created"?"A new vehicle rental request was submitted. Review the requested dates and vehicle in the owner panel.":"A new website order was submitted. Review the order, delivery quotation and payment status in the owner panel.";
       const safeSubject=subject.replace(/[&<>"]/g,"");
       const html="<div style='font-family:Arial,sans-serif;color:#12345a'><h2>"+safeSubject+"</h2><p>"+textBody+"</p><p><strong>Reference:</strong> "+reference.replace(/[&<>"]/g,"")+"</p><p><a href='https://deverve-official.pages.dev/admin'>Open De VERVE owner panel</a></p></div>";
       const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
@@ -661,6 +665,64 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("This quotation has already been used. Please contact De VERVE.", 409);
     return json({ declined: true, message: "Your order has been cancelled and its reserved stock has been released. Contact De VERVE if you would like a revised quotation." });
   } catch { return error("Your decision could not be saved. Please contact De VERVE.", 503); }
+}
+
+async function adminExchangeRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/exchanges";
+  const match = url.pathname.match(/^\/api\/admin\/exchanges\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Exchange management is temporarily unavailable.", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to manage exchanges.", 403);
+
+  if (collection && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT e.id, e.order_id, e.customer_id, e.exchange_number, e.reason, e.details, e.status, e.admin_note, e.created_at, e.updated_at, e.received_at, e.completed_at, o.order_number, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone FROM exchange_requests e JOIN orders o ON o.id = e.order_id JOIN customers c ON c.id = e.customer_id ORDER BY e.created_at DESC LIMIT 100").all<Record<string, unknown>>();
+      const exchanges = rows.results ?? [];
+      if (!exchanges.length) return json({ exchanges: [] });
+      const ids = exchanges.map((item) => String(item.id));
+      const placeholders = ids.map(() => "?").join(",");
+      const items = await env.DB.prepare("SELECT ei.id, ei.exchange_request_id, ei.order_item_id, ei.quantity, ei.requested_size, ei.requested_color, oi.product_name_snapshot, oi.sku_snapshot, oi.size_snapshot, oi.color_snapshot FROM exchange_request_items ei JOIN order_items oi ON oi.id = ei.order_item_id WHERE ei.exchange_request_id IN (" + placeholders + ") ORDER BY ei.rowid").bind(...ids).all<Record<string, unknown>>();
+      const events = await env.DB.prepare("SELECT id, exchange_request_id, from_status, to_status, actor_type, note, created_at FROM exchange_status_events WHERE exchange_request_id IN (" + placeholders + ") ORDER BY created_at, rowid").bind(...ids).all<Record<string, unknown>>();
+      const itemGroups = new Map<string, Record<string, unknown>[]>();
+      const eventGroups = new Map<string, Record<string, unknown>[]>();
+      for (const item of items.results ?? []) { const id = String(item.exchange_request_id); itemGroups.set(id, [...(itemGroups.get(id) ?? []), item]); }
+      for (const event of events.results ?? []) { const id = String(event.exchange_request_id); eventGroups.set(id, [...(eventGroups.get(id) ?? []), event]); }
+      return json({ exchanges: exchanges.map((item) => ({ ...item, items: itemGroups.get(String(item.id)) ?? [], events: eventGroups.get(String(item.id)) ?? [] })) });
+    } catch { return error("Exchange requests could not be loaded.", 503); }
+  }
+
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request, 4_000);
+  const nextStatus = cleanText(body?.status, 20);
+  const adminNote = cleanText(body?.admin_note, 500);
+  if (!["reviewing", "approved", "rejected", "item_received", "completed"].includes(nextStatus)) return error("Choose a valid exchange status.", 400);
+  try {
+    const current = await env.DB.prepare("SELECT id, order_id, status FROM exchange_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; order_id: string; status: string }>();
+    if (!current) return error("Exchange request not found.", 404);
+    const allowed: Record<string, string[]> = {
+      requested: ["reviewing", "approved", "rejected"],
+      reviewing: ["approved", "rejected"],
+      approved: ["item_received"],
+      item_received: ["completed"],
+      rejected: [],
+      completed: [],
+    };
+    if (!allowed[current.status]?.includes(nextStatus)) return error("That exchange status change is not allowed.", 409);
+    const now = new Date().toISOString();
+    const results = await env.DB.batch([
+      env.DB.prepare("UPDATE exchange_requests SET status = ?, admin_note = ?, reviewed_by_admin_id = CASE WHEN ? IN ('approved','rejected') THEN ? ELSE reviewed_by_admin_id END, received_at = CASE WHEN ? = 'item_received' THEN ? ELSE received_at END, completed_at = CASE WHEN ? = 'completed' THEN ? ELSE completed_at END, updated_at = ? WHERE id = ? AND status = ?")
+        .bind(nextStatus, adminNote, nextStatus, admin.admin_user_id, nextStatus, now, nextStatus, now, now, current.id, current.status),
+      env.DB.prepare("INSERT INTO exchange_status_events (id, exchange_request_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, ?, ?, 'admin', ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ? AND status = ?)")
+        .bind(crypto.randomUUID(), current.id, current.status, nextStatus, admin.admin_user_id, adminNote || "Exchange status updated by De VERVE team", current.id, nextStatus),
+      env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, 'exchange.status_changed', 'exchange_request', ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ? AND status = ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, current.id, JSON.stringify({ from: current.status, to: nextStatus }), current.id, nextStatus),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Exchange request changed while you were updating it. Refresh and try again.", 409);
+    return json({ updated: true, status: nextStatus });
+  } catch { return error("Exchange request could not be updated.", 503); }
 }
 
 async function adminReturnRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
@@ -2242,6 +2304,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   if (auditLogResponse) return auditLogResponse;
 
 
+  const exchangeResponse = await adminExchangeRoutes(request, env, url);
+  if (exchangeResponse) return exchangeResponse;
+
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
 
@@ -2415,9 +2480,10 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? env.SAFEPAY_ENV : null });
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
-  if (customerReturnMatch && request.method === "POST") return error("De VERVE offers exchanges only. Please contact our team using the exchange option on your delivered order.", 410);
-  const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns"];
-  if (!accountPaths.includes(path) && !paymentMatch && !customerReturnMatch) return null;
+  const customerExchangeMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/exchanges$/i);
+  if (customerReturnMatch && request.method === "POST") return error("De VERVE offers exchanges only. Please use the exchange request option on your delivered order.", 410);
+  const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns", "/api/customer/exchanges"];
+  if (!accountPaths.includes(path) && !paymentMatch && !customerReturnMatch && !customerExchangeMatch) return null;
 
   if (path === "/api/customer/register" && request.method === "POST") {
     const limited = await enforcePublicRateLimit(request, env, "customer-register", 3);
@@ -2492,6 +2558,81 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   catch { return error("Customer account service is temporarily unavailable", 503); }
   if (!customer) return error("Please sign in to access your account.", 401);
 
+
+  if (path === "/api/customer/exchanges" && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT e.id, e.order_id, e.exchange_number, e.reason, e.details, e.status, e.admin_note, e.created_at, e.updated_at, e.received_at, e.completed_at, o.order_number FROM exchange_requests e JOIN orders o ON o.id = e.order_id WHERE e.customer_id = ? ORDER BY e.created_at DESC LIMIT 50").bind(customer.customer_id).all<Record<string, unknown>>();
+      const exchanges = rows.results ?? [];
+      if (!exchanges.length) return json({ exchanges: [] });
+      const ids = exchanges.map((item) => String(item.id));
+      const placeholders = ids.map(() => "?").join(",");
+      const items = await env.DB.prepare("SELECT ei.id, ei.exchange_request_id, ei.order_item_id, ei.quantity, ei.requested_size, ei.requested_color, oi.product_name_snapshot, oi.sku_snapshot, oi.size_snapshot, oi.color_snapshot FROM exchange_request_items ei JOIN order_items oi ON oi.id = ei.order_item_id WHERE ei.exchange_request_id IN (" + placeholders + ") ORDER BY ei.rowid").bind(...ids).all<Record<string, unknown>>();
+      const events = await env.DB.prepare("SELECT id, exchange_request_id, from_status, to_status, actor_type, note, created_at FROM exchange_status_events WHERE exchange_request_id IN (" + placeholders + ") ORDER BY created_at, rowid").bind(...ids).all<Record<string, unknown>>();
+      const itemGroups = new Map<string, Record<string, unknown>[]>();
+      const eventGroups = new Map<string, Record<string, unknown>[]>();
+      for (const item of items.results ?? []) { const id = String(item.exchange_request_id); itemGroups.set(id, [...(itemGroups.get(id) ?? []), item]); }
+      for (const event of events.results ?? []) { const id = String(event.exchange_request_id); eventGroups.set(id, [...(eventGroups.get(id) ?? []), event]); }
+      return json({ exchanges: exchanges.map((item) => ({ ...item, items: itemGroups.get(String(item.id)) ?? [], events: eventGroups.get(String(item.id)) ?? [] })) });
+    } catch { return error("Your exchange requests could not be loaded. Please try again.", 503); }
+  }
+
+  if (customerExchangeMatch && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const limited = await enforcePublicRateLimit(request, env, "customer-exchange", 5);
+    if (limited) return limited;
+    const body = await readJson(request, 8_000);
+    if (!body || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) return error("Select at least one item for exchange.", 400);
+    const reason = cleanText(body.reason, 30);
+    const details = cleanText(body.details, 1_000);
+    if (!["wrong_item", "damaged", "size_issue", "other"].includes(reason) || details.length < 10) return error("Choose a reason and describe the exchange request in at least 10 characters.", 400);
+    let order: { id: string; order_number: string; order_status: string; updated_at: string } | null;
+    try { order = await env.DB.prepare("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ? LIMIT 1").bind(customerExchangeMatch[1], customer.customer_id).first<{ id: string; order_number: string; order_status: string; updated_at: string }>(); }
+    catch { return error("Your order could not be checked. Please try again.", 503); }
+    if (!order) return error("Order not found in your account.", 404);
+    const deliveredAt = Date.parse(order.updated_at);
+    if (order.order_status !== "delivered" || !Number.isFinite(deliveredAt) || Date.now() < deliveredAt || Date.now() - deliveredAt > 7 * 24 * 60 * 60 * 1000) return error("Exchange requests are available only within 7 calendar days of delivery.", 409);
+    const requestedItems: Array<{ order_item_id: string; quantity: number; requested_size: string; requested_color: string }> = [];
+    for (const raw of body.items) {
+      if (!raw || typeof raw !== "object") return error("One of the selected items is invalid.", 400);
+      const item = raw as Record<string, unknown>;
+      const orderItemId = cleanText(item.order_item_id, 64);
+      const quantity = Number(item.quantity);
+      const requestedSize = cleanText(item.requested_size, 32);
+      const requestedColor = cleanText(item.requested_color, 32);
+      if (!/^[a-f0-9-]{36}$/i.test(orderItemId) || !Number.isInteger(quantity) || quantity < 1 || quantity > 100 || (requestedSize && requestedSize.length < 1)) return error("Check the selected item quantities and replacement details.", 400);
+      let purchased: { id: string; quantity: number } | null;
+      try { purchased = await env.DB.prepare("SELECT id, quantity FROM order_items WHERE id = ? AND order_id = ? LIMIT 1").bind(orderItemId, order.id).first<{ id: string; quantity: number }>(); }
+      catch { return error("Order items could not be checked. Please try again.", 503); }
+      if (!purchased || quantity > purchased.quantity) return error("A selected quantity exceeds the items in your order.", 400);
+      if (requestedItems.some((entry) => entry.order_item_id === orderItemId)) return error("Each order item can be selected only once.", 400);
+      requestedItems.push({ order_item_id: orderItemId, quantity, requested_size: requestedSize, requested_color: requestedColor });
+    }
+    try {
+      const existing = await env.DB.prepare("SELECT id FROM exchange_requests WHERE order_id = ? LIMIT 1").bind(order.id).first<{ id: string }>();
+      if (existing) return error("An exchange request already exists for this order. Contact De VERVE if you need help.", 409);
+      const id = crypto.randomUUID();
+      const exchangeNumber = "DV-EX-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
+      const now = new Date().toISOString();
+      const statements: D1PreparedStatement[] = [
+        env.DB.prepare("INSERT INTO exchange_requests (id, order_id, customer_id, exchange_number, reason, details, status, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 'requested', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND customer_id = ? AND order_status = 'delivered' AND updated_at = ?) AND NOT EXISTS (SELECT 1 FROM exchange_requests WHERE order_id = ?)")
+          .bind(id, order.id, customer.customer_id, exchangeNumber, reason, details, now, now, order.id, customer.customer_id, order.updated_at, order.id),
+      ];
+      for (const item of requestedItems) {
+        statements.push(env.DB.prepare("INSERT INTO exchange_request_items (id, exchange_request_id, order_item_id, quantity, requested_size, requested_color) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ? AND status = 'requested')")
+          .bind(crypto.randomUUID(), id, item.order_item_id, item.quantity, item.requested_size, item.requested_color, id));
+      }
+      statements.push(env.DB.prepare("INSERT INTO exchange_status_events (id, exchange_request_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, NULL, 'requested', 'customer', ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ?)")
+        .bind(crypto.randomUUID(), id, customer.customer_id, details, id));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'exchange.requested', 'exchange_request', ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ?)")
+        .bind(crypto.randomUUID(), id, JSON.stringify({ exchange_number: exchangeNumber, order_number: order.order_number, reason, item_count: requestedItems.length }), id));
+      const results = await env.DB.batch(statements);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("This order is no longer eligible or already has an exchange request. Refresh your account and try again.", 409);
+      if (results.slice(1, 1 + requestedItems.length).some((result) => (result.meta?.changes ?? 0) !== 1)) return error("The exchange request could not save all selected items. Contact De VERVE before submitting again.", 503);
+      try { await recordOwnerNotification(env.DB, { event_type: "exchange.created", title: "New exchange request " + exchangeNumber, body: "A customer requested an exchange for order " + order.order_number + ". Review the requested replacements.", entity_type: "exchange_request", entity_id: id }); } catch {}
+      try { await env.DB.prepare("INSERT INTO notification_outbox (id, order_id, channel, template_key) VALUES (?, ?, 'email', 'owner_exchange_created')").bind(crypto.randomUUID(), order.id).run(); } catch {}
+      return json({ accepted: true, exchange_number: exchangeNumber, message: "Your exchange request has been received. Our team will review it and contact you." }, 201);
+    } catch { return error("Your exchange request could not be submitted. Please try again.", 503); }
+  }
 
   if (paymentMatch && request.method === "POST") {
     if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);

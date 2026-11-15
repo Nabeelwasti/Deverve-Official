@@ -1439,3 +1439,12 @@ test("order promotion selection grants exactly one offer and respects strict spe
   assert.equal(advance.discountAmountPaisa, 1000000);
   assert.equal(advance.freeDelivery, false);
 });
+
+
+test("exchange endpoints require authenticated customer and authorized staff sessions", async () => {
+  const db = new FakeD1();
+  const customer = await handleRequest(new Request(origin + "/api/customer/exchanges"), env(db));
+  assert.equal(customer.status, 401);
+  const admin = await handleRequest(new Request(origin + "/api/admin/exchanges"), env(db));
+  assert.equal(admin.status, 401);
+});
