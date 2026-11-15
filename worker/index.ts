@@ -2121,6 +2121,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const auditLogResponse = await adminAuditLogRoutes(request, env, url);
   if (auditLogResponse) return auditLogResponse;
 
+  const cmsResponse = await cmsContentRoutes(request, env, url);
+  if (cmsResponse) return cmsResponse;
+
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
 
