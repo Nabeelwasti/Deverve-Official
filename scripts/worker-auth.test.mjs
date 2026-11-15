@@ -30,6 +30,44 @@ test("Safepay checkout stays unavailable unless all sandbox credentials are conf
   assert.equal(webhook.status, 503);
 });
 
+test("Safepay failed-payment retry can later succeed on the same tracker", async () => {
+  const db = new FakeD1();
+  const orderId = crypto.randomUUID();
+  const tracker = "track_12345678-1234-1234-1234-123456789012";
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-SAFEPAY-RETRY", total_paisa: 12000,
+    payment_provider: "safepay", payment_status: "pending",
+    delivery_fee_status: "accepted", order_status: "pending",
+  });
+  db.paymentAttempts.set("attempt-retry", {
+    id: "attempt-retry", order_id: orderId, provider: "safepay",
+    provider_reference: tracker, amount_paisa: 12000, status: "pending",
+  });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const send = async (token, type, data) => {
+    const raw = JSON.stringify({ token, type, data });
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+    const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+    const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return handleRequest(new Request(origin + "/api/webhooks/safepay", {
+      method: "POST", headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": signature }, body: raw,
+    }), { ...env(db), SAFEPAY_ENV: "sandbox", SAFEPAY_MERCHANT_API_KEY: "test-public-key", SAFEPAY_SECRET_KEY: "test-secret-key", SAFEPAY_WEBHOOK_SECRET: secret });
+  };
+  const failed = await send("evt_failed_1234567890", "payment.failed", { tracker, state: "TRACKER_ENROLLED" });
+  assert.equal(failed.status, 200);
+  assert.equal(db.paymentAttempts.get("attempt-retry").status, "pending");
+  assert.equal(db.orders.get(orderId).payment_status, "pending");
+
+  const succeeded = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(succeeded.status, 200);
+  assert.equal(db.paymentAttempts.get("attempt-retry").status, "succeeded");
+  assert.equal(db.orders.get(orderId).payment_status, "paid");
+
+  const duplicate = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(duplicate.status, 200);
+  assert.equal((await duplicate.json()).duplicate, true);
+});
+
 test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wall-clock dates", () => {
   assert.equal(parseRentalDateTime("2026-11-15T10:30"), Date.parse("2026-11-15T05:30:00.000Z"));
   assert.equal(parseRentalDateTime("2026-11-15T10:30:45"), Date.parse("2026-11-15T05:30:45.000Z"));
@@ -259,6 +297,8 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
+    if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.provider_reference === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
       const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
       return row ?? null;
@@ -382,6 +422,42 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO payment_webhook_events")) {
+      const [id, eventId, digest] = v;
+      const previous = this.db.paymentWebhookEvents.get(eventId);
+      if (!previous) this.db.paymentWebhookEvents.set(eventId, { id, provider_event_id: eventId, payload_sha256: digest, processing_status: "received" });
+      else if (!["processed", "ignored"].includes(previous.processing_status)) Object.assign(previous, { payload_sha256: digest, processing_status: "received" });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE payment_attempts SET status = 'pending', failure_code")) {
+      const row = this.db.paymentAttempts.get(v[1]);
+      if (!row || !["created", "pending"].includes(row.status)) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "pending", failure_code: "provider_declined", updated_at: v[0] });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE payment_attempts SET status = 'succeeded'")) {
+      const row = this.db.paymentAttempts.get(v[1]);
+      if (!row || !["created", "pending"].includes(row.status)) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "succeeded", updated_at: v[0] });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE orders SET payment_status = 'paid'")) {
+      const [updatedAt, id, amount] = v;
+      const row = this.db.orders.get(id);
+      if (!row || row.payment_provider !== "safepay" || row.payment_status === "paid" || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { payment_status: "paid", updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'processed'")) {
+      const row = this.db.paymentWebhookEvents.get(v[1]);
+      if (row) Object.assign(row, { processing_status: "processed", processed_at: v[0] });
+      return { success: true, meta: { changes: row ? 1 : 0 } };
+    }
+    if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'failed'")) {
+      const row = this.db.paymentWebhookEvents.get(v[0]);
+      if (row) row.processing_status = "failed";
+      return { success: true, meta: { changes: row ? 1 : 0 } };
+    }
     if (q.startsWith("UPDATE orders SET payment_provider = 'safepay'")) { const row = this.db.orders.get(v[0]); if (!row || row.payment_provider === "safepay") return { success: true, meta: { changes: 0 } }; row.payment_provider = "safepay"; return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO order_status_events")) { const id = v[0], order_id = v[1], from_status = v[2], to_status = v[3]; const actor_type = q.includes("'admin'") ? "admin" : "system"; const actor_id = actor_type === "admin" ? v[4] : null; const note = actor_type === "admin" ? v[5] : "Order received"; this.db.orderStatusEvents.push({ id, order_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() }); return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO customers")) {
@@ -689,6 +765,7 @@ class FakeD1 {
   sessions = new Map();
   attempts = new Map();
   paymentAttempts = new Map();
+  paymentWebhookEvents = new Map();
   rateLimits = new Map();
   products = new Map();
   variants = new Map();
