@@ -2015,7 +2015,7 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
       ]);
       if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order");
     } else {
-      await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_declined', updated_at = ? WHERE id = ? AND status IN ('created','pending')")
+      await env.DB.prepare("UPDATE payment_attempts SET status = 'pending', failure_code = 'provider_declined', updated_at = ? WHERE id = ? AND status IN ('created','pending')")
         .bind(new Date().toISOString(), attempt.id).run();
     }
 
