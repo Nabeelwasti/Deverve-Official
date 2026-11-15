@@ -31,10 +31,10 @@ export interface Env {
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
   const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();
-  if(!apiKey||!from||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))return;
+  if(!apiKey||!from||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
   let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
   try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
-  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)):[];
+  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)):[];
   if(!to.length)return;
   const now=new Date().toISOString();
   let rows:Record<string,unknown>[]=[];
@@ -1838,7 +1838,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
-  if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid primary email, up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(address))return error("One of the secondary email addresses is invalid",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
+  if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid primary email, up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return error("One of the secondary email addresses is invalid",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
   const statements: D1PreparedStatement[]=[];
   const now=new Date().toISOString();
   let links:SocialLinks|undefined;
