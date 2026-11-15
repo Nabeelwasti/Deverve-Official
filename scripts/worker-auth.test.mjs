@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, parseRentalDateTime, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, handleRequest, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -68,50 +68,20 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal((await duplicate.json()).duplicate, true);
 });
 
-test("customers can request a return only for their delivered order within seven days", async () => {
+test("exchange-only policy rejects new return submissions without creating refund records", async () => {
   const db = new FakeD1();
   const registered = await handleRequest(request("/api/customer/register", "POST", {
-    full_name: "Return Customer", phone: "+923001234567", email: "returns@example.com",
-    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
-  }, { "cf-connecting-ip": "203.0.113.90", "sec-fetch-site": "same-origin" }), env(db));
-  const customerId = (await registered.json()).customer.id;
-  const cookie = registered.headers.get("set-cookie").split(";")[0];
-  const orderId = crypto.randomUUID(), itemId = crypto.randomUUID();
-  db.orders.set(orderId, { id: orderId, customer_id: customerId, order_number: "DV-RETURN-001", order_status: "delivered", updated_at: new Date().toISOString(), payment_provider: "manual", payment_status: "pending" });
-  db.orderItems.push({ id: itemId, order_id: orderId, quantity: 2, unit_price_paisa: 125000, product_name_snapshot: "Stretch Hoodie", sku_snapshot: "DV-HOOD-M", size_snapshot: "M", color_snapshot: "Navy" });
-  const submitted = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
-    reason: "damaged", details: "The seam is open near the left sleeve.", items: [{ order_item_id: itemId, quantity: 1 }],
-  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(submitted.status, 201);
-  const payload = await submitted.json();
-  assert.equal(payload.refund_amount_paisa, 125000);
-  assert.match(payload.return_number, /^DV-RET-/);
-  assert.equal(db.returnRequests.size, 1);
-  const history = await handleRequest(new Request(origin + "/api/customer/returns", { headers: { cookie } }), env(db));
-  assert.equal(history.status, 200);
-  assert.equal((await history.json()).returns[0].items[0].quantity, 1);
-  const duplicate = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
-    reason: "damaged", details: "Another note for this order.", items: [{ order_item_id: itemId, quantity: 1 }],
-  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(duplicate.status, 409);
-});
-
-test("return requests reject undelivered orders and orders outside the seven-day window", async () => {
-  const db = new FakeD1();
-  const registered = await handleRequest(request("/api/customer/register", "POST", {
-    full_name: "Return Window Customer", phone: "+923001234567", email: "window@example.com",
+    full_name: "Exchange Policy Customer", phone: "+923001234567", email: "exchange@example.com",
     password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
   }, { "cf-connecting-ip": "203.0.113.91", "sec-fetch-site": "same-origin" }), env(db));
   const cookie = registered.headers.get("set-cookie").split(";")[0];
   const customerId = (await registered.json()).customer.id;
-  const recentOrderId = crypto.randomUUID(), oldOrderId = crypto.randomUUID();
-  db.orders.set(recentOrderId, { id: recentOrderId, customer_id: customerId, order_status: "processing", updated_at: new Date().toISOString(), order_number: "DV-RETURN-UNDELIVERED" });
-  db.orders.set(oldOrderId, { id: oldOrderId, customer_id: customerId, order_status: "delivered", updated_at: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(), order_number: "DV-RETURN-EXPIRED" });
-  const payload = { reason: "other", details: "The product did not meet my expectations.", items: [{ order_item_id: crypto.randomUUID(), quantity: 1 }] };
-  const undelivered = await handleRequest(request("/api/customer/orders/" + recentOrderId + "/returns", "POST", payload, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(undelivered.status, 409);
-  const expired = await handleRequest(request("/api/customer/orders/" + oldOrderId + "/returns", "POST", payload, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(expired.status, 409);
+  const deliveredOrderId = crypto.randomUUID();
+  db.orders.set(deliveredOrderId, { id: deliveredOrderId, customer_id: customerId, order_status: "delivered", updated_at: new Date().toISOString(), order_number: "DV-EXCHANGE-ONLY" });
+  const payload = { reason: "size_issue", details: "I need a different size, please guide me.", items: [{ order_item_id: crypto.randomUUID(), quantity: 1 }] };
+  const response = await handleRequest(request("/api/customer/orders/" + deliveredOrderId + "/returns", "POST", payload, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(response.status, 410);
+  assert.match((await response.json()).error, /exchanges only/i);
   assert.equal(db.returnRequests.size, 0);
 });
 
@@ -412,6 +382,7 @@ class FakeStatement {
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, retail_price_paisa: product.retail_price_paisa } : null;
     }
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ?")) { const row = [...this.db.orders.values()].find((item) => item.id === v[0]); return row ?? null; }
+    if (q.startsWith("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, role, is_active, password_hash FROM admin_users")) {
       return [...this.db.admins.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
@@ -473,7 +444,7 @@ class FakeStatement {
       const ids = new Set(v); return { success: true, results: this.db.returnStatusEvents.filter((row) => ids.has(row.return_request_id)) };
     }
     if (q.startsWith("SELECT id, order_id, from_status, to_status, actor_type, note, created_at FROM order_status_events WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderStatusEvents.filter((row) => ids.has(row.order_id)) }; }
-    if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
+    if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) }; }
     if (q.startsWith("SELECT id, reference_code, vehicle_id, customer_name, pickup_city, pickup_address, destination_city, destination_address, pickup_at, return_at, driver_option, status, created_at FROM rental_requests WHERE customer_id = ?")) return { success: true, results: [...this.db.rentalRequests.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.position, pm.is_primary FROM product_media_assets")) {
@@ -760,14 +731,14 @@ class FakeStatement {
       this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO orders")) {
-      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status] = v;
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status] = v;
       if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
-      const checks = v.slice(13);
+      const checks = v.slice(17);
       for (let i = 0; i < checks.length; i += 2) {
         const variant = this.db.variants.get(checks[i]);
         if (!variant || variant.is_active !== 1 || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } };
       }
-      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?")) {
@@ -1442,4 +1413,29 @@ test("Safepay production credentials remain disabled until the explicit live swi
   assert.deepEqual(await disabled.json(),{online_payment_available:false,environment:null});
   const enabled = await handleRequest(request("/api/storefront/payment-options","GET"),{...base,SAFEPAY_LIVE_ENABLED:"true"});
   assert.deepEqual(await enabled.json(),{online_payment_available:true,environment:"production"});
+});
+
+
+test("Safepay checkout URL always matches the selected merchant environment", () => {
+  const sandbox = buildSafepayCheckoutUrl({ apiHost: "https://sandbox.api.getsafepay.com", environment: "sandbox", merchantApiKey: "x", secretKey: "x", webhookSecret: "x" }, "track_test_123456789012", "sandbox-token-123456789012", "https://deverve.example");
+  const live = buildSafepayCheckoutUrl({ apiHost: "https://api.getsafepay.com", environment: "production", merchantApiKey: "x", secretKey: "x", webhookSecret: "x" }, "track_live_123456789012", "live-token-123456789012", "https://deverve.example");
+  assert.equal(new URL(sandbox).searchParams.get("environment"), "sandbox");
+  assert.equal(new URL(sandbox).hostname, "sandbox.api.getsafepay.com");
+  assert.equal(new URL(live).searchParams.get("environment"), "production");
+  assert.equal(new URL(live).hostname, "api.getsafepay.com");
+  assert.equal(new URL(live).searchParams.get("redirect_url"), "https://deverve.example/account?payment=return");
+});
+
+
+test("order promotion selection grants exactly one offer and respects strict spend thresholds", () => {
+  assert.deepEqual(selectOrderPromotion(500000, false), { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false });
+  assert.equal(selectOrderPromotion(500001, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2000000, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2000001, false).code, "ORDER_30");
+  assert.equal(selectOrderPromotion(2000001, true).code, "ADVANCE_40");
+  assert.equal(selectOrderPromotion(4000000, true).code, "ADVANCE_40");
+  assert.equal(selectOrderPromotion(4000001, true).code, "ORDER_45");
+  const advance = selectOrderPromotion(2500000, true);
+  assert.equal(advance.discountAmountPaisa, 1000000);
+  assert.equal(advance.freeDelivery, false);
 });

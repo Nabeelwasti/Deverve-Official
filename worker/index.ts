@@ -30,8 +30,12 @@ export interface Env {
 }
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
-  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim(),to=env.OWNER_NOTIFICATION_EMAIL?.trim();
-  if(!apiKey||!from||!to||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
+  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();
+  if(!apiKey||!from||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
+  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
+  try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
+  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)):[];
+  if(!to.length)return;
   const now=new Date().toISOString();
   let rows:Record<string,unknown>[]=[];
   try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
@@ -53,7 +57,7 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
       const textBody=template==="owner_payment_succeeded"?"Safepay confirmed an online payment. Review the order and reconciliation record in the owner panel.":template==="owner_rental_created"?"A new vehicle rental request was submitted. Review the requested dates and vehicle in the owner panel.":"A new website order was submitted. Review the order, delivery quotation and payment status in the owner panel.";
       const safeSubject=subject.replace(/[&<>"]/g,"");
       const html="<div style='font-family:Arial,sans-serif;color:#12345a'><h2>"+safeSubject+"</h2><p>"+textBody+"</p><p><strong>Reference:</strong> "+reference.replace(/[&<>"]/g,"")+"</p><p><a href='https://deverve-official.pages.dev/admin'>Open De VERVE owner panel</a></p></div>";
-      const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to:[to],subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
+      const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
       const payload=await response.json().catch(()=>({})) as {id?:string};
       if(!response.ok)throw new Error("resend_http_"+response.status);
       await env.DB.batch([
@@ -488,7 +492,7 @@ interface CheckoutVariantRow {
 interface OrderRow {
   id: string; order_number: string; customer_name: string; phone: string; email: string | null;
   delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number;
-  total_paisa: number; payment_method: string; payment_provider: string; payment_status: string; order_status: string;
+  total_paisa: number; discount_code: string; discount_label: string; discount_amount_paisa: number; free_delivery: number; payment_method: string; payment_provider: string; payment_status: string; order_status: string;
   delivery_fee_status: string; delivery_fee_expires_at: string | null;
   customer_note: string; created_at: string; updated_at: string;
 }
@@ -496,6 +500,16 @@ interface OrderItemRow {
   id: string; order_id: string; variant_id: string | null; product_name_snapshot: string;
   sku_snapshot: string | null; size_snapshot: string; color_snapshot: string;
   quantity: number; unit_price_paisa: number; line_total_paisa: number;
+}
+
+export interface OrderPromotion { code: string; label: string; discountPercent: number; discountAmountPaisa: number; freeDelivery: boolean; }
+export function selectOrderPromotion(subtotalPaisa: number, advancePayment: boolean): OrderPromotion {
+  if (!Number.isSafeInteger(subtotalPaisa) || subtotalPaisa < 0) throw new Error("Invalid order subtotal");
+  if (subtotalPaisa > 4_000_000) return { code: "ORDER_45", label: "45% order discount", discountPercent: 45, discountAmountPaisa: Math.floor(subtotalPaisa * 0.45), freeDelivery: false };
+  if (advancePayment) return { code: "ADVANCE_40", label: "40% advance payment discount", discountPercent: 40, discountAmountPaisa: Math.floor(subtotalPaisa * 0.40), freeDelivery: false };
+  if (subtotalPaisa > 2_000_000) return { code: "ORDER_30", label: "30% order discount", discountPercent: 30, discountAmountPaisa: Math.floor(subtotalPaisa * 0.30), freeDelivery: false };
+  if (subtotalPaisa > 500_000) return { code: "FREE_DELIVERY", label: "Free delivery", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: true };
+  return { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false };
 }
 
 async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
@@ -559,17 +573,19 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       subtotal += lineTotal;
       lines.push({ variant, quantity, lineTotal });
     }
+    const advancePayment = requestedPaymentProvider !== "manual" && env.SAFEPAY_ENV === "production";
+    const promotion = selectOrderPromotion(subtotal, advancePayment);
     const deliveryFee = 0;
-    const total = subtotal + deliveryFee;
+    const total = subtotal - promotion.discountAmountPaisa + deliveryFee;
     const id = crypto.randomUUID();
     const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
     const now = new Date().toISOString();
     const conditions = lines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token, "pending_quote"];
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, promotion.code, promotion.label, promotion.discountAmountPaisa, promotion.freeDelivery ? 1 : 0, note, token, promotion.freeDelivery ? "accepted" : "pending_quote"];
     for (const line of lines) orderValues.push(line.variant.id, line.quantity);
     const statements = [
-      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
     ];
     for (const line of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
@@ -586,7 +602,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
-    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
+    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
     try {
@@ -722,7 +738,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const limitValue = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
     try {
-      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
         .bind(limit).all<OrderRow>();
       const orders = result.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -742,10 +758,11 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     if (!Number.isSafeInteger(deliveryFee) || Number(deliveryFee) < 0 || Number(deliveryFee) > 100_000_000) return error("Enter a valid delivery fee between Rs. 0 and Rs. 1,000,000.", 400);
     const id = deliveryFeeMatch[1];
     try {
-      const current = await env.DB.prepare("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; subtotal_paisa: number }>();
+      const current = await env.DB.prepare("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; subtotal_paisa: number; discount_amount_paisa: number; free_delivery: number }>();
       if (!current) return error("Order not found", 404);
       if (!["pending", "confirmed"].includes(current.order_status)) return error("A delivery quotation can only be prepared before fulfilment begins.", 409);
-      const total = current.subtotal_paisa + Number(deliveryFee);
+      if (current.free_delivery === 1) return error("This order already qualifies for its single free-delivery offer. No additional delivery charge can be added.", 409);
+      const total = current.subtotal_paisa - (current.discount_amount_paisa ?? 0) + Number(deliveryFee);
       if (!Number.isSafeInteger(total)) return error("The final order total is outside the supported range.", 400);
       const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
       const tokenHash = await sha256(token);
@@ -1822,7 +1839,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key='cnic_uploads_enabled'").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false,notification_emails:{primary:"deverve61@gmail.com",secondary:[],enabled:true}};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -1830,8 +1847,11 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   const hasLinks=body?.social_links!==undefined;
   const hasBrand=body?.brand_assets!==undefined;
   const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
-  if(!hasLinks&&!hasBrand&&!hasCnicUploads)return error("Submit website settings to save",400);
+  const hasNotificationEmails=body?.notification_emails!==undefined;
+  if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
+  let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
+  if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid primary email, up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return error("One of the secondary email addresses is invalid",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
   const statements: D1PreparedStatement[]=[];
   const now=new Date().toISOString();
   let links:SocialLinks|undefined;
@@ -1844,6 +1864,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})));
   }
+  if(hasNotificationEmails&&notificationEmails){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('notification_emails',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(notificationEmails),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.notification_emails_updated','store_settings','notification_emails',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({primary:notificationEmails.primary,secondary_count:notificationEmails.secondary.length,enabled:notificationEmails.enabled})));}
   if(hasCnicUploads){
     const enabled=body?.cnic_uploads_enabled===true;
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('cnic_uploads_enabled',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(enabled),admin.admin_user_id,now));
@@ -1865,7 +1886,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
@@ -1897,7 +1918,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can view business-wide notifications",403);
-  if(settings&&request.method==="GET")return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&env.OWNER_NOTIFICATION_EMAIL),provider:"Resend"});
+  if(settings&&request.method==="GET"){try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();const recipients=saved?JSON.parse(saved.setting_value_json) as {enabled?:boolean;primary?:string}:null;const enabled=recipients?.enabled!==false;const primary=recipients?.primary??env.OWNER_NOTIFICATION_EMAIL??"deverve61@gmail.com";return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&enabled&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)),provider:"Resend",primary_email:primary});}catch{return json({email_configured:false,provider:"Resend"});}}
   if(collection&&request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications ORDER BY created_at DESC LIMIT 100").all<Record<string,unknown>>();
@@ -2265,6 +2286,7 @@ async function currentCustomer(request: Request, db: D1Database): Promise<Custom
 
 interface SafepayConfig {
   apiHost: string;
+  environment: "sandbox" | "production";
   merchantApiKey: string;
   secretKey: string;
   webhookSecret: string;
@@ -2272,13 +2294,24 @@ interface SafepayConfig {
 
 function getSafepayConfig(env: Env): SafepayConfig | null {
   const environment = env.SAFEPAY_ENV;
-  if (!["sandbox", "production"].includes(environment ?? "") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
+  if ((environment !== "sandbox" && environment !== "production") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
   return {
     apiHost: environment === "production" ? "https://api.getsafepay.com" : "https://sandbox.api.getsafepay.com",
+    environment,
     merchantApiKey: env.SAFEPAY_MERCHANT_API_KEY,
     secretKey: env.SAFEPAY_SECRET_KEY,
     webhookSecret: env.SAFEPAY_WEBHOOK_SECRET,
   };
+}
+
+export function buildSafepayCheckoutUrl(config: SafepayConfig, tracker: string, tbt: string, origin: string): string {
+  const checkout = new URL("/embedded", config.apiHost);
+  checkout.search = new URLSearchParams({
+    environment: config.environment, tracker, source: "hosted", tbt,
+    redirect_url: new URL("/account?payment=return", origin).toString(),
+    cancel_url: new URL("/account?payment=cancelled", origin).toString(),
+  }).toString();
+  return checkout.toString();
 }
 
 function constantTimeHexEqual(expected: string, received: string): boolean {
@@ -2382,6 +2415,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? env.SAFEPAY_ENV : null });
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
+  if (customerReturnMatch && request.method === "POST") return error("De VERVE offers exchanges only. Please contact our team using the exchange option on your delivered order.", 410);
   const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns"];
   if (!accountPaths.includes(path) && !paymentMatch && !customerReturnMatch) return null;
 
@@ -2479,8 +2513,8 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
 
       const attemptId = crypto.randomUUID();
       const idempotencyKey = crypto.randomUUID();
-      await env.DB.prepare("INSERT INTO payment_attempts (id, order_id, provider, environment, idempotency_key, amount_paisa, currency, status) VALUES (?, ?, 'safepay', 'sandbox', ?, ?, 'PKR', 'created')")
-        .bind(attemptId, order.id, idempotencyKey, order.total_paisa).run();
+      await env.DB.prepare("INSERT INTO payment_attempts (id, order_id, provider, environment, idempotency_key, amount_paisa, currency, status) VALUES (?, ?, 'safepay', ?, ?, ?, 'PKR', 'created')")
+        .bind(attemptId, order.id, config.environment, idempotencyKey, order.total_paisa).run();
       try {
         const trackerResponse = await safepayApi(config, "/order/payments/v3/", "POST", {
           merchant_api_key: config.merchantApiKey,
@@ -2500,17 +2534,12 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
         const passportData = passportResponse.data;
         const tbt = typeof passportData === "string" ? passportData : "";
         if (tbt.length < 20 || tbt.length > 1000) throw new Error("Safepay did not return a valid checkout token");
-        const checkout = new URL("/embedded", config.apiHost);
-        checkout.search = new URLSearchParams({
-          environment: "sandbox", tracker, source: "hosted", tbt,
-          redirect_url: url.origin + "/account?payment=return",
-          cancel_url: url.origin + "/account?payment=cancelled",
-        }).toString();
+        const checkoutUrl = buildSafepayCheckoutUrl(config, tracker, tbt, url.origin);
         const now = new Date().toISOString();
         const saved = await env.DB.prepare("UPDATE payment_attempts SET provider_reference = ?, checkout_url = ?, status = 'pending', updated_at = ? WHERE id = ? AND status = 'created'")
-          .bind(tracker, checkout.toString(), now, attemptId).run();
+          .bind(tracker, checkoutUrl, now, attemptId).run();
         if ((saved.meta?.changes ?? 0) !== 1) throw new Error("Payment attempt could not be saved");
-        return json({ checkout_url: checkout.toString(), environment: "sandbox" });
+        return json({ checkout_url: checkoutUrl, environment: config.environment });
       } catch (caught) {
         await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_error', updated_at = ? WHERE id = ? AND status = 'created'")
           .bind(new Date().toISOString(), attemptId).run();
@@ -2638,7 +2667,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
 
   if (path === "/api/customer/orders" && request.method === "GET") {
     try {
-      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
+      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
         .bind(customer.customer_id).all<Record<string, unknown>>();
       const orders = rows.results ?? [];
       if (!orders.length) return json({ orders: [] });

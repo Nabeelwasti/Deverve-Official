@@ -102,7 +102,7 @@ test("bilingual customer policies are accessible from the storefront", async ({ 
   await page.getByRole("button", { name: "Toggle navigation" }).click();
   await page.getByRole("button", { name: "Policies", exact: true }).click();
   await expect(page.getByRole("heading", { name: /clear by design/i })).toBeVisible();
-  await expect(page.getByText("Returns, exchanges & complaints")).toBeVisible();
-  await expect(page.getByText("واپسی، تبدیلی اور شکایات")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Exchange-only policy & complaints" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "صرف تبدیلی کی پالیسی اور شکایات" })).toBeVisible();
   await expect(page.getByText(/CNIC documents/i)).toBeVisible();
 });
