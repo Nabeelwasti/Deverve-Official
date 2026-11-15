@@ -417,3 +417,4 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .footer-policy-links button{border:0;background:transparent;color:inherit;text-decoration:underline;text-underline-offset:4px;cursor:pointer;font:inherit;padding:.25rem 0}
 @media(max-width:760px){.policy-card{grid-template-columns:28px minmax(0,1fr);gap:.75rem;padding:1.1rem}.policy-urdu{grid-column:2;border-top:1px solid rgba(20,45,85,.12);padding-top:1rem}.turnstile-widget{max-width:100%;overflow-x:auto}}
 .store-main[data-screen="policies"]>section:not(.policy-page){display:none!important}
+.checkout-policy-note{margin:.75rem 0;color:#5b687a;font-size:.86rem;line-height:1.6}.checkout-policy-note button{border:0;background:transparent;color:#1d5d9f;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:700;cursor:pointer;padding:0}
