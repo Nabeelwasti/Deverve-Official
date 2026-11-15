@@ -19,7 +19,6 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
-  CNIC_UPLOADS_ENABLED?: string;
 }
 interface ProductRow {
   id: string;
