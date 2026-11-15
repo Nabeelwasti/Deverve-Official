@@ -956,7 +956,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
       .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
     if (signedInCustomer) await env.DB.prepare("UPDATE rental_requests SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id).run();
-    await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a vehicle rental request. Review the requested dates and availability.",entity_type:"rental_request",entity_id:id});
+    try{await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a vehicle rental request. Review the requested dates and availability.",entity_type:"rental_request",entity_id:id});}catch{}
     try{await env.DB.prepare("INSERT INTO notification_outbox (id,rental_request_id,channel,template_key) VALUES (?, ?, 'email', 'owner_rental_created')").bind(crypto.randomUUID(),id).run();}catch{}
     return json({
       accepted: true,
@@ -2007,7 +2007,7 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
     }catch{return error("Page could not be created",503);}
   }
   if(adminPageMatch&&request.method==="PATCH"){
-    const body=await readJson(request,30000);if(!body)return error("Submit valid page content",400);
+    const body=await readJson(request,100000);if(!body)return error("Submit valid page content",400);
     const id=adminPageMatch[1],title=cleanText(body.title,120),slug=cleanText(body.slug,80).toLowerCase(),pageType=cleanText(body.page_type,20),status=cleanText(body.status,20);
     const seoTitle=cleanText(body.seo_title,70),seoDescription=cleanText(body.seo_description,160);
     if(title.length<2||!cmsSlugPattern.test(slug)||!["standard","landing","policy","home"].includes(pageType)||!["draft","published","archived"].includes(status))return error("Check the page title, URL slug, page type and publication status",400);
@@ -2360,7 +2360,7 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
         env.DB.prepare("UPDATE orders SET payment_status = 'paid', updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(now, attempt.order_id, attempt.amount_paisa),
       ]);
       if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order");
-      await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});
+      try{await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});}catch{}
       try{await env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?, ?, 'email', 'owner_payment_succeeded')").bind(crypto.randomUUID(),attempt.order_id).run();}catch{}
     } else {
       await env.DB.prepare("UPDATE payment_attempts SET status = 'pending', failure_code = 'provider_declined', updated_at = ? WHERE id = ? AND status IN ('created','pending')")
@@ -2809,7 +2809,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       await env.DB.prepare(
         "INSERT INTO enquiries (id, enquiry_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(id, enquiryType, customerName, phone, email || null, message).run();
-      await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+enquiryType+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});
+      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+enquiryType+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}
       return json({ accepted: true, reference: id }, 201);
     } catch {
       return error("We could not save your enquiry. Please try again later.", 503);
