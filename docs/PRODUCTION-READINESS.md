@@ -1,3 +1,38 @@
+# Current release verdict — 15 November 2026
+
+**Verdict: deployed technical foundation; not yet ready for unrestricted live commerce.**
+
+- The payments/promotions/owner-email/exchange-policy change set is merged into `main` at application merge commit `4feb999f0332a6ef5234bb9a6faf985c94268b78`.
+- GitHub Actions run #417 (`43729210673`) passed all ten steps, including build/type-check, Worker tests, D1 schema validation and browser tests.
+- Cloudflare Pages deployed the merged application from `main` successfully as deployment `042845de`. A later documentation-only commit `53cff49cbf99bfde0cbe29776fd7e635572cfc9d` is also deployed and active as `72572260-5ebb-469e-8f61-56616c65534d`.
+- Production D1 migration `0017_single_promotion_per_order.sql` was applied manually after confirming the four columns were absent. A fresh `PRAGMA table_info(orders)` verified all four new columns. No order/customer data was changed.
+- Production schema has 42 tables. The D1 `d1_migrations`/migration tracking table is absent, so the applied migration is recorded in this document and the session handoff.
+- Production data snapshot: 1 active owner, 3 media assets, 0 products, 0 variants, 0 vehicles, 0 customers, 0 orders, 0 rental requests, 0 owner notifications and 0 CMS pages.
+- Cloudflare Pages is connected to `Nabeelwasti/Deverve-Official` on `main`, with `DB` bound to `deverve-production` and `MEDIA` bound to the private `deverve-media-private` bucket.
+- Turnstile verifier Worker has its secret binding. The separate CNIC-retention Worker has D1/R2 bindings and a daily schedule; CNIC upload remains disabled.
+- Pages production variables currently expose only `ADMIN_BOOTSTRAP_TOKEN`; Safepay and Resend credentials are not configured. COD remains the only active checkout method.
+- Safepay adapter code supports sandbox and separately gated production, but no merchant credentials or successful sandbox transaction are present. PayFast is not integrated; the public API docs describe direct instrument-data transactions but do not establish the merchant-specific hosted OneCheckout redirect contract needed to avoid handling raw card data.
+- Owner email recipient defaults to `deverve61@gmail.com`, but Resend delivery needs a verified sender domain/address and API key. Exchange requests remain WhatsApp-assisted; an in-site exchange case manager is not implemented.
+- No custom domain is connected. Real catalogue/fleet data and owner-approved business/legal information are absent.
+- A fresh external HTTP smoke test of the Pages hostname could not be performed from the available verification environment; Cloudflare reports the latest deployment as active, but live HTTP response verification is marked unverified here.
+
+## Remaining launch blockers
+
+| Priority | Blocker | Required closure |
+|---|---|---|
+| Critical | No live catalogue or fleet data | Owner/staff must enter verified products, variants, sizes, colours, prices, stock, genuine photos, vehicles, rates and availability. |
+| High | Payment onboarding | Configure Safepay sandbox secrets, run a real sandbox payment and webhook reconciliation, then complete provider live approval before enabling production. Obtain PayFast's official hosted OneCheckout contract and credentials before implementing it. |
+| High | Email delivery | Verify a sending domain, add Resend API key and sender address as Cloudflare secrets, then test delivery and retries. |
+| High | Business/legal data | Owner must approve contact details, delivery coverage/fees, wholesale minimums, rental terms, exchange terms, privacy and CNIC-retention wording. |
+| Medium | Exchange case management | Customer exchange is currently WhatsApp-assisted; build an in-site case workflow if the owner requires portal-managed exchanges. |
+| Medium | Customer account lifecycle | Email verification and email-based password recovery are not active. |
+| Medium | Domain and acceptance | Owner must provide a domain and DNS access if a custom domain is required; complete real-device customer/admin tests against production D1/R2. |
+| Contained | CNIC collection | Keep disabled until owner-approved retention policy and a real scheduled deletion test are complete. |
+
+Do not mark the site unrestricted-commerce-ready while these blockers remain. Do not invent business data, provider credentials, domain ownership or customer records.
+
+---
+
 # De VERVE production-readiness report
 
 Audit baseline: 9e5ac6bfbc45e455d770405b016c17b395538a3a
