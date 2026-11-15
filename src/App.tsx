@@ -147,7 +147,7 @@ function Storefront() {
       const result = await response.json() as { accepted?: boolean; error?: string; order_number?: string };
       if (!response.ok || !result.accepted || !result.order_number) throw new Error(result.error || "Your order could not be placed.");
       setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID());
-      setCheckoutMessage("Your COD order request has been received. Our team will contact you to confirm delivery details.");
+      setCheckoutMessage("Your COD order request has been received. Our team will share a secure link for you to review and approve the delivery fee and final payable total before processing.");
     } catch (error) { setCheckoutMessage(error instanceof Error ? error.message : "Checkout is unavailable. Please try again."); }
     finally { setCheckoutBusy(false); }
   };
