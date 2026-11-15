@@ -803,6 +803,13 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   const order = (await listed.json()).orders[0];
   assert.equal(order.items.length, 1);
   assert.equal(order.items[0].quantity, 2);
+  assert.equal(order.delivery_fee_status, "pending_quote");
+
+  const deliveryQuote = await handleRequest(request("/api/admin/orders/" + order.id + "/delivery-fee", "POST", { delivery_fee_paisa: 0 }, headers), env(db));
+  assert.equal(deliveryQuote.status, 200);
+  const deliveryToken = new URL((await deliveryQuote.json()).approval_url).searchParams.get("token");
+  const deliveryAccepted = await handleRequest(request("/api/delivery-fee/" + deliveryToken, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.57" }), env(db));
+  assert.equal(deliveryAccepted.status, 200);
 
   for (const status of ["confirmed", "processing", "dispatched", "delivered"]) {
     const updated = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: status }, headers), env(db));
