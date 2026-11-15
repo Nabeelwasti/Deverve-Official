@@ -15,7 +15,7 @@ required_tables = {
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
-    "store_settings", "content_revisions", "product_media_assets",
+    "store_settings", "content_revisions", "product_media_assets", "rental_documents",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -43,6 +43,8 @@ assert {"reference_code", "email", "customer_note", "admin_note", "updated_at", 
 assert "rental_documents" in actual_tables, "Private rental document table is missing"
 rental_document_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_documents)")}
 assert {"rental_request_id", "document_side", "object_key", "mime_type", "byte_size"} <= rental_document_columns, "Rental document fields are missing"
+assert (Path("functions/media/[[path]].ts")).is_file(), "Public media URLs must be routed through the Worker authorization handler"
+assert (Path("functions/api/[[path]].ts")).is_file(), "API routes must be routed through the Worker handler"
 
 
 unique_indexes = {
