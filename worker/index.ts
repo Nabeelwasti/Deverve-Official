@@ -2359,6 +2359,8 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
         env.DB.prepare("UPDATE orders SET payment_status = 'paid', updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(now, attempt.order_id, attempt.amount_paisa),
       ]);
       if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order");
+      await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});
+      try{await env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?, ?, 'email', 'owner_payment_succeeded')").bind(crypto.randomUUID(),attempt.order_id).run();}catch{}
     } else {
       await env.DB.prepare("UPDATE payment_attempts SET status = 'pending', failure_code = 'provider_declined', updated_at = ? WHERE id = ? AND status IN ('created','pending')")
         .bind(new Date().toISOString(), attempt.id).run();
