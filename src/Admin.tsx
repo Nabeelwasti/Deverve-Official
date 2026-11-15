@@ -38,6 +38,7 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 export default function Admin() {
   const [admin, setAdmin] = useState<AdminUser | null>(null);
+  const [activeAdminScreen, setActiveAdminScreen] = useState("overview");
   const [checking, setChecking] = useState(true);
   const [setupMode, setSetupMode] = useState(false);
   const [email, setEmail] = useState("");
@@ -359,21 +360,14 @@ export default function Admin() {
   const shownProducts = filter === "all" ? products : products.filter((product) => product.status === filter);
   const canEditProducts = ["owner", "manager", "catalogue"].includes(admin.role);
   return (
-    <main className="admin-screen admin-dashboard">
+    <main className="admin-screen admin-dashboard" data-admin-screen={activeAdminScreen}>
       <header className="admin-topbar">
         <a className="admin-brand" href="/">De VERVE<span>.</span><small>BUSINESS CONTROL CENTRE</small></a>
         <div className="admin-user"><span>{admin.email}<small>{admin.role}</small></span><button type="button" onClick={signOut} disabled={busy}>Sign out</button></div>
       </header>
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>Overview</h1><p className="admin-muted">Manage your catalogue and keep your storefront up to date.</p></div>{canEditProducts && <button className="admin-primary" onClick={startNew}>＋ Add product</button>}</div>
-        <nav className="admin-quick-nav" aria-label="Admin sections">
-          <a href="#products">Products & stock</a>
-          {["owner", "manager", "rental"].includes(admin.role) && <a href="#vehicles">Car fleet setup</a>}
-          {["owner", "manager", "rental"].includes(admin.role) && <a href="#rentals">Rental bookings</a>}
-          {["owner", "manager", "orders"].includes(admin.role) && <a href="#orders">Orders</a>}
-          {["owner", "manager", "orders", "rental"].includes(admin.role) && <a href="#enquiries">Customer enquiries</a>}
-          {["owner", "manager", "orders"].includes(admin.role) && <a href="#wholesale">Wholesale</a>}
-        </nav>
+        <nav className="admin-quick-nav" aria-label="Admin workspace"><button type="button" className={activeAdminScreen === "overview" ? "active" : ""} onClick={() => setActiveAdminScreen("overview")}>Overview</button><button type="button" className={activeAdminScreen === "products" ? "active" : ""} onClick={() => setActiveAdminScreen("products")}>Products & stock</button>{["owner", "manager", "rental"].includes(admin.role) && <><button type="button" className={activeAdminScreen === "vehicles" ? "active" : ""} onClick={() => setActiveAdminScreen("vehicles")}>Car fleet</button><button type="button" className={activeAdminScreen === "rentals" ? "active" : ""} onClick={() => setActiveAdminScreen("rentals")}>Rental bookings</button></>}{["owner", "manager", "orders"].includes(admin.role) && <><button type="button" className={activeAdminScreen === "orders" ? "active" : ""} onClick={() => setActiveAdminScreen("orders")}>Orders</button><button type="button" className={activeAdminScreen === "wholesale" ? "active" : ""} onClick={() => setActiveAdminScreen("wholesale")}>Wholesale</button></>}{["owner", "manager", "orders", "rental"].includes(admin.role) && <button type="button" className={activeAdminScreen === "enquiries" ? "active" : ""} onClick={() => setActiveAdminScreen("enquiries")}>Enquiries</button>}</nav>
         <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
         {["owner", "manager", "orders"].includes(admin.role) && <section id="orders" className="admin-panel admin-orders-panel">
           <div className="admin-panel-heading"><div><h2>Customer orders</h2><p className="admin-muted">Review COD orders, contact customers and move each order through fulfilment.</p></div><span className="admin-enquiry-count">{orders.length} recent</span></div>
