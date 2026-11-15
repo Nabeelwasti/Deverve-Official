@@ -32,6 +32,7 @@ function Storefront() {
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [rentalOpen, setRentalOpen] = useState(false);
@@ -68,6 +69,7 @@ function Storefront() {
       }
     };
     void loadProducts();
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>};if(active&&payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
@@ -375,6 +377,7 @@ function Storefront() {
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
+        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}>{platform}</a>)}</nav>}
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
