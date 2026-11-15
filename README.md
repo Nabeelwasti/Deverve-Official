@@ -44,7 +44,7 @@ These are deliberate boundaries, not fake features:
 - Social settings store public profile URLs only. OAuth account connections, automated publishing, inbox access, ad management, analytics imports and autonomous social actions are not implemented.
 - There is no customer login portal, self-service order tracking or product-review system yet.
 - A full visual CMS/page builder and complete editable SEO/navigation management are not yet implemented.
-- The official De VERVE logo is not bundled in the repository. The owner can upload the approved logo and favicon in Website Settings; the original brand asset must be supplied by the business.
+- The official De VERVE logo and favicon are uploaded to private R2 and selected in the public brand settings. The owner must still confirm these are the final approved brand assets.
 - The production database currently contains no real products, variants, stock, vehicles, orders or rental records. Add verified business data before advertising availability or accepting real orders.
 - Delivery fees, delivery coverage, returns/exchanges, wholesale minimums, vehicle rates, rental terms, privacy/retention policy and business hours must be confirmed by the owner.
 - A custom domain is not connected. The current live address is the Cloudflare Pages domain. Security response headers and a Content Security Policy are defined in the Pages _headers file; verify the deployed response and all application assets after release.
