@@ -515,6 +515,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
         .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
     }
+    statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
@@ -636,6 +637,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request);
   const nextStatus = cleanText(body?.order_status, 20);
+  const statusNote = cleanText(body?.status_note, 300) || "Order status updated by De VERVE team";
   if (!["confirmed", "processing", "dispatched", "delivered", "cancelled"].includes(nextStatus)) return error("Choose a valid order status", 400);
   const id = match[1];
   try {
@@ -670,6 +672,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
           .bind(crypto.randomUUID(), item.variant_id, -item.quantity, id, admin.admin_user_id, id));
       }
     }
+    statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, ?, ?, 'admin', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = ?)").bind(crypto.randomUUID(), id, current.order_status, nextStatus, admin.admin_user_id, statusNote, id, nextStatus));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, ?, 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, "order.status_changed", id, JSON.stringify({ from: current.order_status, to: nextStatus }), id, nextStatus));
     const results = await env.DB.batch(statements);
@@ -2036,7 +2039,10 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
         const id = String(item.order_id);
         grouped.set(id, [...(grouped.get(id) ?? []), item]);
       }
-      return json({ orders: orders.map((order) => ({ ...order, items: grouped.get(String(order.id)) ?? [] })) });
+      const events = await env.DB.prepare("SELECT id, order_id, from_status, to_status, actor_type, note, created_at FROM order_status_events WHERE order_id IN (" + placeholders + ") ORDER BY created_at, rowid").bind(...ids).all<Record<string, unknown>>();
+      const eventsByOrder = new Map<string, Record<string, unknown>[]>();
+      for (const event of events.results ?? []) { const id = String(event.order_id); eventsByOrder.set(id, [...(eventsByOrder.get(id) ?? []), event]); }
+      return json({ orders: orders.map((order) => ({ ...order, items: grouped.get(String(order.id)) ?? [], events: eventsByOrder.get(String(order.id)) ?? [] })) });
     } catch { return error("Your orders could not be loaded. Please try again.", 503); }
   }
 
