@@ -2264,7 +2264,7 @@ async function currentCustomer(request: Request, db: D1Database): Promise<Custom
 
 
 interface SafepayConfig {
-  apiHost: "https://sandbox.api.getsafepay.com";
+  apiHost: string;
   merchantApiKey: string;
   secretKey: string;
   webhookSecret: string;
