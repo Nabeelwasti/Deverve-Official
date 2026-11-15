@@ -2415,6 +2415,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? env.SAFEPAY_ENV : null });
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
+  if (customerReturnMatch && request.method === "POST") return error("De VERVE offers exchanges only. Please contact our team using the exchange option on your delivered order.", 410);
   const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns"];
   if (!accountPaths.includes(path) && !paymentMatch && !customerReturnMatch) return null;
 
