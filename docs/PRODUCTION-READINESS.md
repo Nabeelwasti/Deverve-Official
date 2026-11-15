@@ -4,12 +4,12 @@ Audit baseline: 9e5ac6bfbc45e455d770405b016c17b395538a3a
 
 ## Latest verified release snapshot
 
-- Application commit: `5c36ff79671dec5621ff52c952c33e73683313b0`
-- GitHub Actions run #243: passed build, type-check, Worker tests and D1 schema validation.
-- Cloudflare Pages production deployment: `488214ed-2b26-40c9-b4f8-9133b9bacf64`, all stages successful.
-- Production D1 migrations 0010 (public rate limits) and 0011 (delivery-fee approval) are applied.
-- Production data snapshot: 0 published products, 0 active variants, 0 available vehicles, 0 orders and 0 rental requests.
-- A live browser/customer journey could not be independently executed from the connected environment. CI and deployment success are not substitutes for real-device acceptance testing.
+- Application commit: `d7e8f84ee9cb524d275cb76da689ac51e577c703`
+- GitHub Actions run #244: passed type-check/build, Worker authentication and workflow tests, and D1 schema validation: https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43667002622
+- Cloudflare Pages production deployment for the same commit: `e4c71127.deverve-official.pages.dev`, all reported stages successful.
+- Production D1 contains the public rate-limit table and delivery-fee approval columns; migrations 0010 and 0011 are applied.
+- Direct production D1 counts at this verification: 0 products, 0 variants, 0 vehicles, 0 orders and 0 rental requests.
+- A live browser/customer journey and deployed response headers could not be independently verified from the connected execution environment. CI and deployment success are not substitutes for real-device acceptance testing.
 
 Status: technically improved; not certified for unrestricted production commerce.
 

@@ -21,7 +21,7 @@ Mobile-first storefront and admin system for De VERVE, Jhelum, Pakistan.
 - Server-validated COD checkout with current price/stock checks, stock reservations and duplicate-submission protection.
 - Wholesale enquiries and customer-approved quotations that convert into stock-reserved COD orders.
 - Available vehicle catalogue and rental request form with full pickup/destination city and address details.
-- Optional CNIC front/back upload using a one-time, expiring upload token; files remain in private R2 and can be viewed by authorized rental staff.
+- Rental CNIC uploads are disabled by default. Rental enquiries can be submitted without identity documents; no upload token is issued until the owner approves a retention policy and configures the explicit enable flag.
 - WhatsApp contact using the business-approved number, email links, editable social profile links, owner-managed logo/favicon and developer credit.
 - Installable PWA shell; API/customer data is deliberately excluded from offline caching.
 
