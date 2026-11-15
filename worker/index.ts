@@ -543,6 +543,72 @@ async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promis
   } catch { return error("Vehicle catalogue is temporarily unavailable", 503); }
 }
 
+async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
+  if (!match || request.method !== "POST") return null;
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > 8_500_000) return error("The two CNIC images must be under 8 MB in total", 413);
+  let form: FormData;
+  try { form = await request.formData(); } catch { return error("Upload both CNIC images using the secure form", 400); }
+  const token = cleanText(form.get("upload_token"), 100);
+  const front = form.get("cnic_front");
+  const back = form.get("cnic_back");
+  if (!/^[A-Za-z0-9_-]{40,50}$/.test(token) || !(front instanceof File) || !(back instanceof File)) return error("Upload both the front and back of the CNIC", 400);
+  const files = [{ side: "cnic_front", file: front }, { side: "cnic_back", file: back }];
+  for (const item of files) {
+    if (item.file.size < 1 || item.file.size > 4_000_000) return error("Each CNIC image must be no larger than 4 MB", 413);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(item.file.type)) return error("CNIC files must be JPG, PNG or WebP images", 415);
+  }
+  const bytes = await Promise.all(files.map((item) => item.file.arrayBuffer()));
+  for (let i = 0; i < files.length; i++) {
+    const b = new Uint8Array(bytes[i]);
+    const type = files[i].file.type;
+    const valid = (type === "image/jpeg" && b[0] === 255 && b[1] === 216 && b[2] === 255)
+      || (type === "image/png" && b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71)
+      || (type === "image/webp" && String.fromCharCode(...b.slice(8, 12)) === "WEBP");
+    if (!valid) return error("A CNIC file does not match its declared image type", 415);
+  }
+  const tokenHash = await sha256(token);
+  const now = new Date().toISOString();
+  let rental: { id: string } | null;
+  try {
+    rental = await env.DB.prepare("SELECT id FROM rental_requests WHERE reference_code = ? AND document_upload_token_hash = ? AND document_upload_expires_at > ? LIMIT 1")
+      .bind(match[1], tokenHash, now).first<{ id: string }>();
+  } catch { return error("Secure document upload is temporarily unavailable", 503); }
+  if (!rental) return error("This document upload link is invalid, expired or already used", 410);
+  const objects: Array<{ id: string; key: string; side: string; file: File }> = [];
+  for (const item of files) {
+    const ext = item.file.type === "image/jpeg" ? "jpg" : item.file.type === "image/png" ? "png" : "webp";
+    const id = crypto.randomUUID();
+    const key = "rental-private/" + rental.id + "/" + id + "-" + item.side + "." + ext;
+    objects.push({ id, key, side: item.side, file: item.file });
+  }
+  try {
+    for (let i = 0; i < objects.length; i++) {
+      await env.MEDIA.put(objects[i].key, bytes[i], { httpMetadata: { contentType: objects[i].file.type }, customMetadata: { rentalRequestId: rental.id, documentSide: objects[i].side } });
+    }
+    const results = await env.DB.batch([
+      env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ? AND document_upload_token_hash = ? AND document_upload_expires_at > ?)")
+        .bind(objects[0].id, rental.id, objects[0].side, objects[0].key, objects[0].file.type, objects[0].file.size, rental.id, tokenHash, now),
+      env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ? AND document_upload_token_hash = ? AND document_upload_expires_at > ?)")
+        .bind(objects[1].id, rental.id, objects[1].side, objects[1].key, objects[1].file.type, objects[1].file.size, rental.id, tokenHash, now),
+      env.DB.prepare("UPDATE rental_requests SET document_upload_token_hash = NULL, document_upload_expires_at = NULL, updated_at = ? WHERE id = ? AND document_upload_token_hash = ?")
+        .bind(new Date().toISOString(), rental.id, tokenHash),
+      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'rental.documents_uploaded','rental_request',?,?)")
+        .bind(crypto.randomUUID(), rental.id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"] })),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) {
+      for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+      return error("This upload link was already used or has expired. Contact De VERVE for a new secure link.", 410);
+    }
+    return json({ uploaded: true, message: "Both CNIC images were uploaded securely. Only authorized rental staff can view them." }, 201);
+  } catch {
+    for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+    return error("CNIC images could not be stored securely. Please try again.", 503);
+  }
+}
+
 async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/rentals" || request.method !== "POST") return null;
   const body = await readJson(request, 12_000);
@@ -552,26 +618,33 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const phone = cleanText(body.phone, 24);
   const email = cleanText(body.email, 160).toLowerCase();
   const vehicleId = cleanText(body.vehicle_id, 64) || null;
-  const pickup = cleanText(body.pickup_location, 160);
-  const destination = cleanText(body.destination, 160);
+  const pickupCity = cleanText(body.pickup_city, 80);
+  const pickupAddress = cleanText(body.pickup_address, 300);
+  const destinationCity = cleanText(body.destination_city, 80);
+  const destinationAddress = cleanText(body.destination_address, 300);
+  const pickup = cleanText(pickupAddress + ", " + pickupCity, 420);
+  const destination = cleanText(destinationAddress + ", " + destinationCity, 420);
   const pickupAt = cleanText(body.pickup_at, 40);
   const returnAt = cleanText(body.return_at, 40);
   const driver = cleanText(body.driver_option, 20);
   const note = cleanText(body.customer_note, 500);
   const pickupTime = Date.parse(pickupAt);
   const returnTime = Date.parse(returnAt);
-  if (name.length < 2 || !validPhone(phone) || pickup.length < 2 || !["self_drive", "with_driver"].includes(driver)) return error("Check your name, phone, pickup location and driver option", 400);
+  if (name.length < 2 || !validPhone(phone) || pickupCity.length < 2 || pickupAddress.length < 8 || destinationCity.length < 2 || destinationAddress.length < 5 || !["self_drive", "with_driver"].includes(driver)) return error("Enter your name, phone, complete pickup and destination addresses, and driver option", 400);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Enter a valid email address", 400);
   if (!Number.isFinite(pickupTime) || !Number.isFinite(returnTime) || pickupTime <= Date.now() || returnTime <= pickupTime || returnTime - pickupTime > 60 * 86400000) return error("Choose a future pickup and a return time within 60 days", 400);
   if (vehicleId && !/^[a-f0-9-]{36}$/i.test(vehicleId)) return error("Choose a valid vehicle", 400);
   const id = crypto.randomUUID();
   const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
   const now = new Date().toISOString();
+  const uploadToken = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const uploadTokenHash = await sha256(uploadToken);
+  const uploadExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
   try {
-    const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
-      .bind(id, vehicleId, name, phone, pickup, destination || null, pickupAt, returnAt, driver, email || null, note, reference, now, vehicleId, vehicleId, vehicleId, returnAt, pickupAt).run();
+    const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
+      .bind(id, vehicleId, name, phone, pickup, destination, pickupAt, returnAt, driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, returnAt, pickupAt).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
-    return json({ accepted: true, reference_code: reference, message: "Your rental request has been received. Availability and terms will be confirmed by De VERVE." }, 201);
+    return json({ accepted: true, reference_code: reference, document_upload_token: uploadToken, message: "Your rental request has been received. Availability and terms will be confirmed by De VERVE. You may securely upload CNIC front and back now if requested." }, 201);
   } catch { return error("Rental request could not be submitted. Please contact De VERVE.", 503); }
 }
 
@@ -634,6 +707,40 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   } catch { return error("Vehicle could not be updated", 503); }
 }
 
+async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})\/documents\/(cnic_front|cnic_back)$/i);
+  if (!match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Rental document service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to view rental documents", 403);
+  if (request.method === "GET") {
+    try {
+      const doc = await env.DB.prepare("SELECT object_key, mime_type, document_side FROM rental_documents WHERE rental_request_id = ? AND document_side = ? LIMIT 1")
+        .bind(match[1], match[2]).first<{ object_key: string; mime_type: string; document_side: string }>();
+      if (!doc) return error("Rental document not found", 404);
+      const object = await env.MEDIA.get(doc.object_key);
+      if (!object) return error("Rental document not found", 404);
+      return new Response(object.body, { headers: { "content-type": doc.mime_type, "cache-control": "private, no-store", "x-content-type-options": "nosniff", "content-disposition": "attachment; filename=\"" + doc.document_side + ".jpg\"" } });
+    } catch { return error("Rental document could not be loaded", 503); }
+  }
+  if (request.method === "DELETE") {
+    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can delete rental documents", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    try {
+      const doc = await env.DB.prepare("SELECT id, object_key FROM rental_documents WHERE rental_request_id = ? AND document_side = ? LIMIT 1")
+        .bind(match[1], match[2]).first<{ id: string; object_key: string }>();
+      if (!doc) return error("Rental document not found", 404);
+      await env.DB.prepare("DELETE FROM rental_documents WHERE id = ?").bind(doc.id).run();
+      try { await env.MEDIA.delete(doc.object_key); } catch { return error("Document record was removed, but its private file could not be deleted. Contact the system administrator.", 503); }
+      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'rental.document_deleted','rental_request',?,?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ side: match[2] })).run();
+      return json({ deleted: true });
+    } catch { return error("Rental document could not be deleted", 503); }
+  }
+  return error("Method not allowed", 405);
+}
+
 async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/rentals";
   const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})$/i);
@@ -645,7 +752,7 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
   if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to manage rentals", 403);
   if (collection && request.method === "GET") {
     try {
-      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.created_at, r.updated_at, v.name AS vehicle_name, v.vehicle_type FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
+      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_city, r.pickup_address, r.destination_city, r.destination_address, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.created_at, r.updated_at, v.name AS vehicle_name, v.vehicle_type, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_front') AS cnic_front_uploaded, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_back') AS cnic_back_uploaded FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
       return json({ rentals: result.results ?? [] });
     } catch { return error("Rental requests could not be loaded", 503); }
   }
@@ -1555,6 +1662,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const vehicleAdminResponse = await adminVehicleRoutes(request, env, url);
   if (vehicleAdminResponse) return vehicleAdminResponse;
 
+  const rentalDocumentAdminResponse = await adminRentalDocumentRoutes(request, env, url);
+  if (rentalDocumentAdminResponse) return rentalDocumentAdminResponse;
+
   const rentalAdminResponse = await adminRentalRoutes(request, env, url);
   if (rentalAdminResponse) return rentalAdminResponse;
 
@@ -1650,6 +1760,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const publicVehicles = await publicVehicleRoutes(request, env, url);
   if (publicVehicles) return publicVehicles;
+
+  const publicRentalDocuments = await publicRentalDocumentRoutes(request, env, url);
+  if (publicRentalDocuments) return publicRentalDocuments;
 
   const publicRental = await publicRentalRoutes(request, env, url);
   if (publicRental) return publicRental;
