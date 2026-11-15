@@ -85,3 +85,15 @@ The GitHub Actions workflow runs the type-check/build, Worker behavior tests and
 7. Add customer accounts/order tracking, reviews and the visual CMS only after their access and moderation rules are agreed.
 
 Paid services or external account connections must not be enabled without the owner's explicit approval.
+
+## November 2026 security and policy updates
+
+- Cloudflare Turnstile is configured for the production Pages hostname. The storefront renders Turnstile on enquiries, COD checkout, rental requests and CNIC upload. The backend verifies every token through a dedicated Cloudflare Worker using a secret stored as a Worker secret; the secret is not present in the repository or browser code.
+- The storefront now includes English and Urdu customer policies covering orders and payment, delivery, returns and complaints, wholesale quotations, vehicle rentals, privacy and CNIC handling.
+- The owner can enable or disable rental CNIC uploads in Admin → Website & brand settings. Uploads remain disabled by default. When enabled, the system uses one-time upload tokens, private R2 storage and role-restricted document access. Owners/managers can delete documents manually.
+- A separate Cloudflare scheduled Worker is configured to run daily at 03:00 UTC. It clears expired upload tokens and deletes CNIC files 30 days after a rental request is marked completed or cancelled, with an audit record. The first scheduled execution and its cleanup behavior still need runtime verification; keep uploads disabled until that check is observed.
+- The browser tests simulate the Turnstile widget and mock the business APIs. They verify form integration and token submission, not the real Cloudflare challenge or a real customer transaction.
+
+## Still not connected
+
+Customer sign-in, customer order tracking, payment gateway processing, transactional email, SMS and WhatsApp automation are not yet available. They require additional account, provider and webhook work. Do not advertise them as active until their live integrations have been tested. Social account management remains a separate project.
