@@ -1,6 +1,13 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: 'window.turnstile = { render: function (_element, options) { window.setTimeout(function () { options.callback("e2e-turnstile-token"); }, 0); return "e2e-widget"; }, reset: function () {}, remove: function () {} };',
+    });
+  });
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -48,6 +55,7 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
     name: "Browser Test Customer",
     phone: "+923001234567",
     website: "",
+    turnstile_token: "e2e-turnstile-token",
   });
 });
 
@@ -83,6 +91,7 @@ test("rental request form validates and submits without creating a real booking"
     customer_name: "Browser Test Customer",
     phone: "+923001234567",
     website: "",
+    turnstile_token: "e2e-turnstile-token",
   });
   expect(submitted?.pickup_at).toEqual(expect.any(String));
   expect(submitted?.return_at).toEqual(expect.any(String));
