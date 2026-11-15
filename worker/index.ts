@@ -1277,6 +1277,40 @@ async function adminStaffRoutes(request: Request, env: Env, url: URL): Promise<R
   return error("Method not allowed",405);
 }
 
+
+const socialPlatforms = ["facebook","instagram","tiktok","youtube","linkedin","pinterest","threads","x"] as const;
+type SocialLinks = Partial<Record<typeof socialPlatforms[number],string>>;
+async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise<Response|null>{
+  if(url.pathname!=="/api/admin/settings") return null;
+  let admin:SessionRow|null;
+  try{admin=await currentAdmin(request,env.DB);}catch{return error("Website settings are temporarily unavailable",503);}
+  if(!admin)return error("Authentication required",401);
+  if(admin.role!=="owner")return error("Only the owner can change website settings",403);
+  if(request.method==="GET"){
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+  }
+  if(request.method!=="PATCH")return error("Method not allowed",405);
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  const body=await readJson(request);const raw=body?.social_links;
+  if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid social account links",400);
+  const links:SocialLinks={};
+  for(const platform of socialPlatforms){const value=cleanText((raw as Record<string,unknown>)[platform],500);if(!value)continue;try{const parsed=new URL(value);if(parsed.protocol!=="https:"||!parsed.hostname.includes("."))return error("Social links must be valid HTTPS URLs",400);links[platform]=parsed.toString();}catch{return error("One of the social links is invalid",400);}}
+  try{
+    const now=new Date().toISOString();
+    await env.DB.batch([
+      env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now),
+      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})),
+    ]);
+    return json({updated:true,social_links:links});
+  }catch{return error("Social links could not be saved",503);}
+}
+async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
+  if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
+    try{const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='social_links' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();let links:SocialLinks={};if(row){try{links=JSON.parse(row.setting_value_json) as SocialLinks;}catch{}}return json({social_links:links},{status:200} as never);}catch{return error("Store settings are temporarily unavailable",503);}
+  }
+  return null;
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
@@ -1412,6 +1446,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const staffResponse = await adminStaffRoutes(request, env, url);
   if (staffResponse) return staffResponse;
 
+  const settingsResponse = await adminStoreSettingsRoutes(request, env, url);
+  if(settingsResponse)return settingsResponse;
+
   const orderResponse = await adminOrderRoutes(request, env, url);
   if (orderResponse) return orderResponse;
 
@@ -1457,6 +1494,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const productResponse = await adminProductRoutes(request, env, url);
   if (productResponse) return productResponse;
+
+  const publicSettingsResponse = await publicStoreSettingsRoute(request, env);
+  if(publicSettingsResponse)return publicSettingsResponse;
 
   if (url.pathname === "/api/health" && request.method === "GET") {
     try {
