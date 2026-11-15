@@ -1965,7 +1965,7 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
 
 
 
-async function recordOwnerNotification(db:D1Database,event:{event_type:"order.created"|"rental.created"|"enquiry.created"|"payment.succeeded";title:string;body:string;entity_type:"order"|"rental_request"|"enquiry";entity_id:string}):Promise<void>{
+async function recordOwnerNotification(db:D1Database,event:{event_type:"order.created"|"rental.created"|"enquiry.created"|"payment.succeeded"|"exchange.created";title:string;body:string;entity_type:"order"|"rental_request"|"enquiry"|"exchange_request";entity_id:string}):Promise<void>{
   await db.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) VALUES (?,?,?,?,?,?)")
     .bind(crypto.randomUUID(),event.event_type,event.title.slice(0,160),event.body.slice(0,500),event.entity_type,event.entity_id).run();
 }
