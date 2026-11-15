@@ -18,7 +18,7 @@ required_tables = {
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
-    "return_requests", "return_request_items", "return_status_events",
+    "return_requests", "return_request_items", "return_status_events", "owner_notifications",
 }
 actual_tables = {
     row[0] for row in db.execute(
