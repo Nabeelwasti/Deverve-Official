@@ -36,6 +36,7 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Elevate");
   await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
   await page.getByRole("button", { name: "Contact", exact: true }).click();
   await page.getByLabel("Your name").fill("Browser Test Customer");
   await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
