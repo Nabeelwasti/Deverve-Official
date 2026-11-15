@@ -35,6 +35,7 @@ function Storefront() {
   const [submitMessage, setSubmitMessage] = useState("");
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
+  const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [rentalOpen, setRentalOpen] = useState(false);
@@ -53,6 +54,11 @@ function Storefront() {
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
+  useEffect(() => {
+    if(!brandAssets.favicon_id)return;
+    const icon=document.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if(icon){icon.href="/media/"+brandAssets.favicon_id;icon.type="";}
+  },[brandAssets.favicon_id]);
 
   useEffect(() => {
     let active = true;
@@ -71,7 +77,7 @@ function Storefront() {
       }
     };
     void loadProducts();
-    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>};if(active&&payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);}).catch(()=>undefined);
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null}};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
@@ -172,7 +178,7 @@ function Storefront() {
 
       <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
-          <span className="brand-symbol">DV</span>
+          {brandAssets.logo_id ? <img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE" /> : <span className="brand-symbol">DV</span>}
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
