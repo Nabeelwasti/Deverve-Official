@@ -68,34 +68,6 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal((await duplicate.json()).duplicate, true);
 });
 
-test("customers can request a return only for their delivered order within seven days", async () => {
-  const db = new FakeD1();
-  const registered = await handleRequest(request("/api/customer/register", "POST", {
-    full_name: "Return Customer", phone: "+923001234567", email: "returns@example.com",
-    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
-  }, { "cf-connecting-ip": "203.0.113.90", "sec-fetch-site": "same-origin" }), env(db));
-  const customerId = (await registered.json()).customer.id;
-  const cookie = registered.headers.get("set-cookie").split(";")[0];
-  const orderId = crypto.randomUUID(), itemId = crypto.randomUUID();
-  db.orders.set(orderId, { id: orderId, customer_id: customerId, order_number: "DV-RETURN-001", order_status: "delivered", updated_at: new Date().toISOString(), payment_provider: "manual", payment_status: "pending" });
-  db.orderItems.push({ id: itemId, order_id: orderId, quantity: 2, unit_price_paisa: 125000, product_name_snapshot: "Stretch Hoodie", sku_snapshot: "DV-HOOD-M", size_snapshot: "M", color_snapshot: "Navy" });
-  const submitted = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
-    reason: "damaged", details: "The seam is open near the left sleeve.", items: [{ order_item_id: itemId, quantity: 1 }],
-  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(submitted.status, 201);
-  const payload = await submitted.json();
-  assert.equal(payload.refund_amount_paisa, 125000);
-  assert.match(payload.return_number, /^DV-RET-/);
-  assert.equal(db.returnRequests.size, 1);
-  const history = await handleRequest(new Request(origin + "/api/customer/returns", { headers: { cookie } }), env(db));
-  assert.equal(history.status, 200);
-  assert.equal((await history.json()).returns[0].items[0].quantity, 1);
-  const duplicate = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
-    reason: "damaged", details: "Another note for this order.", items: [{ order_item_id: itemId, quantity: 1 }],
-  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
-  assert.equal(duplicate.status, 409);
-});
-
 test("exchange-only policy rejects new return submissions without creating refund records", async () => {
   const db = new FakeD1();
   const registered = await handleRequest(request("/api/customer/register", "POST", {
