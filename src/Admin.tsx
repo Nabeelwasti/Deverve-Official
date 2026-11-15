@@ -8,10 +8,10 @@ type StaffInvite = { id: string; email: string; role: string; expires_at: string
 type Product = {
   id: string; slug: string; name: string; description: string; category: string;
   audience: "men" | "women" | "kids" | "unisex"; status: "draft" | "published" | "archived";
-  retail_price_paisa: number | null; wholesale_price_paisa: number | null; image_key: string | null;
+  retail_price_paisa: number | null; wholesale_price_paisa: number | null; image_key: string | null; seo_title: string; seo_description: string;
 };
 
-type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
+type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string; seo_title: string; seo_description: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
 type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; delivery_fee_status: "pending_quote" | "awaiting_customer" | "accepted" | "declined"; delivery_fee_expires_at: string | null; payment_method: string; payment_provider: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 type FollowUpItem = { key: string; kind: "enquiry" | "order" | "return" | "rental" | "wholesale"; title: string; contact: string; phone: string; email: string | null; status: string; summary: string; created_at: string; screen: string; priority: number };
@@ -29,7 +29,7 @@ type WholesaleQuote = { id: string; business_name: string; contact_name: string;
 
 const emptyProduct: ProductForm = {
   name: "", slug: "", description: "", category: "", audience: "unisex" as const,
-  status: "draft" as const, retail_price_paisa: "", wholesale_price_paisa: "",
+  status: "draft" as const, retail_price_paisa: "", wholesale_price_paisa: "", seo_title: "", seo_description: "",
 };
 
 function whatsappHref(phone: string, message: string): string {
@@ -224,7 +224,7 @@ export default function Admin() {
   const startNew = () => { setEditingId(null); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
     setEditingId(product.id);
-    setForm({ name: product.name, slug: product.slug, description: product.description, category: product.category, audience: product.audience, status: product.status, retail_price_paisa: product.retail_price_paisa === null ? "" : String(product.retail_price_paisa / 100), wholesale_price_paisa: product.wholesale_price_paisa === null ? "" : String(product.wholesale_price_paisa / 100) });
+    setForm({ name: product.name, slug: product.slug, description: product.description, category: product.category, audience: product.audience, status: product.status, retail_price_paisa: product.retail_price_paisa === null ? "" : String(product.retail_price_paisa / 100), wholesale_price_paisa: product.wholesale_price_paisa === null ? "" : String(product.wholesale_price_paisa / 100), seo_title: product.seo_title || "", seo_description: product.seo_description || "" });
     setShowEditor(true);
   };
   const saveProduct = async (event: FormEvent<HTMLFormElement>) => {
@@ -800,6 +800,7 @@ export default function Admin() {
             <label>Retail price (PKR, optional)<input type="number" min="0" step="1" value={form.retail_price_paisa} onChange={(e) => setForm({ ...form, retail_price_paisa: e.target.value })} /></label>
             <label>Wholesale price (PKR, optional)<input type="number" min="0" step="1" value={form.wholesale_price_paisa} onChange={(e) => setForm({ ...form, wholesale_price_paisa: e.target.value })} /></label>
             <label className="admin-full">Description<textarea rows={4} maxLength={4000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></label>
+            <div className="admin-full admin-seo-fields"><h3>Search engine preview</h3><p className="admin-muted">These fields appear in search results and social previews. Keep titles under 70 characters and descriptions under 160.</p><label>SEO title<input maxLength={70} value={form.seo_title} onChange={(e) => setForm({ ...form, seo_title: e.target.value })} placeholder={form.name || "Product name · De VERVE"} /></label><small>{form.seo_title.length}/70 characters</small><label>SEO description<textarea rows={2} maxLength={160} value={form.seo_description} onChange={(e) => setForm({ ...form, seo_description: e.target.value })} placeholder={form.description.slice(0,160) || "Describe this product clearly for search visitors."} /></label><small>{form.seo_description.length}/160 characters</small></div>
             <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value as typeof form.status })} disabled={admin.role === "catalogue"}><option value="draft">Save as draft</option><option value="published">Publish on website</option><option value="archived">Archived</option></select></label>
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save product"}</button></div>
           </form>
