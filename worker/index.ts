@@ -1306,7 +1306,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
-    try{const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='social_links' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();let links:SocialLinks={};if(row){try{links=JSON.parse(row.setting_value_json) as SocialLinks;}catch{}}return json({social_links:links},{status:200} as never);}catch{return error("Store settings are temporarily unavailable",503);}
+    try{const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='social_links' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();let links:SocialLinks={};if(row){try{links=JSON.parse(row.setting_value_json) as SocialLinks;}catch{}}return json({social_links:links});}catch{return error("Store settings are temporarily unavailable",503);}
   }
   return null;
 }
