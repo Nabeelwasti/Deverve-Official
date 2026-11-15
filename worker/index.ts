@@ -1872,6 +1872,185 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   return error("Not found", 404);
 }
 
+
+
+interface CustomerSessionRow {
+  id: string;
+  customer_id: string;
+  email: string;
+  full_name: string;
+  phone: string;
+  status: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+function customerSessionCookie(token: string, maxAge: number): string {
+  return `__Host-deverve_customer=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+}
+
+async function createCustomerSession(db: D1Database, customerId: string): Promise<{ token: string; expiresAt: string }> {
+  const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  await db.prepare("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) VALUES (?, ?, ?, ?)")
+    .bind(crypto.randomUUID(), customerId, await sha256(token), expiresAt).run();
+  return { token, expiresAt };
+}
+
+async function currentCustomer(request: Request, db: D1Database): Promise<CustomerSessionRow | null> {
+  const token = cookieValue(request, "__Host-deverve_customer");
+  if (!token || token.length > 100) return null;
+  return db.prepare(
+    "SELECT s.id, s.customer_id, c.email, c.full_name, c.phone, c.status, s.expires_at, s.revoked_at FROM customer_sessions s JOIN customers c ON c.id = s.customer_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND c.status = 'active' LIMIT 1",
+  ).bind(await sha256(token), new Date().toISOString()).first<CustomerSessionRow>();
+}
+
+async function customerAccountRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals"];
+  if (!accountPaths.includes(path)) return null;
+
+  if (path === "/api/customer/register" && request.method === "POST") {
+    const limited = await enforcePublicRateLimit(request, env, "customer-register", 3);
+    if (limited) return limited;
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 8_000);
+    if (!body) return error("Please submit valid account details", 400);
+    if (cleanText(body.website, 120)) return json({ accepted: true });
+    if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
+    const email = cleanText(body.email, 160).toLowerCase();
+    const fullName = cleanText(body.full_name, 100);
+    const phone = cleanText(body.phone, 24);
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || fullName.length < 2 || !validPhone(phone) || password.length < 12 || password.length > 128) {
+      return error("Enter a valid email, name, phone number and a password of at least 12 characters.", 400);
+    }
+    try {
+      const id = crypto.randomUUID();
+      const hash = await passwordHash(password);
+      const sessionToken = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const tokenHash = await sha256(sessionToken);
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("INSERT INTO customers (id, email, password_hash, full_name, phone) VALUES (?, ?, ?, ?, ?)")
+          .bind(id, email, hash, fullName, phone),
+        env.DB.prepare("INSERT INTO customer_sessions (id, customer_id, token_hash, expires_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM customers WHERE id = ? AND status = 'active')")
+          .bind(crypto.randomUUID(), id, tokenHash, expiresAt, id),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) return error("This email may already have an account. Try signing in instead.", 409);
+      return json({ authenticated: true, customer: { id, email, full_name: fullName, phone, email_verified: false } }, 201, { "set-cookie": customerSessionCookie(sessionToken, 30 * 24 * 60 * 60) });
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (/unique|constraint/i.test(message)) return error("An account with this email already exists. Please sign in.", 409);
+      return error("Your account could not be created. Please try again.", 503);
+    }
+  }
+
+  if (path === "/api/customer/login" && request.method === "POST") {
+    const limited = await enforcePublicRateLimit(request, env, "customer-login", 5);
+    if (limited) return limited;
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 4_000);
+    if (!body) return error("Please submit valid sign-in details", 400);
+    const email = cleanText(body.email, 160).toLowerCase();
+    const password = typeof body.password === "string" ? body.password : "";
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
+    try {
+      const customer = await env.DB.prepare("SELECT id, email, password_hash, full_name, phone, status FROM customers WHERE email = ? COLLATE NOCASE LIMIT 1")
+        .bind(email).first<{ id: string; email: string; password_hash: string; full_name: string; phone: string; status: string }>();
+      const dummyHash = "pbkdf2-sha256$100000$MDEyMzQ1Njc4OWFiY2RlZg$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+      const matches = await verifyPassword(password, customer?.password_hash ?? dummyHash);
+      if (!customer || customer.status !== "active" || !matches) return error("Email or password is incorrect", 401);
+      const session = await createCustomerSession(env.DB, customer.id);
+      await env.DB.prepare("UPDATE customers SET last_login_at = ?, updated_at = ? WHERE id = ?")
+        .bind(new Date().toISOString(), new Date().toISOString(), customer.id).run();
+      return json({ authenticated: true, customer: { id: customer.id, email: customer.email, full_name: customer.full_name, phone: customer.phone, email_verified: false } }, 200, { "set-cookie": customerSessionCookie(session.token, 30 * 24 * 60 * 60) });
+    } catch { return error("Sign-in is temporarily unavailable. Please try again.", 503); }
+  }
+
+  if (path === "/api/customer/logout" && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    try {
+      const token = cookieValue(request, "__Host-deverve_customer");
+      if (token) await env.DB.prepare("UPDATE customer_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL")
+        .bind(new Date().toISOString(), await sha256(token)).run();
+      return json({ authenticated: false }, 200, { "set-cookie": customerSessionCookie("", 0) });
+    } catch { return error("Sign-out could not be completed", 503); }
+  }
+
+  let customer: CustomerSessionRow | null;
+  try { customer = await currentCustomer(request, env.DB); }
+  catch { return error("Customer account service is temporarily unavailable", 503); }
+  if (!customer) return error("Please sign in to access your account.", 401);
+
+  if (path === "/api/customer/me" && request.method === "GET") {
+    return json({ authenticated: true, customer: { id: customer.customer_id, email: customer.email, full_name: customer.full_name, phone: customer.phone, email_verified: false } });
+  }
+
+  if (path === "/api/customer/profile" && request.method === "PATCH") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 3_000);
+    const fullName = cleanText(body?.full_name, 100);
+    const phone = cleanText(body?.phone, 24);
+    if (fullName.length < 2 || !validPhone(phone)) return error("Enter a valid name and phone number.", 400);
+    try {
+      const result = await env.DB.prepare("UPDATE customers SET full_name = ?, phone = ?, updated_at = ? WHERE id = ? AND status = 'active'")
+        .bind(fullName, phone, new Date().toISOString(), customer.customer_id).run();
+      if ((result.meta?.changes ?? 0) !== 1) return error("Your profile could not be updated.", 409);
+      return json({ updated: true, customer: { id: customer.customer_id, email: customer.email, full_name: fullName, phone, email_verified: false } });
+    } catch { return error("Your profile could not be updated. Please try again.", 503); }
+  }
+
+  if (path === "/api/customer/password" && request.method === "PATCH") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 4_000);
+    const currentPassword = typeof body?.current_password === "string" ? body.current_password : "";
+    const newPassword = typeof body?.new_password === "string" ? body.new_password : "";
+    if (newPassword.length < 12 || newPassword.length > 128) return error("Your new password must be at least 12 characters.", 400);
+    try {
+      const row = await env.DB.prepare("SELECT password_hash FROM customers WHERE id = ? AND status = 'active' LIMIT 1").bind(customer.customer_id).first<{ password_hash: string }>();
+      if (!row || !await verifyPassword(currentPassword, row.password_hash)) return error("Your current password is incorrect.", 403);
+      const hash = await passwordHash(newPassword);
+      const now = new Date().toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE customers SET password_hash = ?, updated_at = ? WHERE id = ? AND status = 'active'").bind(hash, now, customer.customer_id),
+        env.DB.prepare("UPDATE customer_sessions SET revoked_at = ? WHERE customer_id = ? AND id <> ? AND revoked_at IS NULL").bind(now, customer.customer_id, customer.id),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Your password could not be changed.", 409);
+      return json({ updated: true, message: "Password changed. Other signed-in sessions have been signed out." });
+    } catch { return error("Your password could not be changed. Please try again.", 503); }
+  }
+
+  if (path === "/api/customer/orders" && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
+        .bind(customer.customer_id).all<Record<string, unknown>>();
+      const orders = rows.results ?? [];
+      if (!orders.length) return json({ orders: [] });
+      const ids = orders.map((order) => String(order.id));
+      const placeholders = ids.map(() => "?").join(",");
+      const items = await env.DB.prepare("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN (" + placeholders + ") ORDER BY rowid")
+        .bind(...ids).all<Record<string, unknown>>();
+      const grouped = new Map<string, Record<string, unknown>[]>();
+      for (const item of items.results ?? []) {
+        const id = String(item.order_id);
+        grouped.set(id, [...(grouped.get(id) ?? []), item]);
+      }
+      return json({ orders: orders.map((order) => ({ ...order, items: grouped.get(String(order.id)) ?? [] })) });
+    } catch { return error("Your orders could not be loaded. Please try again.", 503); }
+  }
+
+  if (path === "/api/customer/rentals" && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT id, reference_code, vehicle_id, customer_name, pickup_city, pickup_address, destination_city, destination_address, pickup_at, return_at, driver_option, status, created_at FROM rental_requests WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
+        .bind(customer.customer_id).all<Record<string, unknown>>();
+      return json({ rentals: rows.results ?? [] });
+    } catch { return error("Your rental requests could not be loaded. Please try again.", 503); }
+  }
+
+  return error("Method not allowed", 405);
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
@@ -1879,6 +2058,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
   const origin = request.headers.get("origin");
   if (origin && origin !== url.origin) return error("Cross-origin requests are not accepted", 403);
+
+  const customerResponse = await customerAccountRoutes(request, env, url);
+  if (customerResponse) return customerResponse;
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
