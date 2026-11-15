@@ -1912,7 +1912,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   }
   if(readMatch&&request.method==="PATCH"){
     try{const result=await env.DB.prepare("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=? AND is_read=0").bind(new Date().toISOString(),readMatch[1]).run();return json({updated:true,changed:(result.meta?.changes??0)===1});}
-    catch{return error("Notification could not be updated",503);}
+    catch(caught){console.error("[owner-notifications] mark-read failed",caught instanceof Error?caught.message:"unknown error");return error("Notification could not be updated",503);}
   }
   return error("Method not allowed",405);
 }
