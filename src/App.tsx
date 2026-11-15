@@ -51,7 +51,7 @@ function Storefront() {
     let active = true;
     const loadProducts = async () => {
       try {
-        const response = await fetch("/api/products?limit=12", { headers: { accept: "application/json" } });
+        const response = await fetch("/api/products?limit=60", { headers: { accept: "application/json" } });
         if (!response.ok) throw new Error("Catalogue unavailable");
         const payload = await response.json() as { products?: typeof products };
         if (!Array.isArray(payload.products)) throw new Error("Invalid catalogue response");
