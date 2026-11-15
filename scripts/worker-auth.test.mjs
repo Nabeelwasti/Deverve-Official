@@ -423,7 +423,7 @@ class FakeStatement {
       return { success: true, results: rows };
     }
     if (q.startsWith("SELECT ri.id, ri.return_request_id, ri.order_item_id, ri.quantity, ri.unit_refund_paisa, oi.product_name_snapshot")) {
-      const ids = new Set(v); return { success: true, results: this.db.returnRequestItems.filter((row) => ids.has(row.return_request_id)).map((row) => ({ ...row, ...this.db.orderItems.find((item) => item.id === row.order_item_id) })) };
+      const ids = new Set(v); return { success: true, results: this.db.returnRequestItems.filter((row) => ids.has(row.return_request_id)).map((row) => { const item = this.db.orderItems.find((entry) => entry.id === row.order_item_id) ?? {}; return { ...row, product_name_snapshot: item.product_name_snapshot, sku_snapshot: item.sku_snapshot, size_snapshot: item.size_snapshot, color_snapshot: item.color_snapshot }; }) };
     }
     if (q.startsWith("SELECT id, return_request_id, from_status, to_status, actor_type, note, created_at FROM return_status_events")) {
       const ids = new Set(v); return { success: true, results: this.db.returnStatusEvents.filter((row) => ids.has(row.return_request_id)) };
