@@ -476,7 +476,7 @@ function Storefront() {
               <label className="enquiry-message">How can we help?<textarea required minLength={5} maxLength={3000} rows={4} value={enquiry.message} onChange={(event) => setEnquiry({ ...enquiry, message: event.target.value })} /></label>
               <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={enquiry.website} onChange={(event) => setEnquiry({ ...enquiry, website: event.target.value })} /></label>
             </div>
-            <div className="enquiry-submit"><TurnstileWidget resetKey={enquiryTurnstileReset} onToken={setEnquiryTurnstileToken} /><button className="button button-primary" type="submit" disabled={sending || !enquiryTurnstileToken}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
+            <div className="enquiry-submit">{activeScreen === "contact" && <TurnstileWidget resetKey={enquiryTurnstileReset} onToken={setEnquiryTurnstileToken} />}<button className="button button-primary" type="submit" disabled={sending || !enquiryTurnstileToken}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
           </form>
           <small>Prices, product availability, delivery, payment and rental terms are confirmed directly by the De VERVE team.</small>
         </section>
