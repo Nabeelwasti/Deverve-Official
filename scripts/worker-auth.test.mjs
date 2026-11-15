@@ -435,6 +435,7 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications")) return { success: true, results: [...this.db.notifications.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,100) };
     if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) {
       const ids = new Set(v.slice(1));
       return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0] && ids.has(row.id)) };
