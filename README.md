@@ -32,7 +32,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 ### Customer accounts and service
 - Customer registration/sign-in, profile and password changes.
 - Customer-scoped order and rental history and order-status timeline.
-- Exchange-only customer policy. Eligible delivered orders have a WhatsApp exchange contact link; the dedicated in-site exchange case workflow is not yet implemented.
+- Exchange-only customer policy with a dedicated in-site workflow: eligible delivered orders can submit item-level requests within seven days of the actual delivery event; customers can track status and authorised staff can review, approve/reject, record receipt and complete cases. Replacement stock is still confirmed by staff before fulfilment.
 - New customer return submissions are rejected. Historic return/refund records remain for legacy administration only.
 
 ### Admin and business operations
@@ -56,9 +56,9 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 
 ## Production snapshot — 15 November 2026
 
-The 29-commit payments, promotions, owner-notification and exchange-policy change set was merged into `main` as `4feb999f0332a6ef5234bb9a6faf985c94268b78`. Its latest CI run #417 passed all ten steps, including browser tests. Cloudflare Pages then built and deployed that exact `main` commit successfully as deployment `042845de`.
+The payments, promotions, owner-notification and exchange-policy change set was merged into `main` as `4feb999f0332a6ef5234bb9a6faf985c94268b78`. The exchange case-management workflow was then added directly on `main`. Main commit `ec367c3c9caa19bf19ce68ff7d9d990f10c771c1` passed CI run #428 and production smoke run #141. Subsequent hardening commits update the exchange eligibility window and add exchange-route checks to the smoke workflow; their CI runs are being verified separately.
 
-The production D1 schema was checked before migration 0017. The four promotion columns were absent, so the exact additive migration `migrations/0017_single_promotion_per_order.sql` was applied after the code was deployed. A fresh `PRAGMA table_info(orders)` read-back confirmed all four columns are present. No customer, order, product or rental records were created by this operation.
+The production D1 schema includes the four promotion columns from migration `0017_single_promotion_per_order.sql` and the three exchange case tables from migration `0018_exchange_case_management.sql`. The exchange tables were confirmed present by direct SQLite metadata queries. The database has no migration-tracking table, so production schema verification is performed by querying `sqlite_master` and table columns. No customer, order, product or rental records were created by these schema changes.
 
 Current read-only production counts:
 | Record type | Count |
@@ -70,9 +70,10 @@ Current read-only production counts:
 | Customers / orders | 0 / 0 |
 | Rental requests | 0 |
 | Owner notifications | 0 |
+| Exchange requests | 0 |
 | CMS pages | 0 |
 
-The direct SQLite catalogue query reports 42 tables. Cloudflare's D1 metadata `num_tables` field has previously returned 0 despite the tables being present; use direct SQL schema queries for verification.
+The direct SQLite catalogue query reports 45 tables. Cloudflare's D1 metadata `num_tables` field has previously returned 0 despite the tables being present; use direct SQL schema queries for verification.
 
 ## What is actually active
 
