@@ -62,12 +62,14 @@
 .admin-dashboard[data-admin-screen="vehicles"] .admin-panel:not(#vehicles),
 .admin-dashboard[data-admin-screen="rentals"] .admin-panel:not(#rentals),
 .admin-dashboard[data-admin-screen="orders"] .admin-panel:not(#orders),
+.admin-dashboard[data-admin-screen="returns"] .admin-panel:not(#returns),
 .admin-dashboard[data-admin-screen="wholesale"] .admin-panel:not(#wholesale),
 .admin-dashboard[data-admin-screen="enquiries"] .admin-panel:not(#enquiries){display:none!important}
 .admin-dashboard[data-admin-screen="products"] .admin-panel#products,
 .admin-dashboard[data-admin-screen="vehicles"] .admin-panel#vehicles,
 .admin-dashboard[data-admin-screen="rentals"] .admin-panel#rentals,
 .admin-dashboard[data-admin-screen="orders"] .admin-panel#orders,
+.admin-dashboard[data-admin-screen="returns"] .admin-panel#returns,
 .admin-dashboard[data-admin-screen="wholesale"] .admin-panel#wholesale,
 .admin-dashboard[data-admin-screen="enquiries"] .admin-panel#enquiries{display:block!important}
 .admin-dashboard .admin-panel[id]{scroll-margin-top:90px}
