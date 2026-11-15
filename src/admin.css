@@ -50,3 +50,25 @@
 .admin-quick-nav a{display:inline-flex;align-items:center;padding:9px 13px;border:1px solid #d6e1ec;border-radius:999px;background:#fff;color:#173f6b;text-decoration:none;font-size:12px;font-weight:750;white-space:nowrap}
 .admin-quick-nav a:hover,.admin-quick-nav a:focus-visible{background:#eaf3fc;border-color:#8bb8df;outline:none}
 .admin-panel[id]{scroll-margin-top:86px}
+
+
+/* Admin workspace uses focused screens rather than a long dashboard feed. */
+.admin-dashboard .admin-content{padding-top:18px}
+.admin-dashboard .admin-quick-nav{position:sticky;top:0;z-index:35;display:flex;gap:7px;flex-wrap:nowrap;overflow-x:auto;padding:10px 0;background:rgba(247,250,253,.97);backdrop-filter:blur(14px);border-bottom:1px solid #dce6f0;margin:8px 0 18px;scrollbar-width:thin}
+.admin-dashboard .admin-quick-nav button{flex:none;border:1px solid #d6e1ec;border-radius:999px;background:#fff;color:#173f6b;text-decoration:none;padding:10px 14px;font-size:12px;font-weight:750;white-space:nowrap;cursor:pointer}
+.admin-dashboard .admin-quick-nav button.active,.admin-dashboard .admin-quick-nav button:hover{background:#173f6b;color:#fff;border-color:#173f6b}
+.admin-dashboard[data-admin-screen="overview"] .admin-panel{display:none!important}
+.admin-dashboard[data-admin-screen="products"] .admin-panel:not(#products),
+.admin-dashboard[data-admin-screen="vehicles"] .admin-panel:not(#vehicles),
+.admin-dashboard[data-admin-screen="rentals"] .admin-panel:not(#rentals),
+.admin-dashboard[data-admin-screen="orders"] .admin-panel:not(#orders),
+.admin-dashboard[data-admin-screen="wholesale"] .admin-panel:not(#wholesale),
+.admin-dashboard[data-admin-screen="enquiries"] .admin-panel:not(#enquiries){display:none!important}
+.admin-dashboard[data-admin-screen="products"] .admin-panel#products,
+.admin-dashboard[data-admin-screen="vehicles"] .admin-panel#vehicles,
+.admin-dashboard[data-admin-screen="rentals"] .admin-panel#rentals,
+.admin-dashboard[data-admin-screen="orders"] .admin-panel#orders,
+.admin-dashboard[data-admin-screen="wholesale"] .admin-panel#wholesale,
+.admin-dashboard[data-admin-screen="enquiries"] .admin-panel#enquiries{display:block!important}
+.admin-dashboard .admin-panel[id]{scroll-margin-top:90px}
+@media(max-width:650px){.admin-dashboard .admin-content{padding-left:12px;padding-right:12px}.admin-dashboard .admin-heading-row{align-items:flex-start;gap:12px}.admin-dashboard .admin-quick-nav{margin-left:-4px;margin-right:-4px;padding:10px 4px}.admin-dashboard .admin-stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
