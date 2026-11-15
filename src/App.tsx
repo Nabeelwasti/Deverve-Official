@@ -30,6 +30,7 @@ function Storefront() {
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [rentalOpen, setRentalOpen] = useState(false);
   const [rentalBusy, setRentalBusy] = useState(false);
@@ -248,7 +249,7 @@ function Storefront() {
                     <h4>{product.name}</h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
                     {product.variants.length ? <label className="product-variant-select"><span>SIZE / COLOUR</span><select value={selectedVariants[product.id] || product.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [product.id]: event.target.value }))}>{product.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <span className="product-stock-note">Contact us for current availability</span>}
-                    <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong>{product.variants.length && product.retail_price_paisa !== null ? <button type="button" onClick={() => addToCart(product)}>Add to cart +</button> : <a href={whatsapp(`Assalamu Alaikum, I am interested in ${product.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">Enquire ↗</a>}</div>
+                    <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><button type="button" className="product-details-button" onClick={() => setDetailProduct(product)}>View details</button>{product.variants.length > 0 && product.retail_price_paisa !== null && <button type="button" onClick={() => addToCart(product)}>Add to cart +</button>}</div>
                   </div>
                 </article>
               ))}
@@ -256,6 +257,14 @@ function Storefront() {
           </div>
         </section>
 
+        {detailProduct && <div className="checkout-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailProduct(null); }}><section className="checkout-modal product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
+          <div className="checkout-modal-heading"><div><p className="eyebrow">PRODUCT DETAILS</p><h2 id="product-detail-title">{detailProduct.name}</h2><p>{detailProduct.audience} · {detailProduct.category}</p></div><button type="button" className="checkout-close" onClick={() => setDetailProduct(null)} aria-label="Close product details">×</button></div>
+          {detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
+          <p>{detailProduct.description || "Please contact our team for more product information."}</p>
+          <div className="product-detail-price">{formatPrice(detailProduct.retail_price_paisa)}</div>
+          {detailProduct.variants.length > 0 ? <label className="product-variant-select"><span>AVAILABLE SIZE / COLOUR</span><select value={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: event.target.value }))}>{detailProduct.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}
+          <div className="product-detail-actions">{detailProduct.variants.length > 0 && detailProduct.retail_price_paisa !== null && <button type="button" className="button button-primary" onClick={() => { addToCart(detailProduct); setDetailProduct(null); }}>Add to cart</button>}<a className="button button-outline" href={whatsapp(`Assalamu Alaikum, I am interested in ${detailProduct.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">WhatsApp enquiry</a><a className="button button-outline" href="mailto:deverve61@gmail.com?subject=Product%20Enquiry">Email enquiry</a></div>
+        </section></div>}
         {checkoutOpen && <div className="checkout-backdrop"><section className="checkout-panel" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Cash on delivery</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
           {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p><button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
