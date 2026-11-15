@@ -36,6 +36,28 @@ jobs:
             exit 1
           fi
 
+      - name: Verify Turnstile verifier and Siteverify connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          verifier="https://deverve-turnstile-verify.wastinabeel99.workers.dev"
+          health="$(curl --fail --silent --show-error --max-time 15 "$verifier/health")"
+          if [[ "$health" != *'"status":"ok"'* || "$health" != *'"secret_configured":true'* ]]; then
+            echo "Turnstile verifier health check failed: $health"
+            exit 1
+          fi
+          status="$(curl --silent --show-error --max-time 15 -o /tmp/turnstile-invalid.json -w '%{http_code}' \
+            -X POST "$verifier/" \
+            -H 'Origin: https://deverve-official.pages.dev' \
+            -H 'Content-Type: application/json' \
+            --data '{"token":"deliberately-invalid-production-smoke-token"}')"
+          body="$(cat /tmp/turnstile-invalid.json)"
+          if [[ "$status" != "403" || "$body" != *'"success":false'* ]]; then
+            echo "Turnstile Siteverify negative test failed (HTTP $status): $body"
+            exit 1
+          fi
+          echo "Turnstile verifier is live, its secret binding is present, and Siteverify rejects an invalid token."
+
       - name: Verify deployed security response headers
         shell: bash
         run: |
