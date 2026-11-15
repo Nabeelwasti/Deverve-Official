@@ -9,12 +9,39 @@ test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wal
   assert.equal(Number.isNaN(parseRentalDateTime("2026-02-30T10:30")), true);
   assert.equal(Number.isNaN(parseRentalDateTime("2026-11-15 10:30")), true);
 });
+test("public enquiry submissions are rate-limited per client IP with retry guidance", async () => {
+  const db = new FakeD1();
+  const submit = (ip) => handleRequest(request("/api/enquiries", "POST", {
+    enquiryType: "general", name: "Test Customer", phone: "+923001234567",
+    email: "customer@example.com", message: "Please contact me about your products.",
+  }, { "cf-connecting-ip": ip }), env(db));
+  for (let index = 0; index < 8; index += 1) {
+    const response = await submit("203.0.113.9");
+    assert.equal(response.status, 201);
+  }
+  const limited = await submit("203.0.113.9");
+  assert.equal(limited.status, 429);
+  assert.ok(Number(limited.headers.get("retry-after")) > 0);
+  assert.equal(db.enquiries.size, 8);
+  const separateClient = await submit("203.0.113.10");
+  assert.equal(separateClient.status, 201);
+  assert.equal(db.enquiries.size, 9);
+  assert.equal([...db.rateLimits.keys()].every((key) => key.length === 43 && !key.includes("203.0.113.")), true);
+});
+
 class FakeStatement {
   constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO public_rate_limits")) {
+      const [key, windowStart, expiresAt] = v;
+      const previous = this.db.rateLimits.get(key);
+      const count = previous && previous.window_start === windowStart ? previous.request_count + 1 : 1;
+      this.db.rateLimits.set(key, { window_start: windowStart, request_count: count, expires_at: expiresAt });
+      return { request_count: count };
+    }
     if (q.startsWith("SELECT s.id, s.admin_user_id")) {
       const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const admin = session && this.db.admins.get(session.admin_user_id);
@@ -119,6 +146,11 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO enquiries")) {
+      const [id, enquiry_type, customer_name, phone, email, message] = v;
+      this.db.enquiries.set(id, { id, enquiry_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO vehicles")) {
       const [id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description] = v;
       this.db.vehicles.set(id, { id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
@@ -365,6 +397,7 @@ class FakeD1 {
   admins = new Map();
   sessions = new Map();
   attempts = new Map();
+  rateLimits = new Map();
   products = new Map();
   variants = new Map();
   movements = [];

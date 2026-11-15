@@ -118,6 +118,43 @@ async function sha256(value: string): Promise<string> {
   return base64Url(new Uint8Array(digest));
 }
 
+/**
+ * Fixed-window rate limit for public write endpoints.
+ * Cloudflare supplies CF-Connecting-IP at the edge. Only a one-way digest is
+ * stored in D1; the raw client address is never persisted.
+ *
+ * Local development without Cloudflare's edge header intentionally skips this
+ * control so developers can test forms. Production Pages requests include it.
+ */
+async function enforcePublicRateLimit(
+  request: Request,
+  env: Env,
+  scope: string,
+  limit: number,
+  windowSeconds = 15 * 60,
+): Promise<Response | null> {
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim();
+  if (!clientIp) return null;
+  if (clientIp.length > 64) return error("Request could not be verified", 400);
+  const bucketKey = await sha256("deverve-public-rate-limit:v1:" + scope + ":" + clientIp);
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
+  const expiresAt = windowStart + windowSeconds * 2;
+  try {
+    const row = await env.DB.prepare(
+      "INSERT INTO public_rate_limits (bucket_key, window_start, request_count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(bucket_key) DO UPDATE SET request_count = CASE WHEN public_rate_limits.window_start = excluded.window_start THEN public_rate_limits.request_count + 1 ELSE 1 END, window_start = excluded.window_start, expires_at = excluded.expires_at RETURNING request_count",
+    ).bind(bucketKey, windowStart, expiresAt).first<{ request_count: number }>();
+    if (!row || !Number.isInteger(row.request_count)) return error("Request protection is temporarily unavailable. Please try again shortly.", 503);
+    if (row.request_count > limit) {
+      const retryAfter = Math.max(1, windowStart + windowSeconds - now);
+      return json({ error: "Too many requests. Please wait before trying again." }, 429, { "retry-after": String(retryAfter) });
+    }
+    return null;
+  } catch {
+    return error("Request protection is temporarily unavailable. Please try again shortly.", 503);
+  }
+}
+
 async function passwordHash(password: string): Promise<string> {
   // Cloudflare Workers currently rejects PBKDF2 calls above 100,000 iterations.
   // Keep the verifier's accepted minimum aligned with this platform maximum.
@@ -385,6 +422,8 @@ interface OrderItemRow {
 
 async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/orders" || request.method !== "POST") return null;
+  const limited = await enforcePublicRateLimit(request, env, "checkout", 5);
+  if (limited) return limited;
   const body = await readJson(request, 12_000);
   if (!body) return error("Please submit valid checkout details", 400);
   if (cleanText(body.website, 120)) return json({ accepted: true });
@@ -565,6 +604,8 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
   const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
   if (!match || request.method !== "POST") return null;
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const limited = await enforcePublicRateLimit(request, env, "rental-documents", 3);
+  if (limited) return limited;
   const length = Number(request.headers.get("content-length") || 0);
   if (length > 8_500_000) return error("The two CNIC images must be under 8 MB in total", 413);
   let form: FormData;
@@ -629,6 +670,8 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
 
 async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/rentals" || request.method !== "POST") return null;
+  const limited = await enforcePublicRateLimit(request, env, "rental-request", 5);
+  if (limited) return limited;
   const body = await readJson(request, 12_000);
   if (!body) return error("Please submit valid rental request details", 400);
   if (cleanText(body.website, 120)) return json({ accepted: true });
@@ -1794,6 +1837,8 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (publicOrderResponse) return publicOrderResponse;
 
   if (url.pathname === "/api/enquiries" && request.method === "POST") {
+    const limited = await enforcePublicRateLimit(request, env, "enquiry", 8);
+    if (limited) return limited;
     const body = await readJson(request, 12_000);
     if (!body) return error("Please submit valid form details", 400);
 

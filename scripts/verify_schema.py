@@ -15,7 +15,7 @@ required_tables = {
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
-    "store_settings", "content_revisions", "product_media_assets", "rental_documents",
+    "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -41,6 +41,22 @@ rental_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_request
 assert "description" in vehicle_columns, "Vehicle description column is missing"
 assert {"reference_code", "email", "customer_note", "admin_note", "updated_at", "pickup_city", "pickup_address", "destination_city", "destination_address", "document_upload_token_hash", "document_upload_expires_at"} <= rental_columns, "Rental request management fields are missing"
 assert "rental_documents" in actual_tables, "Private rental document table is missing"
+rate_limit_columns = {row[1] for row in db.execute("PRAGMA table_info(public_rate_limits)")}
+assert {"bucket_key", "window_start", "request_count", "expires_at"} <= rate_limit_columns, "Public rate-limit fields are missing"
+assert any(row[1] == "idx_public_rate_limits_expiry" for row in db.execute("PRAGMA index_list(public_rate_limits)")), "Rate-limit expiry index is missing"
+rate_limit_upsert = """
+INSERT INTO public_rate_limits (bucket_key, window_start, request_count, expires_at)
+VALUES (?, ?, 1, ?)
+ON CONFLICT(bucket_key) DO UPDATE SET
+  request_count = CASE WHEN public_rate_limits.window_start = excluded.window_start
+    THEN public_rate_limits.request_count + 1 ELSE 1 END,
+  window_start = excluded.window_start,
+  expires_at = excluded.expires_at
+RETURNING request_count
+"""
+assert db.execute(rate_limit_upsert, ("digest-key", 900, 2700)).fetchone()[0] == 1
+assert db.execute(rate_limit_upsert, ("digest-key", 900, 2700)).fetchone()[0] == 2
+assert db.execute(rate_limit_upsert, ("digest-key", 1800, 3600)).fetchone()[0] == 1
 rental_document_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_documents)")}
 assert {"rental_request_id", "document_side", "object_key", "mime_type", "byte_size"} <= rental_document_columns, "Rental document fields are missing"
 assert (Path("functions/media/[[path]].ts")).is_file(), "Public media URLs must be routed through the Worker authorization handler"

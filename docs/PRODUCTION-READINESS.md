@@ -10,13 +10,14 @@ Status: technically improved; not certified for unrestricted production commerce
 - Regression tests cover Pakistan UTC+05:00 conversion, seconds, explicitly zoned input, impossible dates, and malformed timezone-less input.
 - Cloudflare Pages security headers are defined in _headers, including CSP, frame restrictions, MIME sniffing protection, referrer policy, permissions policy, and HSTS suitable for the shared pages.dev host.
 - A minimal robots policy and canonical sitemap are included for the current production hostname.
+- Atomic D1-backed fixed-window limits protect public enquiries, COD checkout, rental requests and CNIC uploads. Only a SHA-256 digest of the Cloudflare client IP plus endpoint scope is stored; raw IP addresses are not persisted. Limits fail closed if the rate-limit store is unavailable. Local development without the Cloudflare edge IP header skips the limiter.
 - README security and launch-gate statements are updated.
 
 ## Remaining release blockers
 
 | Priority | Finding | Why this prevents an unconditional certification | Required closure |
 |---|---|---|---|
-| Critical | Public form/API abuse controls | Honeypots alone do not stop distributed spam, automated order attempts, or repeated CNIC upload attempts. No production-grade shared rate limit or server-side Turnstile verification is currently configured. | Add endpoint-specific distributed rate limits and configure/verify Turnstile keys; test legitimate and abusive traffic. |
+| High | Public form/API abuse controls | Atomic D1 fixed-window limits now protect enquiries (8/15 min), checkout (5/15 min), rental requests (5/15 min), and CNIC uploads (3/15 min) per Cloudflare client IP. This reduces single-source abuse but does not stop distributed botnets or replace a challenge. | Configure and verify server-side Turnstile (site and secret keys), add periodic expiry cleanup for stale buckets, and test distributed traffic. |
 | High | CNIC retention and deletion policy | Identity documents are sensitive personal data. A business-approved retention period and automated expiry are absent. | Owner approves retention period, customer notice/consent text, access policy, and purge schedule before accepting documents. |
 | High | Delivery fee finalization | Checkout records delivery fee as zero while the UI says the fee will be confirmed. The admin workflow does not obtain customer acceptance of a revised total. | Implement a quoted delivery-fee state and customer acceptance/rejection flow before dispatch. |
 | High | Real catalogue and fleet data | Production database currently has no published products/variants/stock or available vehicles. | Enter verified products, prices, sizes, colours, stock, vehicle data, rates, and real photos. |
