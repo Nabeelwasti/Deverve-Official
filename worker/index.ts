@@ -908,6 +908,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
       .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
     if (signedInCustomer) await env.DB.prepare("UPDATE rental_requests SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id).run();
+    await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a vehicle rental request. Review the requested dates and availability.",entity_type:"rental_request",entity_id:id});
     return json({
       accepted: true,
       reference_code: reference,
@@ -2741,6 +2742,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       await env.DB.prepare(
         "INSERT INTO enquiries (id, enquiry_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?)",
       ).bind(id, enquiryType, customerName, phone, email || null, message).run();
+      await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+enquiryType+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});
       return json({ accepted: true, reference: id }, 201);
     } catch {
       return error("We could not save your enquiry. Please try again later.", 503);
