@@ -29,7 +29,7 @@ const emptyProduct: ProductForm = {
 };
 
 function whatsappHref(phone: string, message: string): string {
-  const digits = phone.replace(/\\D/g, "");
+  const digits = phone.replace(/\D/g, "");
   const international = digits.startsWith("0") ? "92" + digits.slice(1) : digits;
   return international.length >= 10 && international.length <= 15
     ? "https://wa.me/" + international + "?text=" + encodeURIComponent(message)
