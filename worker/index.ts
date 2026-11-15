@@ -23,6 +23,7 @@ export interface Env {
   SAFEPAY_MERCHANT_API_KEY?: string;
   SAFEPAY_SECRET_KEY?: string;
   SAFEPAY_WEBHOOK_SECRET?: string;
+  SAFEPAY_LIVE_ENABLED?: string;
   RESEND_API_KEY?: string;
   RESEND_FROM_EMAIL?: string;
   OWNER_NOTIFICATION_EMAIL?: string;
@@ -2270,9 +2271,10 @@ interface SafepayConfig {
 }
 
 function getSafepayConfig(env: Env): SafepayConfig | null {
-  if (env.SAFEPAY_ENV !== "sandbox" || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
+  const environment = env.SAFEPAY_ENV;
+  if (!["sandbox", "production"].includes(environment ?? "") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
   return {
-    apiHost: "https://sandbox.api.getsafepay.com",
+    apiHost: environment === "production" ? "https://api.getsafepay.com" : "https://sandbox.api.getsafepay.com",
     merchantApiKey: env.SAFEPAY_MERCHANT_API_KEY,
     secretKey: env.SAFEPAY_SECRET_KEY,
     webhookSecret: env.SAFEPAY_WEBHOOK_SECRET,
@@ -2377,7 +2379,7 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
 
 async function customerAccountRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
-  if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? "sandbox" : null });
+  if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? env.SAFEPAY_ENV : null });
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
   const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns"];
