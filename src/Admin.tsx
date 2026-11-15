@@ -63,6 +63,9 @@ export default function Admin() {
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({facebook:"",instagram:"",tiktok:"",youtube:"",linkedin:"",pinterest:"",threads:"",x:""});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [cnicUploadsEnabled,setCnicUploadsEnabled]=useState(false);
+  const [ownerPrimaryEmail,setOwnerPrimaryEmail]=useState("deverve61@gmail.com");
+  const [ownerSecondaryEmails,setOwnerSecondaryEmails]=useState("");
+  const [ownerEmailsEnabled,setOwnerEmailsEnabled]=useState(true);
   const [brandPreviews,setBrandPreviews]=useState<{logo:string;favicon:string}>({logo:"",favicon:""});
   const [invitePassword, setInvitePassword] = useState("");
   const [inviteBusy, setInviteBusy] = useState(false);
@@ -156,9 +159,12 @@ export default function Admin() {
   };
   const loadStaff = async () => { const result = await api<{users:StaffMember[];invites:StaffInvite[]}>("/api/admin/staff"); setStaffUsers(result.users); setStaffInvites(result.invites); };
   const loadSettings = async () => {
-    const result=await api<{settings:{social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};cnic_uploads_enabled?:boolean}}>("/api/admin/settings");
+    const result=await api<{settings:{social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};cnic_uploads_enabled?:boolean;notification_emails?:{primary?:string;secondary?:string[];enabled?:boolean}}}>("/api/admin/settings");
     setSocialLinks({...socialLinks,...(result.settings.social_links??{})});
     setCnicUploadsEnabled(result.settings.cnic_uploads_enabled===true);
+    setOwnerPrimaryEmail(result.settings.notification_emails?.primary??"deverve61@gmail.com");
+    setOwnerSecondaryEmails((result.settings.notification_emails?.secondary??[]).join(", "));
+    setOwnerEmailsEnabled(result.settings.notification_emails?.enabled!==false);
     const brand={logo_id:result.settings.brand_assets?.logo_id??null,favicon_id:result.settings.brand_assets?.favicon_id??null};
     setBrandAssets(brand);
     setBrandPreviews({logo:brand.logo_id?"/api/admin/media/"+brand.logo_id+"/file":"",favicon:brand.favicon_id?"/api/admin/media/"+brand.favicon_id+"/file":""});
@@ -184,7 +190,7 @@ export default function Admin() {
     }
   }, [admin]);
 
-  const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,cnic_uploads_enabled:cnicUploadsEnabled})});setMessage("Website settings saved. CNIC upload setting updated.");}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
+  const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{const secondary=ownerSecondaryEmails.split(/[;,\\n]/).map((item)=>item.trim()).filter(Boolean);await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,cnic_uploads_enabled:cnicUploadsEnabled,notification_emails:{primary:ownerPrimaryEmail,secondary,enabled:ownerEmailsEnabled}})});setMessage("Website, owner notification email and brand settings saved.");}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
   const uploadBrandAsset = async (kind:"logo"|"favicon",file:File|null) => {
     if(!file)return;
     setBusy(true);setMessage("");
