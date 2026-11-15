@@ -369,6 +369,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
     if (q.startsWith("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ?")) { const row = this.db.orders.get(v[0]); return row?.customer_id === v[1] ? row : null; }
+    if (q.startsWith("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications")) return { success: true, results: [...this.db.notifications.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,100) };
     if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) { const ids = new Set(v.slice(1)); return null; }
     if (q.startsWith("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
@@ -388,6 +389,7 @@ class FakeStatement {
       this.db.rateLimits.set(key, { window_start: windowStart, request_count: count, expires_at: expiresAt });
       return { request_count: count };
     }
+    if (q.startsWith("SELECT COUNT(*) AS total FROM owner_notifications")) return { total: [...this.db.notifications.values()].filter((row) => row.is_read === 0).length };
     if (q.startsWith("SELECT s.id, s.admin_user_id")) {
       const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const admin = session && this.db.admins.get(session.admin_user_id);
@@ -532,6 +534,24 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO owner_notifications")) {
+      if (q.includes("SELECT ?, 'order.created'")) {
+        const [id, title, body, entity_id, orderId] = v;
+        if (this.db.orders.has(orderId)) this.db.notifications.set(id, { id, event_type: "order.created", title, body, entity_type: "order", entity_id, is_read: 0, created_at: new Date().toISOString(), read_at: null });
+      } else {
+        const [id, event_type, title, body, entity_type, entity_id] = v;
+        this.db.notifications.set(id, { id, event_type, title, body, entity_type, entity_id, is_read: 0, created_at: new Date().toISOString(), read_at: null });
+      }
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE owner_notifications SET is_read=1,read_at=? WHERE is_read=0")) {
+      let changes = 0; for (const row of this.db.notifications.values()) if (!row.is_read) { row.is_read = 1; row.read_at = v[0]; changes += 1; }
+      return { success: true, meta: { changes } };
+    }
+    if (q.startsWith("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=?")) {
+      const row = this.db.notifications.get(v[1]); if (row && !row.is_read) Object.assign(row, { is_read: 1, read_at: v[0] });
+      return { success: true, meta: { changes: row && row.is_read ? 1 : 0 } };
+    }
     if (q.startsWith("INSERT INTO return_requests")) {
       const [id, order_id, customer_id, return_number, reason, details, refund_amount_paisa] = v;
       if ([...this.db.returnRequests.values()].some((row) => row.order_id === order_id)) throw new Error("UNIQUE constraint failed: return_requests.order_id");
@@ -919,6 +939,7 @@ class FakeD1 {
   vehicles = new Map();
   rentalRequests = new Map();
   audits = [];
+  notifications = new Map();
   storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
@@ -1386,4 +1407,22 @@ test("rental requests can be assigned and confirmed only when the vehicle has no
   assert.equal(db.rentalRequests.get(firstId).status, "confirmed");
   assert.equal(db.rentalRequests.get(secondId).vehicle_id, vehicleTwo);
   assert.equal(db.rentalRequests.get(secondId).status, "confirmed");
+});
+
+
+test("owner notifications are private, readable and can be marked as read", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const unauthenticated = await handleRequest(new Request(origin + "/api/admin/notifications"), env(db));
+  assert.equal(unauthenticated.status, 401);
+  db.notifications.set("notice-1", { id:"notice-1", event_type:"order.created", title:"New order DV-TEST", body:"Review order status.", entity_type:"order", entity_id:"order-1", is_read:0, created_at:new Date().toISOString(), read_at:null });
+  const list = await handleRequest(new Request(origin + "/api/admin/notifications", { headers:{cookie} }), env(db));
+  assert.equal(list.status, 200);
+  assert.equal((await list.json()).unread, 1);
+  const read = await handleRequest(request("/api/admin/notifications/notice-1/read","PATCH",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(read.status,200);
+  assert.equal(db.notifications.get("notice-1").is_read,1);
+  const all = await handleRequest(request("/api/admin/notifications/read-all","POST",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(all.status,200);
 });
