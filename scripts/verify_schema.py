@@ -39,7 +39,10 @@ assert "wholesale_quote_items" in actual_tables, "Wholesale quote item table is 
 vehicle_columns = {row[1] for row in db.execute("PRAGMA table_info(vehicles)")}
 rental_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
 assert "description" in vehicle_columns, "Vehicle description column is missing"
-assert {"reference_code", "email", "customer_note", "admin_note", "updated_at"} <= rental_columns, "Rental request management fields are missing"
+assert {"reference_code", "email", "customer_note", "admin_note", "updated_at", "pickup_city", "pickup_address", "destination_city", "destination_address", "document_upload_token_hash", "document_upload_expires_at"} <= rental_columns, "Rental request management fields are missing"
+assert "rental_documents" in actual_tables, "Private rental document table is missing"
+rental_document_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_documents)")}
+assert {"rental_request_id", "document_side", "object_key", "mime_type", "byte_size"} <= rental_document_columns, "Rental document fields are missing"
 
 
 unique_indexes = {
