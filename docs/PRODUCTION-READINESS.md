@@ -57,3 +57,24 @@ Status: technically improved; not certified for unrestricted production commerce
 7. Close every owner/business dependency above before claiming unrestricted launch readiness.
 
 Verdict: The code can be deployed and technically smoke-tested, but a 100% production-ready certification is not defensible while the listed security, data, policy, and real-world acceptance gates remain open.
+
+## Follow-on implementation snapshot — 15 November 2026
+
+- Turnstile widget created for deverve-official.pages.dev in managed mode. Its secret is stored in the separate deverve-turnstile-verify Cloudflare Worker as a secret binding. The Pages Worker calls this verifier for enquiry, checkout, rental and CNIC upload writes. The verifier requires the expected Pages hostname and Cloudflare Siteverify success.
+- The storefront now includes bilingual English/Urdu policies for orders/payment, delivery, returns/complaints, wholesale, rentals, privacy and CNIC handling.
+- Owner-controlled CNIC uploads setting added to Admin → Website & brand settings. It defaults to disabled. Upload requests are only accepted when enabled, and closed/cancelled rental requests cannot accept late document uploads.
+- A deverve-cnic-retention scheduled Worker is configured with the production D1 and private R2 bindings, running daily at 03:00 UTC. It clears expired one-time upload tokens and purges documents 30 days after a rental request is marked completed or cancelled, recording audit entries. The first scheduled execution and actual R2/D1 deletion have not yet been observed; CNIC uploads must remain disabled until this runtime check is complete.
+- GitHub Actions run #268 passed build/type checks, Worker tests, schema validation and four desktop/mobile Playwright tests with a mocked Turnstile script and mocked APIs. This proves integration wiring and form behavior only; it does not prove real challenge verification or live order/payment transactions.
+- Later commits adding the bilingual policy page and owner CNIC setting are still awaiting the latest CI run and post-deployment smoke check at the time this note was written.
+
+### Remaining work and external dependencies
+
+- Customer accounts and secure order tracking.
+- A Pakistan-supported payment provider, merchant approval, sandbox/live credentials, signed webhooks, refunds and reconciliation.
+- Transactional email domain/provider and templates.
+- SMS provider and WhatsApp Business Platform account, approved templates and message pricing.
+- Real D1/R2 integration tests, actual Turnstile challenge tests, real-device acceptance and the first scheduled CNIC cleanup verification.
+- Owner confirmation/legal review of the public policy wording, especially returns/exchanges, rental deposits, cancellation, liability and document retention.
+- Verified products, variants, stock, fleet and prices remain intentionally empty until the owner adds them.
+
+**Current verdict: not yet certified for unrestricted production commerce.** The free Cloudflare Pages hostname and free hosting remain suitable for the current build stage; a custom domain is optional, not a blocker.
