@@ -532,6 +532,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     }
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
+    statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
     if (requestedPaymentProvider === "safepay" && !signedInCustomer) return error("Please sign in to your De VERVE account before choosing online payment.", 401);
     if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
