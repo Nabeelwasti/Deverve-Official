@@ -74,6 +74,7 @@ export default function Admin() {
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
   const [mediaProduct, setMediaProduct] = useState<Product | null>(null);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
+  const [productMedia, setProductMedia] = useState<MediaAsset[]>([]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaAlt, setMediaAlt] = useState("");
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
@@ -188,8 +189,11 @@ export default function Admin() {
   const openMediaLibrary = async (product: Product) => {
     setBusy(true); setMessage("");
     try {
-      const result = await api<{ media: MediaAsset[] }>("/api/admin/media");
-      setMediaAssets(result.media); setMediaProduct(product); setMediaFile(null); setMediaAlt("");
+      const [result, attached] = await Promise.all([
+        api<{ media: MediaAsset[] }>("/api/admin/media"),
+        api<{ media: MediaAsset[] }>(`/api/admin/products/${product.id}/media`),
+      ]);
+      setMediaAssets(result.media); setProductMedia(attached.media); setMediaProduct(product); setMediaFile(null); setMediaAlt("");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Media library could not be loaded."); }
     finally { setBusy(false); }
   };
@@ -202,22 +206,47 @@ export default function Admin() {
       const data = new FormData(); data.append("file", mediaFile); data.append("alt_text", mediaAlt);
       const response = await fetch("/api/admin/media", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body: data });
       const result = await response.json() as { error?: string; media?: MediaAsset };
-      if (!response.ok || !result.media) throw new Error(result.error || "Image upload failed.");
+      if (!response.ok || !result.media) throw new Error(result.error || "Media upload failed.");
       setMediaAssets((current) => [result.media!, ...current]); setMediaFile(null); setMediaAlt("");
-      setMessage("Image uploaded. Select it to attach it to this product.");
+      setMessage(result.media.media_type === "video" ? "Video uploaded. Add it to the product gallery below." : "Image uploaded. Add it to the product gallery below.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Image could not be uploaded."); }
     finally { setBusy(false); }
   };
 
-  const attachMedia = async (asset: MediaAsset | null) => {
+  const attachMedia = async (asset: MediaAsset | null, makeCover = false) => {
     if (!mediaProduct) return;
     setBusy(true); setMessage("");
     try {
-      await api(`/api/admin/products/${mediaProduct.id}/image`, { method: "PATCH", body: JSON.stringify({ image_id: asset?.id ?? null }) });
-      await loadProducts();
-      setMediaProduct(null);
-      setMessage(asset ? "Product image updated." : "Product image removed.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Product image could not be updated."); }
+      if (!asset) {
+        await api(`/api/admin/products/${mediaProduct.id}/image`, { method: "PATCH", body: JSON.stringify({ image_id: null }) });
+      } else {
+        await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: asset.id, is_primary: makeCover, position: productMedia.length }) });
+      }
+      const [attached] = await Promise.all([
+        api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`),
+        loadProducts(),
+      ]);
+      setProductMedia(attached.media);
+      if (asset && makeCover) setMediaProduct((current) => current ? { ...current, image_key: asset.id } : current);
+      setMessage(asset ? (makeCover ? "Cover image updated and added to the gallery." : "Media added to the product gallery.") : "Product cover image removed.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Product media could not be updated."); }
+    finally { setBusy(false); }
+  };
+
+  const removeProductMedia = async (asset: MediaAsset) => {
+    if (!mediaProduct) return;
+    setBusy(true); setMessage("");
+    try {
+      await api(`/api/admin/products/${mediaProduct.id}/media/${asset.id}`, { method: "DELETE" });
+      const [attached] = await Promise.all([
+        api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`),
+        loadProducts(),
+      ]);
+      setProductMedia(attached.media);
+      const primary = attached.media.find((item) => (item as MediaAsset & { is_primary?: number }).is_primary === 1);
+      setMediaProduct((current) => current ? { ...current, image_key: primary?.id ?? null } : current);
+      setMessage("Media removed from this product.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Media could not be removed."); }
     finally { setBusy(false); }
   };
 
@@ -492,20 +521,32 @@ export default function Admin() {
           </form>
         </section></div>}
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
-          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Upload a product photo or choose an image already in your library.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
-            <label>Choose image (JPG, PNG or WebP, max 5 MB)<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
-            <label>Image description (alt text)<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
-            <button className="admin-primary" disabled={busy || !mediaFile}>{busy ? "Please wait…" : "Upload image"}</button>
+            <label>Choose image or video<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+            <label>Media description<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
+            <button className="admin-primary" disabled={busy || !mediaFile}>{busy ? "Please wait…" : "Upload media"}</button>
           </form>
+          <h3 className="admin-media-subheading">Attached to this product ({productMedia.length})</h3>
           <div className="admin-media-grid">
-            {mediaAssets.length === 0 ? <div className="admin-empty"><strong>No images uploaded yet</strong><p>Upload a clear product photo to start your media library.</p></div> : mediaAssets.map((asset) => <article className={mediaProduct.image_key === asset.id ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
-              <img src={asset.url} alt={asset.alt_text || "Uploaded product media"} loading="lazy" />
-              <div><span>{asset.alt_text || "Untitled image"}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB</small></div>
-              <button type="button" disabled={busy} className="admin-secondary" onClick={() => void attachMedia(asset)}>{mediaProduct.image_key === asset.id ? "Currently selected" : "Use for this product"}</button>
+            {productMedia.length === 0 ? <div className="admin-empty"><strong>No gallery items yet</strong><p>Add product photos or a short product video from your media library below.</p></div> : productMedia.map((asset) => <article className={(asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
+              {asset.media_type === "video" ? <video src={asset.url} controls preload="metadata" /> : <img src={asset.url} alt={asset.alt_text || "Product media"} loading="lazy" />}
+              <div><span>{asset.alt_text || (asset.media_type === "video" ? "Product video" : "Product image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {(asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "Cover image" : asset.media_type}</small></div>
+              <div className="admin-media-actions">{asset.media_type === "image" && <button type="button" disabled={busy || (asset as MediaAsset & {is_primary?:number}).is_primary === 1} className="admin-secondary" onClick={() => void attachMedia(asset, true)}>Set as cover</button>}<button type="button" disabled={busy} className="admin-danger-button" onClick={() => void removeProductMedia(asset)}>Remove</button></div>
             </article>)}
           </div>
-          {mediaProduct.image_key && <button type="button" className="admin-danger-button" disabled={busy} onClick={() => void attachMedia(null)}>Remove product image</button>}
+          <h3 className="admin-media-subheading">Media library</h3>
+          <div className="admin-media-grid">
+            {mediaAssets.length === 0 ? <div className="admin-empty"><strong>No media uploaded yet</strong><p>Upload a clear product photo or short video to start your media library.</p></div> : mediaAssets.map((asset) => {
+              const attached = productMedia.some((item) => item.id === asset.id);
+              return <article className={attached ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
+                {asset.media_type === "video" ? <video src={asset.url} controls preload="metadata" /> : <img src={asset.url} alt={asset.alt_text || "Uploaded product media"} loading="lazy" />}
+                <div><span>{asset.alt_text || (asset.media_type === "video" ? "Untitled video" : "Untitled image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {asset.media_type}</small></div>
+                <button type="button" disabled={busy || attached} className="admin-secondary" onClick={() => void attachMedia(asset, asset.media_type === "image" && !mediaProduct.image_key)}>{attached ? "Already in gallery" : "Add to gallery"}</button>
+              </article>;
+            })}
+          </div>
+          {mediaProduct.image_key && <button type="button" className="admin-danger-button" disabled={busy} onClick={() => void attachMedia(null)}>Clear cover image</button>}
         </section></div>}
         {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); }} aria-label="Close">×</button></div>
