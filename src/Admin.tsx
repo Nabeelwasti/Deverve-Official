@@ -12,7 +12,7 @@ type Product = {
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
-type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; payment_method: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
+type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; delivery_fee_status: "pending_quote" | "awaiting_customer" | "accepted" | "declined"; delivery_fee_expires_at: string | null; payment_method: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
@@ -62,6 +62,8 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [deliveryFeeDrafts, setDeliveryFeeDrafts] = useState<Record<string, string>>({});
+  const [deliveryFeeLinks, setDeliveryFeeLinks] = useState<Record<string, string>>({});
   const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rentals, setRentals] = useState<RentalRequest[]>([]);
@@ -319,6 +321,25 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+  const prepareDeliveryFeeQuote = async (order: AdminOrder) => {
+    const rawAmount = deliveryFeeDrafts[order.id] ?? String(Math.round(order.delivery_fee_paisa / 100));
+    const amount = Number(rawAmount);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 1_000_000) {
+      setMessage("Enter a whole-number delivery fee from Rs. 0 to Rs. 1,000,000.");
+      return;
+    }
+    setBusy(true); setMessage("");
+    try {
+      const result = await api<{ approval_url: string }>(`/api/admin/orders/${order.id}/delivery-fee`, {
+        method: "POST", body: JSON.stringify({ delivery_fee_paisa: amount * 100 }),
+      });
+      setDeliveryFeeLinks((current) => ({ ...current, [order.id]: result.approval_url }));
+      await loadOrders();
+      setMessage(`Delivery quotation prepared for ${order.order_number}. Share the approval link with the customer.`);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Delivery quotation could not be prepared."); }
+    finally { setBusy(false); }
+  };
+
 
   const openQuoteEditor = (enquiry?: Enquiry) => {
     setQuoteForm({ business_name: "", contact_name: enquiry?.customer_name ?? "", phone: enquiry?.phone ?? "", email: enquiry?.email ?? "", delivery_address: "", city: "Jhelum", customer_note: enquiry?.message ?? "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: enquiry?.id ?? "" });
@@ -473,12 +494,20 @@ export default function Admin() {
         {["owner", "manager", "orders"].includes(admin.role) && <section id="orders" className="admin-panel admin-orders-panel">
           <div className="admin-panel-heading"><div><h2>Customer orders</h2><p className="admin-muted">Review COD orders, contact customers and move each order through fulfilment.</p></div><span className="admin-enquiry-count">{orders.length} recent</span></div>
           {orders.length === 0 ? <div className="admin-empty"><strong>No orders yet</strong><p>New website checkout requests will appear here.</p></div> : <div className="admin-order-list">{orders.map((order) => {
-            const next: AdminOrder["order_status"][] = order.order_status === "pending" ? ["confirmed", "cancelled"] : order.order_status === "confirmed" ? ["processing", "cancelled"] : order.order_status === "processing" ? ["dispatched", "cancelled"] : order.order_status === "dispatched" ? ["delivered"] : [];
+            const next: AdminOrder["order_status"][] = (order.order_status === "pending" ? ["confirmed", "cancelled"] : order.order_status === "confirmed" ? ["processing", "cancelled"] : order.order_status === "processing" ? ["dispatched", "cancelled"] : order.order_status === "dispatched" ? ["delivered"] : []) as AdminOrder["order_status"][];
+            const allowedNext = order.delivery_fee_status === "accepted" ? next : next.filter((status) => status !== "processing" && status !== "dispatched");
             return <article className="admin-order-card" key={order.id}>
               <div className="admin-order-heading"><div><strong>{order.order_number}</strong><span>{new Date(order.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${order.order_status}`}>{order.order_status}</span></div>
               <div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
               <div className="admin-order-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
-              <div className="admin-order-footer"><div><span>COD · {order.payment_status}</span><strong>Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}</strong></div><label>Status<select value={order.order_status} disabled={busy || !next.length} onChange={(event) => void updateOrderStatus(order, event.target.value as AdminOrder["order_status"])}><option value={order.order_status}>{order.order_status}</option>{next.map((status) => <option value={status} key={status}>{status}</option>)}</select></label></div>
+              <div className="admin-delivery-quote">
+                <div><strong>Delivery fee approval</strong><span className={`admin-delivery-state state-${order.delivery_fee_status}`}>{order.delivery_fee_status === "pending_quote" ? "Needs a delivery quotation" : order.delivery_fee_status === "awaiting_customer" ? "Waiting for customer approval" : order.delivery_fee_status === "accepted" ? "Customer approved the final total" : "Customer declined the quotation"}</span></div>
+                <label>Delivery fee (PKR)<input type="number" min="0" max="1000000" step="1" value={deliveryFeeDrafts[order.id] ?? String(Math.round(order.delivery_fee_paisa / 100))} onChange={(event) => setDeliveryFeeDrafts((current) => ({ ...current, [order.id]: event.target.value }))} disabled={busy || !["pending", "confirmed"].includes(order.order_status)} /></label>
+                <button type="button" className="admin-secondary" disabled={busy || !["pending", "confirmed"].includes(order.order_status)} onClick={() => void prepareDeliveryFeeQuote(order)}>{order.delivery_fee_status === "awaiting_customer" ? "Regenerate approval link" : "Prepare customer approval"}</button>
+                {deliveryFeeLinks[order.id] && <div className="admin-delivery-share"><input readOnly value={deliveryFeeLinks[order.id]} aria-label="Customer delivery approval link" /><button type="button" className="admin-secondary" onClick={() => void navigator.clipboard.writeText(deliveryFeeLinks[order.id]).then(() => setMessage("Customer approval link copied."))}>Copy link</button><a href={`https://wa.me/${order.phone.replace(/\D/g, "").replace(/^0/, "92")}?text=${encodeURIComponent("Assalamu Alaikum " + order.customer_name + ", please review and confirm your De VERVE COD delivery total: " + deliveryFeeLinks[order.id])}`} target="_blank" rel="noreferrer">Send via WhatsApp ↗</a></div>}
+                <small>Subtotal Rs. {Math.round(order.subtotal_paisa / 100).toLocaleString("en-PK")} · Delivery Rs. {Math.round(order.delivery_fee_paisa / 100).toLocaleString("en-PK")} · Final total Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}. Dispatch is blocked until the customer accepts the final total.</small>
+              </div>
+              <div className="admin-order-footer"><div><span>COD · {order.payment_status}</span><strong>Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}</strong></div><label>Status<select value={order.order_status} disabled={busy || !allowedNext.length} onChange={(event) => void updateOrderStatus(order, event.target.value as AdminOrder["order_status"])}><option value={order.order_status}>{order.order_status}</option>{allowedNext.map((status) => <option value={status} key={status}>{status}</option>)}</select></label></div>
             </article>;
           })}</div>}
         </section>}

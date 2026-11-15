@@ -412,6 +412,7 @@ interface OrderRow {
   id: string; order_number: string; customer_name: string; phone: string; email: string | null;
   delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number;
   total_paisa: number; payment_method: string; payment_status: string; order_status: string;
+  delivery_fee_status: string; delivery_fee_expires_at: string | null;
   customer_note: string; created_at: string; updated_at: string;
 }
 interface OrderItemRow {
@@ -485,7 +486,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, note, token];
     for (const line of lines) orderValues.push(line.variant.id, line.quantity);
     const statements = [
-      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues, "pending_quote"),
     ];
     for (const line of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
@@ -507,10 +508,59 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   }
 }
 
+async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\/api\/delivery-fee\/([A-Za-z0-9_-]{40,50})$/);
+  if (!match) return null;
+  const limited = await enforcePublicRateLimit(request, env, "delivery-fee-approval", 12);
+  if (limited) return limited;
+  const tokenHash = await sha256(match[1]);
+  const now = new Date().toISOString();
+  if (request.method === "GET") {
+    try {
+      const order = await env.DB.prepare(
+        "SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ? AND order_status IN ('pending','confirmed') LIMIT 1",
+      ).bind(tokenHash, now).first<{ order_number: string; customer_name: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; delivery_fee_expires_at: string }>();
+      return order ? json({ order }) : error("This delivery quotation is invalid, expired or already used.", 410);
+    } catch { return error("Delivery quotation is temporarily unavailable.", 503); }
+  }
+  if (request.method !== "POST") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request, 1000);
+  const decision = cleanText(body?.decision, 12);
+  if (decision !== "accept" && decision !== "decline") return error("Choose whether to accept or decline the delivery total.", 400);
+  try {
+    const order = await env.DB.prepare(
+      "SELECT id, order_status FROM orders WHERE delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ? AND order_status IN ('pending','confirmed') LIMIT 1",
+    ).bind(tokenHash, now).first<{ id: string; order_status: string }>();
+    if (!order) return error("This delivery quotation is invalid, expired or already used.", 410);
+    if (decision === "accept") {
+      const result = await env.DB.prepare(
+        "UPDATE orders SET delivery_fee_status = 'accepted', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, delivery_fee_accepted_at = ?, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ?",
+      ).bind(now, now, order.id, tokenHash, now).run();
+      return (result.meta?.changes ?? 0) === 1 ? json({ accepted: true, message: "Thank you. Your final COD total is confirmed. De VERVE will contact you about delivery." }) : error("This quotation has already been used. Please contact De VERVE.", 409);
+    }
+    const items = await env.DB.prepare("SELECT variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
+    const lines = items.results ?? [];
+    if (!lines.length) return error("The order could not be cancelled safely. Please contact De VERVE.", 409);
+    const statements = [
+      env.DB.prepare("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ?").bind(now, order.id, tokenHash, now),
+    ];
+    for (const item of lines) {
+      if (!item.variant_id) continue;
+      statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(item.quantity, now, item.variant_id, item.quantity, order.id));
+    }
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'order.delivery_fee_declined', 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(crypto.randomUUID(), order.id, JSON.stringify({ decision: "declined_by_customer" }), order.id));
+    const results = await env.DB.batch(statements);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("This quotation has already been used. Please contact De VERVE.", 409);
+    return json({ declined: true, message: "Your order has been cancelled and its reserved stock has been released. Contact De VERVE if you would like a revised quotation." });
+  } catch { return error("Your decision could not be saved. Please contact De VERVE.", 503); }
+}
+
 async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/orders";
   const match = url.pathname.match(/^\/api\/admin\/orders\/([a-f0-9-]{36})$/i);
-  if (!collection && !match) return null;
+  const deliveryFeeMatch = url.pathname.match(/^\/api\/admin\/orders\/([a-f0-9-]{36})\/delivery-fee$/i);
+  if (!collection && !match && !deliveryFeeMatch) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
   catch { return error("Order management is temporarily unavailable", 503); }
@@ -521,7 +571,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const limitValue = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
     try {
-      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
         .bind(limit).all<OrderRow>();
       const orders = result.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -534,6 +584,30 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     } catch { return error("Orders could not be loaded", 503); }
   }
 
+  if (deliveryFeeMatch && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request);
+    const deliveryFee = body?.delivery_fee_paisa;
+    if (!Number.isSafeInteger(deliveryFee) || Number(deliveryFee) < 0 || Number(deliveryFee) > 100_000_000) return error("Enter a valid delivery fee between Rs. 0 and Rs. 1,000,000.", 400);
+    const id = deliveryFeeMatch[1];
+    try {
+      const current = await env.DB.prepare("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; subtotal_paisa: number }>();
+      if (!current) return error("Order not found", 404);
+      if (!["pending", "confirmed"].includes(current.order_status)) return error("A delivery quotation can only be prepared before fulfilment begins.", 409);
+      const total = current.subtotal_paisa + Number(deliveryFee);
+      if (!Number.isSafeInteger(total)) return error("The final order total is outside the supported range.", 400);
+      const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+      const tokenHash = await sha256(token);
+      const now = new Date().toISOString();
+      const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET delivery_fee_paisa = ?, total_paisa = ?, delivery_fee_status = 'awaiting_customer', delivery_fee_token_hash = ?, delivery_fee_expires_at = ?, delivery_fee_quote_sent_at = ?, delivery_fee_accepted_at = NULL, updated_at = ? WHERE id = ? AND order_status IN ('pending','confirmed')").bind(Number(deliveryFee), total, tokenHash, expiresAt, now, now, id),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, 'order.delivery_fee_quoted', 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_token_hash = ?)").bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ delivery_fee_paisa: Number(deliveryFee), total_paisa: total }), id, tokenHash),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Order changed while preparing the quotation. Refresh and try again.", 409);
+      return json({ updated: true, delivery_fee_paisa: Number(deliveryFee), total_paisa: total, expires_at: expiresAt, approval_url: url.origin + "/delivery-confirmation?token=" + encodeURIComponent(token) });
+    } catch { return error("Delivery quotation could not be prepared.", 503); }
+  }
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request);
@@ -551,9 +625,11 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(id).all<{ id: string; variant_id: string | null; quantity: number }>();
     const lines = items.results ?? [];
     if (!lines.length) return error("This order has no valid line items", 409);
-    const guard = nextStatus === "dispatched"
-      ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
-      : nextStatus === "cancelled"
+    const guard = nextStatus === "processing"
+      ? "orders.delivery_fee_status = 'accepted'"
+      : nextStatus === "dispatched"
+        ? "orders.delivery_fee_status = 'accepted' AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
+        : nextStatus === "cancelled"
         ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
         : "1 = 1";
     const now = new Date().toISOString();
@@ -1832,6 +1908,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const publicWholesaleResponse = await publicWholesaleQuoteRoutes(request, env, url);
   if (publicWholesaleResponse) return publicWholesaleResponse;
+
+  const publicDeliveryFeeResponse = await publicDeliveryFeeRoutes(request, env, url);
+  if (publicDeliveryFeeResponse) return publicDeliveryFeeResponse;
 
   const publicOrderResponse = await publicOrderRoutes(request, env, url);
   if (publicOrderResponse) return publicOrderResponse;

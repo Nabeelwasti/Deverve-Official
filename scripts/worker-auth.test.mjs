@@ -29,12 +29,91 @@ test("public enquiry submissions are rate-limited per client IP with retry guida
   assert.equal([...db.rateLimits.keys()].every((key) => key.length === 43 && !key.includes("203.0.113.")), true);
 });
 
+test("delivery fee must be customer-approved before dispatch and acceptance preserves the COD order", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const adminHeaders = { cookie, "sec-fetch-site": "same-origin" };
+  const orderId = crypto.randomUUID();
+  const variantId = crypto.randomUUID();
+  db.variants.set(variantId, { id: variantId, stock_on_hand: 5, reserved_quantity: 1, is_active: 1 });
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-TEST-DELIVERY", customer_name: "Delivery Customer",
+    phone: "+923001234567", email: null, delivery_address: "House 10, Main Road",
+    city: "Jhelum", subtotal_paisa: 500000, delivery_fee_paisa: 0, total_paisa: 500000,
+    payment_method: "cod", payment_status: "pending", order_status: "pending",
+    delivery_fee_status: "pending_quote", delivery_fee_token_hash: null,
+    delivery_fee_expires_at: null, customer_note: "", created_at: new Date().toISOString(),
+  });
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  const quote = await handleRequest(request("/api/admin/orders/" + orderId + "/delivery-fee", "POST", { delivery_fee_paisa: 15000 }, adminHeaders), env(db));
+  assert.equal(quote.status, 200);
+  const quoteBody = await quote.json();
+  assert.equal(quoteBody.total_paisa, 515000);
+  const token = new URL(quoteBody.approval_url).searchParams.get("token");
+  assert.ok(token);
+  const preview = await handleRequest(new Request(origin + "/api/delivery-fee/" + token, { headers: { "cf-connecting-ip": "203.0.113.55" } }), env(db));
+  assert.equal(preview.status, 200);
+  assert.equal((await preview.json()).order.delivery_fee_paisa, 15000);
+  await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "confirmed" }, adminHeaders), env(db));
+  const processingBlocked = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "processing" }, adminHeaders), env(db));
+  assert.equal(processingBlocked.status, 409);
+  const accepted = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.55" }), env(db));
+  assert.equal(accepted.status, 200);
+  assert.equal(db.orders.get(orderId).delivery_fee_status, "accepted");
+  const processing = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "processing" }, adminHeaders), env(db));
+  assert.equal(processing.status, 200);
+  const dispatched = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "dispatched" }, adminHeaders), env(db));
+  assert.equal(dispatched.status, 200);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 4);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+});
+
+test("declining a delivery quotation cancels the COD order and releases reserved stock", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const adminHeaders = { cookie, "sec-fetch-site": "same-origin" };
+  const orderId = crypto.randomUUID();
+  const variantId = crypto.randomUUID();
+  const token = "test-delivery-approval-token-0123456789abcdef";
+  const tokenHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const hashText = btoa(String.fromCharCode(...new Uint8Array(tokenHash))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  db.variants.set(variantId, { id: variantId, stock_on_hand: 5, reserved_quantity: 2, is_active: 1 });
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-TEST-DECLINE", customer_name: "Declining Customer",
+    phone: "+923001234567", email: null, delivery_address: "House 10, Main Road",
+    city: "Jhelum", subtotal_paisa: 500000, delivery_fee_paisa: 15000, total_paisa: 515000,
+    payment_method: "cod", payment_status: "pending", order_status: "pending",
+    delivery_fee_status: "awaiting_customer", delivery_fee_token_hash: hashText,
+    delivery_fee_expires_at: new Date(Date.now() + 3600000).toISOString(), customer_note: "",
+    created_at: new Date().toISOString(),
+  });
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 2 });
+  const declined = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
+  assert.equal(declined.status, 200);
+  assert.equal(db.orders.get(orderId).order_status, "cancelled");
+  assert.equal(db.orders.get(orderId).delivery_fee_status, "declined");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  const repeat = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
+  assert.equal(repeat.status, 410);
+});
+
 class FakeStatement {
   constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
+      const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
+      return row ?? null;
+    }
+    if (q.startsWith("SELECT id, order_status FROM orders WHERE delivery_fee_token_hash")) {
+      const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
+      return row ? { id: row.id, order_status: row.order_status } : null;
+    }
     if (q.startsWith("INSERT INTO public_rate_limits")) {
       const [key, windowStart, expiresAt] = v;
       const previous = this.db.rateLimits.get(key);
@@ -146,6 +225,30 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
+      const [fee, total, tokenHash, expiresAt, quotedAt, acceptedAt, updatedAt, id] = v;
+      const row = this.db.orders.get(id);
+      if (!row || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { delivery_fee_paisa: fee, total_paisa: total, delivery_fee_status: "awaiting_customer", delivery_fee_token_hash: tokenHash, delivery_fee_expires_at: expiresAt, delivery_fee_quote_sent_at: quotedAt, delivery_fee_accepted_at: acceptedAt, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE orders SET delivery_fee_status = 'accepted'")) {
+      const [acceptedAt, updatedAt, id, tokenHash, now] = v;
+      const row = this.db.orders.get(id);
+      if (!row || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { delivery_fee_status: "accepted", delivery_fee_token_hash: null, delivery_fee_expires_at: null, delivery_fee_accepted_at: acceptedAt, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined'")) {
+      const [updatedAt, id, tokenHash, now] = v;
+      const row = this.db.orders.get(id);
+      if (!row || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { order_status: "cancelled", delivery_fee_status: "declined", delivery_fee_token_hash: null, delivery_fee_expires_at: null, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_quoted'")) {
+      this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO enquiries")) {
       const [id, enquiry_type, customer_name, phone, email, message] = v;
       this.db.enquiries.set(id, { id, enquiry_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
@@ -231,14 +334,14 @@ class FakeStatement {
       this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO orders")) {
-      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token] = v;
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, checkout_token, delivery_fee_status] = v;
       if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
-      const checks = v.slice(12);
+      const checks = v.slice(13);
       for (let i = 0; i < checks.length; i += 2) {
         const variant = this.db.variants.get(checks[i]);
         if (!variant || variant.is_active !== 1 || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } };
       }
-      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?")) {
@@ -257,7 +360,7 @@ class FakeStatement {
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
       const [status, updated_at, id, expected] = v;
       const order = this.db.orders.get(id);
-      if (!order || order.order_status !== expected) return { success: true, meta: { changes: 0 } };
+      if (!order || order.order_status !== expected || (["processing", "dispatched"].includes(status) && order.delivery_fee_status !== "accepted")) return { success: true, meta: { changes: 0 } };
       const items = this.db.orderItems.filter((item) => item.order_id === id);
       if (status === "cancelled" && items.some((item) => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) < item.quantity)) return { success: true, meta: { changes: 0 } };
       if (status === "dispatched" && items.some((item) => { const variant = this.db.variants.get(item.variant_id); return !variant || variant.stock_on_hand < item.quantity || (variant.reserved_quantity ?? 0) < item.quantity; })) return { success: true, meta: { changes: 0 } };

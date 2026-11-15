@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
 import Admin from "./Admin";
 import WholesaleQuote from "./WholesaleQuote";
+import DeliveryFeeApproval from "./DeliveryFeeApproval";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -338,7 +339,7 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Cash on delivery</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
           {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p><button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
             <div className="checkout-items">{cart.map((item) => <div className="checkout-item" key={item.variant_id}><div><strong>{item.name}</strong><span>{[item.size, item.color].filter(Boolean).join(" / ") || item.sku || "Standard"}</span><small>{formatPrice(item.unit_price_paisa)} each</small></div><div className="checkout-quantity"><button type="button" aria-label="Decrease quantity" onClick={() => item.quantity === 1 ? removeCartItem(item.variant_id) : changeCartQuantity(item.variant_id, item.quantity - 1)}>−</button><span>{item.quantity}</span><button type="button" aria-label="Increase quantity" disabled={item.quantity >= item.available_quantity} onClick={() => changeCartQuantity(item.variant_id, item.quantity + 1)}>+</button></div><strong>{formatPrice(item.unit_price_paisa * item.quantity)}</strong></div>)}</div>
-            <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong><span>Delivery fee</span><strong>Confirmed by our team</strong><span>Payment</span><strong>Cash on delivery</strong></div>
+            <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong><span>Delivery fee</span><strong>Confirmed before dispatch</strong><span>Payment</span><strong>Cash on delivery</strong></div>
             <div className="checkout-fields">
               <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={checkoutForm.customer_name} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_name: event.target.value })} /></label>
               <label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={checkoutForm.phone} onChange={(event) => setCheckoutForm({ ...checkoutForm, phone: event.target.value })} /></label>
@@ -347,7 +348,7 @@ function Storefront() {
               <label className="checkout-address">Complete delivery address<textarea required minLength={8} maxLength={300} rows={3} autoComplete="street-address" value={checkoutForm.delivery_address} onChange={(event) => setCheckoutForm({ ...checkoutForm, delivery_address: event.target.value })} /></label>
               <label className="checkout-address">Order note (optional)<textarea maxLength={500} rows={2} value={checkoutForm.customer_note} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_note: event.target.value })} /></label>
             </div>
-            <p className="checkout-disclaimer">No online payment is collected. Delivery charges and final availability are confirmed by De VERVE before dispatch.</p>
+            <p className="checkout-disclaimer">No online payment is collected. De VERVE will send a secure link to confirm delivery charges and your final COD total before dispatch.</p>
             {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
             <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length}>{checkoutBusy ? "Placing order…" : "Place COD order"} <span>↗</span></button>
           </form>}
@@ -451,6 +452,6 @@ function Storefront() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : <Storefront />;
+  return window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
 }
 

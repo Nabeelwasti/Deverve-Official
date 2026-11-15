@@ -39,6 +39,7 @@ Mobile-first storefront and admin system for De VERVE, Jhelum, Pakistan.
 These are deliberate boundaries, not fake features:
 
 - Checkout currently supports **Cash on Delivery only**. No payment gateway is connected. Online payments must wait for an approved merchant account, provider credentials, webhook configuration and reconciliation tests.
+- Retail COD delivery fees are prepared by staff and must be accepted through a 48-hour customer approval link before processing or dispatch. Declining the quote cancels the order and releases reserved stock.
 - Email notifications are not enabled. The Cloudflare account currently has no custom sending domain onboarded. The contact/enquiry and order records are saved in the admin database; customers can still use the website's email and WhatsApp links.
 - Social settings store public profile URLs only. OAuth account connections, automated publishing, inbox access, ad management, analytics imports and autonomous social actions are not implemented.
 - There is no customer login portal, self-service order tracking or product-review system yet.
