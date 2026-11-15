@@ -257,6 +257,8 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) return this.db.storeSettings.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
       const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
       return row ?? null;
@@ -686,6 +688,7 @@ class FakeD1 {
   admins = new Map();
   sessions = new Map();
   attempts = new Map();
+  paymentAttempts = new Map();
   rateLimits = new Map();
   products = new Map();
   variants = new Map();
@@ -1039,6 +1042,30 @@ test("cancelling a COD order releases its reservation without changing physical 
   assert.equal(cancelled.status, 200);
   assert.equal(db.variants.get(variantId).stock_on_hand, 4);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+});
+
+test("admin cannot cancel an online-paid order or one with an active Safepay payment session", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const orderId = crypto.randomUUID();
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-SAFEPAY-GUARD", payment_provider: "safepay",
+    payment_status: "pending", order_status: "pending", delivery_fee_status: "pending_quote",
+  });
+  db.paymentAttempts.set("attempt-active", {
+    id: "attempt-active", order_id: orderId, provider: "safepay", status: "pending",
+  });
+  const active = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
+  assert.equal(active.status, 409);
+  assert.equal(db.orders.get(orderId).order_status, "pending");
+
+  db.paymentAttempts.clear();
+  db.orders.get(orderId).payment_status = "paid";
+  const paid = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
+  assert.equal(paid.status, 409);
+  assert.equal(db.orders.get(orderId).order_status, "pending");
 });
 
 test("wholesale quotation can be sent, customer-approved and converted once into a stock-reserved COD order", async () => {
