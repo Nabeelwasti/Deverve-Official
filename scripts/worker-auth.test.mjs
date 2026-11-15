@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, handleRequest, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, handleRequest, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -1447,4 +1447,14 @@ test("exchange endpoints require authenticated customer and authorized staff ses
   assert.equal(customer.status, 401);
   const admin = await handleRequest(new Request(origin + "/api/admin/exchanges"), env(db));
   assert.equal(admin.status, 401);
+});
+
+
+test("exchange eligibility uses the actual delivered status event, not later order edits", () => {
+  const now = Date.parse("2026-11-15T12:00:00.000Z");
+  assert.equal(isWithinExchangeWindow("2026-11-08T12:00:00.000Z", now), true);
+  assert.equal(isWithinExchangeWindow("2026-11-08T11:59:59.999Z", now), false);
+  assert.equal(isWithinExchangeWindow("2026-11-15T12:00:01.000Z", now), false);
+  assert.equal(isWithinExchangeWindow(null, now), false);
+  assert.equal(isWithinExchangeWindow("not-a-date", now), false);
 });
