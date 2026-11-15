@@ -51,6 +51,37 @@ jobs:
           done
           echo "Customer and admin return routes are deployed and require authentication."
 
+      - name: Verify CMS, product SEO, sitemap and owner notification routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://deverve-official.pages.dev"
+          products="$(curl --fail --silent --show-error --max-time 15 "$base/api/products")"
+          if [[ "$products" != *'"products"'* ]]; then
+            echo "Public product catalogue API did not return the expected JSON."
+            exit 1
+          fi
+          status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-page.json -w '%{http_code}' "$base/api/pages/production-smoke-page-that-does-not-exist")"
+          if [[ "$status" != "404" ]]; then
+            echo "Expected unpublished/missing CMS page to return 404, received HTTP $status:"
+            cat /tmp/deverve-page.json
+            exit 1
+          fi
+          for route in "/api/admin/pages" "/api/admin/navigation" "/api/admin/notifications" "/api/admin/notification-settings"; do
+            status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-admin.json -w '%{http_code}' "$base$route")"
+            if [[ "$status" != "401" ]]; then
+              echo "Expected unauthenticated access to $route to return 401, received HTTP $status:"
+              cat /tmp/deverve-admin.json
+              exit 1
+            fi
+          done
+          sitemap="$(curl --fail --silent --show-error --max-time 15 "$base/sitemap.xml")"
+          if [[ "$sitemap" != *'<urlset'* || "$sitemap" != *'https://deverve-official.pages.dev/'* ]]; then
+            echo "Dynamic sitemap did not contain the expected URL set."
+            exit 1
+          fi
+          echo "CMS public route, protected content APIs, product catalogue and dynamic sitemap passed."
+
       - name: Verify Turnstile verifier and Siteverify connectivity
         shell: bash
         run: |
