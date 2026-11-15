@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
 import Admin from "./Admin";
 import WholesaleQuote from "./WholesaleQuote";
@@ -40,6 +40,54 @@ function readStoredCart(): CartLine[] {
 
 const socialGlyphs: Record<string, string> = { facebook: "f", instagram: "◎", tiktok: "♪", youtube: "▶", linkedin: "in", pinterest: "p", threads: "@", x: "𝕏" };
 
+type TurnstileApi = {
+  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void }) => string;
+  reset: (widgetId: string) => void;
+  remove?: (widgetId: string) => void;
+};
+declare global { interface Window { turnstile?: TurnstileApi } }
+const TURNSTILE_SITEKEY = "0x4AAAAAAGBpVe5Z1cq2CvB5";
+let turnstileScriptPromise: Promise<void> | null = null;
+function ensureTurnstileLoaded(): Promise<void> {
+  if (window.turnstile) return Promise.resolve();
+  if (!turnstileScriptPromise) {
+    turnstileScriptPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Security verification could not be loaded."));
+      document.head.appendChild(script);
+    });
+  }
+  return turnstileScriptPromise;
+}
+function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (token: string) => void }) {
+  const host = useRef<HTMLDivElement>(null);
+  const widgetId = useRef<string | null>(null);
+  const tokenCallback = useRef(onToken);
+  tokenCallback.current = onToken;
+  useEffect(() => {
+    let active = true;
+    void ensureTurnstileLoaded().then(() => {
+      if (!active || !host.current || !window.turnstile) return;
+      widgetId.current = window.turnstile.render(host.current, {
+        sitekey: TURNSTILE_SITEKEY,
+        callback: (token) => tokenCallback.current(token),
+        "expired-callback": () => tokenCallback.current(""),
+        "error-callback": () => tokenCallback.current(""),
+      });
+    }).catch(() => tokenCallback.current(""));
+    return () => {
+      active = false;
+      if (widgetId.current) window.turnstile?.remove?.(widgetId.current);
+      widgetId.current = null;
+    };
+  }, [resetKey]);
+  return <div className="turnstile-widget" ref={host} role="group" aria-label="Security verification" />;
+}
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeScreen, setActiveScreen] = useState<"home" | "fashion" | "wholesale" | "mobility" | "contact" | "favourites">("home");
@@ -51,6 +99,14 @@ function Storefront() {
   const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
+  const [enquiryTurnstileToken, setEnquiryTurnstileToken] = useState("");
+  const [enquiryTurnstileReset, setEnquiryTurnstileReset] = useState(0);
+  const [checkoutTurnstileToken, setCheckoutTurnstileToken] = useState("");
+  const [checkoutTurnstileReset, setCheckoutTurnstileReset] = useState(0);
+  const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
+  const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
+  const [rentalDocsTurnstileToken, setRentalDocsTurnstileToken] = useState("");
+  const [rentalDocsTurnstileReset, setRentalDocsTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
@@ -141,15 +197,17 @@ function Storefront() {
   const changeCartQuantity = (variantId: string, quantity: number) => setCart((current) => current.map((item) => item.variant_id === variantId ? { ...item, quantity: Math.max(1, Math.min(item.available_quantity, quantity)) } : item));
   const removeCartItem = (variantId: string) => setCart((current) => current.filter((item) => item.variant_id !== variantId));
   const submitCheckout = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setCheckoutBusy(true); setCheckoutMessage(""); setCheckoutResult("");
+    event.preventDefault();
+    if (!checkoutTurnstileToken) { setCheckoutMessage("Please complete the security check first."); return; }
+    setCheckoutBusy(true); setCheckoutMessage(""); setCheckoutResult("");
     try {
-      const response = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...checkoutForm, checkout_token: checkoutToken, items: cart.map((item) => ({ variant_id: item.variant_id, quantity: item.quantity })) }) });
+      const response = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...checkoutForm, turnstile_token: checkoutTurnstileToken, checkout_token: checkoutToken, items: cart.map((item) => ({ variant_id: item.variant_id, quantity: item.quantity })) }) });
       const result = await response.json() as { accepted?: boolean; error?: string; order_number?: string };
       if (!response.ok || !result.accepted || !result.order_number) throw new Error(result.error || "Your order could not be placed.");
       setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID());
       setCheckoutMessage("Your COD order request has been received. Our team will share a secure link for you to review and approve the delivery fee and final payable total before processing.");
     } catch (error) { setCheckoutMessage(error instanceof Error ? error.message : "Checkout is unavailable. Please try again."); }
-    finally { setCheckoutBusy(false); }
+    finally { setCheckoutBusy(false); setCheckoutTurnstileToken(""); setCheckoutTurnstileReset((value) => value + 1); }
   };
 
   const openRentalRequest = (vehicleId = "") => {
@@ -157,16 +215,18 @@ function Storefront() {
     setRentalMessage(""); setRentalReference(""); setRentalDocumentToken(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalOpen(true);
   };
   const submitRentalRequest = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setRentalBusy(true); setRentalMessage(""); setRentalReference("");
+    event.preventDefault();
+    if (!rentalTurnstileToken) { setRentalMessage("Please complete the security check first."); return; }
+    setRentalBusy(true); setRentalMessage(""); setRentalReference("");
     try {
-      const response = await fetch("/api/rentals", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...rentalForm, pickup_location: rentalForm.pickup_address + ", " + rentalForm.pickup_city, destination: rentalForm.destination_address + ", " + rentalForm.destination_city, pickup_at: new Date(rentalForm.pickup_at).toISOString(), return_at: new Date(rentalForm.return_at).toISOString() }) });
+      const response = await fetch("/api/rentals", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...rentalForm, turnstile_token: rentalTurnstileToken, pickup_location: rentalForm.pickup_address + ", " + rentalForm.pickup_city, destination: rentalForm.destination_address + ", " + rentalForm.destination_city, pickup_at: new Date(rentalForm.pickup_at).toISOString(), return_at: new Date(rentalForm.return_at).toISOString() }) });
       const result = await response.json() as { accepted?: boolean; reference_code?: string; document_upload_token?: string; message?: string; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
       setRentalReference(result.reference_code ?? "");
       setRentalDocumentToken(result.document_upload_token ?? "");
       setRentalMessage(result.message || "Your rental request has been received. Our team will confirm availability and terms.");
     } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
-    finally { setRentalBusy(false); }
+    finally { setRentalBusy(false); setRentalTurnstileToken(""); setRentalTurnstileReset((value) => value + 1); }
   };
 
   const uploadRentalDocuments = async (event: FormEvent<HTMLFormElement>) => {
@@ -175,7 +235,9 @@ function Storefront() {
     setRentalDocsBusy(true); setRentalDocsMessage("");
     try {
       const data = new FormData();
+      if (!rentalDocsTurnstileToken) throw new Error("Please complete the security check first.");
       data.append("upload_token", rentalDocumentToken);
+      data.append("turnstile_token", rentalDocsTurnstileToken);
       data.append("cnic_front", rentalFrontFile);
       data.append("cnic_back", rentalBackFile);
       const response = await fetch("/api/rentals/" + encodeURIComponent(rentalReference) + "/documents", { method: "POST", body: data, headers: { accept: "application/json" } });
@@ -184,18 +246,19 @@ function Storefront() {
       setRentalDocumentToken(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false);
       setRentalDocsMessage(result.message || "Both CNIC images were uploaded securely.");
     } catch (error) { setRentalDocsMessage(error instanceof Error ? error.message : "CNIC upload failed. Please try again."); }
-    finally { setRentalDocsBusy(false); }
+    finally { setRentalDocsBusy(false); setRentalDocsTurnstileToken(""); setRentalDocsTurnstileReset((value) => value + 1); }
   };
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!enquiryTurnstileToken) { setSubmitMessage("Please complete the security check first."); return; }
     setSending(true);
     setSubmitMessage("");
     try {
       const response = await fetch("/api/enquiries", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(enquiry),
+        body: JSON.stringify({ ...enquiry, turnstile_token: enquiryTurnstileToken }),
       });
       const result = await response.json() as { accepted?: boolean; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");
@@ -205,6 +268,8 @@ function Storefront() {
       setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
     } finally {
       setSending(false);
+      setEnquiryTurnstileToken("");
+      setEnquiryTurnstileReset((value) => value + 1);
     }
   };
 
@@ -351,7 +416,8 @@ function Storefront() {
             </div>
             <p className="checkout-disclaimer">No online payment is collected. De VERVE will send a secure link to confirm delivery charges and your final COD total before dispatch.</p>
             {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
-            <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length}>{checkoutBusy ? "Placing order…" : "Place COD order"} <span>↗</span></button>
+            <TurnstileWidget resetKey={checkoutTurnstileReset} onToken={setCheckoutTurnstileToken} />
+             <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length || !checkoutTurnstileToken}>{checkoutBusy ? "Placing order…" : "Place COD order"} <span>↗</span></button>
           </form>}
         </section></div>}
 
@@ -409,7 +475,7 @@ function Storefront() {
               <label className="enquiry-message">How can we help?<textarea required minLength={5} maxLength={3000} rows={4} value={enquiry.message} onChange={(event) => setEnquiry({ ...enquiry, message: event.target.value })} /></label>
               <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={enquiry.website} onChange={(event) => setEnquiry({ ...enquiry, website: event.target.value })} /></label>
             </div>
-            <div className="enquiry-submit"><button className="button button-primary" type="submit" disabled={sending}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
+            <div className="enquiry-submit"><TurnstileWidget resetKey={enquiryTurnstileReset} onToken={setEnquiryTurnstileToken} /><button className="button button-primary" type="submit" disabled={sending || !enquiryTurnstileToken}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
           </form>
           <small>Prices, product availability, delivery, payment and rental terms are confirmed directly by the De VERVE team.</small>
         </section>
@@ -417,7 +483,8 @@ function Storefront() {
 
       {rentalOpen && <div className="checkout-backdrop"><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title">
         <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p>Submit your preferred dates. Our team will confirm vehicle availability, price and rental terms.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close">×</button></div>
-        {rentalReference ? <div className="rental-success"><strong>Request received</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p>{rentalDocumentToken && <div className="rental-documents-upload"><h3>Secure CNIC upload (optional)</h3><p>Only upload these documents if our rental team has requested them. Files are private and accessible only to authorized De VERVE rental staff. JPG, PNG or WebP; up to 4 MB each.</p><form className="checkout-form" onSubmit={uploadRentalDocuments}><label>CNIC front<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalFrontFile(e.target.files?.[0]??null)}/></label><label>CNIC back<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalBackFile(e.target.files?.[0]??null)}/></label><label className="rental-consent"><input type="checkbox" checked={rentalDocsConsent} onChange={(e)=>setRentalDocsConsent(e.target.checked)}/> I confirm these are my documents and consent to their secure storage for this rental request.</label><button type="submit" className="button button-primary" disabled={rentalDocsBusy||!rentalFrontFile||!rentalBackFile||!rentalDocsConsent}>{rentalDocsBusy?"Uploading securely…":"Upload both CNIC images"}</button></form></div>}{rentalDocsMessage&&<p className="checkout-message" role="status">{rentalDocsMessage}</p>}<button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
+        {rentalReference ? <div className="rental-success"><strong>Request received</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p>{rentalDocumentToken && <div className="rental-documents-upload"><h3>Secure CNIC upload (optional)</h3><p>Only upload these documents if our rental team has requested them. Files are private and accessible only to authorized De VERVE rental staff. JPG, PNG or WebP; up to 4 MB each.</p><form className="checkout-form" onSubmit={uploadRentalDocuments}><label>CNIC front<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalFrontFile(e.target.files?.[0]??null)}/></label><label>CNIC back<input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalBackFile(e.target.files?.[0]??null)}/></label><label className="rental-consent"><input type="checkbox" checked={rentalDocsConsent} onChange={(e)=>setRentalDocsConsent(e.target.checked)}/> I confirm these are my documents and consent to their secure storage for this rental request.</label><TurnstileWidget resetKey={rentalDocsTurnstileReset} onToken={setRentalDocsTurnstileToken} />
+               <button type="submit" className="button button-primary" disabled={rentalDocsBusy||!rentalFrontFile||!rentalBackFile||!rentalDocsConsent||!rentalDocsTurnstileToken}>{rentalDocsBusy?"Uploading securely…":"Upload both CNIC images"}</button></form></div>}{rentalDocsMessage&&<p className="checkout-message" role="status">{rentalDocsMessage}</p>}<button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
           <div className="checkout-fields">
             <label>Vehicle<select value={rentalForm.vehicle_id} onChange={(e) => setRentalForm({ ...rentalForm, vehicle_id: e.target.value })}><option value="">Any available vehicle</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.vehicle_type}</option>)}</select></label>
             <label>Your name<input required minLength={2} maxLength={100} autoComplete="name" value={rentalForm.customer_name} onChange={(e) => setRentalForm({ ...rentalForm, customer_name: e.target.value })} /></label>
@@ -435,7 +502,8 @@ function Storefront() {
           </div>
           {rentalMessage && <p className="checkout-message" role="alert">{rentalMessage}</p>}
           <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will contact you to confirm availability, documents, price and terms.</p>
-          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy}>{rentalBusy ? "Sending request…" : "Send rental request"} <span>↗</span></button>
+          <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
+           <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || !rentalTurnstileToken}>{rentalBusy ? "Sending request…" : "Send rental request"} <span>↗</span></button>
         </form>}
       </section></div>}
       <footer className="site-footer">
