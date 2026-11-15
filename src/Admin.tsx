@@ -366,8 +366,16 @@ export default function Admin() {
       </header>
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>Overview</h1><p className="admin-muted">Manage your catalogue and keep your storefront up to date.</p></div>{canEditProducts && <button className="admin-primary" onClick={startNew}>＋ Add product</button>}</div>
+        <nav className="admin-quick-nav" aria-label="Admin sections">
+          <a href="#products">Products & stock</a>
+          {["owner", "manager", "rental"].includes(admin.role) && <a href="#vehicles">Car fleet setup</a>}
+          {["owner", "manager", "rental"].includes(admin.role) && <a href="#rentals">Rental bookings</a>}
+          {["owner", "manager", "orders"].includes(admin.role) && <a href="#orders">Orders</a>}
+          {["owner", "manager", "orders", "rental"].includes(admin.role) && <a href="#enquiries">Customer enquiries</a>}
+          {["owner", "manager", "orders"].includes(admin.role) && <a href="#wholesale">Wholesale</a>}
+        </nav>
         <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
-        {["owner", "manager", "orders"].includes(admin.role) && <section className="admin-panel admin-orders-panel">
+        {["owner", "manager", "orders"].includes(admin.role) && <section id="orders" className="admin-panel admin-orders-panel">
           <div className="admin-panel-heading"><div><h2>Customer orders</h2><p className="admin-muted">Review COD orders, contact customers and move each order through fulfilment.</p></div><span className="admin-enquiry-count">{orders.length} recent</span></div>
           {orders.length === 0 ? <div className="admin-empty"><strong>No orders yet</strong><p>New website checkout requests will appear here.</p></div> : <div className="admin-order-list">{orders.map((order) => {
             const next: AdminOrder["order_status"][] = order.order_status === "pending" ? ["confirmed", "cancelled"] : order.order_status === "confirmed" ? ["processing", "cancelled"] : order.order_status === "processing" ? ["dispatched", "cancelled"] : order.order_status === "dispatched" ? ["delivered"] : [];
@@ -379,7 +387,7 @@ export default function Admin() {
             </article>;
           })}</div>}
         </section>}
-        {["owner", "manager", "rental"].includes(admin.role) && <section className="admin-panel admin-fleet-panel">
+        {["owner", "manager", "rental"].includes(admin.role) && <section id="vehicles" className="admin-panel admin-fleet-panel">
           <div className="admin-panel-heading"><div><h2>Vehicle fleet</h2><p className="admin-muted">Manage rental vehicles, daily rates and public availability.</p></div>{["owner", "manager"].includes(admin.role) && <button type="button" className="admin-primary" onClick={() => startVehicleEditor()}>＋ Add vehicle</button>}</div>
           {vehicles.length === 0 ? <div className="admin-empty"><strong>No vehicles added yet</strong><p>Add a vehicle before customers can request it from the rental section.</p></div> : <div className="admin-vehicle-list">{vehicles.map((vehicle) => <article className="admin-vehicle-card" key={vehicle.id}>
             <div><strong>{vehicle.name}</strong><span>{vehicle.vehicle_type} · {vehicle.seats} seats · {vehicle.transmission} · {vehicle.fuel_type}</span><small>{vehicle.description || "No description added."}</small></div>
@@ -387,7 +395,7 @@ export default function Admin() {
             {["owner", "manager"].includes(admin.role) && <button type="button" className="admin-secondary" onClick={() => startVehicleEditor(vehicle)}>Edit</button>}
           </article>)}</div>}
         </section>}
-        {["owner", "manager", "rental"].includes(admin.role) && <section className="admin-panel admin-rentals-panel">
+        {["owner", "manager", "rental"].includes(admin.role) && <section id="rentals" className="admin-panel admin-rentals-panel">
           <div className="admin-panel-heading"><div><h2>Rental requests</h2><p className="admin-muted">Review date ranges, contact customers and confirm only when the vehicle is free.</p></div><span className="admin-enquiry-count">{rentals.length} recent</span></div>
           {rentals.length === 0 ? <div className="admin-empty"><strong>No rental requests yet</strong><p>Customer booking requests will appear here.</p></div> : <div className="admin-rental-list">{rentals.map((rental) => {
             const next: RentalRequest["status"][] = rental.status === "requested" ? ["reviewing", "cancelled"] : rental.status === "reviewing" ? ["confirmed", "cancelled"] : rental.status === "confirmed" ? ["active", "cancelled"] : rental.status === "active" ? ["completed"] : [];
@@ -402,7 +410,7 @@ export default function Admin() {
             </article>;
           })}</div>}
         </section>}
-        {["owner", "manager", "orders"].includes(admin.role) && <section className="admin-panel admin-wholesale-panel">
+        {["owner", "manager", "orders"].includes(admin.role) && <section id="wholesale" className="admin-panel admin-wholesale-panel">
           <div className="admin-panel-heading"><div><h2>Wholesale quotations</h2><p className="admin-muted">Prepare itemised business quotes, share secure approval links and convert accepted quotes into COD orders.</p></div><button type="button" className="admin-primary" onClick={() => openQuoteEditor()}>＋ Prepare quotation</button></div>
           {wholesaleQuotes.length === 0 ? <div className="admin-empty"><strong>No wholesale quotations yet</strong><p>Create a quotation for a retailer or bulk buyer. Customer approval will create an order and reserve stock.</p></div> : <div className="admin-quote-list">{wholesaleQuotes.map((quote) => <article className="admin-quote-card" key={quote.id}>
             <div className="admin-order-heading"><div><strong>{quote.business_name}</strong><span>{quote.contact_name} · {quote.phone} · {new Date(quote.created_at).toLocaleDateString()}</span></div><span className={`admin-enquiry-status status-${quote.status}`}>{quote.status}</span></div>
@@ -412,7 +420,7 @@ export default function Admin() {
           </article>)}</div>}
         </section>}
         {admin.role !== "catalogue" && (
-        <section className="admin-panel admin-enquiry-panel">
+        <section id="enquiries" className="admin-panel admin-enquiry-panel">
           <div className="admin-panel-heading"><div><h2>Customer enquiries</h2><p className="admin-muted">Review retail, wholesale, rental and general enquiries received from your website.</p></div><span className="admin-enquiry-count">{enquiries.length} recent</span></div>
           {enquiries.length === 0 ? <div className="admin-empty"><strong>No enquiries yet</strong><p>New customer messages submitted through the website will appear here.</p></div> :
             <div className="admin-enquiry-list">{enquiries.map((enquiry) => <article className="admin-enquiry-row" key={enquiry.id}>
@@ -423,7 +431,7 @@ export default function Admin() {
             </article>)}</div>}
         </section>
         )}
-        <section className="admin-panel">
+        <section id="products" className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, images and stock from one place.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openMediaLibrary(product)}>Images</button><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
