@@ -28,6 +28,9 @@ actual_tables = {
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
 
+product_columns = {row[1] for row in db.execute("PRAGMA table_info(products)")}
+assert {"seo_title", "seo_description"} <= product_columns, "Product SEO metadata columns are missing"
+
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
