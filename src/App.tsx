@@ -28,6 +28,7 @@ function Storefront() {
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
+  const [visibleProductCount,setVisibleProductCount]=useState(8);
   const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
@@ -243,7 +244,7 @@ function Storefront() {
             {catalogueState === "error" && <p className="catalogue-feedback">The live catalogue is not connected yet. Please contact our team for current collections.</p>}
             {catalogueState === "empty" && <p className="catalogue-feedback">New pieces are being added. Contact us to ask about current arrivals and availability.</p>}
             {catalogueState === "ready" && <div className="product-grid">
-              {products.map((product) => (
+              {products.slice(0,visibleProductCount).map((product) => (
                 <article className="product-card" key={product.id}>
                   {product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
@@ -257,6 +258,7 @@ function Storefront() {
                 </article>
               ))}
             </div>}
+            {catalogueState === "ready" && products.length > visibleProductCount && <div className="catalogue-pagination"><span>Showing {Math.min(visibleProductCount,products.length)} of {products.length} listings</span><button type="button" className="button button-outline" onClick={() => setVisibleProductCount((count)=>Math.min(count+8,products.length))}>Load more products</button></div>}
           </div>
         </section>
 
