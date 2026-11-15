@@ -1,65 +1,109 @@
 # De VERVE — Commerce & Business Operations Platform
 
-Mobile-first storefront and admin system for De VERVE, Jhelum, Pakistan.
+Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based business operations workspace for De VERVE, Jhelum, Pakistan.
 
 ## Live environment
 
 - Storefront: https://deverve-official.pages.dev/
 - Admin: https://deverve-official.pages.dev/admin
+- Customer account: https://deverve-official.pages.dev/account
 - Source: https://github.com/Nabeelwasti/Deverve-Official
 - Hosting: Cloudflare Pages
 - API: Cloudflare Pages Functions / Worker handler
 - Database: Cloudflare D1 (`deverve-production`, APAC)
-- Media: private Cloudflare R2 bucket; public media is delivered only through the Worker authorization route.
+- Media: private Cloudflare R2 bucket; public media is delivered through the Worker authorization route.
 
-## Implemented workflows
+## Implemented capabilities
 
-### Storefront
-- Screen-based responsive navigation, product catalogue, search/filtering and product details.
-- Product galleries with multiple images and MP4/WebM videos.
-- Favourites and a browser-persisted retail cart.
-- Server-validated COD checkout with current price/stock checks, stock reservations and duplicate-submission protection.
-- Wholesale enquiries and customer-approved quotations that convert into stock-reserved COD orders.
-- Available vehicle catalogue and rental request form with full pickup/destination city and address details.
-- Rental CNIC uploads are disabled by default. Rental enquiries can be submitted without identity documents; no upload token is issued until the owner approves a retention policy and configures the explicit enable flag.
-- WhatsApp contact using the business-approved number, email links, editable social profile links, owner-managed logo/favicon and developer credit.
-- Installable PWA shell; API/customer data is deliberately excluded from offline caching.
+### Storefront and commerce
+- Responsive mobile-first storefront with fashion, wholesale, car-rental, contact and policy areas.
+- Product catalogue, search/filtering, product details, image/video galleries and favourites.
+- Browser-persisted cart and server-validated Cash on Delivery checkout.
+- Server-side price and stock validation, stock reservations and duplicate-submission protection.
+- Delivery fee quotation with a 48-hour customer approval/decline link before fulfilment.
+- Wholesale enquiries, staff quotations, customer approval links and conversion to stock-reserved COD orders.
+- Vehicle catalogue and rental request flow with pickup/destination addresses and overlap checks for confirmed bookings.
+- WhatsApp contact and contextual follow-up links.
+- Installable PWA shell; customer and API data are excluded from offline caching.
 
-### Admin
-- Owner bootstrap/login, hashed server-side sessions, login throttling, logout and audit records.
+### Customer accounts and service
+- Customer registration/sign-in, profile and password changes.
+- Customer-scoped order and rental history.
+- Order status timeline.
+- Customer return requests for eligible delivered orders within seven calendar days.
+- Return status history; refund completion is recorded only after staff enter the actual manual refund method and transaction reference.
+
+### Admin and business operations
+- Owner bootstrap/login, hashed server-side sessions, login throttling, logout and audit history.
 - Role-based staff invitations, access changes and account disabling.
 - Product create/edit/publish/archive, variants, inventory movements and stock history.
 - Media library, multiple product images/videos, product cover selection and vehicle photos.
-- COD order management, wholesale quotations and approval links.
-- Fleet and rental request management, overlap checks and private rental-document access/deletion.
-- Customer enquiries and owner-only website branding/social-link settings.
+- COD order management, wholesale quotations, fleet and rental request management.
+- Customer directory/CRM, customer enquiries and unified operational follow-up inbox.
+- Returns and manual refund records.
+- Owner-managed logo/favicon, social profile URLs and CNIC-upload setting.
+- Owner-only business activity history.
 
-## Important operating limits
+### Security and infrastructure
+- Cloudflare D1 relational database and private R2 object storage.
+- Server-side authorization and role checks for protected admin/customer routes.
+- Hashed random session tokens in HttpOnly, Secure, SameSite=Strict host-only cookies.
+- Same-origin checks for mutations.
+- Cloudflare Turnstile with server-side verification for protected public forms.
+- D1-backed public rate limits.
+- Security response headers and Content Security Policy.
+- Separate scheduled CNIC retention Worker; CNIC uploads remain disabled by default.
+- GitHub Actions build, type-check, Worker tests, schema checks, desktop/mobile browser tests and post-deployment smoke checks.
 
-These are deliberate boundaries, not fake features:
+## Current production snapshot
 
-- Checkout currently exposes **Cash on Delivery only**. A Safepay Express Checkout sandbox adapter and signed webhook reconciliation are implemented, but disabled because the production environment has no sandbox credentials. No real sandbox transaction has been completed. Do not enable live payments until merchant onboarding, live keys, webhooks, refunds and reconciliation are tested.
-- Retail COD delivery fees are prepared by staff and must be accepted through a 48-hour customer approval link before processing or dispatch. Declining the quote cancels the order and releases reserved stock.
-- Email notifications are not enabled. The Cloudflare account currently has no custom sending domain onboarded. The contact/enquiry and order records are saved in the admin database; customers can still use the website's email and WhatsApp links.
-- Social settings store public profile URLs only. OAuth account connections, automated publishing, inbox access, ad management, analytics imports and autonomous social actions are not implemented.
-- There is no customer login portal, self-service order tracking or product-review system yet.
-- A full visual CMS/page builder and complete editable SEO/navigation management are not yet implemented.
-- The official De VERVE logo and favicon are uploaded to private R2 and selected in the public brand settings. The owner must still confirm these are the final approved brand assets.
-- The production database currently contains no real products, variants, stock, vehicles, orders or rental records. Add verified business data before advertising availability or accepting real orders.
-- Delivery fees, delivery coverage, returns/exchanges, wholesale minimums, vehicle rates, rental terms, privacy/retention policy and business hours must be confirmed by the owner.
-- A custom domain is not connected. The current live address is the Cloudflare Pages domain. Security response headers and a Content Security Policy are defined in the Pages _headers file; verify the deployed response and all application assets after release.
+Read-only checks against the production D1 database on 15 November 2026 found:
 
-## Security and data handling
+| Record type | Count |
+|---|---:|
+| Owner/admin accounts | 1 |
+| Media assets | 3 |
+| Customer accounts | 0 |
+| Products / published products | 0 / 0 |
+| Product variants | 0 |
+| Vehicles | 0 |
+| Orders | 0 |
+| Rental requests | 0 |
+| Return requests | 0 |
+| CMS pages / sections / navigation items | 0 / 0 / 0 |
+| Sales-channel connections / listings | 0 / 0 |
 
-- Admin routes enforce server-side authentication, role permissions and same-origin checks for mutations.
-- Admin and customer sessions use hashed random bearer tokens, HttpOnly, Secure, SameSite=Strict host-only cookies and server-side revocation.
-- Customer registration uses Turnstile and a 12-character minimum password. Account profile/password changes and order/rental history require a valid customer session. Customer orders are queried by authenticated customer ID, not a caller-supplied order ID.
-- Product/order stock is checked on the server; the browser is never trusted for final price or stock.
-- R2 is private. Public media delivery checks that the media is assigned to a published product, available vehicle or selected public brand setting.
-- CNIC uploads are **disabled by default**. The rental API does not issue upload tokens unless the Cloudflare Pages environment flag `CNIC_UPLOADS_ENABLED=true` is explicitly configured. Do not enable it until the business approves and publishes a retention/deletion policy and an automated expiry/purge process. When enabled, documents use private R2 storage and one-time upload tokens.
-- Public enquiries, checkout, rental requests and CNIC uploads have atomic D1-backed per-IP rate limits. Raw client IP addresses are not persisted. These limits are a baseline control, not a substitute for Turnstile or bot mitigation against distributed traffic.
-- Do not store payment card data. Keep secrets out of source control.
-- Never invent products, prices, stock, reviews, vehicle availability, brand-authenticity claims or customer records.
+The site is deployed and its health/database connectivity, Turnstile verifier, scheduled-retention bindings and security headers have passed the latest automated production smoke checks. A green deployment does not mean the business is ready to accept real orders: the live catalogue and fleet have not yet been entered.
+
+## Important operating limits — do not advertise unavailable features
+
+- **Payments:** COD is the only active checkout method. A Safepay sandbox adapter and signed webhook reconciliation are implemented but dormant. No sandbox or live payment transaction has been completed.
+- **Notifications:** transactional email, SMS and automated WhatsApp messages are not connected. Enquiries and orders are stored in the admin database; staff can contact customers using the displayed contact details and WhatsApp links.
+- **Social accounts:** the website stores public social profile URLs only. OAuth connections, publishing, inbox access, ad management and analytics imports are not implemented here.
+- **CMS:** the database has foundational page/section/navigation/revision tables, but the admin page builder, public CMS renderer, preview/publish workflow and navigation editor are not yet implemented.
+- **Sales channels:** database foundations exist, but marketplace OAuth, product feed/API adapters, stock sync and order sync are not implemented.
+- **SEO:** the current product detail view is a modal, not a dedicated indexable product URL. Per-product metadata, structured data and dynamic sitemap generation remain to be completed.
+- **Returns:** the system manages requests and audited manual refund records. It does not send money, trigger Safepay refunds or automatically restock returned goods.
+- **Rental identity documents:** CNIC uploads are disabled by default. Do not enable them until the owner approves the retention policy and the scheduled deletion process has been observed operating.
+- **Customer email:** email verification and email-based password recovery are not active.
+- **Branding and data:** the logo/favicon assets are uploaded, but final brand approval is still an owner decision. Production contains no real product or fleet records. Never invent products, prices, stock, vehicle availability, reviews or brand-authenticity claims.
+- **Business policies:** delivery coverage/fees, wholesale minimums, vehicle rates, rental terms, returns, privacy/retention details and business hours require owner confirmation and legal review.
+- **Domain:** the current live address is the Cloudflare Pages hostname. A custom domain is not connected.
+
+## Release gates
+
+1. Enter verified garment products, variants, sizes, colours, actual prices, stock and genuine product photos.
+2. Enter the real rental fleet, photos, availability, rates and approved rental terms.
+3. Confirm the business phone/WhatsApp, email, address, opening hours, delivery coverage and charges.
+4. Obtain owner approval for English/Urdu customer policies, returns, privacy and document-retention wording.
+5. Complete real-device customer and admin acceptance tests for COD, stock reservation/release, wholesale quotations, returns, rental requests, staff permissions and media access.
+6. Configure transactional email only after an approved sending domain/provider is available; then test verification and password recovery.
+7. Complete Safepay sandbox onboarding and a verified end-to-end sandbox transaction before considering live payment onboarding. Keep all credentials in Cloudflare secrets, never in source code, GitHub issues or chat.
+8. Implement the CMS/page builder, dedicated SEO-friendly product routes and structured data.
+9. Add sales-channel integrations only after confirming De VERVE account eligibility and official API access for each platform.
+10. Connect a custom domain after the owner confirms domain ownership and DNS access.
+
+Paid services, live payment methods, external account connections and sensitive-document collection must not be enabled without the owner's explicit approval.
 
 ## Local development and verification
 
@@ -71,77 +115,12 @@ npm run dev
 npm run check
 npm run test:worker
 python scripts/verify_schema.py
+npm run test:e2e
 ```
 
-The GitHub Actions workflow runs the type-check/build, Worker behavior tests and migration/schema smoke checks. Production D1 schema and foreign-key integrity have also been read back directly. A successful deployment/build is not a substitute for browser-based end-to-end tests on real devices.
+The latest verified source commit is `c512448c68dde33c4ba4f0d8523b7b99b634fa06` (15 November 2026).
 
-## Next production gates
+- Build/type-check and CI run #331: https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43717007816
+- Production smoke run #71: https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43717113043
 
-1. Add verified products, variants, inventory, real vehicle fleet and approved prices.
-2. Upload the official logo/favicon and configure the real social profile URLs.
-3. Confirm delivery, returns, privacy/retention and rental policies.
-4. Connect a custom domain and onboard its email-sending domain; then configure and test transactional notifications.
-5. Complete Safepay sandbox onboarding and end-to-end test transactions before considering live payment onboarding. Configure secrets only in Cloudflare Pages, never in source code or chat.
-6. Complete browser/mobile end-to-end tests for product media, checkout, stock reservation, wholesale approval, staff invitations and rental CNIC access.
-7. Finish customer email verification/password recovery, transactional notifications, returns/refunds workflows, order/rental operations and visual CMS. Reviews remain disabled until moderation rules are agreed.
-
-Paid services or external account connections must not be enabled without the owner's explicit approval.
-
-## November 2026 security and policy updates
-
-- Cloudflare Turnstile is configured for the production Pages hostname. The storefront renders Turnstile on enquiries, COD checkout, rental requests and CNIC upload. The backend verifies every token through a dedicated Cloudflare Worker using a secret stored as a Worker secret; the secret is not present in the repository or browser code.
-- The storefront now includes English and Urdu customer policies covering orders and payment, delivery, returns and complaints, wholesale quotations, vehicle rentals, privacy and CNIC handling.
-- The owner can enable or disable rental CNIC uploads in Admin → Website & brand settings. Uploads remain disabled by default. When enabled, the system uses one-time upload tokens, private R2 storage and role-restricted document access. Owners/managers can delete documents manually.
-- A separate Cloudflare scheduled Worker is configured to run daily at 03:00 UTC. It clears expired upload tokens and deletes CNIC files 30 days after a rental request is marked completed or cancelled, with an audit record. The first scheduled execution and its cleanup behavior still need runtime verification; keep uploads disabled until that check is observed.
-- The browser tests simulate the Turnstile widget and mock the business APIs. They verify form integration and token submission, not the real Cloudflare challenge or a real customer transaction.
-
-## Still not connected
-
-Customer registration/sign-in, account profile, password change, order/rental history and order-status timeline are now available at /account. Email verification and email-based password recovery are not active. Safepay sandbox adapter code is present but disabled until sandbox credentials are configured and a real sandbox test is completed. Live payments, refunds, transactional email, SMS and WhatsApp automation remain unavailable and must not be advertised as active. Social account management remains a separate project.
-
-## Verification notes — 15 November 2026
-
-- Production smoke run #30 passed: live Pages health and D1 connection, Turnstile verifier health and secret binding, a negative Siteverify request (invalid token rejected), CNIC retention worker health with D1 and private R2 bindings, and deployed security headers.
-- The CNIC cleanup Worker source is maintained at workers/deverve-cnic-retention.js; its health endpoint is checked in production smoke. Unit coverage is in scripts/cnic-retention.test.mjs. The cron trigger is 03:00 UTC daily. Runtime deletion of a real document is intentionally not tested because production contains zero rental documents.
-- The Turnstile verifier source is maintained at workers/deverve-turnstile-verify.js. The actual successful human challenge path has not been exercised in an end-to-end live browser test; automated browser tests use a mocked widget callback.
-- Production D1 currently has no CNIC upload setting row (so the application default is disabled) and zero rental documents. No customer orders, products, variants or vehicles were created as test data.
-- A clear 7-calendar-day return request window and 7-working-day approved refund processing target are now disclosed in both languages. Owner/legal review is still recommended before accepting paid orders.
-
-
-## Customer accounts and order tracking — 15 November 2026
-
-- Migration 0012 is applied in production D1; the export was created before applying it. The migration adds customer/session/token tables, order status events, payment attempts/webhook records and notification outbox tables.
-- The deployed `/account` page supports registration, sign-in, profile updates, password changes, customer-only order history and rental request history.
-- Customer sessions are 256-bit random tokens stored as SHA-256 digests, carried only in a host-only HttpOnly/Secure/SameSite=Strict cookie, with a 30-day expiry.
-- Customer passwords use the existing PBKDF2-HMAC-SHA-256 password helper. Rate limits and Turnstile protect public registration; sign-in has D1-backed per-IP rate limiting.
-- New checkout orders and rental requests are associated with the signed-in customer. Historical guest orders are never automatically linked by matching an unverified email.
-- Order creation and admin status transitions create immutable status-event records; the customer account displays the event timeline.
-- Email verification and password-reset email flows are not enabled because no transactional email provider is configured. Customers can change a password only while signed in.
-- CI run #43704058411 passed 27 Worker/CNIC tests, schema validation and four desktop/mobile storefront browser tests. Production smoke run #43704125125 passed.
-
-
-## Latest payment safety and production verification — 15 November 2026
-
-- Safepay sandbox adapter is server-side and hard-locked to the Safepay sandbox host. It remains hidden in checkout unless the explicit sandbox flag and all three server-side secrets are configured.
-- A signed-in customer can request online payment only after approving the final delivery fee. The amount is read from the order record, never accepted from the browser.
-- Signed webhook processing deduplicates event tokens and checks tracker state, PKR currency and exact order amount. Failed attempts remain retryable on the same tracker. Paid orders and active online-payment sessions cannot be cancelled through the admin workflow.
-- No Safepay credentials or card transactions are configured. COD remains the only available payment method in production.
-- CI [#43707019218](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707019218) passed 31 Worker/CNIC tests, 13-migration / 36-table schema verification and four desktop/mobile browser tests.
-- Production smoke [#43707104164](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707104164) passed. Production D1 read-back: 1 owner admin, 3 media assets, and no customer/product/vehicle/order/rental records.
-
-
-## Returns and manual refund records — 15 November 2026
-
-- Customer accounts now include My returns. Return requests are limited to delivered orders and seven calendar days after delivery; item ownership and quantities are validated on the server.
-- Admins with owner, manager or orders access can approve/reject requests, mark goods received and record a completed manual refund with its reference.
-- No automated bank transfer, cash payment, store-credit issuance or Safepay refund is initiated by this system. A refund is marked complete only after staff have actually paid it and entered the reference.
-- CI #43707582618 passed 33 Worker/CNIC tests, 14 migrations / 39 tables and four desktop/mobile browser tests. Production smoke #43707668582 passed.
-- The 0014 return tables were applied after a complete D1 export. Production still has one owner, three media assets and no customer or commerce records.
-
-
-## Final return workflow verification — 15 November 2026
-
-- CI [#43708097899](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43708097899) passed 34 Worker/CNIC tests, 14 migrations / 39 tables, type-check/build and five Playwright scenarios on desktop and mobile.
-- The customer return journey passed in both desktop Chromium and mobile Chromium: delivered-order return request, item quantity selection, submission and return-history display.
-- Production smoke [#43708191784](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43708191784) passed health/D1, unauthenticated return-route protection, Turnstile, CNIC retention bindings and security headers.
-- The returns admin workspace has its own navigation screen and role restrictions. Refund completion remains a manual record only.
+A feature is complete only when its UI, API, database behavior, permissions, failure states, audit trail, automated tests and operator instructions are implemented and verified. Report implemented, tested, deployed and live separately.
