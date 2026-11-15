@@ -88,3 +88,12 @@
 .admin-staff-row>div strong{overflow-wrap:anywhere;color:#193b5e}
 .admin-staff-row>div span,.admin-staff-row>div small{font-size:12px;color:#60758a}
 @media(max-width:650px){.admin-staff-invite,.admin-staff-row{grid-template-columns:1fr}.admin-staff-row .admin-secondary,.admin-staff-row .admin-danger{width:100%}}
+
+
+.admin-dashboard[data-admin-screen="settings"] .admin-panel:not(#settings){display:none!important}
+.admin-dashboard[data-admin-screen="settings"] .admin-panel#settings{display:block!important}
+.admin-social-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;padding:16px;border:1px solid #e0e8f1;border-radius:14px;background:#fff}
+.admin-social-form label{display:grid;gap:6px;color:#38536e;font-size:12px;font-weight:700}
+.admin-social-form input{width:100%;min-width:0;padding:11px 12px;border:1px solid #cbd8e6;border-radius:9px;background:#fff;color:#193b5e;font:inherit}
+.admin-social-form .admin-full,.admin-social-form .admin-form-actions{grid-column:1/-1}
+@media(max-width:650px){.admin-social-form{grid-template-columns:1fr}}
