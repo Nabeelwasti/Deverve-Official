@@ -15,21 +15,21 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 let turnstilePromise: Promise<void> | null = null;
 type TurnstileApi = { render: (host: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void }) => string; remove?: (id: string) => void };
-declare global { interface Window { turnstile?: TurnstileApi } }
+type CustomerWindow = Window & { turnstile?: TurnstileApi };
 function SecurityCheck({ onToken, reset }: { onToken: (token: string) => void; reset: number }) {
   const [host, setHost] = useState<HTMLDivElement | null>(null);
   useEffect(() => {
     let active = true;
     if (!turnstilePromise) turnstilePromise = new Promise((resolve, reject) => {
-      if (window.turnstile) { resolve(); return; }
+      if ((window as CustomerWindow).turnstile) { resolve(); return; }
       const script = document.createElement("script");
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true; script.defer = true; script.onload = () => resolve(); script.onerror = () => reject(new Error("Security verification unavailable."));
       document.head.appendChild(script);
     });
     let widget = "";
-    void turnstilePromise.then(() => { if (active && host && window.turnstile) widget = window.turnstile.render(host, { sitekey: "0x4AAAAAAGBpVe5Z1cq2CvB5", callback: onToken, "expired-callback": () => onToken(""), "error-callback": () => onToken("") }); }).catch(() => onToken(""));
-    return () => { active = false; if (widget) window.turnstile?.remove?.(widget); };
+    void turnstilePromise.then(() => { if (active && host && (window as CustomerWindow).turnstile) widget = (window as CustomerWindow).turnstile!.render(host, { sitekey: "0x4AAAAAAGBpVe5Z1cq2CvB5", callback: onToken, "expired-callback": () => onToken(""), "error-callback": () => onToken("") }); }).catch(() => onToken(""));
+    return () => { active = false; if (widget) (window as CustomerWindow).turnstile?.remove?.(widget); };
   }, [host, reset, onToken]);
   return <div className="customer-security" ref={setHost} aria-label="Security verification" />;
 }
