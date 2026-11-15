@@ -731,8 +731,8 @@ async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): 
       const doc = await env.DB.prepare("SELECT id, object_key FROM rental_documents WHERE rental_request_id = ? AND document_side = ? LIMIT 1")
         .bind(match[1], match[2]).first<{ id: string; object_key: string }>();
       if (!doc) return error("Rental document not found", 404);
+      try { await env.MEDIA.delete(doc.object_key); } catch { return error("The private file could not be deleted. The document record was kept so an owner can safely retry.", 503); }
       await env.DB.prepare("DELETE FROM rental_documents WHERE id = ?").bind(doc.id).run();
-      try { await env.MEDIA.delete(doc.object_key); } catch { return error("Document record was removed, but its private file could not be deleted. Contact the system administrator.", 503); }
       await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'rental.document_deleted','rental_request',?,?)")
         .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ side: match[2] })).run();
       return json({ deleted: true });
