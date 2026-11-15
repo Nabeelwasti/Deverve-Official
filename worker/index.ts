@@ -33,6 +33,8 @@ interface ProductRow {
   audience: string;
   retail_price_paisa: number | null;
   image_key: string | null;
+  seo_title: string;
+  seo_description: string;
 }
 interface PublicVariantRow { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; }
 interface AdminRow {
@@ -54,6 +56,8 @@ interface AdminProductRow {
   wholesale_price_paisa: number | null;
   updated_at: string;
   image_key: string | null;
+  seo_title: string;
+  seo_description: string;
 }
 interface SessionRow {
   id: string;
@@ -271,12 +275,16 @@ interface NormalizedProduct {
   status: "draft" | "published" | "archived";
   retailPrice: number | null;
   wholesalePrice: number | null;
+  seoTitle: string;
+  seoDescription: string;
 }
 
 function normalizeProduct(body: Record<string, unknown>, current?: AdminProductRow): NormalizedProduct | null {
   const has = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
   const name = has("name") ? cleanText(body.name, 120) : current?.name ?? "";
   const description = has("description") ? cleanText(body.description, 4000) : current?.description ?? "";
+  const seoTitle = has("seo_title") ? cleanText(body.seo_title, 70) : current?.seo_title ?? "";
+  const seoDescription = has("seo_description") ? cleanText(body.seo_description, 160) : current?.seo_description ?? "";
   const category = has("category") ? cleanText(body.category, 60) : current?.category ?? "";
   const audience = has("audience") ? cleanText(body.audience, 12) : current?.audience ?? "";
   const status = has("status") ? cleanText(body.status, 12) : current?.status ?? "draft";
@@ -298,7 +306,7 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
     slug, name, description, category,
     audience: audience as NormalizedProduct["audience"],
     status: status as NormalizedProduct["status"],
-    retailPrice, wholesalePrice,
+    retailPrice, wholesalePrice, seoTitle, seoDescription,
   };
 }
 
@@ -335,7 +343,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
-        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
         : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
       const productRows = rows.results ?? [];
       if (!productRows.length) return json({ products: [] });
@@ -370,8 +378,8 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       if (duplicate) return error("A product with this URL slug already exists", 409);
       const id = crypto.randomUUID();
       await env.DB.batch([
-        env.DB.prepare("INSERT INTO products (id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-          .bind(id, product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice),
+        env.DB.prepare("INSERT INTO products (id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, seo_title, seo_description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice, product.seoTitle, product.seoDescription),
         env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
           .bind(crypto.randomUUID(), admin.admin_user_id, "product.created", "product", id, JSON.stringify({ status: product.status, category: product.category })),
       ]);
@@ -386,7 +394,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     const body = await readJson(request);
     if (!body) return error("Please submit valid product details", 400);
     try {
-      const current = await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at FROM products WHERE id = ? LIMIT 1")
+      const current = await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE id = ? LIMIT 1")
         .bind(id).first<AdminProductRow>();
       if (!current) return error("Product not found", 404);
       const product = normalizeProduct(body, current);
@@ -395,8 +403,8 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const duplicate = await env.DB.prepare("SELECT id FROM products WHERE slug = ? AND id <> ? LIMIT 1").bind(product.slug, id).first<{ id: string }>();
       if (duplicate) return error("A product with this URL slug already exists", 409);
       await env.DB.batch([
-        env.DB.prepare("UPDATE products SET slug = ?, name = ?, description = ?, category = ?, audience = ?, status = ?, retail_price_paisa = ?, wholesale_price_paisa = ?, updated_at = ? WHERE id = ?")
-          .bind(product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice, new Date().toISOString(), id),
+        env.DB.prepare("UPDATE products SET slug = ?, name = ?, description = ?, category = ?, audience = ?, status = ?, retail_price_paisa = ?, wholesale_price_paisa = ?, seo_title = ?, seo_description = ?, updated_at = ? WHERE id = ?")
+          .bind(product.slug, product.name, product.description, product.category, product.audience, product.status, product.retailPrice, product.wholesalePrice, product.seoTitle, product.seoDescription, new Date().toISOString(), id),
         env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
           .bind(crypto.randomUUID(), admin.admin_user_id, "product.updated", "product", id, JSON.stringify({ status: product.status, category: product.category })),
       ]);
@@ -2620,15 +2628,15 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   if (url.pathname === "/api/products" && request.method === "GET") {
     try {
       const category = cleanText(url.searchParams.get("category"), 60);
+      const slug = cleanText(url.searchParams.get("slug"), 120);
       const limitValue = Number(url.searchParams.get("limit") ?? "24");
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 60) : 24;
-      const rows = category
-        ? await env.DB.prepare(
-            "SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key FROM products WHERE status = 'published' AND category = ? ORDER BY created_at DESC LIMIT ?",
-          ).bind(category, limit).all<ProductRow>()
-        : await env.DB.prepare(
-            "SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key FROM products WHERE status = 'published' ORDER BY created_at DESC LIMIT ?",
-          ).bind(limit).all<ProductRow>();
+      const columns = "SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products WHERE status = 'published'";
+      const rows = slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
+        ? await env.DB.prepare(columns + " AND slug = ? LIMIT 1").bind(slug).all<ProductRow>()
+        : category
+          ? await env.DB.prepare(columns + " AND category = ? ORDER BY created_at DESC LIMIT ?").bind(category, limit).all<ProductRow>()
+          : await env.DB.prepare(columns + " ORDER BY created_at DESC LIMIT ?").bind(limit).all<ProductRow>();
       const products = rows.results ?? [];
       if (!products.length) return json({ products: [] });
       const productIds = products.map((product) => product.id);
