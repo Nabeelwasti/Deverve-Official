@@ -414,6 +414,10 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) {
+      const ids = new Set(v.slice(1));
+      return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0] && ids.has(row.id)) };
+    }
     if (q.startsWith("SELECT r.id, r.order_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number FROM return_requests r")) {
       const rows = [...this.db.returnRequests.values()].filter((row) => row.customer_id === v[0]).map((row) => ({ ...row, order_number: this.db.orders.get(row.order_id)?.order_number }));
       return { success: true, results: rows };
