@@ -535,10 +535,11 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
     ).bind(tokenHash, now).first<{ id: string; order_status: string }>();
     if (!order) return error("This delivery quotation is invalid, expired or already used.", 410);
     if (decision === "accept") {
-      const result = await env.DB.prepare(
-        "UPDATE orders SET delivery_fee_status = 'accepted', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, delivery_fee_accepted_at = ?, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ?",
-      ).bind(now, now, order.id, tokenHash, now).run();
-      return (result.meta?.changes ?? 0) === 1 ? json({ accepted: true, message: "Thank you. Your final COD total is confirmed. De VERVE will contact you about delivery." }) : error("This quotation has already been used. Please contact De VERVE.", 409);
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET delivery_fee_status = 'accepted', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, delivery_fee_accepted_at = ?, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ?").bind(now, now, order.id, tokenHash, now),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'order.delivery_fee_accepted', 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND delivery_fee_status = 'accepted' AND delivery_fee_accepted_at = ?)").bind(crypto.randomUUID(), order.id, JSON.stringify({ decision: "accepted_by_customer" }), order.id, now),
+      ]);
+      return (results[0]?.meta?.changes ?? 0) === 1 ? json({ accepted: true, message: "Thank you. Your final COD total is confirmed. De VERVE will contact you about delivery." }) : error("This quotation has already been used. Please contact De VERVE.", 409);
     }
     const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
     const lines = items.results ?? [];
