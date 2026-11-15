@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, parseRentalDateTime, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, handleRequest, parseRentalDateTime, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -1442,4 +1442,15 @@ test("Safepay production credentials remain disabled until the explicit live swi
   assert.deepEqual(await disabled.json(),{online_payment_available:false,environment:null});
   const enabled = await handleRequest(request("/api/storefront/payment-options","GET"),{...base,SAFEPAY_LIVE_ENABLED:"true"});
   assert.deepEqual(await enabled.json(),{online_payment_available:true,environment:"production"});
+});
+
+
+test("Safepay checkout URL always matches the selected merchant environment", () => {
+  const sandbox = buildSafepayCheckoutUrl({ apiHost: "https://sandbox.api.getsafepay.com", environment: "sandbox", merchantApiKey: "x", secretKey: "x", webhookSecret: "x" }, "track_test_123456789012", "sandbox-token-123456789012", "https://deverve.example");
+  const live = buildSafepayCheckoutUrl({ apiHost: "https://api.getsafepay.com", environment: "production", merchantApiKey: "x", secretKey: "x", webhookSecret: "x" }, "track_live_123456789012", "live-token-123456789012", "https://deverve.example");
+  assert.equal(new URL(sandbox).searchParams.get("environment"), "sandbox");
+  assert.equal(new URL(sandbox).hostname, "sandbox.api.getsafepay.com");
+  assert.equal(new URL(live).searchParams.get("environment"), "production");
+  assert.equal(new URL(live).hostname, "api.getsafepay.com");
+  assert.equal(new URL(live).searchParams.get("redirect_url"), "https://deverve.example/account?payment=return");
 });
