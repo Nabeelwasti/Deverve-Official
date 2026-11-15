@@ -2,26 +2,26 @@
 
 ## Binding workflow rule
 - Work directly on `main` only. Do not create, switch to, or push feature branches. Do not force-push, reset, or discard repository work.
-- Current source commit: `53cff49cbf99bfde0cbe29776fd7e635572cfc9d` (README reconciliation after merge).
-- Application merge commit: `4feb999f0332a6ef5234bb9a6faf985c94268b78`; PR #2 is merged.
-- PR branch CI run #417 (`43729210673`) passed all ten steps, including build/type-check, Worker tests, D1 schema checks and Playwright browser tests.
-- Cloudflare Pages production is connected to GitHub `Nabeelwasti/Deverve-Official`, branch `main`, `npm run build`, output `dist`. Latest Pages deployment after the README update is `72572260-5ebb-469e-8f61-56616c65534d` and is active.
-- Production D1: `deverve-production`, ID `355da876-17c4-4762-a59d-bb85f2e4551b`; private R2 binding: `deverve-media-private`.
-- Migration `0017_single_promotion_per_order.sql` was applied to production after checking the four columns were absent. A fresh `PRAGMA table_info(orders)` confirmed `discount_code`, `discount_label`, `discount_amount_paisa` and `free_delivery` are now present. Production currently has 42 tables and no migration-tracking table; record manual production migrations here and in the readiness report.
-- Production D1 counts at this read: 1 active owner, 3 media assets, 0 products, 0 variants, 0 vehicles, 0 customers, 0 orders, 0 rentals, 0 owner notifications and 0 CMS pages.
-- The Turnstile verifier Worker has a `TURNSTILE_SECRET` binding. The CNIC-retention Worker has D1/R2 bindings and a daily `0 3 * * *` schedule. CNIC uploads remain disabled.
-- Pages production environment currently exposes only the `ADMIN_BOOTSTRAP_TOKEN` variable name; Safepay and Resend production secrets are not configured. COD remains the only active payment method.
-- Safepay sandbox/live code exists but no merchant credentials or end-to-end transaction are configured/tested. PayFast is not integrated: its public API docs show direct card/account/wallet data endpoints, but no verified merchant-specific hosted OneCheckout redirect contract. Never collect PAN/CVV on De VERVE pages.
-- Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery still needs an API key and verified sender domain/address. Customer exchange requests are WhatsApp-assisted; no in-site exchange case manager exists yet.
-- The old `feat/commerce-os-foundation` branch contains copies of the CMS blueprint and migration 0002 already present on main; do not merge its stale divergent history. The payments PR branch is merged and should not be used for further work.
-- Public HTTP requests to the Pages hostname were blocked by the available verification environment, so the latest Cloudflare deployment status is verified but a fresh external HTTP smoke check remains unverified here.
+- Current source history includes payments merge `4feb999f0332a6ef5234bb9a6faf985c94268b78`, exchange workflow `51f693f52a3185e0696a04d6acb74b6f186cd4e3` / `cd93fdcd0cf8d464b0d0c88c46ede523451ebcb5`, and exchange delivery-window fix `c9c652bab6d7f7d4af5ca1beba6db6dabce7eae9` plus test `b76af8a0062f27ee7eb56312fef107c12aeeb60a`. Production smoke workflow update is `8777f4e86b7a027f95c3d812564db3a11035ef96`; README is updated in `5d295171f0b7c0ba6b7307a906be67ff5dc945dd`.
+- Latest confirmed full application CI: run #428 `43733696484` passed all 13 steps. Production smoke run #141 `43733777782` passed, but it predates the new exchange-specific smoke assertions.
+- CI runs #429, #430 and #431 were triggered for the delivery-window code, regression test and exchange smoke workflow; check their final results before further deployment claims. The Pages project automatically deployed commit `8777f4e86b7a027f95c3d812564db3a11035ef96` as `15405b50-0b40-4111-bd0c-7a4c0c217cdd` with success status; the subsequent README commit may trigger another deployment.
+- Production D1: `deverve-production`, ID `355da876-17c4-4762-a59d-bb85f2e4551b`; private R2 bucket: `deverve-media-private`. Pages is connected to GitHub `Nabeelwasti/Deverve-Official`, branch `main`.
+- Migration `0017_single_promotion_per_order.sql` columns are present in production. Migration `0018_exchange_case_management.sql` tables `exchange_requests`, `exchange_request_items` and `exchange_status_events` are also present. Production has 45 tables; no migration-tracking table exists. Verify with direct `sqlite_master` and `PRAGMA table_info` queries. Do not rerun non-idempotent ALTER TABLE statements.
+- Production counts: 1 active owner, 3 media assets, 0 products, 0 variants, 0 vehicles, 0 customers, 0 orders, 0 rental requests, 0 exchange requests, 0 CMS pages. No synthetic business/customer records have been inserted.
+- Exchange workflow now exists in customer and admin apps. Eligibility is based on the latest `order_status_events.created_at` delivery event, not `orders.updated_at`. A helper regression test covers exactly seven days, expired, future and invalid timestamps. Production smoke workflow now checks unauthenticated customer/admin exchange collection routes return 401.
+- Turnstile verifier Worker has its `TURNSTILE_SECRET` binding. CNIC-retention Worker has D1/R2 bindings and a daily schedule. CNIC uploads remain disabled pending owner-approved retention policy.
+- Pages production environment currently exposes only `ADMIN_BOOTSTRAP_TOKEN`; Safepay and Resend credentials are not configured. COD remains the only active payment method.
+- Safepay sandbox/live code exists but no merchant credentials or successful end-to-end transaction are present. PayFast is not integrated; obtain merchant-specific hosted OneCheckout documentation before implementation. Never collect PAN/CVV on De VERVE pages.
+- Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery needs a verified sender domain/address and API key. The app can manage notification recipients but the provider sender is not yet active.
+- External HTTP requests from this verification environment to the Pages hostname return a tool-side 403, so rely on the GitHub-hosted production smoke workflow for real-origin checks; do not interpret that tool-side 403 as the site's response.
+- The old `feat/commerce-os-foundation` branch is stale/diverged (4 commits ahead, 388 behind) and duplicates files already on main. Do not merge it. The payments branch is merged; do all future work on `main`.
 
 ## Next work
-1. Continue directly on `main` with one coherent commit at a time.
-2. Close code-completable gaps (especially an in-site exchange workflow and any missing integration regression coverage) without inventing provider credentials or business data.
-3. Keep COD as the only enabled method until a real provider is onboarded and sandbox transactions/webhooks are tested.
-4. Keep CNIC upload disabled until owner-approved retention terms and actual deletion verification.
-5. Do not claim unrestricted production readiness while catalogue/fleet records, verified sender, payment merchant credentials, custom domain and owner-approved business/legal information are missing.
+1. Verify the latest main CI and production smoke workflow runs, including the newly added exchange endpoint assertions.
+2. Continue closing code-completable launch gaps without inventing provider credentials, catalogue/fleet data or owner policies.
+3. Keep COD as the only enabled method until a provider sandbox payment and webhook reconciliation have passed, then enable live only after merchant approval.
+4. Keep CNIC upload disabled until owner-approved retention terms and an actual deletion verification.
+5. Do not claim unrestricted production readiness while products/fleet, sender verification, payment merchant onboarding, business/legal approvals and real-device acceptance are missing.
 
 ---
 
