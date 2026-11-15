@@ -517,7 +517,7 @@ class FakeStatement {
       const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
       return { success: true, results: rows.slice(0, v[0]) };
     }
-    if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key FROM products")) {
+    if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products")) {
       const category = q.includes("category = ?") ? v[0] : null;
       const limit = v[v.length - 1];
       const rows = [...this.db.products.values()].filter((row) => row.status === "published" && (!category || row.category === category));
@@ -790,8 +790,8 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO products")) {
-      const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa] = v;
-      this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at: new Date().toISOString() });
+      const [id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, seo_title, seo_description] = v;
+      this.db.products.set(id, { id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, seo_title, seo_description, updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO product_variants")) {
@@ -841,9 +841,9 @@ class FakeStatement {
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("UPDATE products SET slug")) {
-      const [slug, name, description, category, audience, status, retail, wholesale, updated, id] = v;
+      const [slug, name, description, category, audience, status, retail, wholesale, seo_title, seo_description, updated, id] = v;
       const row = this.db.products.get(id);
-      if (row) Object.assign(row, { slug, name, description, category, audience, status, retail_price_paisa: retail, wholesale_price_paisa: wholesale, updated_at: updated });
+      if (row) Object.assign(row, { slug, name, description, category, audience, status, retail_price_paisa: retail, wholesale_price_paisa: wholesale, seo_title, seo_description, updated_at: updated });
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("UPDATE products SET status = 'archived'")) {
