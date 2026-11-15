@@ -1593,6 +1593,32 @@ interface AdminEnquiryRow {
   created_at: string;
 }
 
+
+async function adminCustomerRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/admin/customers") return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Customer directory is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to view customer records", 403);
+  if (request.method !== "GET") return error("Method not allowed", 405);
+
+  const search = cleanText(url.searchParams.get("search"), 80);
+  const limitValue = Number(url.searchParams.get("limit") ?? "100");
+  const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 100;
+  const pattern = "%" + search.replace(/[\\%_]/g, "\\async function adminEnquiryRoutes(") + "%";
+  try {
+    const rows = search
+      ? await env.DB.prepare("SELECT c.id, c.full_name, c.email, c.phone, c.status, c.email_verified_at, c.created_at, c.last_login_at, (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS order_count, (SELECT COALESCE(SUM(o.total_paisa),0) FROM orders o WHERE o.customer_id = c.id AND o.payment_status = 'paid') AS paid_total_paisa, (SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id) AS last_order_at, (SELECT COUNT(*) FROM rental_requests rr WHERE rr.customer_id = c.id) AS rental_count FROM customers c WHERE c.full_name LIKE ? ESCAPE '\\' OR c.email LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\' ORDER BY c.created_at DESC LIMIT ?")
+          .bind(pattern, pattern, pattern, limit).all<Record<string, unknown>>()
+      : await env.DB.prepare("SELECT c.id, c.full_name, c.email, c.phone, c.status, c.email_verified_at, c.created_at, c.last_login_at, (SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id) AS order_count, (SELECT COALESCE(SUM(o.total_paisa),0) FROM orders o WHERE o.customer_id = c.id AND o.payment_status = 'paid') AS paid_total_paisa, (SELECT MAX(o.created_at) FROM orders o WHERE o.customer_id = c.id) AS last_order_at, (SELECT COUNT(*) FROM rental_requests rr WHERE rr.customer_id = c.id) AS rental_count FROM customers c ORDER BY c.created_at DESC LIMIT ?")
+          .bind(limit).all<Record<string, unknown>>();
+    return json({ customers: rows.results ?? [], total_returned: rows.results?.length ?? 0, search_applied: Boolean(search) });
+  } catch {
+    return error("Customer records could not be loaded", 503);
+  }
+}
+
 async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   const isCollection = path === "/api/admin/enquiries";
@@ -1944,6 +1970,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
 
   const wholesaleAdminResponse = await adminWholesaleQuoteRoutes(request, env, url);
   if (wholesaleAdminResponse) return wholesaleAdminResponse;
+
+  const customerAdminResponse = await adminCustomerRoutes(request, env, url);
+  if (customerAdminResponse) return customerAdminResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
