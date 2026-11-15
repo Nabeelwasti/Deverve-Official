@@ -2,6 +2,15 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handleRequest, parseRentalDateTime } from "../.test-dist/worker/index.js";
 
+const nativeFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input, init = {}) => {
+  if (String(input) === "https://deverve-turnstile-verify.wastinabeel99.workers.dev") {
+    const body = JSON.parse(String(init.body || "{}"));
+    return new Response(JSON.stringify({ success: body.token === "test-valid-token" }), { status: 200, headers: { "content-type": "application/json" } });
+  }
+  return nativeFetch(input, init);
+};
+
 test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wall-clock dates", () => {
   assert.equal(parseRentalDateTime("2026-11-15T10:30"), Date.parse("2026-11-15T05:30:00.000Z"));
   assert.equal(parseRentalDateTime("2026-11-15T10:30:45"), Date.parse("2026-11-15T05:30:45.000Z"));
@@ -9,6 +18,16 @@ test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wal
   assert.equal(Number.isNaN(parseRentalDateTime("2026-02-30T10:30")), true);
   assert.equal(Number.isNaN(parseRentalDateTime("2026-11-15 10:30")), true);
 });
+test("public enquiry submissions reject missing or invalid Turnstile tokens", async () => {
+  const db = new FakeD1();
+  const response = await handleRequest(request("/api/enquiries", "POST", {
+    enquiryType: "general", name: "Test Customer", phone: "+923001234567",
+    message: "Please contact me.", turnstile_token: "invalid-token",
+  }), env(db));
+  assert.equal(response.status, 403);
+  assert.equal(db.enquiries.size, 0);
+});
+
 test("public enquiry submissions are rate-limited per client IP with retry guidance", async () => {
   const db = new FakeD1();
   const submit = (ip) => handleRequest(request("/api/enquiries", "POST", {
@@ -554,11 +573,17 @@ class FakeD1 {
 
 const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, ADMIN_BOOTSTRAP_TOKEN: token });
 const origin = "https://deverve.example";
-const request = (path, method, body, headers = {}) => new Request(origin + path, {
-  method,
-  headers: { origin, "content-type": "application/json", ...headers },
-  body: body === undefined ? undefined : JSON.stringify(body),
-});
+const request = (path, method, body, headers = {}) => {
+  const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals";
+  const payload = protectedPublicWrite && body && typeof body === "object"
+    ? { ...body, turnstile_token: body.turnstile_token ?? "test-valid-token" }
+    : body;
+  return new Request(origin + path, {
+    method,
+    headers: { origin, "content-type": "application/json", ...headers },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  });
+};
 const bootstrap = (db, overrides = {}) => handleRequest(request("/api/admin/bootstrap", "POST", {
   bootstrapToken: "test-bootstrap-token-with-more-than-32-characters",
   email: "owner@deverve.example",
