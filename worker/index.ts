@@ -23,7 +23,53 @@ export interface Env {
   SAFEPAY_MERCHANT_API_KEY?: string;
   SAFEPAY_SECRET_KEY?: string;
   SAFEPAY_WEBHOOK_SECRET?: string;
+  RESEND_API_KEY?: string;
+  RESEND_FROM_EMAIL?: string;
+  OWNER_NOTIFICATION_EMAIL?: string;
 }
+
+export async function processNotificationOutbox(env:Env):Promise<void>{
+  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim(),to=env.OWNER_NOTIFICATION_EMAIL?.trim();
+  if(!apiKey||!from||!to||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
+  const now=new Date().toISOString();
+  let rows:Record<string,unknown>[]=[];
+  try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
+  for(const row of rows){
+    const id=String(row.id),template=String(row.template_key);
+    if(!["owner_order_created","owner_rental_created","owner_payment_succeeded"].includes(template))continue;
+    try{
+      const claim=await env.DB.prepare("UPDATE notification_outbox SET status='processing',attempts=attempts+1 WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(id,now).run();
+      if((claim.meta?.changes??0)!==1)continue;
+      let subject="De VERVE business alert",reference="";
+      if(template==="owner_order_created"||template==="owner_payment_succeeded"){
+        const order=await env.DB.prepare("SELECT order_number FROM orders WHERE id=? LIMIT 1").bind(row.order_id).first<{order_number:string}>();
+        reference=order?.order_number??String(row.order_id??"");
+        subject=template==="owner_payment_succeeded"?"Payment confirmed · "+reference:"New website order · "+reference;
+      }else{
+        const rental=await env.DB.prepare("SELECT reference_code FROM rental_requests WHERE id=? LIMIT 1").bind(row.rental_request_id).first<{reference_code:string}>();
+        reference=rental?.reference_code??String(row.rental_request_id??"");subject="New vehicle rental request · "+reference;
+      }
+      const textBody=template==="owner_payment_succeeded"?"Safepay confirmed an online payment. Review the order and reconciliation record in the owner panel.":template==="owner_rental_created"?"A new vehicle rental request was submitted. Review the requested dates and vehicle in the owner panel.":"A new website order was submitted. Review the order, delivery quotation and payment status in the owner panel.";
+      const safeSubject=subject.replace(/[&<>"]/g,"");
+      const html="<div style='font-family:Arial,sans-serif;color:#12345a'><h2>"+safeSubject+"</h2><p>"+textBody+"</p><p><strong>Reference:</strong> "+reference.replace(/[&<>"]/g,"")+"</p><p><a href='https://deverve-official.pages.dev/admin'>Open De VERVE owner panel</a></p></div>";
+      const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to:[to],subject,text:textBody+" Reference: "+reference+". Open https://deverve-official.pages.dev/admin",html}),signal:AbortSignal.timeout(8000)});
+      const payload=await response.json().catch(()=>({})) as {id?:string};
+      if(!response.ok)throw new Error("resend_http_"+response.status);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE notification_outbox SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id),
+        env.DB.prepare("INSERT INTO notification_attempts (id,outbox_id,provider,outcome,provider_message_id) VALUES (?,?, 'resend','accepted',?)").bind(crypto.randomUUID(),id,payload.id??null)
+      ]);
+    }catch(caught){
+      const attempts=Number(row.attempts??0)+1,failed=attempts>=5,next=new Date(Date.now()+Math.min(60,2**attempts)*60_000).toISOString();
+      const code=caught instanceof Error&&/^resend_http_\d+$/.test(caught.message)?caught.message:"provider_unavailable";
+      try{await env.DB.batch([
+        env.DB.prepare("UPDATE notification_outbox SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id),
+        env.DB.prepare("INSERT INTO notification_attempts (id,outbox_id,provider,outcome,error_code) VALUES (?,?, 'resend','error',?)").bind(crypto.randomUUID(),id,code)
+      ]);}catch{}
+    }
+  }
+}
+
 interface ProductRow {
   id: string;
   slug: string;
