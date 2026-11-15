@@ -579,6 +579,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
+    statements.push(env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?,?,'email','owner_order_created')").bind(crypto.randomUUID(),id));
     if (requestedPaymentProvider === "safepay" && !signedInCustomer) return error("Please sign in to your De VERVE account before choosing online payment.", 401);
     if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
@@ -955,6 +956,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
     if (signedInCustomer) await env.DB.prepare("UPDATE rental_requests SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id).run();
     await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a vehicle rental request. Review the requested dates and availability.",entity_type:"rental_request",entity_id:id});
+    try{await env.DB.prepare("INSERT INTO notification_outbox (id,rental_request_id,channel,template_key) VALUES (?, ?, 'email', 'owner_rental_created')").bind(crypto.randomUUID(),id).run();}catch{}
     return json({
       accepted: true,
       reference_code: reference,
