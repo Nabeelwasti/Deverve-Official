@@ -17,7 +17,8 @@ const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURICo
 const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
-type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; variants: StoreVariant[] };
+type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; url: string };
+type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; variants: StoreVariant[]; media: StoreProductMedia[] };
 type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; image_key: string | null; image_url: string | null; description: string };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
 
@@ -264,7 +265,7 @@ function Storefront() {
 
         {detailProduct && <div className="checkout-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailProduct(null); }}><section className="checkout-modal product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
           <div className="checkout-modal-heading"><div><p className="eyebrow">PRODUCT DETAILS</p><h2 id="product-detail-title">{detailProduct.name}</h2><p>{detailProduct.audience} · {detailProduct.category}</p></div><button type="button" className="checkout-close" onClick={() => setDetailProduct(null)} aria-label="Close product details">×</button></div>
-          {detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
+          {detailProduct.media?.length ? <div className="product-detail-gallery">{detailProduct.media.map((item) => item.media_type === "video" ? <video key={item.id} className="product-detail-image" src={item.url} controls playsInline preload="metadata" aria-label={item.alt_text || detailProduct.name} /> : <img key={item.id} className="product-detail-image" src={item.url} alt={item.alt_text || detailProduct.name} loading="lazy" />)}</div> : detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
           <p>{detailProduct.description || "Please contact our team for more product information."}</p>
           <div className="product-detail-price">{formatPrice(detailProduct.retail_price_paisa)}</div>
           {detailProduct.variants.length > 0 ? <label className="product-variant-select"><span>AVAILABLE SIZE / COLOUR</span><select value={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: event.target.value }))}>{detailProduct.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}
