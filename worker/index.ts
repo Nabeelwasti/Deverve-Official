@@ -1918,7 +1918,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can view business-wide notifications",403);
-  if(settings&&request.method==="GET")return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&env.OWNER_NOTIFICATION_EMAIL),provider:"Resend"});
+  if(settings&&request.method==="GET"){try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();const recipients=saved?JSON.parse(saved.setting_value_json) as {enabled?:boolean;primary?:string}:null;const enabled=recipients?.enabled!==false;const primary=recipients?.primary??env.OWNER_NOTIFICATION_EMAIL??"deverve61@gmail.com";return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&enabled&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)),provider:"Resend",primary_email:primary});}catch{return json({email_configured:false,provider:"Resend"});}}
   if(collection&&request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications ORDER BY created_at DESC LIMIT 100").all<Record<string,unknown>>();
