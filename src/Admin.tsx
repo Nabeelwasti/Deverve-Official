@@ -654,8 +654,8 @@ export default function Admin() {
             {item.status === "completed" && <p className="admin-return-complete">Exchange completed. {item.admin_note}</p>}
           </article>)}</div>}
         </section>}
-        <section id="returns" className="admin-panel admin-returns-panel">
-          <div className="admin-panel-heading"><div><h2>Returns & refunds</h2><p className="admin-muted">Review customer requests, receive returned items and record manually completed refunds.</p></div><span className="admin-enquiry-count">{returns.length} requests</span></div>
+        {["owner", "manager", "orders"].includes(admin.role) && <section id="returns" className="admin-panel admin-returns-panel">
+          <div className="admin-panel-heading"><div><h2>Historical return records (legacy)</h2><p className="admin-muted">Read-only legacy records created before the exchange-only policy. New customer requests are handled in Exchanges.</p></div><span className="admin-enquiry-count">{returns.length} requests</span></div>
           {returns.length === 0 ? <div className="admin-empty"><strong>No return requests yet</strong><p>Eligible customer return requests will appear here.</p></div> : <div className="admin-return-list">{returns.map((item) => {
             const draft = returnRefundDrafts[item.id] ?? { refund_method: "bank_transfer", refund_reference: "", admin_note: item.admin_note ?? "" };
             const setDraft = (patch: Partial<typeof draft>) => setReturnRefundDrafts((current) => ({ ...current, [item.id]: { ...draft, ...patch } }));
