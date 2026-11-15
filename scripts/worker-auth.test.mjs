@@ -29,6 +29,22 @@ test("public enquiry submissions are rate-limited per client IP with retry guida
   assert.equal([...db.rateLimits.keys()].every((key) => key.length === 43 && !key.includes("203.0.113.")), true);
 });
 
+test("checkout honeypot accepts bot-shaped requests without creating orders", async () => {
+  const db = new FakeD1();
+  const response = await handleRequest(request("/api/orders", "POST", {
+    website: "https://spam.example",
+    customer_name: "Automated Bot",
+    phone: "+923001234567",
+    delivery_address: "Bot address",
+    city: "Jhelum",
+    items: [],
+  }, { "cf-connecting-ip": "203.0.113.11" }), env(db));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { accepted: true });
+  assert.equal(db.orders.size, 0);
+  assert.equal(db.orderItems.length, 0);
+});
+
 test("delivery fee must be customer-approved before dispatch and acceptance preserves the COD order", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
