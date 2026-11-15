@@ -378,6 +378,14 @@ export default function Admin() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Vehicle could not be saved."); }
     finally { setBusy(false); }
   };
+  const deleteRentalDocument = async (rental: RentalRequest, side: "cnic_front" | "cnic_back") => {
+    if(!window.confirm("Permanently delete this private CNIC image?"))return;
+    setBusy(true);setMessage("");
+    try{await api(`/api/admin/rentals/${rental.id}/documents/${side}`,{method:"DELETE"});await loadRentals();setMessage("Private rental document deleted.");}
+    catch(error){setMessage(error instanceof Error?error.message:"Document could not be deleted.");}
+    finally{setBusy(false);}
+  };
+
   const updateRentalStatus = async (rental: RentalRequest, status: RentalRequest["status"]) => {
     if (status === rental.status) return;
     setBusy(true); setMessage("");
@@ -473,7 +481,7 @@ export default function Admin() {
               <div className="admin-order-heading"><div><strong>{rental.reference_code}</strong><span>{new Date(rental.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${rental.status}`}>{rental.status}</span></div>
               <div className="admin-order-customer"><strong>{rental.customer_name}</strong><a href={`tel:${rental.phone}`}>{rental.phone}</a>{rental.email && <a href={`mailto:${rental.email}`}>{rental.email}</a>}<span>{rental.vehicle_name || "Any available vehicle"} · {rental.vehicle_type || "Vehicle preference not specified"}</span></div>
               <div className="admin-rental-dates"><div><span>PICKUP</span><strong>{new Date(rental.pickup_at).toLocaleString()}</strong><small>{rental.pickup_address ? rental.pickup_address + ", " + rental.pickup_city : rental.pickup_location}</small></div><div><span>DESTINATION / RETURN</span><strong>{new Date(rental.return_at).toLocaleString()}</strong><small>{rental.destination_address ? rental.destination_address + ", " + rental.destination_city : rental.destination || "Destination not specified"}</small></div></div>
-              {(rental.cnic_front_uploaded || rental.cnic_back_uploaded) && <div className="admin-rental-documents"><strong>Private CNIC documents</strong>{rental.cnic_front_uploaded ? <a href={`/api/admin/rentals/${rental.id}/documents/cnic_front`} target="_blank" rel="noreferrer">View CNIC front</a> : <span>Front not uploaded</span>}{rental.cnic_back_uploaded ? <a href={`/api/admin/rentals/${rental.id}/documents/cnic_back`} target="_blank" rel="noreferrer">View CNIC back</a> : <span>Back not uploaded</span>}{["owner","manager"].includes(admin.role) && <small>Delete sensitive documents after verification and when no longer required.</small>}</div>}
+              {(rental.cnic_front_uploaded || rental.cnic_back_uploaded) && <div className="admin-rental-documents"><strong>Private CNIC documents</strong>{rental.cnic_front_uploaded ? <span><a href={`/api/admin/rentals/${rental.id}/documents/cnic_front`} target="_blank" rel="noreferrer">View CNIC front</a>{["owner","manager"].includes(admin.role)&&<button type="button" className="admin-danger-button" disabled={busy} onClick={()=>void deleteRentalDocument(rental,"cnic_front")}>Delete</button>}</span> : <span>Front not uploaded</span>}{rental.cnic_back_uploaded ? <span><a href={`/api/admin/rentals/${rental.id}/documents/cnic_back`} target="_blank" rel="noreferrer">View CNIC back</a>{["owner","manager"].includes(admin.role)&&<button type="button" className="admin-danger-button" disabled={busy} onClick={()=>void deleteRentalDocument(rental,"cnic_back")}>Delete</button>}</span> : <span>Back not uploaded</span>}<small>Delete sensitive documents as soon as verification is complete and they are no longer required.</small></div>}
               <label className="admin-rental-note">Assign vehicle<select value={rental.vehicle_id ?? ""} disabled={busy} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, vehicle_id: e.target.value || null, vehicle_name: vehicles.find((vehicle) => vehicle.id === e.target.value)?.name ?? null } : item))}><option value="">Any / not assigned</option>{vehicles.filter((vehicle) => vehicle.status === "available").map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label>
               <p className="admin-muted">{rental.driver_option.replace("_", " ")}{rental.customer_note ? ` · ${rental.customer_note}` : ""}</p>
               {["owner", "manager"].includes(admin.role) && <label className="admin-rental-note">Internal note<input value={rental.admin_note} maxLength={500} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, admin_note: e.target.value } : item))} /></label>}
