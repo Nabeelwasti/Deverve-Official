@@ -100,7 +100,7 @@ Verdict: The code can be deployed and technically smoke-tested, but a 100% produ
 - The follow-on order-status timeline commit `df2832b01a70a2b40cb03e910394b087e0df4fed` passed CI run [#43704058411](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704058411) and production smoke [#43704125125](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704125125).
 - Production still has one admin owner, zero customer accounts, zero products, zero vehicles, zero orders and zero rental requests. No real customer or business data was created for tests.
 
-The site is still **not certified for unrestricted production commerce**. Safepay sandbox credentials and end-to-end transaction tests, live merchant onboarding, email/SMS/WhatsApp delivery, refunds/returns operations, real-device business acceptance, legal/policy approval and owner-supplied inventory/fleet data remain open.
+The site is still **not certified for unrestricted production commerce**. Safepay sandbox credentials and end-to-end transaction tests, live merchant onboarding, email/SMS/WhatsApp delivery, automated refunds, owner/legal return-policy approval, real-device business acceptance, legal/policy approval and owner-supplied inventory/fleet data remain open.
 
 
 ## Safepay sandbox adapter — 15 November 2026
@@ -126,3 +126,15 @@ The site is still **not certified for unrestricted production commerce**. Safepa
 - No Safepay sandbox transaction has been made. The checkout adapter remains dormant until the owner has a sandbox merchant account and the three credentials are installed as Cloudflare Pages production secrets. The integration is not a live payment service and must not be advertised as one.
 
 The deployment is still not certified for unrestricted commerce. Returns/refund workflows, notification delivery, payment sandbox transaction verification, merchant live onboarding, legal/policy approval, owner inventory/fleet data and real-device business acceptance remain open.
+
+
+## Customer returns and manual refund workflow — 15 November 2026
+
+- Migration `0014_returns_refunds.sql` was applied to production D1 after a complete D1 SQL export finished successfully. The three new tables are `return_requests`, `return_request_items` and `return_status_events`.
+- The customer account has a **My returns** area. A customer may request one return per order, only after delivery and within seven calendar days of the delivered timestamp. The customer selects item quantities and a reason; the server verifies order ownership, delivery state, time window, item membership and quantity. Refund estimates use the stored item prices and exclude delivery charges.
+- The admin workspace has **Returns & refunds** for owner, manager and orders roles. Status progression is requested → approved/rejected → received → refunded. All transitions are audited.
+- Recording a refund requires a manual method (bank transfer, cash or store credit) and a transaction/receipt reference. The system does not send money, create a Safepay refund or mark a refund complete without that reference. Returned stock is not automatically restocked; staff must inspect it and use the normal inventory adjustment workflow.
+- CI run [#43707582618](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707582618) passed 33 Worker/CNIC tests, 14-migration / 39-table schema validation, build/type-check and four desktop/mobile storefront browser tests.
+- Production smoke [#43707668582](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707668582) passed after the return UI deployment. The production D1 read-back confirms one owner, three media assets and zero customer, product, vehicle, order, rental or return records.
+
+Automated payment refunds, notification delivery, live payment onboarding, owner/legal review of return policy, and real-device acceptance remain outstanding. The platform is not certified for unrestricted commerce.

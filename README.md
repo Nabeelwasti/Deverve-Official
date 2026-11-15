@@ -128,3 +128,12 @@ Customer registration/sign-in, account profile, password change, order/rental hi
 - No Safepay credentials or card transactions are configured. COD remains the only available payment method in production.
 - CI [#43707019218](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707019218) passed 31 Worker/CNIC tests, 13-migration / 36-table schema verification and four desktop/mobile browser tests.
 - Production smoke [#43707104164](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43707104164) passed. Production D1 read-back: 1 owner admin, 3 media assets, and no customer/product/vehicle/order/rental records.
+
+
+## Returns and manual refund records — 15 November 2026
+
+- Customer accounts now include My returns. Return requests are limited to delivered orders and seven calendar days after delivery; item ownership and quantities are validated on the server.
+- Admins with owner, manager or orders access can approve/reject requests, mark goods received and record a completed manual refund with its reference.
+- No automated bank transfer, cash payment, store-credit issuance or Safepay refund is initiated by this system. A refund is marked complete only after staff have actually paid it and entered the reference.
+- CI #43707582618 passed 33 Worker/CNIC tests, 14 migrations / 39 tables and four desktop/mobile browser tests. Production smoke #43707668582 passed.
+- The 0014 return tables were applied after a complete D1 export. Production still has one owner, three media assets and no customer or commerce records.

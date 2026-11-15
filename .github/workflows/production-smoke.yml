@@ -36,6 +36,21 @@ jobs:
             exit 1
           fi
 
+      - name: Verify customer return and admin return routes are deployed
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://deverve-official.pages.dev"
+          for route in "/api/customer/returns" "/api/admin/returns"; do
+            status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-route.json -w '%{http_code}' "$base$route")"
+            if [[ "$status" != "401" ]]; then
+              echo "Expected unauthenticated access to $route to return 401, received HTTP $status:"
+              cat /tmp/deverve-route.json
+              exit 1
+            fi
+          done
+          echo "Customer and admin return routes are deployed and require authentication."
+
       - name: Verify Turnstile verifier and Siteverify connectivity
         shell: bash
         run: |

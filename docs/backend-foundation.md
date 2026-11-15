@@ -55,7 +55,7 @@ Order creation writes a system status event. Admin status transitions write an a
 
 ## Verification
 
-- CI run #43704058411 passed: build/type-check, security-header artifact check, 31 Worker/CNIC tests, 13-migration / 36-table schema check and four desktop/mobile Playwright tests.
+- CI run #43704058411 passed: build/type-check, security-header artifact check, 33 Worker/CNIC tests, 14-migration / 39-table schema check and four desktop/mobile Playwright tests.
 - Production smoke #43707104164 passed: Pages health, D1 connectivity, Turnstile verifier/Siteverify negative test, CNIC retention Worker bindings and deployed security headers.
 - Customer account UI: `/account`.
 - Admin UI: `/admin`.
@@ -82,3 +82,12 @@ This is a tested production deployment with a limited set of live commerce featu
 - CI #43707019218 passed 31 Worker/CNIC tests and four Playwright tests; production smoke #43707104164 passed.
 - Production schema includes `orders.payment_provider` with `manual` default. The public payment choice remains disabled because no Safepay sandbox credentials are configured.
 - No real sandbox or live payment transaction has been tested. Do not claim payment processing is ready.
+
+
+## Returns and manual refund operations
+
+- Migration 0014 adds return request, item and status-event tables and is applied to production D1 after a completed SQL export.
+- Customers can request one return per order after delivery, within seven calendar days. Server-side checks validate ownership, eligible status, time window, item membership and quantity.
+- The customer account displays return requests. Admin owner/manager/orders roles can approve, reject, mark received and record a manual refund reference.
+- Refund amount is calculated from the selected product items; delivery fee is excluded. The system does not execute a refund or automatically restock returned items.
+- Production has 14 migrations and 39 verified tables. Latest CI #43707582618 passed 33 Worker/CNIC tests and four browser tests; smoke #43707668582 passed.
