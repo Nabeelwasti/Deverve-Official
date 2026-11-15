@@ -2669,6 +2669,20 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   return error("Method not allowed", 405);
 }
 
+
+export async function sitemapResponse(env:Env):Promise<Response>{
+  try{
+    const [products,pages]=await Promise.all([
+      env.DB.prepare("SELECT slug,updated_at FROM products WHERE status='published' ORDER BY updated_at DESC LIMIT 5000").all<{slug:string;updated_at:string}>(),
+      env.DB.prepare("SELECT slug,updated_at FROM site_pages WHERE status='published' ORDER BY updated_at DESC LIMIT 1000").all<{slug:string;updated_at:string}>()
+    ]);
+    const escapeXml=(value:string)=>value.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&apos;");
+    const urls=[{loc:"https://deverve-official.pages.dev/",priority:"1.0",changefreq:"weekly",lastmod:new Date().toISOString()},...(products.results??[]).map(row=>({loc:"https://deverve-official.pages.dev/product/"+encodeURIComponent(row.slug),priority:"0.8",changefreq:"weekly",lastmod:row.updated_at})),...(pages.results??[]).map(row=>({loc:"https://deverve-official.pages.dev/pages/"+encodeURIComponent(row.slug),priority:"0.6",changefreq:"monthly",lastmod:row.updated_at}))];
+    const body='<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'+urls.map(item=>"  <url><loc>"+escapeXml(item.loc)+"</loc><lastmod>"+escapeXml(item.lastmod)+"</lastmod><changefreq>"+item.changefreq+"</changefreq><priority>"+item.priority+"</priority></url>").join("\n")+"\n</urlset>";
+    return new Response(body,{headers:{"content-type":"application/xml; charset=utf-8","cache-control":"public, max-age=300","x-content-type-options":"nosniff"}});
+  }catch{return new Response("Sitemap temporarily unavailable",{status:503,headers:{"content-type":"text/plain; charset=utf-8","cache-control":"no-store"}});}
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
