@@ -2273,7 +2273,7 @@ interface SafepayConfig {
 
 function getSafepayConfig(env: Env): SafepayConfig | null {
   const environment = env.SAFEPAY_ENV;
-  if (!["sandbox", "production"].includes(environment ?? "") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
+  if ((environment !== "sandbox" && environment !== "production") || (environment === "production" && env.SAFEPAY_LIVE_ENABLED !== "true") || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
   return {
     apiHost: environment === "production" ? "https://api.getsafepay.com" : "https://sandbox.api.getsafepay.com",
     environment,
