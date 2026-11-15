@@ -4,12 +4,12 @@ Audit baseline: 9e5ac6bfbc45e455d770405b016c17b395538a3a
 
 ## Latest verified release snapshot
 
-- Application commit: `d7e8f84ee9cb524d275cb76da689ac51e577c703`
-- GitHub Actions run #244: passed type-check/build, Worker authentication and workflow tests, and D1 schema validation: https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43667002622
-- Cloudflare Pages production deployment for the same commit: `e4c71127.deverve-official.pages.dev`, all reported stages successful.
+- Application commit: `fb7896c23f28765c00a4c9182cece1ad0d8e9e15`
+- GitHub Actions run #257: passed frontend/Worker type checks and build, all 21 Worker tests, D1 schema validation (11 migrations / 28 tables), and four Playwright browser tests across desktop Chromium and Pixel 7 emulation: https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43684366652
+- Cloudflare Pages deployment for the same commit: `bd2abe59.deverve-official.pages.dev`, all reported stages successful.
 - Production D1 contains the public rate-limit table and delivery-fee approval columns; migrations 0010 and 0011 are applied.
 - Direct production D1 counts at this verification: 0 products, 0 variants, 0 vehicles, 0 orders and 0 rental requests; 1 owner admin account and 3 media assets. The official-logo media asset and favicon are selected in public brand settings.
-- A live browser/customer journey and deployed response headers could not be independently verified from the connected execution environment. CI and deployment success are not substitutes for real-device acceptance testing.
+- Playwright now exercises the built storefront in desktop and Pixel 7 browser profiles. Enquiry and rental API responses are mocked, so these tests verify the frontend journeys only; they do not create production enquiries/bookings or validate the live D1/R2 integration. A real customer-device journey and deployed response headers still require independent verification.
 
 Status: technically improved; not certified for unrestricted production commerce.
 
@@ -32,7 +32,7 @@ Status: technically improved; not certified for unrestricted production commerce
 | Closed in code | Delivery fee finalization | Staff can set the fee in the admin order card and share a 48-hour approval link through WhatsApp. Customers see subtotal, fee and final COD total, then accept or decline. Declining cancels the order and releases reserved stock. Processing and dispatch are blocked until acceptance. | Complete browser-level customer and admin testing on the live site. |
 | High | Real catalogue and fleet data | Production database currently has no published products/variants/stock or available vehicles. | Enter verified products, prices, sizes, colours, stock, vehicle data, rates, and real photos. |
 | High | Business identity and legal content | A logo asset and favicon are uploaded and selected, but the owner must confirm they are final approved versions. Verified contact details, returns/exchange terms, delivery coverage, wholesale terms, rental terms, business hours, and privacy notice still require owner confirmation. | Confirm and publish accurate business information and policies. |
-| Medium | End-to-end verification | Existing Worker tests use a fake D1 implementation. Browser-level checkout, staff invitation, media, wholesale, rental, and CNIC workflows have not all been verified against production-like Cloudflare D1/R2. | Add isolated integration/E2E tests and complete mobile browser checks. |
+| Medium | End-to-end verification | Worker tests use a fake D1 implementation. Playwright covers public enquiry and rental form interactions on desktop and Pixel 7 emulation with mocked API responses; it does not yet verify real D1/R2, checkout, staff invitation, media, wholesale, or CNIC workflows. | Add isolated Cloudflare-compatible integration tests and complete real-device customer/admin acceptance checks. |
 | Medium | Customer lifecycle | Customer accounts, public order tracking, returns/refunds, transactional email/SMS, and payment gateway are not implemented. | Treat these as roadmap items; do not advertise them as available. |
 | Medium | Domain and SEO | The site uses the shared Pages hostname. Product detail views are not dedicated indexable product URLs. | Connect the business domain and later add canonical product routes, structured data, and per-product metadata. |
 
@@ -47,11 +47,11 @@ Status: technically improved; not certified for unrestricted production commerce
 
 ## Verification required after deployment
 
-1. GitHub Actions: build/type checks, Worker tests, and migration/schema checks pass on the release commit.
+1. GitHub Actions: build/type checks, all 21 Worker tests, 11-migration / 28-table schema checks, and four desktop/mobile Playwright storefront tests pass on the release commit.
 2. Cloudflare Pages deployment for that exact commit reports success.
 3. Live /api/health returns a healthy database response.
 4. Live response headers include the intended CSP and security headers without breaking assets or application behavior.
-5. Test a rental booking with a Pakistan-local future time and confirm the stored UTC timestamp is correct; test past, invalid, and overlapping bookings.
+5. Test a rental booking with a Pakistan-local future time and confirm the stored UTC timestamp is correct; test past, invalid, and overlapping bookings against an isolated D1 environment.
 6. Complete real-device journeys for retail COD, stock reservation/release, wholesale approval, admin roles, media access, and rental document controls.
 7. Close every owner/business dependency above before claiming unrestricted launch readiness.
 
