@@ -12,7 +12,7 @@ const categories = [
   { id: "bottoms", name: "Trousers & pants", detail: "Relaxed comfort, made for movement", tag: "06", tone: "bottoms" },
 ];
 
-const phone = "923298684517";
+const phone = "923197553705";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
@@ -310,11 +310,13 @@ function Storefront() {
           <p>For fashion, wholesale or car rental enquiries, connect with De VERVE in Jhelum.</p>
           <div className="contact-details">
             <div><span>VISIT OUR STORE</span><strong>Kachahri Road, near Khawateen College,<br />opposite Ali Mobile, basement of Ali Plaza,<br />Jhelum, Pakistan</strong></div>
-            <div><span>CALL / WHATSAPP</span><strong>+92 329 8684517<br />+92 319 7553705</strong></div>
+            <div><span>CALL / WHATSAPP</span><strong>+92 319 7553705</strong></div>
+            <div><span>EMAIL</span><strong><a href="mailto:deverve61@gmail.com">deverve61@gmail.com</a></strong></div>
             <div><span>OUR SERVICES</span><strong>Fashion retail · Wholesale · Car rentals</strong></div>
           </div>
           <div className="contact-actions">
             <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">Chat on WhatsApp <span>↗</span></a>
+            <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
             <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span>↗</span></a>
           </div>
           <form className="enquiry-form" onSubmit={submitEnquiry}>
@@ -358,6 +360,7 @@ function Storefront() {
         <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
+        <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
       <InstallPrompt />
       <a className="floating-whatsapp" href={whatsapp("Assalamu Alaikum, I would like to enquire about De VERVE.")} target="_blank" rel="noreferrer" aria-label="Chat with De VERVE on WhatsApp">✆</a>
