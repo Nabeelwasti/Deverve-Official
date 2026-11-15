@@ -137,3 +137,11 @@ Customer registration/sign-in, account profile, password change, order/rental hi
 - No automated bank transfer, cash payment, store-credit issuance or Safepay refund is initiated by this system. A refund is marked complete only after staff have actually paid it and entered the reference.
 - CI #43707582618 passed 33 Worker/CNIC tests, 14 migrations / 39 tables and four desktop/mobile browser tests. Production smoke #43707668582 passed.
 - The 0014 return tables were applied after a complete D1 export. Production still has one owner, three media assets and no customer or commerce records.
+
+
+## Final return workflow verification — 15 November 2026
+
+- CI [#43708097899](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43708097899) passed 34 Worker/CNIC tests, 14 migrations / 39 tables, type-check/build and five Playwright scenarios on desktop and mobile.
+- The customer return journey passed in both desktop Chromium and mobile Chromium: delivered-order return request, item quantity selection, submission and return-history display.
+- Production smoke [#43708191784](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43708191784) passed health/D1, unauthenticated return-route protection, Turnstile, CNIC retention bindings and security headers.
+- The returns admin workspace has its own navigation screen and role restrictions. Refund completion remains a manual record only.
