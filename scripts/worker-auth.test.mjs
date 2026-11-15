@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest } from "../.test-dist/worker/index.js";
+import { handleRequest, parseRentalDateTime } from "../.test-dist/worker/index.js";
 
+test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wall-clock dates", () => {
+  assert.equal(parseRentalDateTime("2026-11-15T10:30"), Date.parse("2026-11-15T05:30:00.000Z"));
+  assert.equal(parseRentalDateTime("2026-11-15T10:30:45"), Date.parse("2026-11-15T05:30:45.000Z"));
+  assert.equal(parseRentalDateTime("2026-11-15T05:30:00Z"), Date.parse("2026-11-15T05:30:00.000Z"));
+  assert.equal(Number.isNaN(parseRentalDateTime("2026-02-30T10:30")), true);
+  assert.equal(Number.isNaN(parseRentalDateTime("2026-11-15 10:30")), true);
+});
 class FakeStatement {
   constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }

@@ -46,7 +46,7 @@ These are deliberate boundaries, not fake features:
 - The official De VERVE logo is not bundled in the repository. The owner can upload the approved logo and favicon in Website Settings; the original brand asset must be supplied by the business.
 - The production database currently contains no real products, variants, stock, vehicles, orders or rental records. Add verified business data before advertising availability or accepting real orders.
 - Delivery fees, delivery coverage, returns/exchanges, wholesale minimums, vehicle rates, rental terms, privacy/retention policy and business hours must be confirmed by the owner.
-- A custom domain is not connected. The current live address is the Cloudflare Pages domain.
+- A custom domain is not connected. The current live address is the Cloudflare Pages domain. Security response headers and a Content Security Policy are defined in the Pages _headers file; verify the deployed response and all application assets after release.
 
 ## Security and data handling
 
@@ -54,7 +54,7 @@ These are deliberate boundaries, not fake features:
 - Admin sessions are hashed, HttpOnly, Secure and SameSite=Strict.
 - Product/order stock is checked on the server; the browser is never trusted for final price or stock.
 - R2 is private. Public media delivery checks that the media is assigned to a published product, available vehicle or selected public brand setting.
-- Rental CNIC documents are stored under a private object prefix, use one-time upload tokens, and are accessible only to authorized rental roles. Owners/managers can delete them. Establish and follow a written retention policy before collecting real identity documents.
+- Rental CNIC documents are stored under a private object prefix, use one-time upload tokens, and are accessible only to authorized rental roles. Owners/managers can delete them. **Do not collect real CNIC documents until the business approves and publishes a retention/deletion policy.** Automated expiry/purge is not yet configured.
 - Do not store payment card data. Keep secrets out of source control.
 - Never invent products, prices, stock, reviews, vehicle availability, brand-authenticity claims or customer records.
 

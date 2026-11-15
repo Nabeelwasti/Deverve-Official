@@ -83,6 +83,24 @@ function validPhone(value: string): boolean {
   return /^\+?[0-9 ()-]{8,20}$/.test(value);
 }
 
+/**
+ * datetime-local values from the rental form are Pakistan wall-clock times.
+ * Cloudflare Workers run in UTC, so timezone-less values must not use Date.parse.
+ * Explicitly zoned ISO timestamps remain supported for API clients.
+ */
+export function parseRentalDateTime(value: string): number {
+  const input = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:?\d{2})$/i.test(input)) return Date.parse(input);
+  const match = input.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return Number.NaN;
+  const [, y, mo, d, h, mi, s = "0"] = match;
+  const parts = [y, mo, d, h, mi, s].map(Number);
+  const [year, month, day, hour, minute, second] = parts;
+  const wallClock = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  if (wallClock.getUTCFullYear() !== year || wallClock.getUTCMonth() !== month - 1 || wallClock.getUTCDate() !== day || wallClock.getUTCHours() !== hour || wallClock.getUTCMinutes() !== minute || wallClock.getUTCSeconds() !== second) return Number.NaN;
+  return wallClock.getTime() - 5 * 60 * 60 * 1000;
+}
+
 function base64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -628,8 +646,8 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const returnAt = cleanText(body.return_at, 40);
   const driver = cleanText(body.driver_option, 20);
   const note = cleanText(body.customer_note, 500);
-  const pickupTime = Date.parse(pickupAt);
-  const returnTime = Date.parse(returnAt);
+  const pickupTime = parseRentalDateTime(pickupAt);
+  const returnTime = parseRentalDateTime(returnAt);
   if (name.length < 2 || !validPhone(phone) || pickupCity.length < 2 || pickupAddress.length < 8 || destinationCity.length < 2 || destinationAddress.length < 5 || !["self_drive", "with_driver"].includes(driver)) return error("Enter your name, phone, complete pickup and destination addresses, and driver option", 400);
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Enter a valid email address", 400);
   if (!Number.isFinite(pickupTime) || !Number.isFinite(returnTime) || pickupTime <= Date.now() || returnTime <= pickupTime || returnTime - pickupTime > 60 * 86400000) return error("Choose a future pickup and a return time within 60 days", 400);
@@ -642,7 +660,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const uploadExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   try {
     const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
-      .bind(id, vehicleId, name, phone, pickup, destination, pickupAt, returnAt, driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, returnAt, pickupAt).run();
+      .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
     return json({ accepted: true, reference_code: reference, document_upload_token: uploadToken, message: "Your rental request has been received. Availability and terms will be confirmed by De VERVE. You may securely upload CNIC front and back now if requested." }, 201);
   } catch { return error("Rental request could not be submitted. Please contact De VERVE.", 503); }
