@@ -350,3 +350,42 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .site-credit{display:block;font-size:10px;letter-spacing:.03em;color:#657990;text-align:center;flex-basis:100%}
 .product-buy-row .product-details-button{background:#edf4fb;color:#174a78;border:1px solid #cbdced}
 @media(max-width:600px){.checkout-backdrop{padding:8px;align-items:end}.checkout-modal{width:100%;max-height:94dvh;border-radius:16px 16px 10px 10px;padding:18px}.checkout-modal .checkout-fields{grid-template-columns:1fr}.product-detail-actions{display:grid}.product-detail-actions .button{width:100%}.site-footer{flex-wrap:wrap}}
+
+
+/* Screen-first storefront navigation: customers open only the area they choose. */
+.store-main[data-screen="home"]>section:not(.hero),
+.store-main[data-screen="fashion"]>section:not(.collections-section),
+.store-main[data-screen="wholesale"]>section:not(.wholesale-section),
+.store-main[data-screen="mobility"]>section:not(.mobility-section),
+.store-main[data-screen="contact"]>section:not(.contact-section),
+.store-main[data-screen="favourites"]>section:not(.favourites-section){display:none!important}
+.site-header{position:sticky;top:0;z-index:70}
+.brand-home-button{border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;padding:0}
+.site-header .menu-toggle{display:inline-flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;width:42px;height:42px;border:1px solid #dce5ef;border-radius:12px;background:#fff;cursor:pointer}
+.site-header .menu-toggle span{display:block;width:17px;height:2px;background:#163d65;border-radius:2px}
+.site-header .main-nav{display:none}
+.site-header .main-nav.is-open{display:flex;position:absolute;right:24px;top:calc(100% - 2px);width:min(300px,calc(100vw - 32px));padding:12px;background:#fff;border:1px solid #dce5ef;border-radius:16px;box-shadow:0 18px 50px #0b27421f;flex-direction:column;align-items:stretch;gap:4px}
+.site-header .main-nav button{border:0;border-radius:9px;background:transparent;color:#183c60;text-align:left;padding:13px 14px;font:inherit;font-weight:700;cursor:pointer}
+.site-header .main-nav button:hover,.site-header .main-nav button:focus-visible{background:#edf4fb;outline:2px solid transparent}
+.header-actions{display:flex;align-items:center;gap:10px}
+.header-cart{border:1px solid #d8e3ee;background:#fff;color:#173f68;border-radius:999px;padding:10px 14px;font:inherit;font-size:12px;font-weight:800;cursor:pointer}
+.header-cart span{display:inline-grid;place-items:center;min-width:20px;height:20px;margin-left:5px;border-radius:50%;background:#173f68;color:#fff}
+.hero-bottom button,.text-link{border:0;background:transparent;color:inherit;font:inherit;cursor:pointer}
+.favourite-toggle{align-self:flex-start;border:1px solid #d8e3ee;background:#fff;color:#234c73;border-radius:999px;padding:7px 11px;font:inherit;font-size:11px;font-weight:800;cursor:pointer}
+.favourite-toggle.is-saved{background:#eef5fc;border-color:#9ebbd7;color:#174c7d}
+.favourites-section{min-height:60vh}
+.mobile-dock{display:none}
+@media(max-width:760px){
+  .site-header{display:flex;gap:10px}
+  .site-header .brand-lockup{min-width:0}
+  .site-header .header-actions .header-cta{display:none}
+  .site-header .main-nav.is-open{right:10px}
+  .mobile-dock{position:fixed;z-index:90;left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:7px;background:rgba(255,255,255,.96);border:1px solid #dce5ef;border-radius:18px;box-shadow:0 12px 36px #0a25431f;backdrop-filter:blur(18px)}
+  .mobile-dock button{display:flex;min-width:0;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#657990;border-radius:12px;padding:6px 2px;font:inherit;font-size:10px;font-weight:750;cursor:pointer}
+  .mobile-dock button span{font-size:18px;line-height:1.1}
+  .mobile-dock button.active{background:#edf4fb;color:#174c7d}
+  .mobile-dock button i{font-style:normal;font-size:9px}
+  .site-shell{padding-bottom:82px}
+  .checkout-backdrop{padding-bottom:82px}
+}
+@media(prefers-reduced-motion:reduce){html:focus-within{scroll-behavior:auto}.mobile-dock,.site-header .main-nav{transition:none!important}}
