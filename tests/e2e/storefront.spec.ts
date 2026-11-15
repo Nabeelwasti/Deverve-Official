@@ -34,7 +34,7 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
 
   await page.goto("/");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Elevate");
-  await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Toggle navigation" })).toBeVisible();
 
   await page.getByRole("button", { name: "Toggle navigation" }).click();
   await page.getByRole("button", { name: "Contact", exact: true }).click();
