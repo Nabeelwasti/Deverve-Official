@@ -22,6 +22,23 @@ type StoreProduct = { id: string; slug: string; name: string; description: strin
 type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; image_key: string | null; image_url: string | null; description: string };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
 
+function readStoredCart(): CartLine[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem("deverve-cart") || "[]");
+    if (!Array.isArray(value)) return [];
+    return value.filter((item): item is CartLine => Boolean(item && typeof item === "object"
+      && typeof item.variant_id === "string" && /^[a-f0-9-]{36}$/i.test(item.variant_id)
+      && typeof item.product_id === "string" && typeof item.name === "string"
+      && (item.sku === null || typeof item.sku === "string")
+      && typeof item.size === "string" && typeof item.color === "string"
+      && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10
+      && Number.isSafeInteger(item.unit_price_paisa) && item.unit_price_paisa >= 0
+      && Number.isInteger(item.available_quantity) && item.available_quantity > 0)).slice(0, 20);
+  } catch { return []; }
+}
+
+const socialGlyphs: Record<string, string> = { facebook: "f", instagram: "◎", tiktok: "♪", youtube: "▶", linkedin: "in", pinterest: "p", threads: "@", x: "𝕏" };
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeScreen, setActiveScreen] = useState<"home" | "fashion" | "wholesale" | "mobility" | "contact" | "favourites">("home");
@@ -50,7 +67,7 @@ function Storefront() {
   const [rentalDocsMessage, setRentalDocsMessage] = useState("");
   const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cart, setCart] = useState<CartLine[]>(readStoredCart);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState("");
@@ -60,6 +77,7 @@ function Storefront() {
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
+  useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => {
     if(!brandAssets.favicon_id)return;
     const icon=document.querySelector<HTMLLinkElement>('link[rel="icon"]');
@@ -79,6 +97,12 @@ function Storefront() {
         if (!active) return;
         setProducts(payload.products);
         setSelectedVariants(Object.fromEntries(payload.products.map((product) => [product.id, product.variants[0]?.id ?? ""])));
+        setCart((current) => current.flatMap((line) => {
+          const product = payload.products!.find((item) => item.id === line.product_id);
+          const variant = product?.variants.find((item) => item.id === line.variant_id);
+          if (!product || !variant || product.retail_price_paisa === null || variant.available_quantity < 1) return [];
+          return [{ ...line, name: product.name, sku: variant.sku, size: variant.size, color: variant.color, unit_price_paisa: product.retail_price_paisa, available_quantity: variant.available_quantity, quantity: Math.min(line.quantity, variant.available_quantity) }];
+        }));
         setCatalogueState(payload.products.length ? "ready" : "empty");
       } catch {
         if (active) setCatalogueState("error");
@@ -415,7 +439,7 @@ function Storefront() {
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
-        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}>{platform}</a>)}</nav>}
+        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
