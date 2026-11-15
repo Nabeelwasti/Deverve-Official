@@ -417,7 +417,8 @@ function Storefront() {
             </div>
             <p className="checkout-disclaimer">No online payment is collected. De VERVE will send a secure link to confirm delivery charges and your final COD total before dispatch.</p>
             {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
-            <TurnstileWidget resetKey={checkoutTurnstileReset} onToken={setCheckoutTurnstileToken} />
+            <p className="checkout-policy-note">Before placing your order, please review the <button type="button" onClick={() => { setCheckoutOpen(false); navigate("policies"); }}>returns, refunds and privacy policies</button>. You can return to your cart to continue.</p>
+             <TurnstileWidget resetKey={checkoutTurnstileReset} onToken={setCheckoutTurnstileToken} />
              <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length || !checkoutTurnstileToken}>{checkoutBusy ? "Placing order…" : "Place COD order"} <span>↗</span></button>
           </form>}
         </section></div>}
@@ -504,7 +505,8 @@ function Storefront() {
           </div>
           {rentalMessage && <p className="checkout-message" role="alert">{rentalMessage}</p>}
           <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will contact you to confirm availability, documents, price and terms.</p>
-          <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
+          <p className="checkout-policy-note">A rental request is not a confirmed booking. Please review the rental and privacy policies before submitting. <button type="button" onClick={() => { setRentalOpen(false); navigate("policies"); }}>Read rental terms</button>.</p>
+           <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
            <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || !rentalTurnstileToken}>{rentalBusy ? "Sending request…" : "Send rental request"} <span>↗</span></button>
         </form>}
       </section></div>}
