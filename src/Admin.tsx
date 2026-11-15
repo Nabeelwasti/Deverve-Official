@@ -190,7 +190,7 @@ export default function Admin() {
     }
   }, [admin]);
 
-  const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{const secondary=ownerSecondaryEmails.split(/[;,\\n]/).map((item)=>item.trim()).filter(Boolean);await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,cnic_uploads_enabled:cnicUploadsEnabled,notification_emails:{primary:ownerPrimaryEmail,secondary,enabled:ownerEmailsEnabled}})});setMessage("Website, owner notification email and brand settings saved.");}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
+  const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{const secondary=ownerSecondaryEmails.split(/[;,\n]/).map((item)=>item.trim()).filter(Boolean);await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,cnic_uploads_enabled:cnicUploadsEnabled,notification_emails:{primary:ownerPrimaryEmail,secondary,enabled:ownerEmailsEnabled}})});setMessage("Website, owner notification email and brand settings saved.");}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
   const uploadBrandAsset = async (kind:"logo"|"favicon",file:File|null) => {
     if(!file)return;
     setBusy(true);setMessage("");
