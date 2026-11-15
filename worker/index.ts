@@ -1830,6 +1830,40 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
 }
 
 
+
+async function recordOwnerNotification(db:D1Database,event:{event_type:"order.created"|"rental.created"|"enquiry.created"|"payment.succeeded";title:string;body:string;entity_type:"order"|"rental_request"|"enquiry";entity_id:string}):Promise<void>{
+  await db.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) VALUES (?,?,?,?,?,?)")
+    .bind(crypto.randomUUID(),event.event_type,event.title.slice(0,160),event.body.slice(0,500),event.entity_type,event.entity_id).run();
+}
+async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<Response|null>{
+  const path=url.pathname;
+  const collection=path==="/api/admin/notifications";
+  const readAll=path==="/api/admin/notifications/read-all";
+  const readMatch=path.match(new RegExp("^/api/admin/notifications/([a-f0-9-]{36})/read$","i"));
+  if(!collection&&!readAll&&!readMatch)return null;
+  let admin:SessionRow|null;
+  try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
+  if(!admin)return error("Authentication required",401);
+  if(admin.role!=="owner")return error("Only the owner can view business-wide notifications",403);
+  if(collection&&request.method==="GET"){
+    try{
+      const rows=await env.DB.prepare("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications ORDER BY created_at DESC LIMIT 100").all<Record<string,unknown>>();
+      const unread=await env.DB.prepare("SELECT COUNT(*) AS total FROM owner_notifications WHERE is_read=0").first<{total:number}>();
+      return json({notifications:rows.results??[],unread:unread?.total??0});
+    }catch{return error("Notification inbox could not be loaded",503);}
+  }
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  if(readAll&&request.method==="POST"){
+    try{await env.DB.prepare("UPDATE owner_notifications SET is_read=1,read_at=? WHERE is_read=0").bind(new Date().toISOString()).run();return json({updated:true});}
+    catch{return error("Notifications could not be marked as read",503);}
+  }
+  if(readMatch&&request.method==="PATCH"){
+    try{const result=await env.DB.prepare("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=? AND is_read=0").bind(new Date().toISOString(),readMatch[1]).run();return json({updated:true,changed:(result.meta?.changes??0)===1});}
+    catch{return error("Notification could not be updated",503);}
+  }
+  return error("Method not allowed",405);
+}
+
 const cmsSectionTypes = new Set(["hero","rich_text","image_text","image_gallery","video","product_collection","category_grid","promo_banner","contact_cta","faq"]);
 const cmsSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function normalizeCmsSection(value: unknown, position: number): {id:string;section_type:string;position:number;content_json:string;is_visible:number}|null {
