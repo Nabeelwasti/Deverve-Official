@@ -19,6 +19,10 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  SAFEPAY_ENV?: string;
+  SAFEPAY_MERCHANT_API_KEY?: string;
+  SAFEPAY_SECRET_KEY?: string;
+  SAFEPAY_WEBHOOK_SECRET?: string;
 }
 interface ProductRow {
   id: string;
@@ -429,7 +433,7 @@ interface CheckoutVariantRow {
 interface OrderRow {
   id: string; order_number: string; customer_name: string; phone: string; email: string | null;
   delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number;
-  total_paisa: number; payment_method: string; payment_status: string; order_status: string;
+  total_paisa: number; payment_method: string; payment_provider: string; payment_status: string; order_status: string;
   delivery_fee_status: string; delivery_fee_expires_at: string | null;
   customer_note: string; created_at: string; updated_at: string;
 }
@@ -449,11 +453,14 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
   const token = cleanText(body.checkout_token, 64);
   if (!/^[a-f0-9-]{36}$/i.test(token)) return error("Refresh checkout and try again", 400);
+  const requestedPaymentProvider = cleanText(body.payment_provider, 20) || "manual";
+  if (!["manual", "safepay"].includes(requestedPaymentProvider)) return error("Choose a valid payment method", 400);
+  if (requestedPaymentProvider === "safepay" && !getSafepayConfig(env)) return error("Online payment is not enabled yet. Please choose cash on delivery.", 503);
   let signedInCustomer: CustomerSessionRow | null = null;
   try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
   try {
-    const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
-      .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
+    const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token = ? LIMIT 1")
+      .bind(token).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
     if (existing) return json({ accepted: true, duplicate: true, ...existing });
   } catch { return error("Checkout is temporarily unavailable", 503); }
 
@@ -515,17 +522,19 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
         .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
     }
+    if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
+    if (requestedPaymentProvider === "safepay" && !signedInCustomer) return error("Please sign in to your De VERVE account before choosing online payment.", 401);
     if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
-    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending" }, 201);
+    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
     try {
-      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
-        .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token = ? LIMIT 1")
+        .bind(token).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
       if (existing) return json({ accepted: true, duplicate: true, ...existing });
     } catch { /* report the original safe error */ }
     return error("Your order could not be placed. Please try again or contact us on WhatsApp.", 503);
@@ -596,7 +605,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const limitValue = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
     try {
-      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
         .bind(limit).all<OrderRow>();
       const orders = result.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -652,9 +661,9 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const lines = items.results ?? [];
     if (!lines.length) return error("This order has no valid line items", 409);
     const guard = nextStatus === "processing"
-      ? "orders.delivery_fee_status = 'accepted'"
+      ? "orders.delivery_fee_status = 'accepted' AND (orders.payment_provider = 'manual' OR orders.payment_status = 'paid')"
       : nextStatus === "dispatched"
-        ? "orders.delivery_fee_status = 'accepted' AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
+        ? "orders.delivery_fee_status = 'accepted' AND (orders.payment_provider = 'manual' OR orders.payment_status = 'paid') AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
         : nextStatus === "cancelled"
         ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
         : "1 = 1";
@@ -1098,7 +1107,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     const quote = await env.DB.prepare("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ? LIMIT 1").bind(token).first<{ id: string; business_name: string; contact_name: string; phone: string; email: string | null; delivery_address: string; requested_items: string; quoted_total_paisa: number | null; status: string; valid_until: string | null; city: string; approval_token: string; converted_order_id: string | null }>();
     if (!quote) return error("Quotation not found", 404);
     if (quote.status === "accepted" && quote.converted_order_id) {
-      const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
       const acceptedItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
       return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: acceptedItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
     }
@@ -1142,7 +1151,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'wholesale_quote.accepted', 'wholesale_quote', ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'accepted')").bind(crypto.randomUUID(), quote.id, JSON.stringify({ order_id: orderId, order_number: orderNumber }), quote.id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) {
-      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ? LIMIT 1").bind(quote.id).first<{ order_number: string; total_paisa: number; order_status: string }>();
+      const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ? LIMIT 1").bind(quote.id).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
       if (existing) return json({ accepted: true, duplicate: true, order: existing });
       return error("Stock changed or this quotation is no longer open. Please contact De VERVE.", 409);
     }
@@ -1908,10 +1917,124 @@ async function currentCustomer(request: Request, db: D1Database): Promise<Custom
   ).bind(await sha256(token), new Date().toISOString()).first<CustomerSessionRow>();
 }
 
+
+interface SafepayConfig {
+  apiHost: "https://sandbox.api.getsafepay.com";
+  merchantApiKey: string;
+  secretKey: string;
+  webhookSecret: string;
+}
+
+function getSafepayConfig(env: Env): SafepayConfig | null {
+  if (env.SAFEPAY_ENV !== "sandbox" || !env.SAFEPAY_MERCHANT_API_KEY || !env.SAFEPAY_SECRET_KEY || !env.SAFEPAY_WEBHOOK_SECRET) return null;
+  return {
+    apiHost: "https://sandbox.api.getsafepay.com",
+    merchantApiKey: env.SAFEPAY_MERCHANT_API_KEY,
+    secretKey: env.SAFEPAY_SECRET_KEY,
+    webhookSecret: env.SAFEPAY_WEBHOOK_SECRET,
+  };
+}
+
+function constantTimeHexEqual(expected: string, received: string): boolean {
+  if (!/^[a-f0-9]{128}$/i.test(expected) || !/^[a-f0-9]{128}$/i.test(received)) return false;
+  let difference = 0;
+  for (let index = 0; index < 128; index += 1) difference |= expected.toLowerCase().charCodeAt(index) ^ received.toLowerCase().charCodeAt(index);
+  return difference === 0;
+}
+
+export async function verifySafepaySignature(rawBody: string, signature: string, secret: string): Promise<boolean> {
+  try {
+    const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+    const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+    const expected = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return constantTimeHexEqual(expected, signature);
+  } catch { return false; }
+}
+
+async function safepayApi(config: SafepayConfig, path: string, method: "GET" | "POST", payload?: unknown): Promise<Record<string, unknown>> {
+  const response = await fetch(config.apiHost + path, {
+    method,
+    headers: { accept: "application/json", "content-type": "application/json", "X-SFPY-MERCHANT-SECRET": config.secretKey },
+    ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
+  });
+  const raw = await response.text();
+  let parsed: Record<string, unknown>;
+  try { parsed = JSON.parse(raw) as Record<string, unknown>; } catch { throw new Error("Safepay returned an invalid response"); }
+  if (!response.ok) throw new Error("Safepay API request failed");
+  return parsed;
+}
+
+async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/webhooks/safepay") return null;
+  if (request.method !== "POST") return error("Method not allowed", 405);
+  const config = getSafepayConfig(env);
+  if (!config) return error("Safepay sandbox webhook is not configured", 503);
+  const rawBody = await request.text();
+  if (!rawBody || rawBody.length > 65_536) return error("Invalid webhook payload", 400);
+  const signature = request.headers.get("X-SFPY-SIGNATURE") ?? "";
+  if (!await verifySafepaySignature(rawBody, signature, config.webhookSecret)) return error("Invalid Safepay signature", 401);
+
+  let event: Record<string, unknown>;
+  try { event = JSON.parse(rawBody) as Record<string, unknown>; } catch { return error("Invalid webhook JSON", 400); }
+  const eventId = cleanText(event.token, 160);
+  const eventType = cleanText(event.type, 80);
+  const data = event.data && typeof event.data === "object" ? event.data as Record<string, unknown> : {};
+  if (!/^evt_[A-Za-z0-9_-]{12,150}$/.test(eventId) || !eventType) return error("Webhook event identity is missing", 400);
+
+  try {
+    const prior = await env.DB.prepare("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay' AND provider_event_id = ? LIMIT 1")
+      .bind(eventId).first<{ processing_status: string }>();
+    if (prior?.processing_status === "processed" || prior?.processing_status === "ignored") return json({ received: true, duplicate: true });
+    const payloadDigest = await sha256(rawBody);
+    await env.DB.prepare("INSERT INTO payment_webhook_events (id, provider, provider_event_id, payload_sha256, processing_status) VALUES (?, 'safepay', ?, ?, 'received') ON CONFLICT(provider, provider_event_id) DO UPDATE SET payload_sha256 = excluded.payload_sha256, processing_status = 'received' WHERE payment_webhook_events.processing_status NOT IN ('processed','ignored')")
+      .bind(crypto.randomUUID(), eventId, payloadDigest).run();
+
+    if (eventType !== "payment.succeeded" && eventType !== "payment.failed") {
+      await env.DB.prepare("UPDATE payment_webhook_events SET processing_status = 'ignored', processed_at = ? WHERE provider = 'safepay' AND provider_event_id = ?")
+        .bind(new Date().toISOString(), eventId).run();
+      return json({ received: true, ignored: true });
+    }
+
+    const tracker = cleanText(data.tracker, 200);
+    if (!/^track_[A-Za-z0-9_-]{12,190}$/.test(tracker)) throw new Error("Safepay event tracker is missing");
+    const attempt = await env.DB.prepare("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay' AND provider_reference = ? LIMIT 1")
+      .bind(tracker).first<{ id: string; order_id: string; amount_paisa: number; status: string }>();
+    if (!attempt) throw new Error("Payment attempt for webhook tracker was not found");
+
+    if (eventType === "payment.succeeded") {
+      const amount = data.amount;
+      const currency = cleanText(data.currency, 3);
+      const state = cleanText(data.state, 40);
+      if (state !== "TRACKER_ENDED" || currency !== "PKR" || !Number.isSafeInteger(amount) || Number(amount) !== attempt.amount_paisa) {
+        throw new Error("Safepay payment amount, currency or final state did not match the stored order");
+      }
+      const now = new Date().toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE payment_attempts SET status = 'succeeded', updated_at = ? WHERE id = ? AND status IN ('created','pending')").bind(now, attempt.id),
+        env.DB.prepare("UPDATE orders SET payment_status = 'paid', updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(now, attempt.order_id, attempt.amount_paisa),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order");
+    } else {
+      await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_declined', updated_at = ? WHERE id = ? AND status IN ('created','pending')")
+        .bind(new Date().toISOString(), attempt.id).run();
+    }
+
+    await env.DB.prepare("UPDATE payment_webhook_events SET processing_status = 'processed', processed_at = ? WHERE provider = 'safepay' AND provider_event_id = ?")
+      .bind(new Date().toISOString(), eventId).run();
+    return json({ received: true, processed: true });
+  } catch (caught) {
+    try { await env.DB.prepare("UPDATE payment_webhook_events SET processing_status = 'failed' WHERE provider = 'safepay' AND provider_event_id = ?").bind(eventId).run(); } catch { /* preserve retry response */ }
+    console.error("[safepay-webhook] reconciliation failed", caught instanceof Error ? caught.message : "unknown error");
+    return error("Safepay webhook could not be reconciled; please retry delivery", 503);
+  }
+}
+
 async function customerAccountRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
+  if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? "sandbox" : null });
+  const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals"];
-  if (!accountPaths.includes(path)) return null;
+  if (!accountPaths.includes(path) && !paymentMatch) return null;
 
   if (path === "/api/customer/register" && request.method === "POST") {
     const limited = await enforcePublicRateLimit(request, env, "customer-register", 3);
@@ -1986,6 +2109,70 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   catch { return error("Customer account service is temporarily unavailable", 503); }
   if (!customer) return error("Please sign in to access your account.", 401);
 
+
+  if (paymentMatch && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const config = getSafepayConfig(env);
+    if (!config) return error("Secure online payment is not enabled yet. Please use cash on delivery or contact De VERVE.", 503);
+    const orderId = paymentMatch[1];
+    try {
+      const order = await env.DB.prepare("SELECT id, order_number, total_paisa, payment_status, payment_provider, order_status, delivery_fee_status FROM orders WHERE id = ? AND customer_id = ? LIMIT 1")
+        .bind(orderId, customer.customer_id).first<{ id: string; order_number: string; total_paisa: number; payment_status: string; payment_provider: string; order_status: string; delivery_fee_status: string }>();
+      if (!order) return error("Order not found in your account.", 404);
+      if (order.payment_status === "paid") return json({ paid: true, message: "This order is already marked as paid." });
+      if (order.payment_provider !== "safepay") return error("Online payment was not selected for this order.", 409);
+      if (order.delivery_fee_status !== "accepted") return error("Please approve the final delivery fee before paying.", 409);
+      if (!["pending", "confirmed"].includes(order.order_status) || !Number.isSafeInteger(order.total_paisa) || order.total_paisa < 1) return error("This order is not ready for online payment.", 409);
+      const existing = await env.DB.prepare("SELECT id, checkout_url, status, created_at FROM payment_attempts WHERE order_id = ? AND provider = 'safepay' AND status IN ('created','pending') ORDER BY created_at DESC LIMIT 1")
+        .bind(order.id).first<{ id: string; checkout_url: string | null; status: string; created_at: string }>();
+      if (existing?.status === "pending" && existing.checkout_url && Date.now() - Date.parse(existing.created_at) < 55 * 60 * 1000) return json({ checkout_url: existing.checkout_url, reused: true });
+      if (existing?.status === "created") return error("Your payment session is being prepared. Please wait a moment and try again.", 409);
+
+      const attemptId = crypto.randomUUID();
+      const idempotencyKey = crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO payment_attempts (id, order_id, provider, environment, idempotency_key, amount_paisa, currency, status) VALUES (?, ?, 'safepay', 'sandbox', ?, ?, 'PKR', 'created')")
+        .bind(attemptId, order.id, idempotencyKey, order.total_paisa).run();
+      try {
+        const trackerResponse = await safepayApi(config, "/order/payments/v3/", "POST", {
+          merchant_api_key: config.merchantApiKey,
+          intent: "CYBERSOURCE",
+          mode: "payment",
+          entry_mode: "raw",
+          currency: "PKR",
+          amount: order.total_paisa,
+          metadata: { order_id: order.id, order_number: order.order_number },
+          include_fees: false,
+        });
+        const trackerData = trackerResponse.data && typeof trackerResponse.data === "object" ? trackerResponse.data as Record<string, unknown> : {};
+        const trackerObject = trackerData.tracker && typeof trackerData.tracker === "object" ? trackerData.tracker as Record<string, unknown> : {};
+        const tracker = cleanText(trackerObject.token, 200);
+        if (!/^track_[A-Za-z0-9_-]{12,190}$/.test(tracker)) throw new Error("Safepay did not return a valid payment tracker");
+        const passportResponse = await safepayApi(config, "/client/passport/v1/token", "POST");
+        const passportData = passportResponse.data;
+        const tbt = typeof passportData === "string" ? passportData : "";
+        if (tbt.length < 20 || tbt.length > 1000) throw new Error("Safepay did not return a valid checkout token");
+        const checkout = new URL("/embedded", config.apiHost);
+        checkout.search = new URLSearchParams({
+          environment: "sandbox", tracker, source: "hosted", tbt,
+          redirect_url: url.origin + "/account?payment=return",
+          cancel_url: url.origin + "/account?payment=cancelled",
+        }).toString();
+        const now = new Date().toISOString();
+        const saved = await env.DB.prepare("UPDATE payment_attempts SET provider_reference = ?, checkout_url = ?, status = 'pending', updated_at = ? WHERE id = ? AND status = 'created'")
+          .bind(tracker, checkout.toString(), now, attemptId).run();
+        if ((saved.meta?.changes ?? 0) !== 1) throw new Error("Payment attempt could not be saved");
+        return json({ checkout_url: checkout.toString(), environment: "sandbox" });
+      } catch (caught) {
+        await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_error', updated_at = ? WHERE id = ? AND status = 'created'")
+          .bind(new Date().toISOString(), attemptId).run();
+        throw caught;
+      }
+    } catch (caught) {
+      console.error("[safepay-checkout] session creation failed", caught instanceof Error ? caught.message : "unknown error");
+      return error("Secure payment could not be started. Please try again or contact De VERVE.", 503);
+    }
+  }
+
   if (path === "/api/customer/me" && request.method === "GET") {
     return json({ authenticated: true, customer: { id: customer.customer_id, email: customer.email, full_name: customer.full_name, phone: customer.phone, email_verified: false } });
   }
@@ -2026,7 +2213,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
 
   if (path === "/api/customer/orders" && request.method === "GET") {
     try {
-      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
+      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
         .bind(customer.customer_id).all<Record<string, unknown>>();
       const orders = rows.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -2064,6 +2251,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
   const origin = request.headers.get("origin");
   if (origin && origin !== url.origin) return error("Cross-origin requests are not accepted", 403);
+
+  const safepayWebhookResponse = await safepayWebhookRoutes(request, env, url);
+  if (safepayWebhookResponse) return safepayWebhookResponse;
 
   const customerResponse = await customerAccountRoutes(request, env, url);
   if (customerResponse) return customerResponse;

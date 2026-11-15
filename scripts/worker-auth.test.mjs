@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { handleRequest, parseRentalDateTime } from "../.test-dist/worker/index.js";
+import { handleRequest, parseRentalDateTime, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -10,6 +10,25 @@ globalThis.fetch = async (input, init = {}) => {
   }
   return nativeFetch(input, init);
 };
+
+test("Safepay webhook HMAC-SHA512 verification accepts the exact raw payload and rejects tampering", async () => {
+  const raw = '{"token":"evt_123456789012","type":"payment.succeeded","data":{"tracker":"track_123456789012","state":"TRACKER_ENDED","amount":12000,"currency":"PKR"}}';
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  assert.equal(await verifySafepaySignature(raw, signature, secret), true);
+  assert.equal(await verifySafepaySignature(raw + " ", signature, secret), false);
+  assert.equal(await verifySafepaySignature(raw, "invalid", secret), false);
+});
+
+test("Safepay checkout stays unavailable unless all sandbox credentials are configured", async () => {
+  const response = await handleRequest(request("/api/storefront/payment-options", "GET"), env(new FakeD1()));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { online_payment_available: false, environment: null });
+  const webhook = await handleRequest(request("/api/webhooks/safepay", "POST", {}), env(new FakeD1()));
+  assert.equal(webhook.status, 503);
+});
 
 test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wall-clock dates", () => {
   assert.equal(parseRentalDateTime("2026-11-15T10:30"), Date.parse("2026-11-15T05:30:00.000Z"));
