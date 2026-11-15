@@ -1,3 +1,30 @@
+# Current handoff — 15 November 2026 (Asia/Karachi)
+
+## Binding workflow rule
+- Work directly on `main` only. Do not create, switch to, or push feature branches. Do not force-push, reset, or discard repository work.
+- Current source commit: `53cff49cbf99bfde0cbe29776fd7e635572cfc9d` (README reconciliation after merge).
+- Application merge commit: `4feb999f0332a6ef5234bb9a6faf985c94268b78`; PR #2 is merged.
+- PR branch CI run #417 (`43729210673`) passed all ten steps, including build/type-check, Worker tests, D1 schema checks and Playwright browser tests.
+- Cloudflare Pages production is connected to GitHub `Nabeelwasti/Deverve-Official`, branch `main`, `npm run build`, output `dist`. Latest Pages deployment after the README update is `72572260-5ebb-469e-8f61-56616c65534d` and is active.
+- Production D1: `deverve-production`, ID `355da876-17c4-4762-a59d-bb85f2e4551b`; private R2 binding: `deverve-media-private`.
+- Migration `0017_single_promotion_per_order.sql` was applied to production after checking the four columns were absent. A fresh `PRAGMA table_info(orders)` confirmed `discount_code`, `discount_label`, `discount_amount_paisa` and `free_delivery` are now present. Production currently has 42 tables and no migration-tracking table; record manual production migrations here and in the readiness report.
+- Production D1 counts at this read: 1 active owner, 3 media assets, 0 products, 0 variants, 0 vehicles, 0 customers, 0 orders, 0 rentals, 0 owner notifications and 0 CMS pages.
+- The Turnstile verifier Worker has a `TURNSTILE_SECRET` binding. The CNIC-retention Worker has D1/R2 bindings and a daily `0 3 * * *` schedule. CNIC uploads remain disabled.
+- Pages production environment currently exposes only the `ADMIN_BOOTSTRAP_TOKEN` variable name; Safepay and Resend production secrets are not configured. COD remains the only active payment method.
+- Safepay sandbox/live code exists but no merchant credentials or end-to-end transaction are configured/tested. PayFast is not integrated: its public API docs show direct card/account/wallet data endpoints, but no verified merchant-specific hosted OneCheckout redirect contract. Never collect PAN/CVV on De VERVE pages.
+- Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery still needs an API key and verified sender domain/address. Customer exchange requests are WhatsApp-assisted; no in-site exchange case manager exists yet.
+- The old `feat/commerce-os-foundation` branch contains copies of the CMS blueprint and migration 0002 already present on main; do not merge its stale divergent history. The payments PR branch is merged and should not be used for further work.
+- Public HTTP requests to the Pages hostname were blocked by the available verification environment, so the latest Cloudflare deployment status is verified but a fresh external HTTP smoke check remains unverified here.
+
+## Next work
+1. Continue directly on `main` with one coherent commit at a time.
+2. Close code-completable gaps (especially an in-site exchange workflow and any missing integration regression coverage) without inventing provider credentials or business data.
+3. Keep COD as the only enabled method until a real provider is onboarded and sandbox transactions/webhooks are tested.
+4. Keep CNIC upload disabled until owner-approved retention terms and actual deletion verification.
+5. Do not claim unrestricted production readiness while catalogue/fleet records, verified sender, payment merchant credentials, custom domain and owner-approved business/legal information are missing.
+
+---
+
 # De VERVE website — active session handoff
 
 Last reconciled: 15 November 2026 (Asia/Karachi)
