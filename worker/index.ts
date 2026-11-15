@@ -639,7 +639,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const now = new Date().toISOString();
   const uploadToken = base64Url(crypto.getRandomValues(new Uint8Array(32)));
   const uploadTokenHash = await sha256(uploadToken);
-  const uploadExpiresAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+  const uploadExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   try {
     const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
       .bind(id, vehicleId, name, phone, pickup, destination, pickupAt, returnAt, driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, returnAt, pickupAt).run();
@@ -721,7 +721,7 @@ async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): 
       if (!doc) return error("Rental document not found", 404);
       const object = await env.MEDIA.get(doc.object_key);
       if (!object) return error("Rental document not found", 404);
-      return new Response(object.body, { headers: { "content-type": doc.mime_type, "cache-control": "private, no-store", "x-content-type-options": "nosniff", "content-disposition": "attachment; filename=\"" + doc.document_side + ".jpg\"" } });
+      return new Response(object.body, { headers: { "content-type": doc.mime_type, "cache-control": "private, no-store", "x-content-type-options": "nosniff", "content-disposition": "attachment; filename=\"" + doc.document_side + (doc.mime_type === "image/png" ? ".png" : doc.mime_type === "image/webp" ? ".webp" : ".jpg") + "\"" } });
     } catch { return error("Rental document could not be loaded", 503); }
   }
   if (request.method === "DELETE") {
