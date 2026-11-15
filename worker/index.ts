@@ -874,7 +874,7 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
     try {
       const rows = await env.DB.prepare("SELECT a.id, a.media_type, a.mime_type, a.byte_size, a.alt_text, a.caption, a.status, pm.position, pm.is_primary FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = ? AND a.status = 'ready' ORDER BY pm.position, a.created_at")
         .bind(collection[1]).all<Record<string, unknown>>();
-      return json({ media: (rows.results ?? []).map((row) => ({ ...row, url: "/media/" + row.id })) });
+      return json({ media: (rows.results ?? []).map((row) => ({ ...row, url: "/api/admin/media/" + row.id + "/file" })) });
     } catch { return error("Product media could not be loaded", 503); }
   }
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
