@@ -5,6 +5,7 @@ import WholesaleQuote from "./WholesaleQuote";
 import DeliveryFeeApproval from "./DeliveryFeeApproval";
 import Policies from "./Policies";
 import CustomerAccount from "./CustomerAccount";
+import PublicPage from "./PublicPage";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -531,6 +532,6 @@ function Storefront() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/account") ? <CustomerAccount /> : window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
+  return window.location.pathname.startsWith("/pages/") ? <PublicPage /> : window.location.pathname.startsWith("/account") ? <CustomerAccount /> : window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
 }
 
