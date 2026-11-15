@@ -1005,8 +1005,8 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
   if (assetMatch && request.method === "DELETE") {
     if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive media", 403);
     try {
-      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? LIMIT 1").bind(assetMatch[1]).first<{ id: string }>();
-      if (used) return error("This image is assigned to a product. Remove it from the product before archiving.", 409);
+      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? UNION ALL SELECT product_id AS id FROM product_media_assets WHERE media_asset_id = ? LIMIT 1").bind(assetMatch[1], assetMatch[1]).first<{ id: string }>();
+      if (used) return error("This media item is assigned to a product. Remove it from the product gallery before archiving.", 409);
       const result = await env.DB.prepare("UPDATE media_assets SET status = 'archived', updated_at = ? WHERE id = ? AND status <> 'archived'").bind(new Date().toISOString(), assetMatch[1]).run();
       if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404);
       await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "media.archived", "media_asset", assetMatch[1], "{}").run();
@@ -1512,6 +1512,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
 
   const orderResponse = await adminOrderRoutes(request, env, url);
   if (orderResponse) return orderResponse;
+
+  const productMediaResponse = await adminProductMediaRoutes(request, env, url);
+  if (productMediaResponse) return productMediaResponse;
 
   const mediaResponse = await adminMediaRoutes(request, env, url);
   if (mediaResponse) return mediaResponse;
