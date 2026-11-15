@@ -38,7 +38,29 @@ export default {
       expired_upload_tokens: expiredTokens.meta?.changes || 0
     }));
   },
-  async fetch() {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    if (request.method === "GET" && url.pathname === "/health") {
+      try {
+        const result = await env.DB.prepare("SELECT 1 AS ok").first();
+        const healthy = result?.ok === 1 && Boolean(env.MEDIA);
+        return new Response(JSON.stringify({
+          status: healthy ? "ok" : "unavailable",
+          database_connected: result?.ok === 1,
+          private_storage_binding: Boolean(env.MEDIA),
+          closed_request_retention_days: 30,
+          unresolved_request_retention_days: 90
+        }), {
+          status: healthy ? 200 : 503,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }
+        });
+      } catch {
+        return new Response(JSON.stringify({ status: "unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" }
+        });
+      }
+    }
     return new Response("Not found", { status: 404, headers: { "cache-control": "no-store" } });
   }
 };
