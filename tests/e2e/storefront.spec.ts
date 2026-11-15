@@ -67,6 +67,8 @@ test("rental request form validates and submits without creating a real booking"
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
   await page.getByRole("button", { name: "Request a rental" }).click();
   const dialog = page.getByRole("dialog", { name: "Request a rental." });
   await expect(dialog).toBeVisible();
