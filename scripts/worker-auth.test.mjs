@@ -1433,3 +1433,12 @@ test("owner notifications are private, readable and can be marked as read", asyn
   const all = await handleRequest(request("/api/admin/notifications/read-all","POST",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(all.status,200);
 });
+
+
+test("Safepay production credentials remain disabled until the explicit live switch is enabled", async () => {
+  const base = { ...env(new FakeD1()), SAFEPAY_ENV:"production", SAFEPAY_MERCHANT_API_KEY:"production-public-key", SAFEPAY_SECRET_KEY:"production-secret", SAFEPAY_WEBHOOK_SECRET:"production-webhook-secret" };
+  const disabled = await handleRequest(request("/api/storefront/payment-options","GET"),base);
+  assert.deepEqual(await disabled.json(),{online_payment_available:false,environment:null});
+  const enabled = await handleRequest(request("/api/storefront/payment-options","GET"),{...base,SAFEPAY_LIVE_ENABLED:"true"});
+  assert.deepEqual(await enabled.json(),{online_payment_available:true,environment:"production"});
+});
