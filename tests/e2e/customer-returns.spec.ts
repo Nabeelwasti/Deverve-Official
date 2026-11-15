@@ -57,7 +57,7 @@ test("signed-in customer can submit and track an eligible delivered-order exchan
   await page.getByLabel("Tell us what happened").fill("The current size is too small; please exchange it for size L.");
   await page.getByRole("button", { name: "Submit exchange request" }).click();
 
-  await expect(page.getByText("DV-EX-TEST-123")).toBeVisible();
+  await expect(page.getByText("DV-EX-TEST-123").first()).toBeVisible();
   await expect(page.getByText(/Exchange request DV-EX-TEST-123 has been submitted/)).toBeVisible();
   expect(submitted).toMatchObject({
     reason: "size_issue",
