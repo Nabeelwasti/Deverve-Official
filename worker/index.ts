@@ -1922,7 +1922,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     const fullName = cleanText(body.full_name, 100);
     const phone = cleanText(body.phone, 24);
     const password = typeof body.password === "string" ? body.password : "";
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || fullName.length < 2 || !validPhone(phone) || password.length < 12 || password.length > 128) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || fullName.length < 2 || !validPhone(phone) || password.length < 12 || password.length > 128) {
       return error("Enter a valid email, name, phone number and a password of at least 12 characters.", 400);
     }
     try {
@@ -1954,7 +1954,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     if (!body) return error("Please submit valid sign-in details", 400);
     const email = cleanText(body.email, 160).toLowerCase();
     const password = typeof body.password === "string" ? body.password : "";
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
     try {
       const customer = await env.DB.prepare("SELECT id, email, password_hash, full_name, phone, status FROM customers WHERE email = ? COLLATE NOCASE LIMIT 1")
         .bind(email).first<{ id: string; email: string; password_hash: string; full_name: string; phone: string; status: string }>();
