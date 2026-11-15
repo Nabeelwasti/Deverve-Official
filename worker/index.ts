@@ -492,7 +492,7 @@ interface CheckoutVariantRow {
 interface OrderRow {
   id: string; order_number: string; customer_name: string; phone: string; email: string | null;
   delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number;
-  total_paisa: number; payment_method: string; payment_provider: string; payment_status: string; order_status: string;
+  total_paisa: number; discount_code: string; discount_label: string; discount_amount_paisa: number; free_delivery: number; payment_method: string; payment_provider: string; payment_status: string; order_status: string;
   delivery_fee_status: string; delivery_fee_expires_at: string | null;
   customer_note: string; created_at: string; updated_at: string;
 }
@@ -602,7 +602,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
-    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
+    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
     try {
@@ -738,7 +738,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const limitValue = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
     try {
-      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
         .bind(limit).all<OrderRow>();
       const orders = result.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -758,10 +758,11 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     if (!Number.isSafeInteger(deliveryFee) || Number(deliveryFee) < 0 || Number(deliveryFee) > 100_000_000) return error("Enter a valid delivery fee between Rs. 0 and Rs. 1,000,000.", 400);
     const id = deliveryFeeMatch[1];
     try {
-      const current = await env.DB.prepare("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; subtotal_paisa: number }>();
+      const current = await env.DB.prepare("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; subtotal_paisa: number; discount_amount_paisa: number; free_delivery: number }>();
       if (!current) return error("Order not found", 404);
       if (!["pending", "confirmed"].includes(current.order_status)) return error("A delivery quotation can only be prepared before fulfilment begins.", 409);
-      const total = current.subtotal_paisa + Number(deliveryFee);
+      if (current.free_delivery === 1) return error("This order already qualifies for its single free-delivery offer. No additional delivery charge can be added.", 409);
+      const total = current.subtotal_paisa - current.discount_amount_paisa + Number(deliveryFee);
       if (!Number.isSafeInteger(total)) return error("The final order total is outside the supported range.", 400);
       const token = base64Url(crypto.getRandomValues(new Uint8Array(32)));
       const tokenHash = await sha256(token);
@@ -2665,7 +2666,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
 
   if (path === "/api/customer/orders" && request.method === "GET") {
     try {
-      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
+      const rows = await env.DB.prepare("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50")
         .bind(customer.customer_id).all<Record<string, unknown>>();
       const orders = rows.results ?? [];
       if (!orders.length) return json({ orders: [] });
