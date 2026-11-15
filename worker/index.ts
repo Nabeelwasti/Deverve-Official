@@ -36,6 +36,7 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
   try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
   const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(value)):[];
   if(!to.length)return;
+  const now=new Date().toISOString();
   let rows:Record<string,unknown>[]=[];
   try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
   for(const row of rows){
