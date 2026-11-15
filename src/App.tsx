@@ -74,7 +74,7 @@ function Storefront() {
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [checkoutResult, setCheckoutResult] = useState("");
   const [checkoutToken, setCheckoutToken] = useState(() => crypto.randomUUID());
-  const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "" });
+  const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
@@ -347,6 +347,7 @@ function Storefront() {
               <label>City<input required minLength={2} maxLength={80} autoComplete="address-level2" value={checkoutForm.city} onChange={(event) => setCheckoutForm({ ...checkoutForm, city: event.target.value })} /></label>
               <label className="checkout-address">Complete delivery address<textarea required minLength={8} maxLength={300} rows={3} autoComplete="street-address" value={checkoutForm.delivery_address} onChange={(event) => setCheckoutForm({ ...checkoutForm, delivery_address: event.target.value })} /></label>
               <label className="checkout-address">Order note (optional)<textarea maxLength={500} rows={2} value={checkoutForm.customer_note} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_note: event.target.value })} /></label>
+              <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={checkoutForm.website} onChange={(event) => setCheckoutForm({ ...checkoutForm, website: event.target.value })} /></label>
             </div>
             <p className="checkout-disclaimer">No online payment is collected. De VERVE will send a secure link to confirm delivery charges and your final COD total before dispatch.</p>
             {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
