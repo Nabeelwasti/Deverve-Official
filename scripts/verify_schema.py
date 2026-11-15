@@ -18,6 +18,7 @@ required_tables = {
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
+    "return_requests", "return_request_items", "return_status_events",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -32,6 +33,8 @@ order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
 assert "checkout_token" in order_columns, "Checkout idempotency column is missing"
 assert "payment_provider" in order_columns, "Payment provider selection column is missing"
+return_columns = {row[1] for row in db.execute("PRAGMA table_info(return_requests)")}
+assert {"order_id", "customer_id", "status", "refund_amount_paisa", "refund_method", "refund_reference"} <= return_columns, "Return/refund workflow fields are missing"
 assert {"delivery_fee_status", "delivery_fee_token_hash", "delivery_fee_expires_at", "delivery_fee_quote_sent_at", "delivery_fee_accepted_at"} <= order_columns, "Customer-approved delivery fee workflow fields are missing"
 quote_columns = {row[1] for row in db.execute("PRAGMA table_info(wholesale_quotes)")}
 assert {"approval_token", "delivery_address", "city", "converted_order_id"} <= quote_columns, "Wholesale approval fields are missing"

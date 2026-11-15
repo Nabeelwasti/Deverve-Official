@@ -590,6 +590,66 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
   } catch { return error("Your decision could not be saved. Please contact De VERVE.", 503); }
 }
 
+async function adminReturnRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection = url.pathname === "/api/admin/returns";
+  const match = url.pathname.match(/^\/api\/admin\/returns\/([a-f0-9-]{36})$/i);
+  if (!collection && !match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Return management is temporarily unavailable.", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to manage returns.", 403);
+
+  if (collection && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT r.id, r.order_id, r.customer_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number, o.payment_provider, o.payment_status, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone FROM return_requests r JOIN orders o ON o.id = r.order_id JOIN customers c ON c.id = r.customer_id ORDER BY r.created_at DESC LIMIT 100")
+        .all<Record<string, unknown>>();
+      const returns = rows.results ?? [];
+      if (!returns.length) return json({ returns: [] });
+      const ids = returns.map((item) => String(item.id));
+      const placeholders = ids.map(() => "?").join(",");
+      const items = await env.DB.prepare("SELECT ri.id, ri.return_request_id, ri.order_item_id, ri.quantity, ri.unit_refund_paisa, oi.product_name_snapshot, oi.sku_snapshot, oi.size_snapshot, oi.color_snapshot FROM return_request_items ri JOIN order_items oi ON oi.id = ri.order_item_id WHERE ri.return_request_id IN (" + placeholders + ") ORDER BY ri.rowid")
+        .bind(...ids).all<Record<string, unknown>>();
+      const grouped = new Map<string, Record<string, unknown>[]>();
+      for (const item of items.results ?? []) { const id = String(item.return_request_id); grouped.set(id, [...(grouped.get(id) ?? []), item]); }
+      return json({ returns: returns.map((item) => ({ ...item, items: grouped.get(String(item.id)) ?? [] })) });
+    } catch { return error("Return requests could not be loaded.", 503); }
+  }
+
+  if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  const body = await readJson(request, 4_000);
+  const nextStatus = cleanText(body?.status, 20);
+  const adminNote = cleanText(body?.admin_note, 500);
+  const refundMethod = cleanText(body?.refund_method, 30);
+  const refundReference = cleanText(body?.refund_reference, 120);
+  if (!["approved", "rejected", "received", "refunded"].includes(nextStatus)) return error("Choose a valid return status.", 400);
+  if (nextStatus === "refunded" && (!["bank_transfer", "cash", "store_credit"].includes(refundMethod) || refundReference.length < 3)) return error("Record the manual refund method and its reference before completing this request.", 400);
+  try {
+    const current = await env.DB.prepare("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ? LIMIT 1")
+      .bind(match[1]).first<{ id: string; order_id: string; status: string; refund_amount_paisa: number }>();
+    if (!current) return error("Return request not found.", 404);
+    const allowed: Record<string, string[]> = {
+      requested: ["approved", "rejected"],
+      approved: ["received"],
+      received: ["refunded"],
+      rejected: [],
+      refunded: [],
+    };
+    if (!allowed[current.status]?.includes(nextStatus)) return error("That return status change is not allowed.", 409);
+    const now = new Date().toISOString();
+    const results = await env.DB.batch([
+      env.DB.prepare("UPDATE return_requests SET status = ?, admin_note = ?, refund_method = COALESCE(?, refund_method), refund_reference = COALESCE(?, refund_reference), reviewed_by_admin_id = CASE WHEN ? IN ('approved','rejected') THEN ? ELSE reviewed_by_admin_id END, received_at = CASE WHEN ? = 'received' THEN ? ELSE received_at END, refunded_at = CASE WHEN ? = 'refunded' THEN ? ELSE refunded_at END, updated_at = ? WHERE id = ? AND status = ?")
+        .bind(nextStatus, adminNote, nextStatus === "refunded" ? refundMethod : null, nextStatus === "refunded" ? refundReference : null, nextStatus, admin.admin_user_id, nextStatus, now, nextStatus, now, now, current.id, current.status),
+      env.DB.prepare("INSERT INTO return_status_events (id, return_request_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, ?, ?, 'admin', ?, ? WHERE EXISTS (SELECT 1 FROM return_requests WHERE id = ? AND status = ?)")
+        .bind(crypto.randomUUID(), current.id, current.status, nextStatus, admin.admin_user_id, adminNote || "Return status updated by De VERVE team", current.id, nextStatus),
+      env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, ?, 'return_request', ?, ? WHERE EXISTS (SELECT 1 FROM return_requests WHERE id = ? AND status = ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, "return.status_changed", current.id, JSON.stringify({ from: current.status, to: nextStatus, refund_method: nextStatus === "refunded" ? refundMethod : null, refund_reference: nextStatus === "refunded" ? refundReference : null }), current.id, nextStatus),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Return request changed while you were updating it. Refresh and try again.", 409);
+    return json({ updated: true, status: nextStatus, refund_amount_paisa: current.refund_amount_paisa });
+  } catch { return error("Return request could not be updated.", 503); }
+}
+
 async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/orders";
   const match = url.pathname.match(/^\/api\/admin\/orders\/([a-f0-9-]{36})$/i);
@@ -1855,6 +1915,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const settingsResponse = await adminStoreSettingsRoutes(request, env, url);
   if(settingsResponse)return settingsResponse;
 
+  const returnAdminResponse = await adminReturnRoutes(request, env, url);
+  if (returnAdminResponse) return returnAdminResponse;
+
   const orderResponse = await adminOrderRoutes(request, env, url);
   if (orderResponse) return orderResponse;
 
@@ -2039,8 +2102,9 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
   const path = url.pathname;
   if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? "sandbox" : null });
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
-  const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals"];
-  if (!accountPaths.includes(path) && !paymentMatch) return null;
+  const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
+  const accountPaths = ["/api/customer/register", "/api/customer/login", "/api/customer/me", "/api/customer/logout", "/api/customer/profile", "/api/customer/password", "/api/customer/orders", "/api/customer/rentals", "/api/customer/returns"];
+  if (!accountPaths.includes(path) && !paymentMatch && !customerReturnMatch) return null;
 
   if (path === "/api/customer/register" && request.method === "POST") {
     const limited = await enforcePublicRateLimit(request, env, "customer-register", 3);
@@ -2215,6 +2279,82 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
       if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Your password could not be changed.", 409);
       return json({ updated: true, message: "Password changed. Other signed-in sessions have been signed out." });
     } catch { return error("Your password could not be changed. Please try again.", 503); }
+  }
+
+  if (path === "/api/customer/returns" && request.method === "GET") {
+    try {
+      const rows = await env.DB.prepare("SELECT r.id, r.order_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number FROM return_requests r JOIN orders o ON o.id = r.order_id WHERE r.customer_id = ? ORDER BY r.created_at DESC LIMIT 50")
+        .bind(customer.customer_id).all<Record<string, unknown>>();
+      const returns = rows.results ?? [];
+      if (!returns.length) return json({ returns: [] });
+      const ids = returns.map((item) => String(item.id));
+      const placeholders = ids.map(() => "?").join(",");
+      const items = await env.DB.prepare("SELECT ri.id, ri.return_request_id, ri.order_item_id, ri.quantity, ri.unit_refund_paisa, oi.product_name_snapshot, oi.sku_snapshot, oi.size_snapshot, oi.color_snapshot FROM return_request_items ri JOIN order_items oi ON oi.id = ri.order_item_id WHERE ri.return_request_id IN (" + placeholders + ") ORDER BY ri.rowid")
+        .bind(...ids).all<Record<string, unknown>>();
+      const grouped = new Map<string, Record<string, unknown>[]>();
+      for (const item of items.results ?? []) { const id = String(item.return_request_id); grouped.set(id, [...(grouped.get(id) ?? []), item]); }
+      const events = await env.DB.prepare("SELECT id, return_request_id, from_status, to_status, actor_type, note, created_at FROM return_status_events WHERE return_request_id IN (" + placeholders + ") ORDER BY created_at, rowid")
+        .bind(...ids).all<Record<string, unknown>>();
+      const eventGroups = new Map<string, Record<string, unknown>[]>();
+      for (const event of events.results ?? []) { const id = String(event.return_request_id); eventGroups.set(id, [...(eventGroups.get(id) ?? []), event]); }
+      return json({ returns: returns.map((item) => ({ ...item, items: grouped.get(String(item.id)) ?? [], events: eventGroups.get(String(item.id)) ?? [] })) });
+    } catch { return error("Your return requests could not be loaded. Please try again.", 503); }
+  }
+
+  if (customerReturnMatch && request.method === "POST") {
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 8_000);
+    if (!body || !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) return error("Select at least one item to return.", 400);
+    const reason = cleanText(body.reason, 30);
+    const details = cleanText(body.details, 1000);
+    if (!["wrong_item", "damaged", "size_issue", "not_as_described", "other"].includes(reason) || details.length < 10) return error("Choose a return reason and provide at least 10 characters of detail.", 400);
+    const quantities = new Map<string, number>();
+    for (const raw of body.items) {
+      if (!raw || typeof raw !== "object") return error("A selected return item is invalid.", 400);
+      const item = raw as Record<string, unknown>;
+      const itemId = cleanText(item.order_item_id, 64);
+      const quantity = item.quantity;
+      if (!/^[a-f0-9-]{36}$/i.test(itemId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 10 || quantities.has(itemId)) return error("Check the return item selections and quantities.", 400);
+      quantities.set(itemId, Number(quantity));
+    }
+    try {
+      const order = await env.DB.prepare("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ? LIMIT 1")
+        .bind(customerReturnMatch[1], customer.customer_id).first<{ id: string; order_number: string; order_status: string; updated_at: string }>();
+      if (!order) return error("Order not found in your account.", 404);
+      if (order.order_status !== "delivered") return error("A return can only be requested after delivery.", 409);
+      const deliveredAt = Date.parse(order.updated_at);
+      if (!Number.isFinite(deliveredAt) || Date.now() - deliveredAt > 7 * 24 * 60 * 60 * 1000 || deliveredAt > Date.now() + 5 * 60 * 1000) return error("The 7-calendar-day return request window has expired.", 409);
+      const placeholders = [...quantities.keys()].map(() => "?").join(",");
+      const selected = await env.DB.prepare("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN (" + placeholders + ")")
+        .bind(order.id, ...quantities.keys()).all<{ id: string; quantity: number; unit_price_paisa: number }>();
+      const orderItems = selected.results ?? [];
+      if (orderItems.length !== quantities.size) return error("One or more selected items do not belong to this order.", 400);
+      let refundAmount = 0;
+      for (const item of orderItems) {
+        const quantity = quantities.get(item.id) ?? 0;
+        if (quantity > item.quantity || !Number.isSafeInteger(item.unit_price_paisa) || item.unit_price_paisa < 0) return error("Return quantity exceeds the purchased quantity.", 400);
+        const lineRefund = quantity * item.unit_price_paisa;
+        if (!Number.isSafeInteger(lineRefund) || !Number.isSafeInteger(refundAmount + lineRefund)) return error("Return amount is outside the supported range.", 400);
+        refundAmount += lineRefund;
+      }
+      const id = crypto.randomUUID();
+      const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
+      const returnNumber = "DV-RET-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
+      const statements = [
+        env.DB.prepare("INSERT INTO return_requests (id, order_id, customer_id, return_number, reason, details, refund_amount_paisa) VALUES (?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, order.id, customer.customer_id, returnNumber, reason, details, refundAmount),
+      ];
+      for (const item of orderItems) statements.push(env.DB.prepare("INSERT INTO return_request_items (id, return_request_id, order_item_id, quantity, unit_refund_paisa) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), id, item.id, quantities.get(item.id), item.unit_price_paisa));
+      statements.push(env.DB.prepare("INSERT INTO return_status_events (id, return_request_id, from_status, to_status, actor_type, actor_id, note) VALUES (?, ?, NULL, 'requested', 'customer', ?, 'Return request submitted')")
+        .bind(crypto.randomUUID(), id, customer.customer_id));
+      await env.DB.batch(statements);
+      return json({ accepted: true, return_number: returnNumber, refund_amount_paisa: refundAmount }, 201);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      if (/unique|constraint/i.test(message)) return error("A return request already exists for this order.", 409);
+      return error("Your return request could not be submitted. Please try again.", 503);
+    }
   }
 
   if (path === "/api/customer/orders" && request.method === "GET") {

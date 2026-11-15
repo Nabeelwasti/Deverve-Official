@@ -68,6 +68,58 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal((await duplicate.json()).duplicate, true);
 });
 
+test("customers can request a return only for their delivered order within seven days", async () => {
+  const db = new FakeD1();
+  const registered = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Return Customer", phone: "+923001234567", email: "returns@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.90", "sec-fetch-site": "same-origin" }), env(db));
+  const customerId = (await registered.json()).customer.id;
+  const cookie = registered.headers.get("set-cookie").split(";")[0];
+  const orderId = crypto.randomUUID(), itemId = crypto.randomUUID();
+  db.orders.set(orderId, { id: orderId, customer_id: customerId, order_number: "DV-RETURN-001", order_status: "delivered", updated_at: new Date().toISOString(), payment_provider: "manual", payment_status: "pending" });
+  db.orderItems.push({ id: itemId, order_id: orderId, quantity: 2, unit_price_paisa: 125000, product_name_snapshot: "Stretch Hoodie", sku_snapshot: "DV-HOOD-M", size_snapshot: "M", color_snapshot: "Navy" });
+  const submitted = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
+    reason: "damaged", details: "The seam is open near the left sleeve.", items: [{ order_item_id: itemId, quantity: 1 }],
+  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(submitted.status, 201);
+  const payload = await submitted.json();
+  assert.equal(payload.refund_amount_paisa, 125000);
+  assert.match(payload.return_number, /^DV-RET-/);
+  assert.equal(db.returnRequests.size, 1);
+  const history = await handleRequest(new Request(origin + "/api/customer/returns", { headers: { cookie } }), env(db));
+  assert.equal(history.status, 200);
+  assert.equal((await history.json()).returns[0].items[0].quantity, 1);
+  const duplicate = await handleRequest(request("/api/customer/orders/" + orderId + "/returns", "POST", {
+    reason: "damaged", details: "Another note for this order.", items: [{ order_item_id: itemId, quantity: 1 }],
+  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(duplicate.status, 409);
+});
+
+test("return requests can only be refunded after approval and receipt with a manual refund reference", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const orderId = crypto.randomUUID(), customerId = crypto.randomUUID(), returnId = crypto.randomUUID();
+  db.orders.set(orderId, { id: orderId, order_number: "DV-RETURN-002" });
+  db.customers.set(customerId, { id: customerId, full_name: "Refund Customer", email: "refund@example.com", phone: "+923001234567" });
+  db.returnRequests.set(returnId, { id: returnId, order_id: orderId, customer_id: customerId, return_number: "DV-RET-TEST", status: "requested", refund_amount_paisa: 125000, refund_method: null, refund_reference: null, admin_note: "" });
+  const early = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { status: "refunded", refund_method: "bank_transfer", refund_reference: "BANK-12345" }, headers), env(db));
+  assert.equal(early.status, 409);
+  const approved = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { status: "approved", admin_note: "Return approved." }, headers), env(db));
+  assert.equal(approved.status, 200);
+  const received = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { status: "received", admin_note: "Items received for inspection." }, headers), env(db));
+  assert.equal(received.status, 200);
+  const missingReference = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { status: "refunded", refund_method: "bank_transfer" }, headers), env(db));
+  assert.equal(missingReference.status, 400);
+  const refunded = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { status: "refunded", refund_method: "bank_transfer", refund_reference: "BANK-12345", admin_note: "Manual transfer completed." }, headers), env(db));
+  assert.equal(refunded.status, 200);
+  assert.equal(db.returnRequests.get(returnId).status, "refunded");
+  assert.equal(db.returnRequests.get(returnId).refund_reference, "BANK-12345");
+  assert.equal(db.returnStatusEvents.length, 3);
+});
+
 test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wall-clock dates", () => {
   assert.equal(parseRentalDateTime("2026-11-15T10:30"), Date.parse("2026-11-15T05:30:00.000Z"));
   assert.equal(parseRentalDateTime("2026-11-15T10:30:45"), Date.parse("2026-11-15T05:30:45.000Z"));
@@ -297,6 +349,9 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
+    if (q.startsWith("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ?")) { const row = this.db.orders.get(v[0]); return row?.customer_id === v[1] ? row : null; }
+    if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) { const ids = new Set(v.slice(1)); return null; }
+    if (q.startsWith("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.provider_reference === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
@@ -359,6 +414,38 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT r.id, r.order_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number FROM return_requests r")) {
+      const rows = [...this.db.returnRequests.values()].filter((row) => row.customer_id === v[0]).map((row) => ({ ...row, order_number: this.db.orders.get(row.order_id)?.order_number }));
+      return { success: true, results: rows };
+    }
+    if (q.startsWith("SELECT ri.id, ri.return_request_id, ri.order_item_id, ri.quantity, ri.unit_refund_paisa, oi.product_name_snapshot")) {
+      const ids = new Set(v); return { success: true, results: this.db.returnRequestItems.filter((row) => ids.has(row.return_request_id)).map((row) => ({ ...row, ...this.db.orderItems.find((item) => item.id === row.order_item_id) })) };
+    }
+    if (q.startsWith("SELECT id, return_request_id, from_status, to_status, actor_type, note, created_at FROM return_status_events")) {
+      const ids = new Set(v); return { success: true, results: this.db.returnStatusEvents.filter((row) => ids.has(row.return_request_id)) };
+    }
+    if (q.startsWith("SELECT r.id, r.order_id, r.customer_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number")) {
+      const rows = [...this.db.returnRequests.values()].map((row) => ({ ...row, order_number: this.db.orders.get(row.order_id)?.order_number, payment_provider: this.db.orders.get(row.order_id)?.payment_provider, payment_status: this.db.orders.get(row.order_id)?.payment_status, customer_name: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.full_name, customer_email: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.email, customer_phone: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.phone }));
+      return { success: true, results: rows };
+    }
+    if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) {
+      const ids = new Set(v.slice(1));
+      return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0] && ids.has(row.id)) };
+    }
+    if (q.startsWith("SELECT r.id, r.order_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number FROM return_requests r")) {
+      const rows = [...this.db.returnRequests.values()].filter((row) => row.customer_id === v[0]).map((row) => ({ ...row, order_number: this.db.orders.get(row.order_id)?.order_number }));
+      return { success: true, results: rows };
+    }
+    if (q.startsWith("SELECT r.id, r.order_id, r.customer_id, r.return_number, r.reason, r.details, r.status, r.refund_amount_paisa, r.refund_method, r.refund_reference, r.admin_note, r.created_at, r.updated_at, o.order_number")) {
+      const rows = [...this.db.returnRequests.values()].map((row) => ({ ...row, order_number: this.db.orders.get(row.order_id)?.order_number, payment_provider: this.db.orders.get(row.order_id)?.payment_provider, payment_status: this.db.orders.get(row.order_id)?.payment_status, customer_name: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.full_name, customer_email: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.email, customer_phone: [...this.db.customers.values()].find((customer) => customer.id === row.customer_id)?.phone }));
+      return { success: true, results: rows };
+    }
+    if (q.startsWith("SELECT ri.id, ri.return_request_id, ri.order_item_id, ri.quantity, ri.unit_refund_paisa, oi.product_name_snapshot")) {
+      const ids = new Set(v); return { success: true, results: this.db.returnRequestItems.filter((row) => ids.has(row.return_request_id)).map((row) => ({ ...row, ...this.db.orderItems.find((item) => item.id === row.order_item_id) })) };
+    }
+    if (q.startsWith("SELECT id, return_request_id, from_status, to_status, actor_type, note, created_at FROM return_status_events")) {
+      const ids = new Set(v); return { success: true, results: this.db.returnStatusEvents.filter((row) => ids.has(row.return_request_id)) };
+    }
     if (q.startsWith("SELECT id, order_id, from_status, to_status, actor_type, note, created_at FROM order_status_events WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderStatusEvents.filter((row) => ids.has(row.order_id)) }; }
     if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) }; }
@@ -422,6 +509,34 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO return_requests")) {
+      const [id, order_id, customer_id, return_number, reason, details, refund_amount_paisa] = v;
+      if ([...this.db.returnRequests.values()].some((row) => row.order_id === order_id)) throw new Error("UNIQUE constraint failed: return_requests.order_id");
+      this.db.returnRequests.set(id, { id, order_id, customer_id, return_number, reason, details, status: "requested", refund_amount_paisa, refund_method: null, refund_reference: null, admin_note: "", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO return_request_items")) {
+      const [id, return_request_id, order_item_id, quantity, unit_refund_paisa] = v;
+      this.db.returnRequestItems.push({ id, return_request_id, order_item_id, quantity, unit_refund_paisa });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO return_status_events")) {
+      const actor_type = q.includes("'customer'") ? "customer" : "admin";
+      const id = v[0], return_request_id = v[1];
+      const from_status = actor_type === "customer" ? null : v[2];
+      const to_status = actor_type === "customer" ? "requested" : v[3];
+      const actor_id = actor_type === "customer" ? v[2] : v[4];
+      const note = actor_type === "customer" ? "Return request submitted" : v[5];
+      this.db.returnStatusEvents.push({ id, return_request_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE return_requests SET status = ?")) {
+      const [status, admin_note, refund_method, refund_reference, reviewed_status, reviewed_by, received_status, received_at, refunded_status, refunded_at, updated_at, id, expected] = v;
+      const row = this.db.returnRequests.get(id);
+      if (!row || row.status !== expected) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status, admin_note, refund_method: refund_method ?? row.refund_method, refund_reference: refund_reference ?? row.refund_reference, reviewed_by_admin_id: reviewed_status === "approved" || reviewed_status === "rejected" ? reviewed_by : row.reviewed_by_admin_id, received_at: received_status === "received" ? received_at : row.received_at, refunded_at: refunded_status === "refunded" ? refunded_at : row.refunded_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("INSERT INTO payment_webhook_events")) {
       const [id, eventId, digest] = v;
       const previous = this.db.paymentWebhookEvents.get(eventId);
@@ -766,6 +881,9 @@ class FakeD1 {
   attempts = new Map();
   paymentAttempts = new Map();
   paymentWebhookEvents = new Map();
+  returnRequests = new Map();
+  returnRequestItems = [];
+  returnStatusEvents = [];
   rateLimits = new Map();
   products = new Map();
   variants = new Map();
