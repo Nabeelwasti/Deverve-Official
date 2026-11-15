@@ -144,12 +144,94 @@ test("CNIC document uploads stay disabled until a retention policy is approved",
   assert.match(payload.error, /disabled/i);
 });
 
+
+test("customer registration creates a secure session and stores a password hash", async () => {
+  const db = new FakeD1();
+  const response = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Test Customer", phone: "+923001234567", email: "customer@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.80", "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(response.status, 201);
+  const cookie = response.headers.get("set-cookie");
+  assert.match(cookie, /__Host-deverve_customer=/);
+  assert.match(cookie, /HttpOnly/);
+  assert.match(cookie, /Secure/);
+  assert.match(cookie, /SameSite=Strict/);
+  assert.equal(db.customers.size, 1);
+  assert.equal(db.customerSessions.size, 1);
+  assert.notEqual([...db.customers.values()][0].password_hash, "A-strong-customer-password-2026");
+  assert.equal([...db.customers.values()][0].email_verified_at, null);
+  const duplicate = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Test Customer", phone: "+923001234567", email: "customer@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.81", "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(duplicate.status, 409);
+  assert.equal(db.customers.size, 1);
+});
+
+test("customer sign-in, profile update, password change and logout are session protected", async () => {
+  const db = new FakeD1();
+  await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Test Customer", phone: "+923001234567", email: "customer@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.82", "sec-fetch-site": "same-origin" }), env(db));
+  const signedIn = await handleRequest(request("/api/customer/login", "POST", {
+    email: "customer@example.com", password: "A-strong-customer-password-2026",
+  }, { "cf-connecting-ip": "203.0.113.82", "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(signedIn.status, 200);
+  const cookie = signedIn.headers.get("set-cookie").split(";")[0];
+  const me = await handleRequest(new Request(origin + "/api/customer/me", { headers: { cookie } }), env(db));
+  assert.equal(me.status, 200);
+  assert.equal((await me.json()).customer.email, "customer@example.com");
+  const updated = await handleRequest(request("/api/customer/profile", "PATCH", {
+    full_name: "Updated Customer", phone: "+923001234568",
+  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(updated.status, 200);
+  assert.equal(db.customers.values().next().value.full_name, "Updated Customer");
+  const passwordChanged = await handleRequest(request("/api/customer/password", "PATCH", {
+    current_password: "A-strong-customer-password-2026", new_password: "Another-strong-password-2026",
+  }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(passwordChanged.status, 200);
+  const signedOut = await handleRequest(request("/api/customer/logout", "POST", {}, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(signedOut.status, 200);
+  assert.equal((await handleRequest(new Request(origin + "/api/customer/me", { headers: { cookie } }), env(db))).status, 401);
+});
+
+test("customer order history only returns orders owned by the authenticated account", async () => {
+  const db = new FakeD1();
+  const first = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "First Customer", phone: "+923001234567", email: "first@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.83", "sec-fetch-site": "same-origin" }), env(db));
+  const second = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Second Customer", phone: "+923001234568", email: "second@example.com",
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.84", "sec-fetch-site": "same-origin" }), env(db));
+  const firstId = (await first.json()).customer.id;
+  const secondId = (await second.json()).customer.id;
+  db.orders.set("order-first", { id: "order-first", customer_id: firstId, order_number: "DV-OWNED-001", city: "Jhelum", subtotal_paisa: 10000, delivery_fee_paisa: 0, total_paisa: 10000, payment_method: "cod", payment_status: "pending", order_status: "pending", delivery_fee_status: "pending_quote", created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+  const firstCookie = first.headers.get("set-cookie").split(";")[0];
+  const secondCookie = second.headers.get("set-cookie").split(";")[0];
+  const firstOrders = await handleRequest(new Request(origin + "/api/customer/orders", { headers: { cookie: firstCookie } }), env(db));
+  const secondOrders = await handleRequest(new Request(origin + "/api/customer/orders", { headers: { cookie: secondCookie } }), env(db));
+  assert.equal((await firstOrders.json()).orders.length, 1);
+  assert.equal((await secondOrders.json()).orders.length, 0);
+  assert.notEqual(firstId, secondId);
+});
+
 class FakeStatement {
   constructor(db, sql) { this.db = db; this.sql = sql.replace(/\s+/g, " ").trim(); this.values = []; }
   bind(...values) { this.values = values; return this; }
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT s.id, s.customer_id")) {
+      const session = [...this.db.customerSessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
+      const customer = session && this.db.customers.get(session.customer_id);
+      return customer?.status === "active" ? { id: session.id, customer_id: customer.id, email: customer.email, full_name: customer.full_name, phone: customer.phone, status: customer.status, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
+    }
+    if (q.startsWith("SELECT id, email, password_hash, full_name, phone, status FROM customers")) return [...this.db.customers.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
+    if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) return this.db.storeSettings.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
@@ -212,6 +294,9 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, payment_method, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
+    if (q.startsWith("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) }; }
+    if (q.startsWith("SELECT id, reference_code, vehicle_id, customer_name, pickup_city, pickup_address, destination_city, destination_address, pickup_at, return_at, driver_option, status, created_at FROM rental_requests WHERE customer_id = ?")) return { success: true, results: [...this.db.rentalRequests.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.position, pm.is_primary FROM product_media_assets")) {
       return { success: true, results: [] };
     }
@@ -271,6 +356,25 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO customers")) {
+      const [id, email, password_hash, full_name, phone] = v;
+      if ([...this.db.customers.values()].some((row) => row.email.toLowerCase() === email.toLowerCase())) throw new Error("UNIQUE constraint failed: customers.email");
+      this.db.customers.set(id, { id, email, password_hash, full_name, phone, status: "active", email_verified_at: null, last_login_at: null });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO customer_sessions")) {
+      const [id, customer_id, token_hash, expires_at] = v;
+      if (!this.db.customers.has(customer_id)) return { success: true, meta: { changes: 0 } };
+      this.db.customerSessions.set(id, { id, customer_id, token_hash, expires_at, revoked_at: null });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE customers SET last_login_at")) { const row = this.db.customers.get(v[2]); if (row) Object.assign(row, { last_login_at: v[0], updated_at: v[1] }); return { success: true, meta: { changes: row ? 1 : 0 } }; }
+    if (q.startsWith("UPDATE customers SET full_name")) { const row = this.db.customers.get(v[3]); if (row) Object.assign(row, { full_name: v[0], phone: v[1], updated_at: v[2] }); return { success: true, meta: { changes: row ? 1 : 0 } }; }
+    if (q.startsWith("UPDATE customers SET password_hash")) { const row = this.db.customers.get(v[2]); if (row) Object.assign(row, { password_hash: v[0], updated_at: v[1] }); return { success: true, meta: { changes: row ? 1 : 0 } }; }
+    if (q.startsWith("UPDATE customer_sessions SET revoked_at = ? WHERE customer_id")) { let changes = 0; for (const row of this.db.customerSessions.values()) if (row.customer_id === v[1] && row.id !== v[2] && !row.revoked_at) { row.revoked_at = v[0]; changes += 1; } return { success: true, meta: { changes } }; }
+    if (q.startsWith("UPDATE customer_sessions SET revoked_at")) { let changes = 0; for (const row of this.db.customerSessions.values()) if (row.token_hash === v[1] && !row.revoked_at) { row.revoked_at = v[0]; changes += 1; } return { success: true, meta: { changes } }; }
+    if (q.startsWith("UPDATE orders SET customer_id")) { const row = this.db.orders.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
+    if (q.startsWith("UPDATE rental_requests SET customer_id")) { const row = this.db.rentalRequests.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
     if (q.startsWith("INSERT INTO store_settings")) { const key = q.includes("cnic_uploads_enabled") ? "cnic_uploads_enabled" : v[0]; const value = q.includes("cnic_uploads_enabled") ? v[0] : v[1]; this.db.storeSettings.set(key, { setting_value_json: value }); return { success:true, meta:{changes:1} }; }
     if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
       const [fee, total, tokenHash, expiresAt, quotedAt, updatedAt, id] = v;
@@ -550,6 +654,8 @@ class FakeStatement {
 }
 
 class FakeD1 {
+  customers = new Map();
+  customerSessions = new Map();
   admins = new Map();
   sessions = new Map();
   attempts = new Map();
@@ -577,7 +683,7 @@ class FakeD1 {
 const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, ADMIN_BOOTSTRAP_TOKEN: token });
 const origin = "https://deverve.example";
 const request = (path, method, body, headers = {}) => {
-  const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals";
+  const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals" || path === "/api/customer/register";
   const payload = protectedPublicWrite && body && typeof body === "object"
     ? { ...body, turnstile_token: body.turnstile_token ?? "test-valid-token" }
     : body;

@@ -449,6 +449,8 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
   const token = cleanText(body.checkout_token, 64);
   if (!/^[a-f0-9-]{36}$/i.test(token)) return error("Refresh checkout and try again", 400);
+  let signedInCustomer: CustomerSessionRow | null = null;
+  try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
   try {
     const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE checkout_token = ? LIMIT 1")
       .bind(token).first<{ order_number: string; total_paisa: number; order_status: string }>();
@@ -513,8 +515,10 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
         .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
     }
+    if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
+    if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
     return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending" }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
@@ -810,10 +814,13 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   const uploadToken = documentUploadsEnabled ? base64Url(crypto.getRandomValues(new Uint8Array(32))) : "";
   const uploadTokenHash = documentUploadsEnabled ? await sha256(uploadToken) : null;
   const uploadExpiresAt = documentUploadsEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
+  let signedInCustomer: CustomerSessionRow | null = null;
+  try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
   try {
     const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
       .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
+    if (signedInCustomer) await env.DB.prepare("UPDATE rental_requests SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id).run();
     return json({
       accepted: true,
       reference_code: reference,

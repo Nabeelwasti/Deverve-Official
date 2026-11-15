@@ -4,6 +4,7 @@ import Admin from "./Admin";
 import WholesaleQuote from "./WholesaleQuote";
 import DeliveryFeeApproval from "./DeliveryFeeApproval";
 import Policies from "./Policies";
+import CustomerAccount from "./CustomerAccount";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -302,7 +303,7 @@ function Storefront() {
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
-        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button></nav>
+        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
         <div className="header-actions"><button className="header-cart" type="button" onClick={() => { setCheckoutOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
       </header>
 
@@ -526,6 +527,6 @@ function Storefront() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
+  return window.location.pathname.startsWith("/account") ? <CustomerAccount /> : window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
 }
 
