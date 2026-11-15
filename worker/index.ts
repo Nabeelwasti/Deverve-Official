@@ -1674,6 +1674,24 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
 }
 
 
+
+async function adminAuditLogRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/admin/audit-logs") return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); }
+  catch { return error("Audit history is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (admin.role !== "owner") return error("Only the owner can view the audit history", 403);
+  if (request.method !== "GET") return error("Method not allowed", 405);
+  const limitValue = Number(url.searchParams.get("limit") ?? "100");
+  const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 200) : 100;
+  try {
+    const rows = await env.DB.prepare("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs l LEFT JOIN admin_users u ON u.id = l.actor_admin_id ORDER BY l.created_at DESC, l.rowid DESC LIMIT ?")
+      .bind(limit).all<Record<string, unknown>>();
+    return json({ events: rows.results ?? [], total_returned: rows.results?.length ?? 0 });
+  } catch { return error("Audit history could not be loaded", 503); }
+}
+
 type StaffRole = "manager" | "catalogue" | "orders" | "rental" | "viewer";
 async function adminStaffRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
@@ -1973,6 +1991,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
 
   const customerAdminResponse = await adminCustomerRoutes(request, env, url);
   if (customerAdminResponse) return customerAdminResponse;
+
+  const auditLogResponse = await adminAuditLogRoutes(request, env, url);
+  if (auditLogResponse) return auditLogResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
