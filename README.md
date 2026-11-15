@@ -52,7 +52,8 @@ These are deliberate boundaries, not fake features:
 ## Security and data handling
 
 - Admin routes enforce server-side authentication, role permissions and same-origin checks for mutations.
-- Admin sessions are hashed, HttpOnly, Secure and SameSite=Strict.
+- Admin and customer sessions use hashed random bearer tokens, HttpOnly, Secure, SameSite=Strict host-only cookies and server-side revocation.
+- Customer registration uses Turnstile and a 12-character minimum password. Account profile/password changes and order/rental history require a valid customer session. Customer orders are queried by authenticated customer ID, not a caller-supplied order ID.
 - Product/order stock is checked on the server; the browser is never trusted for final price or stock.
 - R2 is private. Public media delivery checks that the media is assigned to a published product, available vehicle or selected public brand setting.
 - CNIC uploads are **disabled by default**. The rental API does not issue upload tokens unless the Cloudflare Pages environment flag `CNIC_UPLOADS_ENABLED=true` is explicitly configured. Do not enable it until the business approves and publishes a retention/deletion policy and an automated expiry/purge process. When enabled, documents use private R2 storage and one-time upload tokens.
@@ -82,7 +83,7 @@ The GitHub Actions workflow runs the type-check/build, Worker behavior tests and
 4. Connect a custom domain and onboard its email-sending domain; then configure and test transactional notifications.
 5. Choose a Pakistan-supported payment provider and supply merchant credentials before enabling online payment.
 6. Complete browser/mobile end-to-end tests for product media, checkout, stock reservation, wholesale approval, staff invitations and rental CNIC access.
-7. Add customer accounts/order tracking, reviews and the visual CMS only after their access and moderation rules are agreed.
+7. Finish customer email verification/password recovery, payment integration, transactional notifications, returns/refunds workflows, order/rental operations and visual CMS. Reviews remain disabled until moderation rules are agreed.
 
 Paid services or external account connections must not be enabled without the owner's explicit approval.
 
@@ -96,7 +97,7 @@ Paid services or external account connections must not be enabled without the ow
 
 ## Still not connected
 
-Customer sign-in, customer order tracking, payment gateway processing, transactional email, SMS and WhatsApp automation are not yet available. They require additional account, provider and webhook work. Do not advertise them as active until their live integrations have been tested. Social account management remains a separate project.
+Customer registration/sign-in, account profile, password change, order/rental history and order-status timeline are now available at /account. Email verification and email-based password recovery are not active. Payment gateway processing, refunds, transactional email, SMS and WhatsApp automation remain unconnected and must not be advertised as active. Social account management remains a separate project.
 
 ## Verification notes — 15 November 2026
 
@@ -105,3 +106,15 @@ Customer sign-in, customer order tracking, payment gateway processing, transacti
 - The Turnstile verifier source is maintained at workers/deverve-turnstile-verify.js. The actual successful human challenge path has not been exercised in an end-to-end live browser test; automated browser tests use a mocked widget callback.
 - Production D1 currently has no CNIC upload setting row (so the application default is disabled) and zero rental documents. No customer orders, products, variants or vehicles were created as test data.
 - A clear 7-calendar-day return request window and 7-working-day approved refund processing target are now disclosed in both languages. Owner/legal review is still recommended before accepting paid orders.
+
+
+## Customer accounts and order tracking — 15 November 2026
+
+- Migration 0012 is applied in production D1; the export was created before applying it. The migration adds customer/session/token tables, order status events, payment attempts/webhook records and notification outbox tables.
+- The deployed `/account` page supports registration, sign-in, profile updates, password changes, customer-only order history and rental request history.
+- Customer sessions are 256-bit random tokens stored as SHA-256 digests, carried only in a host-only HttpOnly/Secure/SameSite=Strict cookie, with a 30-day expiry.
+- Customer passwords use the existing PBKDF2-HMAC-SHA-256 password helper. Rate limits and Turnstile protect public registration; sign-in has D1-backed per-IP rate limiting.
+- New checkout orders and rental requests are associated with the signed-in customer. Historical guest orders are never automatically linked by matching an unverified email.
+- Order creation and admin status transitions create immutable status-event records; the customer account displays the event timeline.
+- Email verification and password-reset email flows are not enabled because no transactional email provider is configured. Customers can change a password only while signed in.
+- CI run #43704058411 passed 27 Worker/CNIC tests, schema validation and four desktop/mobile storefront browser tests. Production smoke run #43704125125 passed.

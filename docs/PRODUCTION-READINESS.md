@@ -34,7 +34,7 @@ Status: technically improved; not certified for unrestricted production commerce
 | High | Real catalogue and fleet data | Production database currently has no published products/variants/stock or available vehicles. | Enter verified products, prices, sizes, colours, stock, vehicle data, rates, and real photos. |
 | High | Business identity and legal content | A logo asset and favicon are uploaded and selected, but the owner must confirm they are final approved versions. Verified contact details, returns/exchange terms, delivery coverage, wholesale terms, rental terms, business hours, and privacy notice still require owner confirmation. | Confirm and publish accurate business information and policies. |
 | Medium | End-to-end verification | Worker tests use a fake D1 implementation. Playwright covers public enquiry and rental form interactions on desktop and Pixel 7 emulation with mocked API responses; it does not yet verify real D1/R2, checkout, staff invitation, media, wholesale, or CNIC workflows. | Add isolated Cloudflare-compatible integration tests and complete real-device customer/admin acceptance checks. |
-| Medium | Customer lifecycle | Customer accounts, public order tracking, returns/refunds, transactional email/SMS, and payment gateway are not implemented. | Treat these as roadmap items; do not advertise them as available. |
+| Medium | Customer lifecycle | Customer registration/sign-in, secure sessions, profile/password changes, account-scoped order/rental history and order-status timeline are implemented. Email verification, email-based password recovery, returns/refunds automation, payment gateway and transactional notifications are not connected. | Advertise only the working account and tracking functions. Do not claim email verification, password recovery, online payment or automated refunds. |
 | Medium | Domain and SEO | The site uses the shared Pages hostname. Product detail views are not dedicated indexable product URLs. | Connect the business domain and later add canonical product routes, structured data, and per-product metadata. |
 
 ## Explicit operating boundaries
@@ -48,7 +48,7 @@ Status: technically improved; not certified for unrestricted production commerce
 
 ## Verification required after deployment
 
-1. GitHub Actions: build/type checks, all 21 Worker tests, 11-migration / 28-table schema checks, and four desktop/mobile Playwright storefront tests pass on the release commit.
+1. GitHub Actions: build/type checks, all 27 Worker/CNIC tests, 12-migration / 36-table schema checks, and four desktop/mobile Playwright storefront tests pass on the release commit.
 2. Cloudflare Pages deployment for that exact commit reports success.
 3. Live /api/health returns a healthy database response.
 4. Live response headers include the intended CSP and security headers without breaking assets or application behavior.
@@ -69,7 +69,8 @@ Verdict: The code can be deployed and technically smoke-tested, but a 100% produ
 
 ### Remaining work and external dependencies
 
-- Customer accounts and secure order tracking.
+- Email verification and secure password recovery require a transactional email provider; the current account flow clearly discloses that these are not active.
+- Payment gateway processing, refunds and reconciliation require merchant approval, sandbox/live credentials and signed webhook verification.
 - A Pakistan-supported payment provider, merchant approval, sandbox/live credentials, signed webhooks, refunds and reconciliation.
 - Transactional email domain/provider and templates.
 - SMS provider and WhatsApp Business Platform account, approved templates and message pricing.
@@ -86,3 +87,17 @@ Verdict: The code can be deployed and technically smoke-tested, but a 100% produ
 - The Turnstile verifier source is maintained at workers/deverve-turnstile-verify.js. The actual successful human challenge path has not been exercised in an end-to-end live browser test; automated browser tests use a mocked widget callback.
 - Production D1 currently has no CNIC upload setting row (so the application default is disabled) and zero rental documents. No customer orders, products, variants or vehicles were created as test data.
 - A clear 7-calendar-day return request window and 7-working-day approved refund processing target are now disclosed in both languages. Owner/legal review is still recommended before accepting paid orders.
+
+
+## Release verification update — 15 November 2026
+
+- Commit `ac42386b4fbc59f03906fd654e7256f39d911d00` passed CI run [#43703808674](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43703808674): TypeScript/Vite build, Pages security-header artifact check, 27 Worker/CNIC tests, 12-migration / 36-table schema verification and four desktop/mobile Playwright tests.
+- Production smoke run [#43703905158](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43703905158) passed live Pages/D1 health, Turnstile verifier/Siteverify negative test, CNIC-retention bindings and deployed security headers.
+- The additive migration `0012_customer_payments_notifications.sql` was applied to production D1 after a database export. Read-back confirmed all eight new tables and preserved the single owner account, three media assets and zero catalogue/order/rental records.
+- Customer accounts are available at `/account`: Turnstile-protected registration, password sign-in, HttpOnly/Secure/SameSite=Strict 30-day sessions, profile editing, authenticated password changes, account-scoped order/rental history and order progress events.
+- New COD orders and rental requests are associated with the currently signed-in customer. Historical guest orders are not auto-linked by email, to avoid account-takeover/IDOR risks.
+- Email verification and email-based password reset are intentionally not offered until an approved transactional email sender is configured. The account page warns customers of this limitation.
+- The follow-on order-status timeline commit `df2832b01a70a2b40cb03e910394b087e0df4fed` passed CI run [#43704058411](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704058411) and production smoke [#43704125125](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/43704125125).
+- Production still has one admin owner, zero customer accounts, zero products, zero vehicles, zero orders and zero rental requests. No real customer or business data was created for tests.
+
+The site is still **not certified for unrestricted production commerce**. Payment provider onboarding, email/SMS/WhatsApp delivery, refunds/returns operations, real-device business acceptance, legal/policy approval and owner-supplied inventory/fleet data remain open.
