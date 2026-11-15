@@ -152,3 +152,22 @@
 .admin-customer-actions{display:flex;gap:8px;flex-wrap:wrap}
 .admin-customer-actions a{color:#2368b5;font-size:12px;font-weight:700;text-decoration:none;background:#edf2f8;border-radius:8px;padding:8px 10px}
 @media(max-width:680px){.admin-customer-search{align-items:stretch;flex-direction:column}.admin-customer-row{grid-template-columns:1fr;gap:10px}.admin-customer-actions{padding-top:4px}}
+
+.admin-dashboard[data-admin-screen="followups"] .admin-panel:not(#followups){display:none!important}
+.admin-dashboard[data-admin-screen="followups"] .admin-panel#followups{display:block!important}
+.admin-followups-panel{margin-bottom:24px}
+.admin-followup-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:18px 0;color:#7b8ba0;font-size:11px}
+.admin-followup-toolbar label{display:flex;align-items:center;gap:9px;color:#38536e;font-size:12px;font-weight:750}
+.admin-followup-toolbar select{border:1px solid #d8e1ed;border-radius:9px;padding:9px 12px;background:#fff;color:#173b63;font:inherit}
+.admin-followup-list{display:grid}
+.admin-followup-row{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:16px 0;border-top:1px solid #eaf0f6}
+.admin-followup-main{display:grid;gap:6px;min-width:0;flex:1}
+.admin-followup-title{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-followup-title strong{color:#173b63;font-size:14px}
+.admin-followup-reference{font-size:11px;color:#58708b;font-weight:750}
+.admin-followup-main p{margin:0;color:#50657e;font-size:12px;line-height:1.5;overflow-wrap:anywhere}
+.admin-followup-main small{color:#8a98a9;font-size:10px}
+.admin-followup-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.admin-followup-actions a,.admin-followup-actions button{border:0;border-radius:8px;background:#edf3fa;color:#2368a8;text-decoration:none;padding:9px 11px;font-size:11px;font-weight:800;white-space:nowrap;cursor:pointer}
+.admin-followup-actions button{background:#173f6b;color:#fff}
+@media(max-width:640px){.admin-followup-toolbar{align-items:flex-start;flex-direction:column}.admin-followup-row{align-items:flex-start;flex-direction:column}.admin-followup-actions{width:100%}.admin-followup-actions>*{flex:1;text-align:center}}
