@@ -1891,8 +1891,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   const collection=path==="/api/admin/notifications";
   const settings=path==="/api/admin/notification-settings";
   const readAll=path==="/api/admin/notifications/read-all";
-  const readId=path.startsWith("/api/admin/notifications/")&&path.endsWith("/read")?path.split("/")[4]:"";
-  const readMatch=/^[a-f0-9-]{36}$/i.test(readId)?readId:"";
+  const readMatch=path.match(/^\/api\/admin\/notifications\/([a-f0-9-]{36})\/read$/i)?.[1]??"";
   if(!collection&&!settings&&!readAll&&!readMatch)return null;
   let admin:SessionRow|null;
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
