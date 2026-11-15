@@ -1427,7 +1427,7 @@ test("owner notifications are private, readable and can be marked as read", asyn
   const list = await handleRequest(new Request(origin + "/api/admin/notifications", { headers:{cookie} }), env(db));
   assert.equal(list.status, 200);
   assert.equal((await list.json()).unread, 1);
-  const read = await handleRequest(request("/api/admin/notifications/notice-1/read","PATCH",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const read = await handleRequest(request("/api/admin/notifications/123e4567-e89b-42d3-a456-426614174000/read","PATCH",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(read.status,200);
   assert.equal(db.notifications.get("123e4567-e89b-42d3-a456-426614174000").is_read,1);
   const all = await handleRequest(request("/api/admin/notifications/read-all","POST",{}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
