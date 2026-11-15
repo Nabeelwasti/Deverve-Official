@@ -58,6 +58,18 @@ jobs:
           fi
           echo "Turnstile verifier is live, its secret binding is present, and Siteverify rejects an invalid token."
 
+      - name: Verify scheduled CNIC retention service bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://deverve-cnic-retention.wastinabeel99.workers.dev/health"
+          body="$(curl --fail --silent --show-error --max-time 15 "$url")"
+          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"closed_request_retention_days":30'* || "$body" != *'"unresolved_request_retention_days":90'* ]]; then
+            echo "CNIC retention service health check failed: $body"
+            exit 1
+          fi
+          echo "CNIC retention service has live D1 and private R2 bindings."
+
       - name: Verify deployed security response headers
         shell: bash
         run: |
