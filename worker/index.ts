@@ -2045,6 +2045,11 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
 
+  const notificationResponse = await ownerNotificationRoutes(request, env, url);
+  if (notificationResponse) return notificationResponse;
+  const cmsResponse = await cmsContentRoutes(request, env, url);
+  if (cmsResponse) return cmsResponse;
+
 
   if (path === "/api/admin/invites/accept" && request.method === "POST") {
     if (!requireSameOrigin(request, url)) return error("Request origin could not be verified",403);
@@ -2215,11 +2220,6 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const auditLogResponse = await adminAuditLogRoutes(request, env, url);
   if (auditLogResponse) return auditLogResponse;
 
-  const notificationResponse = await ownerNotificationRoutes(request, env, url);
-  if (notificationResponse) return notificationResponse;
-
-  const cmsResponse = await cmsContentRoutes(request, env, url);
-  if (cmsResponse) return cmsResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
