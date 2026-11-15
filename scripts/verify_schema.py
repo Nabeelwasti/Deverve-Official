@@ -15,7 +15,9 @@ required_tables = {
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
-    "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",\n    "customers", "customer_sessions", "customer_account_tokens", "order_status_events",\n    "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
+    "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
+    "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
+    "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
 }
 actual_tables = {
     row[0] for row in db.execute(
