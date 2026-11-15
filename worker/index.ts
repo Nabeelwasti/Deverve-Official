@@ -2043,12 +2043,11 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
 
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
-  if (!path.startsWith("/api/admin/")) return null;
-
-  const notificationResponse = await ownerNotificationRoutes(request, env, url);
-  if (notificationResponse) return notificationResponse;
   const cmsResponse = await cmsContentRoutes(request, env, url);
   if (cmsResponse) return cmsResponse;
+  const notificationResponse = await ownerNotificationRoutes(request, env, url);
+  if (notificationResponse) return notificationResponse;
+  if (!path.startsWith("/api/admin/")) return null;
 
 
   if (path === "/api/admin/invites/accept" && request.method === "POST") {
