@@ -1821,6 +1821,132 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
   return null;
 }
 
+
+const cmsSectionTypes = new Set(["hero","rich_text","image_text","image_gallery","video","product_collection","category_grid","promo_banner","contact_cta","faq"]);
+const cmsSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+function normalizeCmsSection(value: unknown, position: number): {id:string;section_type:string;position:number;content_json:string;is_visible:number}|null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row=value as Record<string,unknown>;
+  const sectionType=cleanText(row.section_type,40);
+  if (!cmsSectionTypes.has(sectionType)) return null;
+  const raw=row.content && typeof row.content==="object" && !Array.isArray(row.content) ? row.content as Record<string,unknown> : {};
+  const content:Record<string,string>={};
+  for (const key of ["eyebrow","heading","body","image_url","button_text","button_href"]) {
+    const value=cleanText(raw[key],key==="body"?3000: key==="image_url"||key==="button_href"?240:500);
+    if (!value) continue;
+    if (key==="image_url" && !/^\/media\/[a-f0-9-]{36}$/i.test(value)) return null;
+    if (key==="button_href" && (!value.startsWith("/") || value.startsWith("//") || value.length>240)) return null;
+    content[key]=value;
+  }
+  const id=cleanText(row.id,64);
+  return {id:/^[a-f0-9-]{36}$/i.test(id)?id:crypto.randomUUID(),section_type:sectionType,position,is_visible:row.is_visible===false?0:1,content_json:JSON.stringify(content)};
+}
+async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Response|null>{
+  const path=url.pathname;
+  const publicMatch=path.match(/^\/api\/pages\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
+  if(publicMatch&&request.method==="GET"){
+    try{
+      const page=await env.DB.prepare("SELECT id,slug,title,page_type,seo_title,seo_description FROM site_pages WHERE slug=? AND status='published' LIMIT 1").bind(publicMatch[1]).first<Record<string,unknown>>();
+      if(!page)return error("Page not found",404);
+      const rows=await env.DB.prepare("SELECT id,section_type,position,content_json,is_visible FROM site_page_sections WHERE page_id=? AND is_visible=1 ORDER BY position").bind(page.id).all<Record<string,unknown>>();
+      const sections=(rows.results??[]).map(row=>{let content:Record<string,string>={};try{const parsed=JSON.parse(String(row.content_json));if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))content=parsed;}catch{}return{id:row.id,section_type:row.section_type,position:row.position,content};});
+      return json({page,sections});
+    }catch{return error("Page content is temporarily unavailable",503);}
+  }
+  const adminCollection=path==="/api/admin/pages";
+  const adminPageMatch=path.match(/^\/api\/admin\/pages\/([a-f0-9-]{36})$/i);
+  const navigation=path==="/api/admin/navigation";
+  if(!adminCollection&&!adminPageMatch&&!navigation)return null;
+  let admin:SessionRow|null;
+  try{admin=await currentAdmin(request,env.DB);}catch{return error("Content workspace is temporarily unavailable",503);}
+  if(!admin)return error("Authentication required",401);
+  if(!["owner","manager"].includes(admin.role))return error("Only an owner or manager can manage website content",403);
+  if(request.method==="GET"){
+    try{
+      if(adminCollection){
+        const rows=await env.DB.prepare("SELECT id,slug,title,page_type,status,seo_title,seo_description,updated_at FROM site_pages ORDER BY updated_at DESC LIMIT 100").all<Record<string,unknown>>();
+        return json({pages:rows.results??[]});
+      }
+      if(adminPageMatch){
+        const page=await env.DB.prepare("SELECT id,slug,title,page_type,status,seo_title,seo_description,updated_at FROM site_pages WHERE id=? LIMIT 1").bind(adminPageMatch[1]).first<Record<string,unknown>>();
+        if(!page)return error("Page not found",404);
+        const rows=await env.DB.prepare("SELECT id,section_type,position,content_json,is_visible FROM site_page_sections WHERE page_id=? ORDER BY position").bind(adminPageMatch[1]).all<Record<string,unknown>>();
+        const sections=(rows.results??[]).map(row=>{let content:Record<string,string>={};try{const parsed=JSON.parse(String(row.content_json));if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))content=parsed;}catch{}return{id:row.id,section_type:row.section_type,position:row.position,is_visible:row.is_visible===1,content};});
+        return json({page,sections});
+      }
+      const rows=await env.DB.prepare("SELECT id,label,href,position,is_visible FROM site_navigation_items ORDER BY position LIMIT 50").all<Record<string,unknown>>();
+      return json({items:rows.results??[]});
+    }catch{return error("Website content could not be loaded",503);}
+  }
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  if(navigation&&request.method==="PUT"){
+    const body=await readJson(request,12000),items=body?.items;
+    if(!Array.isArray(items)||items.length>30)return error("Submit up to 30 valid navigation links",400);
+    const normalized:Array<{id:string;label:string;href:string;position:number;is_visible:number}>=[];
+    for(let i=0;i<items.length;i++){
+      const item=items[i] as Record<string,unknown>;
+      const label=cleanText(item?.label,60),href=cleanText(item?.href,240);
+      if(label.length<1||!href.startsWith("/")||href.startsWith("//"))return error("Navigation labels and safe internal links are required",400);
+      normalized.push({id:crypto.randomUUID(),label,href,position:i,is_visible:item?.is_visible===false?0:1});
+    }
+    try{
+      const statements:D1PreparedStatement[]=[env.DB.prepare("DELETE FROM site_navigation_items")];
+      for(const item of normalized)statements.push(env.DB.prepare("INSERT INTO site_navigation_items (id,label,href,position,is_visible) VALUES (?,?,?,?,?)").bind(item.id,item.label,item.href,item.position,item.is_visible));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.navigation_updated','store_settings','navigation',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({count:normalized.length})));
+      await env.DB.batch(statements);return json({updated:true,items:normalized});
+    }catch{return error("Navigation could not be saved",503);}
+  }
+  if(adminCollection&&request.method==="POST"){
+    const body=await readJson(request,4000);if(!body)return error("Submit valid page details",400);
+    const title=cleanText(body.title,120),slug=cleanText(body.slug,80).toLowerCase(),pageType=cleanText(body.page_type,20)||"standard";
+    if(title.length<2||!cmsSlugPattern.test(slug)||!["standard","landing","policy","home"].includes(pageType))return error("Check the page title, URL slug and page type",400);
+    try{
+      const existing=await env.DB.prepare("SELECT id FROM site_pages WHERE slug=? LIMIT 1").bind(slug).first<{id:string}>();
+      if(existing)return error("A page already uses this URL slug",409);
+      const id=crypto.randomUUID(),now=new Date().toISOString();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO site_pages (id,slug,title,page_type,status,seo_title,seo_description,created_by,updated_by,updated_at) VALUES (?,?,?,?,'draft','','',?,?,?)").bind(id,slug,title,pageType,admin.admin_user_id,admin.admin_user_id,now),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.page_created','page',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({slug,page_type:pageType}))
+      ]);
+      return json({created:true,id},201);
+    }catch{return error("Page could not be created",503);}
+  }
+  if(adminPageMatch&&request.method==="PATCH"){
+    const body=await readJson(request,30000);if(!body)return error("Submit valid page content",400);
+    const id=adminPageMatch[1],title=cleanText(body.title,120),slug=cleanText(body.slug,80).toLowerCase(),pageType=cleanText(body.page_type,20),status=cleanText(body.status,20);
+    const seoTitle=cleanText(body.seo_title,70),seoDescription=cleanText(body.seo_description,160);
+    if(title.length<2||!cmsSlugPattern.test(slug)||!["standard","landing","policy","home"].includes(pageType)||!["draft","published","archived"].includes(status))return error("Check the page title, URL slug, page type and publication status",400);
+    if(status==="published"&&cleanText(body.seo_title,70).length===0)return error("Add an SEO title before publishing",400);
+    if(!Array.isArray(body.sections)||body.sections.length>20)return error("A page can contain up to 20 sections",400);
+    const sections:Array<{id:string;section_type:string;position:number;content_json:string;is_visible:number}>=[];
+    for(let i=0;i<body.sections.length;i++){const section=normalizeCmsSection(body.sections[i],i);if(!section)return error("One section contains an unsupported block type or unsafe content. Check image URLs and button destinations.",400);sections.push(section);}
+    if(status==="published"&&sections.length===0)return error("Add at least one section before publishing",400);
+    try{
+      const current=await env.DB.prepare("SELECT id,slug,title,page_type,status,seo_title,seo_description FROM site_pages WHERE id=? LIMIT 1").bind(id).first<Record<string,unknown>>();
+      if(!current)return error("Page not found",404);
+      const duplicate=await env.DB.prepare("SELECT id FROM site_pages WHERE slug=? AND id<>? LIMIT 1").bind(slug,id).first<{id:string}>();
+      if(duplicate)return error("A page already uses this URL slug",409);
+      const oldSections=await env.DB.prepare("SELECT id,section_type,position,content_json,is_visible FROM site_page_sections WHERE page_id=? ORDER BY position").bind(id).all<Record<string,unknown>>();
+      const snapshot=JSON.stringify({page:current,sections:oldSections.results??[]});
+      const revision=await env.DB.prepare("SELECT COALESCE(MAX(revision_number),0)+1 AS next FROM content_revisions WHERE entity_type='page' AND entity_id=?").bind(id).first<{next:number}>();
+      const now=new Date().toISOString();
+      const statements:D1PreparedStatement[]=[
+        env.DB.prepare("INSERT INTO content_revisions (id,entity_type,entity_id,revision_number,snapshot_json,created_by) VALUES (?,'page',?,?,?,?)").bind(crypto.randomUUID(),id,revision?.next??1,snapshot,admin.admin_user_id),
+        env.DB.prepare("UPDATE site_pages SET slug=?,title=?,page_type=?,status=?,seo_title=?,seo_description=?,updated_by=?,published_at=CASE WHEN ?='published' THEN COALESCE(published_at,?) ELSE published_at END,updated_at=? WHERE id=?").bind(slug,title,pageType,status,seoTitle,seoDescription,admin.admin_user_id,status,now,now,id),
+        env.DB.prepare("DELETE FROM site_page_sections WHERE page_id=?").bind(id)
+      ];
+      for(const section of sections)statements.push(env.DB.prepare("INSERT INTO site_page_sections (id,page_id,section_type,position,content_json,is_visible,updated_at) VALUES (?,?,?,?,?,?,?)").bind(section.id,id,section.section_type,section.position,section.content_json,section.is_visible,now));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,status==="published"?"website.page_published":"website.page_updated","page",id,JSON.stringify({slug,status,sections:sections.length})));
+      await env.DB.batch(statements);
+      return json({updated:true,status,revision:revision?.next??1});
+    }catch{return error("Page could not be saved. Your previous published version has been preserved.",503);}
+  }
+  if(adminPageMatch&&request.method==="DELETE"){
+    try{const result=await env.DB.prepare("UPDATE site_pages SET status='archived',updated_by=?,updated_at=? WHERE id=?").bind(admin.admin_user_id,new Date().toISOString(),adminPageMatch[1]).run();if((result.meta?.changes??0)!==1)return error("Page not found",404);await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.page_archived','page',?,'{}')").bind(crypto.randomUUID(),admin.admin_user_id,adminPageMatch[1]).run();return json({archived:true});}catch{return error("Page could not be archived",503);}
+  }
+  return error("Method not allowed",405);
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/")) return null;
