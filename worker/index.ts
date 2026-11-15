@@ -1372,8 +1372,8 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     const raw=body?.brand_assets;
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid brand asset settings",400);
     const source=raw as Record<string,unknown>;
-    const logoId=source.logo_id===null||source.logo_id===""?null:cleanText(source.logo_id,64);
-    const faviconId=source.favicon_id===null||source.favicon_id===""?null:cleanText(source.favicon_id,64);
+    const logoId=source.logo_id===undefined||source.logo_id===null||source.logo_id===""?null:cleanText(source.logo_id,64);
+    const faviconId=source.favicon_id===undefined||source.favicon_id===null||source.favicon_id===""?null:cleanText(source.favicon_id,64);
     for(const id of [logoId,faviconId]){
       if(id&&!/^[a-f0-9-]{36}$/i.test(id))return error("Choose a valid logo or favicon image",400);
       if(id){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(!media)return error("A selected brand image is unavailable",404);}
