@@ -650,8 +650,14 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
   if (!["confirmed", "processing", "dispatched", "delivered", "cancelled"].includes(nextStatus)) return error("Choose a valid order status", 400);
   const id = match[1];
   try {
-    const current = await env.DB.prepare("SELECT id, order_status FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string }>();
+    const current = await env.DB.prepare("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ? LIMIT 1").bind(id).first<{ id: string; order_status: string; payment_provider: string; payment_status: string }>();
     if (!current) return error("Order not found", 404);
+    if (nextStatus === "cancelled") {
+      if (current.payment_status === "paid") return error("This order has an online payment recorded. A refund must be reviewed before cancellation.", 409);
+      const activePayment = await env.DB.prepare("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay' AND status IN ('created','pending','succeeded') LIMIT 1")
+        .bind(id).first<{ id: string }>();
+      if (activePayment) return error("This order has an active online payment session. Reconcile or expire the payment before cancelling it.", 409);
+    }
     const allowed: Record<string, string[]> = {
       pending: ["confirmed", "cancelled"], confirmed: ["processing", "cancelled"],
       processing: ["dispatched", "cancelled"], dispatched: ["delivered"], delivered: [], cancelled: [],
@@ -665,7 +671,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
       : nextStatus === "dispatched"
         ? "orders.delivery_fee_status = 'accepted' AND (orders.payment_provider = 'manual' OR orders.payment_status = 'paid') AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
         : nextStatus === "cancelled"
-        ? "NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
+        ? "orders.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id = orders.id AND pa.provider = 'safepay' AND pa.status IN ('created','pending','succeeded')) AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
         : "1 = 1";
     const now = new Date().toISOString();
     const statements = [env.DB.prepare("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ? AND order_status = ? AND " + guard).bind(nextStatus, now, id, current.order_status)];
