@@ -193,6 +193,15 @@ function Storefront() {
     : new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(paisa / 100);
 
   const cartSubtotal = cart.reduce((sum, item) => sum + item.unit_price_paisa * item.quantity, 0);
+  const promotionPreview = cartSubtotal > 4_000_000
+    ? { label: "45% order discount", amount: Math.floor(cartSubtotal * 0.45), freeDelivery: false }
+    : paymentProvider === "safepay" && onlinePaymentEnvironment === "production"
+      ? { label: "40% advance payment discount", amount: Math.floor(cartSubtotal * 0.40), freeDelivery: false }
+      : cartSubtotal > 2_000_000
+        ? { label: "30% order discount", amount: Math.floor(cartSubtotal * 0.30), freeDelivery: false }
+        : cartSubtotal > 500_000
+          ? { label: "Free delivery", amount: 0, freeDelivery: true }
+          : null;
   const addToCart = (product: StoreProduct) => {
     const variantId = selectedVariants[product.id] || product.variants[0]?.id;
     const variant = product.variants.find((item) => item.id === variantId);
@@ -413,7 +422,7 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">{onlinePaymentAvailable ? "Choose how to pay" : "Cash on delivery"}</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
           {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p><button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
             <div className="checkout-items">{cart.map((item) => <div className="checkout-item" key={item.variant_id}><div><strong>{item.name}</strong><span>{[item.size, item.color].filter(Boolean).join(" / ") || item.sku || "Standard"}</span><small>{formatPrice(item.unit_price_paisa)} each</small></div><div className="checkout-quantity"><button type="button" aria-label="Decrease quantity" onClick={() => item.quantity === 1 ? removeCartItem(item.variant_id) : changeCartQuantity(item.variant_id, item.quantity - 1)}>−</button><span>{item.quantity}</span><button type="button" aria-label="Increase quantity" disabled={item.quantity >= item.available_quantity} onClick={() => changeCartQuantity(item.variant_id, item.quantity + 1)}>+</button></div><strong>{formatPrice(item.unit_price_paisa * item.quantity)}</strong></div>)}</div>
-            <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong><span>Delivery fee</span><strong>Confirmed before dispatch</strong><span>Payment</span><strong>{paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "Card / online payment" : "Card / online payment (sandbox)") : "Cash on delivery"}</strong></div>
+            <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong>{promotionPreview && <><span>{promotionPreview.label}</span><strong>{promotionPreview.freeDelivery ? "FREE" : "−"+formatPrice(promotionPreview.amount)}</strong></>}<span>Estimated total before delivery</span><strong>{formatPrice(cartSubtotal-(promotionPreview?.amount??0))}</strong><span>Delivery</span><strong>{promotionPreview?.freeDelivery ? "FREE" : "Confirmed before dispatch"}</strong><span>Payment</span><strong>{paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "Card / online payment" : "Card / online payment (sandbox)") : "Cash on delivery"}</strong></div>
             {onlinePaymentAvailable && <fieldset className="checkout-payment-options"><legend>Payment method</legend><label><input type="radio" name="payment_provider" checked={paymentProvider === "manual"} onChange={() => setPaymentProvider("manual")}/> Cash on delivery</label><label><input type="radio" name="payment_provider" checked={paymentProvider === "safepay"} onChange={() => setPaymentProvider("safepay")}/> Card / online payment <small>{onlinePaymentEnvironment === "production" ? "Secure checkout" : "Sandbox testing only"}</small></label>{paymentProvider === "safepay" && <p className="checkout-policy-note">Online payment requires a De VERVE account. <a href="/account">Sign in or create an account</a> before placing this order.</p>}</fieldset>}<div className="checkout-fields">
               <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={checkoutForm.customer_name} onChange={(event) => setCheckoutForm({ ...checkoutForm, customer_name: event.target.value })} /></label>
               <label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={checkoutForm.phone} onChange={(event) => setCheckoutForm({ ...checkoutForm, phone: event.target.value })} /></label>
@@ -425,7 +434,7 @@ function Storefront() {
             </div>
             <p className="checkout-disclaimer">{paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "You will be redirected to Safepay's secure checkout after the final delivery fee is approved." : "This is a sandbox payment request. The final delivery fee must be approved before any test payment can begin.") : "No online payment is collected. De VERVE will send a secure link to confirm delivery charges and your final COD total before dispatch."}</p>
             {checkoutMessage && <p className="checkout-message" role="alert">{checkoutMessage}</p>}
-            <p className="checkout-policy-note">Before placing your order, please review the <button type="button" onClick={() => { setCheckoutOpen(false); navigate("policies"); }}>returns, refunds and privacy policies</button>. You can return to your cart to continue.</p>
+            <p className="checkout-policy-note">Before placing your order, please review the <button type="button" onClick={() => { setCheckoutOpen(false); navigate("policies"); }}>exchange and privacy policies</button>. You can return to your cart to continue.</p>
              <TurnstileWidget resetKey={checkoutTurnstileReset} onToken={setCheckoutTurnstileToken} />
              <button type="submit" className="button button-primary checkout-submit" disabled={checkoutBusy || !cart.length || !checkoutTurnstileToken}>{checkoutBusy ? "Placing order…" : "Place order"} <span>↗</span></button>
           </form>}
