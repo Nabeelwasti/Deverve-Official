@@ -1891,7 +1891,8 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   const collection=path==="/api/admin/notifications";
   const settings=path==="/api/admin/notification-settings";
   const readAll=path==="/api/admin/notifications/read-all";
-  const readMatch=path.match(new RegExp("^/api/admin/notifications/([a-f0-9-]{36})/read$","i"));
+  const readId=path.startsWith("/api/admin/notifications/")&&path.endsWith("/read")?path.split("/")[4]:"";
+  const readMatch=/^[a-f0-9-]{36}$/i.test(readId)?readId:"";
   if(!collection&&!settings&&!readAll&&!readMatch)return null;
   let admin:SessionRow|null;
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
@@ -1911,7 +1912,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
     catch{return error("Notifications could not be marked as read",503);}
   }
   if(readMatch&&request.method==="PATCH"){
-    try{const result=await env.DB.prepare("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=? AND is_read=0").bind(new Date().toISOString(),readMatch[1]).run();return json({updated:true,changed:(result.meta?.changes??0)===1});}
+    try{const result=await env.DB.prepare("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=? AND is_read=0").bind(new Date().toISOString(),readMatch).run();return json({updated:true,changed:(result.meta?.changes??0)===1});}
     catch(caught){console.error("[owner-notifications] mark-read failed",caught instanceof Error?caught.message:"unknown error");return error("Notification could not be updated",503);}
   }
   return error("Method not allowed",405);
