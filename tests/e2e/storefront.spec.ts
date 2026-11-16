@@ -179,7 +179,7 @@ test("bilingual customer policies are accessible from the storefront", async ({ 
 test("product page supports auto-advancing galleries, selectable variants and direct cart addition", async ({ page }) => {
   const imageA = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23142b4d'/%3E%3C/svg%3E";
   const imageB = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%2370263d'/%3E%3C/svg%3E";
-  await page.route("**/api/products?slug=navy-hoodie", async (route) => {
+  await page.route("**/api/products*", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", slug: "navy-hoodie", name: "De VERVE Hoodie",
       description: "Test product", category: "Hoodies", audience: "unisex", retail_price_paisa: 350000,
