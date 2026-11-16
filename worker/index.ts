@@ -1881,23 +1881,25 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         if (!item || typeof item.variant_id!=="string" || !/^[a-f0-9-]{36}$/i.test(item.variant_id) || !Number.isSafeInteger(item.quantity) || Number(item.quantity)<1 || Number(item.quantity)>100) return error("One or more sale quantities are invalid",400);
         combined.set(item.variant_id,(combined.get(item.variant_id)??0)+Number(item.quantity));
       }
-      const resolved = [];
+      const resolved: Array<{ product_id:string; product_name:string; variant_id:string; sku:string|null; size:string; color:string; quantity:number; unit_price_paisa:number; cost_price_paisa:number; line_total_paisa:number }> = [];
       let subtotal=0;
       for (const [variantId,quantity] of combined) {
         const row = await env.DB.prepare("SELECT p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa,v.id AS variant_id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,v.cost_price_paisa,v.is_active FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=? LIMIT 1").bind(variantId).first<Record<string,unknown>>();
         if (!row || row.product_status!=="published" || Number(row.is_active)!==1 || row.retail_price_paisa===null) return error("A selected product or variant is no longer available",409);
         if (Number(row.stock_on_hand)-Number(row.reserved_quantity)<quantity) return error("Not enough available stock for "+String(row.product_name)+" "+String(row.size??"")+" "+String(row.color??""),409);
         const unitPrice=Number(row.retail_price_paisa);
+        if (!Number.isSafeInteger(unitPrice) || unitPrice <= 0) return error("A product needs a valid retail price before it can be sold",409);
         const lineTotal=unitPrice*quantity;
         if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal+lineTotal)) return error("Sale total is too large",400);
         subtotal+=lineTotal;
-        resolved.push({...row,quantity,unit_price_paisa:unitPrice,line_total_paisa:lineTotal});
+        resolved.push({ product_id:String(row.product_id), product_name:String(row.product_name), variant_id:String(row.variant_id), sku:typeof row.sku==="string"?row.sku:null, size:typeof row.size==="string"?row.size:"", color:typeof row.color==="string"?row.color:"", quantity, unit_price_paisa:unitPrice, cost_price_paisa:Number(row.cost_price_paisa??0), line_total_paisa:lineTotal });
       }
       let applied=0,change=0;
-      const resolvedPayments=[];
+      const resolvedPayments: Array<{account:{id:string;name:string;kind:string};method:"cash"|"bank_transfer"|"mobile_wallet"|"card";amount:number;tendered:number;change:number;reference:string}> = [];
       for (const payment of payments) {
         const accountId=typeof payment?.account_id==="string"?payment.account_id:"";
-        const method=payment?.payment_method;
+        const methodValue=payment?.payment_method;
+        const method=methodValue as "cash"|"bank_transfer"|"mobile_wallet"|"card";
         const amount=payment?.amount_paisa;
         const tendered=payment?.tendered_paisa;
         if (!accountId || !["cash","bank_transfer","mobile_wallet","card"].includes(method) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !Number.isSafeInteger(tendered) || Number(tendered)<Number(amount)) return error("A payment entry is invalid",400);
