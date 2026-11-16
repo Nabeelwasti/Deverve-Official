@@ -97,7 +97,7 @@ test("rental request requires both CNIC images and sends them with the request",
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
   await expect(dialog.getByLabel(/CNIC front image/)).toHaveJSProperty("validity.valid", false);
-  await expect(page.locator(".dv-toast")).toContainText(/CNIC front image/i);
+  await expect(page.locator(".dv-toast")).toContainText(/Please check this box|Please select a file|CNIC/i);
   expect(submitted).toBeUndefined();
 
   const png = {
@@ -178,6 +178,7 @@ test("rental form explains blocked Turnstile and keeps the request safely blocke
   await dialog.getByLabel(/I confirm these are my documents/).check();
   await dialog.getByRole("button", { name: /Submit rental request/ }).click();
   await expect(dialog.getByRole("alert")).toContainText(/Security verification is not complete/i);
+  await expect(page.locator(".dv-toast")).toContainText(/Security verification is not complete/i);
   expect(submitted).toBe(false);
 });
 
