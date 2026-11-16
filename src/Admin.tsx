@@ -109,7 +109,8 @@ export default function Admin() {
   const [mediaProduct, setMediaProduct] = useState<Product | null>(null);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [productMedia, setProductMedia] = useState<MediaAsset[]>([]);
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });
@@ -283,24 +284,42 @@ export default function Admin() {
         api<{ media: MediaAsset[] }>("/api/admin/media"),
         api<{ media: MediaAsset[] }>(`/api/admin/products/${product.id}/media`),
       ]);
-      setMediaAssets(result.media); setProductMedia(attached.media); setMediaProduct(product); setMediaFile(null); setMediaAlt("");
+      setMediaAssets(result.media); setProductMedia(attached.media); setMediaProduct(product); setMediaFiles([]); setMediaAlt(""); setMediaUploadProgress("");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Media library could not be loaded."); }
     finally { setBusy(false); }
   };
 
   const uploadMedia = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!mediaFile || !mediaProduct) return;
+    if (!mediaFiles.length || !mediaProduct) return;
+    if (mediaFiles.length > 50) { setMessage("Choose no more than 50 images in one batch."); return; }
+    if (productMedia.length + mediaFiles.length > 100) { setMessage("This gallery can contain up to 100 media items. Remove older images before adding more."); return; }
+    const files = [...mediaFiles];
+    const invalid = files.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
+    if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
     setBusy(true); setMessage("");
+    let attachedCount = 0; const failures: string[] = [];
     try {
-      const data = new FormData(); data.append("file", mediaFile); data.append("alt_text", mediaAlt);
-      const response = await fetch("/api/admin/media", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body: data });
-      const result = await response.json() as { error?: string; media?: MediaAsset };
-      if (!response.ok || !result.media) throw new Error(result.error || "Media upload failed.");
-      setMediaAssets((current) => [result.media!, ...current]); setMediaFile(null); setMediaAlt("");
-      setMessage(result.media.media_type === "video" ? "Video uploaded. Add it to the product gallery below." : "Image uploaded. Add it to the product gallery below.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Image could not be uploaded."); }
-    finally { setBusy(false); }
+      for (let index = 0; index < files.length; index++) {
+        const file = files[index]; setMediaUploadProgress("Uploading and attaching image " + (index + 1) + " of " + files.length + "…");
+        try {
+          const data = new FormData(); data.append("file", file);
+          const description = (mediaAlt.trim() ? mediaAlt.trim() + " · " : "") + mediaProduct.name + " · " + file.name;
+          data.append("alt_text", description.slice(0, 240));
+          const response = await fetch("/api/admin/media", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body: data });
+          const result = await response.json() as { error?: string; media?: MediaAsset };
+          if (!response.ok || !result.media) throw new Error(result.error || "Upload failed.");
+          setMediaAssets((current) => [result.media!, ...current.filter((item) => item.id !== result.media!.id)]);
+          const makeCover = !mediaProduct.image_key && attachedCount === 0;
+          await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, is_primary: makeCover, position: productMedia.length + attachedCount }) });
+          attachedCount++; if (makeCover) setMediaProduct((current) => current ? { ...current, image_key: result.media!.id } : current);
+        } catch (error) { failures.push(file.name + ": " + (error instanceof Error ? error.message : "Upload failed")); }
+      }
+      const [attached] = await Promise.all([api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`), loadProducts()]);
+      setProductMedia(attached.media); setMediaFiles([]);
+      setMessage(failures.length ? attachedCount + " of " + files.length + " images uploaded and attached. " + failures.slice(0, 3).join(" · ") : "Successfully uploaded and added all " + attachedCount + " images to " + mediaProduct.name + ".");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "The image batch could not be completed."); }
+    finally { setMediaUploadProgress(""); setBusy(false); }
   };
 
   const attachMedia = async (asset: MediaAsset | null, makeCover = false) => {
@@ -807,9 +826,11 @@ export default function Admin() {
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
-            <label>Choose image or video<input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/webm" onChange={(event) => setMediaFile(event.target.files?.[0] ?? null)} /></label>
+            <label>Choose product images (up to 50 at once)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); setMediaFiles(files.slice(0, 50)); if (files.length > 50) setMessage("Only the first 50 selected images were kept."); }} /></label>
             <label>Media description<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
-            <button className="admin-primary" disabled={busy || !mediaFile}>{busy ? "Please wait…" : "Upload media"}</button>
+            <button className="admin-primary" disabled={busy || !mediaFiles.length}>{busy ? "Please wait…" : "Upload & add " + mediaFiles.length + " images"}</button>
+            {mediaFiles.length > 0 && <p className="admin-muted admin-media-selected">{mediaFiles.length} images selected · JPG, PNG or WebP · maximum 5 MB each · 50 per batch</p>}
+            {mediaUploadProgress && <p className="admin-message" role="status" aria-live="polite">{mediaUploadProgress}</p>}
           </form>
           <h3 className="admin-media-subheading">Attached to this product ({productMedia.length})</h3>
           <div className="admin-media-grid">

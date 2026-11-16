@@ -7,6 +7,8 @@ import Policies from "./Policies";
 import CustomerAccount from "./CustomerAccount";
 import PublicPage from "./PublicPage";
 import ProductPage from "./ProductPage";
+import ProductGallery from "./ProductGallery";
+import ProductVariantPicker from "./ProductVariantPicker";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -153,6 +155,7 @@ function Storefront() {
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { if (!rentalNotice) return; const timeout = window.setTimeout(() => setRentalNotice(null), 6500); return () => window.clearTimeout(timeout); }, [rentalNotice]);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCheckoutOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => {
@@ -405,13 +408,13 @@ function Storefront() {
             {catalogueState === "ready" && <div className="product-grid">
               {products.slice(0,visibleProductCount).map((product) => (
                 <article className="product-card" key={product.id}>
-                  {product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
+                  {product.media?.some((item) => item.media_type === "image") ? <ProductGallery className="product-visual product-photo dv-gallery-card" images={product.media.filter((item) => item.media_type === "image").map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }))} /> : product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
                     <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
                     <span className="product-audience">{product.audience} · {product.category}</span>
                     <h4>{product.name}</h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
-                    {product.variants.length ? <label className="product-variant-select"><span>SIZE / COLOUR</span><select value={selectedVariants[product.id] || product.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [product.id]: event.target.value }))}>{product.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <span className="product-stock-note">Contact us for current availability</span>}
+                    {product.variants.length ? <ProductVariantPicker variants={product.variants} selectedVariantId={selectedVariants[product.id] || product.variants[0].id} onChange={(variantId) => setSelectedVariants((current) => ({ ...current, [product.id]: variantId }))} compact /> : <span className="product-stock-note">Contact us for current availability</span>}
                     <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><button type="button" className="product-details-button" onClick={() => { window.location.href = "/product/" + encodeURIComponent(product.slug); }}>View details</button>{product.variants.length > 0 && product.retail_price_paisa !== null && <button type="button" onClick={() => addToCart(product)}>Add to cart +</button>}</div>
                   </div>
                 </article>
@@ -423,10 +426,10 @@ function Storefront() {
 
         {detailProduct && <div className="checkout-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailProduct(null); }}><section className="checkout-modal product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
           <div className="checkout-modal-heading"><div><p className="eyebrow">PRODUCT DETAILS</p><h2 id="product-detail-title">{detailProduct.name}</h2><p>{detailProduct.audience} · {detailProduct.category}</p></div><button type="button" className="checkout-close" onClick={() => setDetailProduct(null)} aria-label="Close product details">×</button></div>
-          {detailProduct.media?.length ? <div className="product-detail-gallery">{detailProduct.media.map((item) => item.media_type === "video" ? <video key={item.id} className="product-detail-image" src={item.url} controls playsInline preload="metadata" aria-label={item.alt_text || detailProduct.name} /> : <img key={item.id} className="product-detail-image" src={item.url} alt={item.alt_text || detailProduct.name} loading="lazy" />)}</div> : detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
+          {detailProduct.media?.some((item) => item.media_type === "image") ? <ProductGallery className="product-detail-gallery" images={detailProduct.media.filter((item) => item.media_type === "image").map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || detailProduct.name }))} /> : detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
           <p>{detailProduct.description || "Please contact our team for more product information."}</p>
           <div className="product-detail-price">{formatPrice(detailProduct.retail_price_paisa)}</div>
-          {detailProduct.variants.length > 0 ? <label className="product-variant-select"><span>AVAILABLE SIZE / COLOUR</span><select value={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(event) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: event.target.value }))}>{detailProduct.variants.map((variant) => <option key={variant.id} value={variant.id}>{[variant.size, variant.color].filter(Boolean).join(" / ") || "Standard"} · {variant.available_quantity} available</option>)}</select></label> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}
+          {detailProduct.variants.length > 0 ? <ProductVariantPicker variants={detailProduct.variants} selectedVariantId={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(variantId) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: variantId }))} /> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}
           <div className="product-detail-actions">{detailProduct.variants.length > 0 && detailProduct.retail_price_paisa !== null && <button type="button" className="button button-primary" onClick={() => { addToCart(detailProduct); setDetailProduct(null); }}>Add to cart</button>}<a className="button button-outline" href={whatsapp(`Assalamu Alaikum, I am interested in ${detailProduct.name}. Please confirm current sizes, colours, price and availability.`)} target="_blank" rel="noreferrer">WhatsApp enquiry</a><a className="button button-outline" href="mailto:deverve61@gmail.com?subject=Product%20Enquiry">Email enquiry</a></div>
         </section></div>}
         {activeScreen === "favourites" ? (

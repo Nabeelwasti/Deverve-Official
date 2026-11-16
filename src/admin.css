@@ -220,3 +220,5 @@
  .admin-panel{min-width:0;overflow-wrap:anywhere}
 }
 @media(prefers-reduced-motion:reduce){.admin-editor{animation:none}}
+
+.admin-media-selected{grid-column:1/-1;margin:0}.admin-media-upload input[type=file]{min-height:46px}.admin-media-upload .admin-message{grid-column:1/-1}
