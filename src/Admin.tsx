@@ -25,7 +25,7 @@ type CustomerRecord = { id: string; full_name: string; email: string; phone: str
 type AdminReturn = { id: string; order_id: string; customer_id: string; return_number: string; order_number: string; customer_name: string; customer_email: string | null; customer_phone: string; reason: string; details: string; status: "requested" | "approved" | "rejected" | "received" | "refunded"; refund_amount_paisa: number; refund_method: string | null; refund_reference: string | null; admin_note: string; payment_provider: string; payment_status: string; created_at: string; items: Array<{ quantity: number; unit_refund_paisa: number; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string }> };
 type AdminExchange = { id: string; order_id: string; customer_id: string; exchange_number: string; order_number: string; customer_name: string; customer_email: string | null; customer_phone: string; reason: string; details: string; status: "requested" | "reviewing" | "approved" | "rejected" | "item_received" | "completed"; admin_note: string; created_at: string; items: Array<{ quantity: number; requested_size: string; requested_color: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string }> };
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
-type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
+type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; barcode?: string | null; cost_price_paisa?: number; reorder_level?: number; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
 type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string };
 type QuoteLineDraft = { product_id: string; variant_id: string; quantity: string; unit_price: string; variants: Variant[] };
@@ -117,7 +117,9 @@ export default function Admin() {
   const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
-  const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", initial_stock: "0" });
+  const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
+  const [variantEditTarget, setVariantEditTarget] = useState<Variant | null>(null);
+  const [variantEditForm, setVariantEditForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
   const [stockForm, setStockForm] = useState({ movement_type: "received", quantity_delta: "", note: "" });
   const [overview, setOverview] = useState<Overview>({ published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 });
@@ -276,7 +278,7 @@ export default function Admin() {
     setBusy(true); setMessage("");
     try {
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`);
-      setVariantProduct(product); setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" });
+      setVariantProduct(product); setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
     } catch (error) { setMessage(error instanceof Error ? error.message : "Variants could not be loaded."); }
     finally { setBusy(false); }
   };
@@ -377,11 +379,28 @@ export default function Admin() {
     if (!variantProduct) return;
     setBusy(true); setMessage("");
     try {
-      await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify({ ...variantForm, initial_stock: Number(variantForm.initial_stock) }) });
+      await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify({ ...variantForm, initial_stock: Number(variantForm.initial_stock), cost_price_paisa: Math.round(Number(variantForm.cost_price || 0) * 100), reorder_level: Number(variantForm.reorder_level) }) });
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
       setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" }); setMessage("Product variant added.");
       await loadProducts();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Variant could not be added."); }
+    finally { setBusy(false); }
+  };
+
+  const startVariantEdit = (variant: Variant) => {
+    setVariantEditTarget(variant);
+    setVariantEditForm({ sku: variant.sku || "", size: variant.size || "", color: variant.color || "", barcode: variant.barcode || "", cost_price: String(((variant.cost_price_paisa || 0) / 100)), reorder_level: String(variant.reorder_level ?? 5) });
+  };
+  const saveVariantEdit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!variantEditTarget) return;
+    setBusy(true); setMessage("");
+    try {
+      const payload = { ...variantEditForm, cost_price_paisa: Math.round(Number(variantEditForm.cost_price || 0) * 100), reorder_level: Number(variantEditForm.reorder_level) };
+      await api(`/api/admin/variants/${variantEditTarget.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantEditTarget.product_id}/variants`);
+      setVariants(result.variants); setVariantEditTarget(null); setMessage("Variant details saved.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Variant details could not be saved."); }
     finally { setBusy(false); }
   };
 
@@ -865,8 +884,19 @@ export default function Admin() {
           <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
             <div><strong>{variant.sku || "No SKU"}</strong><span>{[variant.size, variant.color].filter(Boolean).join(" · ") || "General option"}</span><small>{variant.is_active ? "Active" : "Inactive"}</small></div>
             <div className="admin-variant-stock"><strong>{variant.available_quantity}</strong><span>available</span><small>{variant.reserved_quantity} reserved · {variant.stock_on_hand} physical</small></div>
-            <button type="button" disabled={busy} onClick={() => void openMovementHistory(variant)}>History</button>{["owner", "manager", "orders"].includes(admin.role) && <button type="button" disabled={busy || !variant.is_active} onClick={() => { setStockTarget(variant); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); }}>Adjust stock</button>}
+            {["owner", "manager", "catalogue"].includes(admin.role) && <button type="button" disabled={busy} onClick={() => startVariantEdit(variant)}>Edit details</button>}<button type="button" disabled={busy} onClick={() => void openMovementHistory(variant)}>History</button>{["owner", "manager", "orders"].includes(admin.role) && <button type="button" disabled={busy || !variant.is_active} onClick={() => { setStockTarget(variant); setStockForm({ movement_type: "received", quantity_delta: "", note: "" }); }}>Adjust stock</button>}
           </article>)}</div>
+          {variantEditTarget && <form className="admin-form admin-variant-form" onSubmit={saveVariantEdit}>
+            <h3>Edit variant · {[variantEditTarget.size, variantEditTarget.color].filter(Boolean).join(" / ") || variantEditTarget.sku || "Variant"}</h3>
+            <div className="admin-variant-fields">
+              <label>SKU<input maxLength={64} value={variantEditForm.sku} onChange={e=>setVariantEditForm({...variantEditForm,sku:e.target.value})}/></label>
+              <label>Size<input maxLength={32} value={variantEditForm.size} onChange={e=>setVariantEditForm({...variantEditForm,size:e.target.value})}/></label>
+              <label>Colour<input maxLength={32} value={variantEditForm.color} onChange={e=>setVariantEditForm({...variantEditForm,color:e.target.value})}/></label>
+              <label>Barcode<input maxLength={64} value={variantEditForm.barcode} onChange={e=>setVariantEditForm({...variantEditForm,barcode:e.target.value})}/></label>
+              <label>Reorder alert at<input type="number" min="0" max="1000000" step="1" value={variantEditForm.reorder_level} onChange={e=>setVariantEditForm({...variantEditForm,reorder_level:e.target.value})}/></label>
+              {["owner","manager"].includes(admin.role) && <label>Purchase cost (PKR)<input type="number" min="0" step="0.01" value={variantEditForm.cost_price} onChange={e=>setVariantEditForm({...variantEditForm,cost_price:e.target.value})}/></label>}
+            </div><div className="admin-form-actions"><button className="admin-primary" disabled={busy}>Save variant</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>setVariantEditTarget(null)}>Cancel</button></div>
+          </form>}
           {movementTarget && <section className="admin-movement-history"><div className="admin-panel-heading"><div><h3>Stock history</h3><p className="admin-muted">{movementTarget.sku || [movementTarget.size, movementTarget.color].filter(Boolean).join(" / ")}</p></div><button type="button" className="admin-secondary" onClick={() => setMovementTarget(null)}>Close history</button></div>
             {movements.length === 0 ? <p className="admin-muted">No stock movements recorded.</p> : <div className="admin-movement-list">{movements.map((movement) => <article key={movement.id}><div><strong>{movement.movement_type.replaceAll("_", " ")}</strong><span>{movement.note}</span><small>{movement.reference_type}{movement.reference_id ? ` · ${movement.reference_id}` : ""}</small></div><b className={movement.quantity_delta < 0 ? "movement-negative" : "movement-positive"}>{movement.quantity_delta > 0 ? "+" : ""}{movement.quantity_delta}</b><time dateTime={movement.created_at}>{new Date(movement.created_at).toLocaleString()}</time></article>)}</div>}
           </section>}
@@ -875,7 +905,10 @@ export default function Admin() {
               <label>SKU (optional)<input maxLength={64} placeholder="e.g. DV-HOOD-BLK-M" value={variantForm.sku} onChange={(e) => setVariantForm({ ...variantForm, sku: e.target.value })} /></label>
               <label>Size<input maxLength={32} placeholder="e.g. M, L, XL" value={variantForm.size} onChange={(e) => setVariantForm({ ...variantForm, size: e.target.value })} /></label>
               <label>Colour<input maxLength={32} placeholder="e.g. Black" value={variantForm.color} onChange={(e) => setVariantForm({ ...variantForm, color: e.target.value })} /></label>
+              <label>Barcode (optional)<input maxLength={64} placeholder="Scan or enter barcode" value={variantForm.barcode} onChange={(e) => setVariantForm({ ...variantForm, barcode: e.target.value })} /></label>
               <label>Opening stock<input type="number" min="0" max="1000000" step="1" value={variantForm.initial_stock} onChange={(e) => setVariantForm({ ...variantForm, initial_stock: e.target.value })} /></label>
+              <label>Reorder alert at<input type="number" min="0" max="1000000" step="1" value={variantForm.reorder_level} onChange={(e) => setVariantForm({ ...variantForm, reorder_level: e.target.value })} /></label>
+              {["owner","manager"].includes(admin.role) && <label>Purchase cost (PKR)<input type="number" min="0" step="0.01" value={variantForm.cost_price} onChange={(e) => setVariantForm({ ...variantForm, cost_price: e.target.value })} /></label>}
             </div><button className="admin-primary" disabled={busy}>Add variant</button>
           </form>}
           {stockTarget && <form className="admin-form admin-stock-form" onSubmit={recordStock}>
