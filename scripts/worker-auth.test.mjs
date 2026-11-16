@@ -501,7 +501,7 @@ class FakeStatement {
     if (q.startsWith("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ?")) {
       return { success: true, results: this.db.wholesaleQuoteItems.filter((row) => row.quote_id === v[0]).map(({ product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa }) => ({ product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa })) };
     }
-    if (q.startsWith("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ?")) {
+    if (q.startsWith("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ?")) {
       return { success: true, results: this.db.wholesaleQuoteItems.filter((row) => row.quote_id === v[0]) };
     }
     if (q.startsWith("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa")) {
