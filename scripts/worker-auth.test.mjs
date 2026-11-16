@@ -421,6 +421,9 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT v.id, v.name, v.vehicle_type, v.transmission, v.seats, v.fuel_type, v.daily_rate_paisa, v.with_driver_daily_rate_paisa, v.image_key, v.description, vm.media_asset_id")) {
+      return { success: true, results: [...this.db.vehicles.values()].filter((vehicle) => vehicle.status === "available").map((vehicle) => ({ ...vehicle, media_asset_id: null, media_alt_text: null, media_position: null, media_is_primary: null })) };
+    }
     if (q.startsWith("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications")) return { success: true, results: [...this.db.notifications.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,100) };
     if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) {
       const ids = new Set(v.slice(1));
