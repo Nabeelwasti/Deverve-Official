@@ -334,7 +334,7 @@ class FakeStatement {
     }
     if (q.startsWith("SELECT id, email, password_hash, full_name, phone, status FROM customers")) return [...this.db.customers.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
-    if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) return this.db.storeSettings.get(v[0]) ?? null;
+    if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
@@ -615,7 +615,8 @@ class FakeStatement {
     if (q.startsWith("UPDATE customer_sessions SET revoked_at")) { let changes = 0; for (const row of this.db.customerSessions.values()) if (row.token_hash === v[1] && !row.revoked_at) { row.revoked_at = v[0]; changes += 1; } return { success: true, meta: { changes } }; }
     if (q.startsWith("UPDATE orders SET customer_id")) { const row = this.db.orders.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
     if (q.startsWith("UPDATE rental_requests SET customer_id")) { const row = this.db.rentalRequests.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
-    if (q.startsWith("INSERT INTO store_settings")) { const key = q.includes("cnic_uploads_enabled") ? "cnic_uploads_enabled" : v[0]; const value = q.includes("cnic_uploads_enabled") ? v[0] : v[1]; this.db.storeSettings.set(key, { setting_value_json: value }); return { success:true, meta:{changes:1} }; }
+    if (q.startsWith("INSERT INTO store_settings")) { const key=q.match(/VALUES\s*\('([^']+)'/i)?.[1]; if(!key)return {success:true,meta:{changes:0}}; this.db.storeSettings.set(key,{setting_value_json:v[0],is_public:q.includes("?,1,")?1:0}); return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'owner.payment_methods_updated'")) { this.db.audits.push(v); return {success:true,meta:{changes:1}}; }
     if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
       const [fee, total, tokenHash, expiresAt, quotedAt, updatedAt, id] = v;
       const row = this.db.orders.get(id);
@@ -1471,4 +1472,28 @@ test("exchange eligibility uses the actual delivered status event, not later ord
   assert.equal(isWithinExchangeWindow("2026-11-15T12:00:01.000Z", now), false);
   assert.equal(isWithinExchangeWindow(null, now), false);
   assert.equal(isWithinExchangeWindow("not-a-date", now), false);
+});
+
+
+test("owner can configure public direct payment methods and disabled options stay hidden", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const methods=[
+    {id:"cod",label:"Cash on delivery",kind:"cod",provider:"",enabled:true,account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay on delivery.",qr_media_id:null},
+    {id:"meezan-bank",label:"Bank transfer",kind:"bank",provider:"Meezan Bank",enabled:true,account_title:"De VERVE",bank_name:"Meezan Bank",account_number:"1234567890",iban:"PK00TEST1234567890",payment_url:"",instructions:"Pay only after the final total is confirmed.",qr_media_id:null},
+    {id:"sadapay",label:"SadaPay",kind:"wallet",provider:"SadaPay",enabled:true,account_title:"De VERVE",bank_name:"",account_number:"03197553705",iban:"",payment_url:"",instructions:"Use your order number as reference.",qr_media_id:null},
+    {id:"hidden-payfast",label:"PayFast",kind:"link",provider:"PayFast",enabled:false,account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"",qr_media_id:null}
+  ];
+  const saved=await handleRequest(request("/api/admin/settings","PATCH",{payment_methods:{methods}}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(saved.status,200);
+  const publicOptions=await handleRequest(request("/api/storefront/payment-options","GET"),env(db));
+  assert.equal(publicOptions.status,200);
+  const result=await publicOptions.json();
+  assert.deepEqual(result.methods.map(item=>item.id),["cod","meezan-bank","sadapay"]);
+  assert.equal(result.methods[1].account_number,"1234567890");
+  assert.equal(result.methods.some(item=>item.id==="hidden-payfast"),false);
+  [...db.admins.values()][0].role="manager";
+  const denied=await handleRequest(request("/api/admin/settings","PATCH",{payment_methods:{methods}}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(denied.status,403);
 });
