@@ -732,9 +732,9 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO wholesale_quote_items")) {
-      const [id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa] = v;
+      const [id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa] = v;
       if (!this.db.wholesaleQuotes.has(quote_id)) return { success: true, meta: { changes: 0 } };
-      this.db.wholesaleQuoteItems.push({ id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa });
+      this.db.wholesaleQuoteItems.push({ id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE wholesale_quotes SET status = ?")) {
@@ -809,9 +809,9 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO order_items")) {
-      const [id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa] = v;
+      const [id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa] = v;
       if (!this.db.orders.has(order_id)) return { success: true, meta: { changes: 0 } };
-      this.db.orderItems.push({ id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa });
+      this.db.orderItems.push({ id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
