@@ -516,3 +516,6 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .dv-toast.is-success{border-left:4px solid #259363}.dv-toast.is-error{border-left:4px solid #cf5148}
 @keyframes dvToastIn{from{opacity:0;transform:translateY(-10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(max-width:600px){.dv-toast{top:max(10px,env(safe-area-inset-top));right:10px;width:calc(100vw - 20px);padding:11px}.dv-toast p{font-size:11px}}
+
+.turnstile-status.is-error{color:#a92f2a;font-weight:700;background:#fff1ef;border:1px solid #f0cfca;border-radius:9px;padding:9px 10px}
+.turnstile-shell[data-state="error"]{border-color:#e6b8b2;background:#fff9f8}

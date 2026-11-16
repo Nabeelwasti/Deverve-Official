@@ -159,7 +159,6 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { if (!rentalNotice) return; const timeout = window.setTimeout(() => setRentalNotice(null), 6500); return () => window.clearTimeout(timeout); }, [rentalNotice]);
   useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCheckoutOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
