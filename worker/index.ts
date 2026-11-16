@@ -1268,10 +1268,14 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
         const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
         if (!media) return error("Vehicle image not found", 404);
       }
-      await env.DB.prepare("INSERT INTO vehicles (id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(id, name, type, transmission, seats, fuel, rate, withDriverRate, status, imageId, description).run();
-      await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.created', 'vehicle', ?, ?)")
-        .bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ status, vehicle_type: type })).run();
+      const statements = [
+        env.DB.prepare("INSERT INTO vehicles (id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(id, name, type, transmission, seats, fuel, rate, withDriverRate, status, imageId, description),
+      ];
+      if (imageId) statements.push(env.DB.prepare("INSERT INTO vehicle_media_assets (vehicle_id, media_asset_id, position, is_primary) VALUES (?, ?, 0, 1) ON CONFLICT(vehicle_id,media_asset_id) DO UPDATE SET is_primary=1").bind(id, imageId));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.created', 'vehicle', ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ status, vehicle_type: type })));
+      await env.DB.batch(statements);
       return json({ created: true, vehicle_id: id }, 201);
     } catch { return error("Vehicle could not be saved", 503); }
   }
@@ -1284,6 +1288,9 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
     const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, with_driver_daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ? AND (? = 'available' OR NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = vehicles.id AND status IN ('confirmed','active')))")
       .bind(name, type, transmission, seats, fuel, rate, withDriverRate, status, imageId, description, new Date().toISOString(), match[1], status).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("Vehicle not found or it has a confirmed or active rental and cannot be taken out of service.", 409);
+    const galleryStatements = [env.DB.prepare("UPDATE vehicle_media_assets SET is_primary = 0 WHERE vehicle_id = ?").bind(match[1])];
+    if (imageId) galleryStatements.push(env.DB.prepare("INSERT INTO vehicle_media_assets (vehicle_id, media_asset_id, position, is_primary) VALUES (?, ?, COALESCE((SELECT MAX(position)+1 FROM vehicle_media_assets WHERE vehicle_id=?),0), 1) ON CONFLICT(vehicle_id,media_asset_id) DO UPDATE SET is_primary=1").bind(match[1], imageId, match[1]));
+    await env.DB.batch(galleryStatements);
     await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.updated', 'vehicle', ?, ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ status, vehicle_type: type })).run();
     return json({ updated: true });

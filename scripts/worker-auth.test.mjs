@@ -11,6 +11,12 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
+test("vehicle gallery management requires an authenticated owner or manager", async () => {
+  const vehicleId = crypto.randomUUID();
+  const response = await handleRequest(request(`/api/admin/vehicles/${vehicleId}/media`, "GET"), env(new FakeD1()));
+  assert.equal(response.status, 401);
+});
+
 test("Safepay webhook HMAC-SHA512 verification accepts the exact raw payload and rejects tampering", async () => {
   const raw = '{"token":"evt_123456789012","type":"payment.succeeded","data":{"tracker":"track_123456789012","state":"TRACKER_ENDED","amount":12000,"currency":"PKR"}}';
   const secret = "sandbox-webhook-secret-for-test-only";
