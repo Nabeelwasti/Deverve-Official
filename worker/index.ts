@@ -142,6 +142,10 @@ function cleanText(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+function splitOptionValues(value: string): string[] {
+  return [...new Set(value.split(/[,;|\\n]+/).map(item => item.trim()).filter(Boolean))];
+}
+
 function validPhone(value: string): boolean {
   return /^\+?[0-9 ()-]{8,20}$/.test(value);
 }
@@ -1318,7 +1322,21 @@ async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): 
       if (!doc) return error("Rental document not found", 404);
       const object = await env.MEDIA.get(doc.object_key);
       if (!object) return error("Rental document not found", 404);
-      return new Response(object.body, { headers: { "content-type": doc.mime_type, "cache-control": "private, no-store", "x-content-type-options": "nosniff", "content-disposition": "attachment; filename=\"" + doc.document_side + (doc.mime_type === "image/png" ? ".png" : doc.mime_type === "image/webp" ? ".webp" : ".jpg") + "\"" } });
+      const download = url.searchParams.get("download") === "1";
+      const extension = doc.mime_type === "image/png" ? ".png" : doc.mime_type === "image/webp" ? ".webp" : ".jpg";
+      const filename = doc.document_side + extension;
+      const audit = await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, 'rental_request', ?, ?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, download ? "rental.document_downloaded" : "rental.document_viewed", match[1], JSON.stringify({ side: doc.document_side })).run();
+      if ((audit.meta?.changes ?? 0) !== 1) return error("Secure document access could not be recorded. Please retry.", 503);
+      return new Response(object.body, { headers: {
+        "content-type": doc.mime_type,
+        "cache-control": "private, no-store, max-age=0",
+        "pragma": "no-cache",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
+        "content-security-policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'",
+        "content-disposition": (download ? "attachment" : "inline") + "; filename=\"" + filename + "\"",
+      } });
     } catch { return error("Rental document could not be loaded", 503); }
   }
   if (request.method === "DELETE") {
