@@ -857,22 +857,30 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request);
   if(body?.payment_status!==undefined){
-    if(admin.role!=="owner")return error("Only the owner can verify direct customer payments",403);
+    if(admin.role!=="owner")return error("Only the owner can verify customer payments",403);
     if(body.payment_status!=="paid")return error("Only a verified payment can be marked as received",400);
     const reference=cleanText(body.payment_reference,100);
+    const accountId=typeof body.financial_account_id==="string"?body.financial_account_id:"";
+    if(!/^[a-zA-Z0-9-]{2,64}$/.test(accountId))return error("Choose the business account that received this payment",400);
     try{
-      const current=await env.DB.prepare("SELECT id,order_number,payment_method,payment_provider,payment_status FROM orders WHERE id=? LIMIT 1").bind(match[1]).first<{id:string;order_number:string;payment_method:string;payment_provider:string;payment_status:string}>();
+      const current=await env.DB.prepare("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=? LIMIT 1").bind(match[1]).first<{id:string;order_number:string;payment_method:string;payment_provider:string;payment_status:string;order_status:string;total_paisa:number;financial_transaction_id:string|null}>();
       if(!current)return error("Order not found",404);
-      if(current.payment_provider!=="manual"||current.payment_method==="cod")return error("This order is not awaiting a manual transfer verification",409);
-      if(current.payment_status==="paid")return json({updated:true,payment_status:"paid",already_verified:true});
-      if(current.payment_status!=="pending")return error("This payment cannot be verified from its current status",409);
-      const now=new Date().toISOString();
+      if(current.payment_provider!=="manual")return error("Safepay payments are reconciled automatically by the verified webhook",409);
+      const isCod=current.payment_method==="cod";
+      if(isCod&&current.order_status!=="delivered")return error("COD payment can only be recorded after the order is marked delivered",409);
+      if(!isCod&&current.payment_status!=="pending"&&!(current.payment_status==="paid"&&!current.financial_transaction_id))return error("This payment cannot be verified from its current status",409);
+      if(current.payment_status==="paid"&&current.financial_transaction_id)return json({updated:true,payment_status:"paid",already_verified:true});
+      const account=await env.DB.prepare("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;name:string;kind:string}>();
+      if(!account)return error("Selected financial account is not active",404);
+      if(isCod ? !["cash","bank","wallet","gateway"].includes(account.kind) : !["bank","wallet","gateway"].includes(account.kind))return error("Choose the account type that actually received this payment",400);
+      const now=new Date().toISOString(),transactionId=crypto.randomUUID();
       const result=await env.DB.batch([
-        env.DB.prepare("UPDATE orders SET payment_status='paid',updated_at=? WHERE id=? AND payment_provider='manual' AND payment_method!='cod' AND payment_status='pending'").bind(now,match[1]),
-        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'order.manual_payment_verified','order',?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid')").bind(crypto.randomUUID(),admin.admin_user_id,match[1],JSON.stringify({order_number:current.order_number,reference:reference||null}),match[1])
+        env.DB.prepare("UPDATE orders SET payment_status='paid',financial_account_id=?,financial_transaction_id=?,updated_at=? WHERE id=? AND payment_provider='manual' AND (payment_status='pending' OR (payment_status='paid' AND financial_transaction_id IS NULL)) AND (?=0 OR order_status='delivered')").bind(accountId,transactionId,now,match[1],isCod?1:0),
+        env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,?,'in',?,'website_order','order',?,?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?)").bind(transactionId,accountId,current.total_paisa,match[1],"Website order "+current.order_number+(reference?" · Ref "+reference:""),admin.admin_user_id,match[1],transactionId),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'order.payment_received','order',?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND financial_transaction_id=?)").bind(crypto.randomUUID(),admin.admin_user_id,match[1],JSON.stringify({order_number:current.order_number,reference:reference||null,account_id:accountId,account_name:account.name,amount_paisa:current.total_paisa}),match[1],transactionId)
       ]);
       if((result[0]?.meta?.changes??0)!==1)return error("Payment status changed. Refresh the order and try again.",409);
-      return json({updated:true,payment_status:"paid"});
+      return json({updated:true,payment_status:"paid",financial_account_id:accountId,financial_transaction_id:transactionId});
     }catch{return error("Payment verification could not be saved",503);}
   }
   const nextStatus = cleanText(body?.order_status, 20);
@@ -2982,11 +2990,13 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
         throw new Error("Safepay payment amount, currency or final state did not match the stored order");
       }
       const now = new Date().toISOString();
+      const transactionId = crypto.randomUUID();
       const results = await env.DB.batch([
         env.DB.prepare("UPDATE payment_attempts SET status = 'succeeded', updated_at = ? WHERE id = ? AND status IN ('created','pending')").bind(now, attempt.id),
-        env.DB.prepare("UPDATE orders SET payment_status = 'paid', updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(now, attempt.order_id, attempt.amount_paisa),
+        env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(transactionId,now,attempt.order_id,attempt.amount_paisa),
+        env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,'gateway-clearing','in',?,'website_order','order',?,'Safepay online payment',NULL WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?)").bind(transactionId,attempt.amount_paisa,attempt.order_id,attempt.order_id,transactionId),
       ]);
-      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order");
+      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order and cashbook");
       try{await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});}catch{}
       try{await env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?, ?, 'email', 'owner_payment_succeeded')").bind(crypto.randomUUID(),attempt.order_id).run();}catch{}
     } else {
