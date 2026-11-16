@@ -93,7 +93,7 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
   }, [resetKey, attempt]);
   return <div className="turnstile-shell">
     <div className="turnstile-widget" ref={host} role="group" aria-label="Cloudflare security verification" />
-    <p className={status === "verified" ? "turnstile-status is-verified" : "turnstile-status"} role="status" aria-live="polite">
+    <p className={status === "verified" ? "turnstile-status is-verified" : "turnstile-status"} aria-live="polite">
       {status === "loading" ? "Loading secure verification…" : status === "verified" ? "Security check complete." : status === "error" ? "Security check could not load. Check your connection and try again." : "Complete the security check above to submit your request."}
     </p>
     {status === "error" && <button type="button" className="turnstile-retry" onClick={() => setAttempt(value => value + 1)}>Retry security check</button>}
