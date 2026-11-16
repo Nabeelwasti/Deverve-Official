@@ -338,6 +338,8 @@ class FakeStatement {
       const customer = session && this.db.customers.get(session.customer_id);
       return customer?.status === "active" ? { id: session.id, customer_id: customer.id, email: customer.email, full_name: customer.full_name, phone: customer.phone, status: customer.status, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
     }
+    if (q.startsWith("SELECT COUNT(*) AS document_count FROM rental_documents")) return { document_count: [...this.db.rentalDocuments.values()].filter((item) => item.rental_request_id === v[0] && ["cnic_front","cnic_back"].includes(item.document_side)).length };
+    if (q.startsWith("SELECT id, daily_rate_paisa, with_driver_daily_rate_paisa FROM vehicles")) return this.db.vehicles.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, password_hash, full_name, phone, status FROM customers")) return [...this.db.customers.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
@@ -660,29 +662,36 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO vehicles")) {
-      const [id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description] = v;
-      this.db.vehicles.set(id, { id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      const [id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description] = v;
+      this.db.vehicles.set(id, { id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE vehicles SET name")) {
-      const [name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, updated_at, id] = v;
+      const [name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, updated_at, id] = v;
       const row = this.db.vehicles.get(id);
       if (!row) return { success: true, meta: { changes: 0 } };
-      Object.assign(row, { name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, updated_at });
+      Object.assign(row, { name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO rental_requests")) {
-      const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at] = v;
-      const guardVehicle = v[19];
+      const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa] = v;
+      const guardVehicle = v[21];
       if (guardVehicle !== vehicle_id) return { success: true, meta: { changes: 0 } };
       if (vehicle_id) {
         const vehicle = this.db.vehicles.get(vehicle_id);
         const overlap = [...this.db.rentalRequests.values()].some((row) => row.vehicle_id === vehicle_id && ["confirmed", "active"].includes(row.status) && row.pickup_at < return_at && row.return_at > pickup_at);
         if (!vehicle || vehicle.status !== "available" || overlap) return { success: true, meta: { changes: 0 } };
       }
-      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_city: v[13], pickup_address: v[14], destination_city: v[15], destination_address: v[16], document_upload_token_hash: v[17], document_upload_expires_at: v[18], pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
+      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa, document_upload_token_hash: null, document_upload_expires_at: null, pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
+    if (q.startsWith("INSERT INTO rental_documents")) {
+      const [id, rental_request_id, document_side, object_key, mime_type, byte_size] = v;
+      if (!this.db.rentalRequests.has(rental_request_id)) return { success: true, meta: { changes: 0 } };
+      this.db.rentalDocuments.set(id, { id, rental_request_id, document_side, object_key, mime_type, byte_size });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("rental.created_with_cnic")) { this.db.audits.push({ action: "rental.created_with_cnic", values: v }); return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("UPDATE rental_requests SET vehicle_id = ?")) {
       const [vehicle_id, status, admin_note, updated_at, id, expected, guardStatus, guardVehicle, existsVehicle, overlapVehicle] = v;
       const row = this.db.rentalRequests.get(id);
@@ -939,6 +948,7 @@ class FakeD1 {
   wholesaleQuoteItems = [];
   vehicles = new Map();
   rentalRequests = new Map();
+  rentalDocuments = new Map();
   audits = [];
   notifications = new Map();
   notificationOutbox = new Map();
@@ -951,7 +961,7 @@ class FakeD1 {
   }
 }
 
-const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, ADMIN_BOOTSTRAP_TOKEN: token });
+const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, MEDIA: { put: async () => undefined, delete: async () => undefined, get: async () => null }, ADMIN_BOOTSTRAP_TOKEN: token });
 const origin = "https://deverve.example";
 const request = (path, method, body, headers = {}) => {
   const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals" || path === "/api/customer/register";
