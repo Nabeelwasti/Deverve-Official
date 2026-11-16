@@ -14,6 +14,8 @@ globalThis.fetch = async (input, init = {}) => {
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);
+  const refund = await handleRequest(request("/api/admin/pos/sales/00000000-0000-4000-8000-000000000000/void", "POST", {reason:"test"}), env(new FakeD1()));
+  assert.equal(refund.status, 401);
 });
 
 test("inventory overview requires an authenticated staff session", async () => {

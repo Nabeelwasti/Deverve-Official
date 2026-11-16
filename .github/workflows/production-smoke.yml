@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://deverve-official.pages.dev"
-          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges" "/api/admin/inventory" "/api/admin/pos/bootstrap" "/api/admin/pos/summary" "/api/admin/pos/expenses" "/api/admin/vehicles/00000000-0000-4000-8000-000000000000/media"; do
+          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges" "/api/admin/inventory" "/api/admin/pos/bootstrap" "/api/admin/pos/summary" "/api/admin/pos/expenses" "/api/admin/pos/sales/00000000-0000-4000-8000-000000000000/void" "/api/admin/vehicles/00000000-0000-4000-8000-000000000000/media"; do
             status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-route.json -w '%{http_code}' "$base$route")"
             if [[ "$status" != "401" ]]; then
               echo "Expected unauthenticated access to $route to return 401, received HTTP $status:"
