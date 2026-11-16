@@ -43,6 +43,8 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Block-based CMS workspace for pages, sections, navigation, draft/publish/archive, revision snapshots and audit events.
 - Product SEO title/description, canonical and Open Graph metadata, Product JSON-LD, dedicated product routes and dynamic sitemap.
 - Owner-only in-app notification inbox and owner-managed primary/secondary email recipient settings.
+- Owner-managed customer payment methods: COD, bank transfers, mobile wallets (including SadaPay/JazzCash/Easypaisa account details), hosted HTTPS payment links and uploaded QR images. Each method can be added, edited, activated or disabled from Website Settings; checkout exposes enabled methods only.
+- Direct-transfer orders record the selected payment method and remain unpaid until the owner independently verifies receipt. Staff cannot mark payments paid; fulfilment is blocked until verification.
 - Resend notification outbox with retry/audit records; actual email delivery remains disabled until provider credentials and a verified sender are configured.
 - Owner-managed brand assets and social profile URLs.
 
@@ -77,9 +79,9 @@ The direct SQLite catalogue query reports 45 tables. Cloudflare's D1 metadata `n
 
 ## What is actually active
 
-- **Checkout:** Cash on Delivery only. Safepay adapter code supports sandbox and a separately gated production environment, but the Pages project has no Safepay merchant credentials configured and no end-to-end payment has been completed. The online option therefore remains unavailable.
-- **PayFast:** Not integrated. The public Premier PayFast developer API documentation describes direct card/account/wallet transaction APIs that require sensitive instrument fields; it does not provide the merchant-specific hosted OneCheckout redirect contract needed for a safe redirect-only integration. Do not collect card numbers or CVV on De VERVE pages. Obtain PayFast's hosted checkout integration specification from the merchant onboarding team before implementation.
-- **Other wallets:** JazzCash and Easypaisa are not directly integrated. They may be available through an approved gateway account, but merchant eligibility and enabled methods must be confirmed.
+- **Checkout:** COD plus owner-configurable direct payment instructions are supported. The owner can publish bank/wallet account details, IBANs, hosted HTTPS links and QR images from Website Settings without a code change. SadaPay, JazzCash and Easypaisa can be offered as manually reconciled wallet/account methods when the owner has an eligible account. Direct transfers stay pending until the owner verifies receipt.
+- **Safepay:** The existing gateway adapter supports sandbox and separately gated production credentials held as Cloudflare secrets. The owner dashboard does not yet edit Safepay API secrets, and no live merchant credentials or end-to-end transaction have been verified. Keep the gateway disabled until onboarding and sandbox/webhook reconciliation pass. The owner can still publish a provider-supplied HTTPS payment link as a manual payment option.
+- **PayFast:** Not yet integrated as a dynamic per-order gateway. A merchant-supplied hosted payment URL can be published as a manual link, but dynamic checkout, signed callbacks and reconciliation require the official merchant-specific hosted OneCheckout contract and credentials. Do not collect card numbers or CVV on De VERVE pages.
 - **Email:** In-app owner notifications work. Resend delivery is not active because no Resend API key or verified sender address is configured in the Pages production environment. The owner recipient defaults to `deverve61@gmail.com` and can be managed in the owner settings.
 - **WhatsApp/SMS:** Customer contact links open WhatsApp; automated WhatsApp Business or SMS delivery is not connected.
 - **Social accounts:** Only public profile URLs are stored. OAuth, publishing, inbox management, ad management and analytics imports are not part of this website.
@@ -94,8 +96,9 @@ The direct SQLite catalogue query reports 45 tables. Cloudflare's D1 metadata `n
 2. Enter the actual rental fleet, rates, availability, photos and owner-approved rental terms.
 3. Confirm business phone/WhatsApp, address, email, opening hours, delivery coverage/fees and wholesale minimums.
 4. Obtain owner approval for customer policies, privacy notice, exchange terms, rental terms and CNIC retention policy.
-5. Configure Safepay sandbox merchant credentials in Cloudflare secrets and complete an end-to-end sandbox payment plus webhook/reconciliation tests before considering live onboarding.
-6. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before building or enabling that provider.
+5. Owner must configure actual bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images in Website Settings, then test a customer checkout and manual reconciliation.
+6. Configure Safepay sandbox merchant credentials in Cloudflare secrets and complete an end-to-end sandbox payment plus webhook/reconciliation tests before considering live onboarding.
+7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before building or enabling that provider.
 7. Configure a verified sending domain, Resend API key and sender address; test delivery and retry records.
 8. Implement and test the dedicated exchange case-management workflow if the business wants exchanges handled inside the customer/admin portal rather than WhatsApp.
 9. Complete real-device customer/admin acceptance tests against production D1/R2. Current Playwright tests mock public API responses and do not replace live order, payment, media or staff acceptance.
