@@ -223,9 +223,10 @@ function Storefront() {
           ? { label: "Free delivery", amount: 0, freeDelivery: true }
           : null;
   const addToCart = (product: StoreProduct) => {
-    const variantId = selectedVariants[product.id] || product.variants[0]?.id;
-    const variant = product.variants.find((item) => item.id === variantId);
-    if (!variant || product.retail_price_paisa === null) return;
+    const selectedId = selectedVariants[product.id];
+    const variant = product.variants.find((item) => item.id === selectedId && item.available_quantity > 0)
+      || product.variants.find((item) => item.available_quantity > 0);
+    if (!variant || product.retail_price_paisa === null) { setCheckoutMessage("Please choose an available size and colour before adding this item."); return; }
     setCart((current) => {
       const existing = current.find((item) => item.variant_id === variant.id);
       if (existing) return current.map((item) => item.variant_id === variant.id ? { ...item, quantity: Math.min(item.quantity + 1, variant.available_quantity) } : item);
