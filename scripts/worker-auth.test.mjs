@@ -1250,10 +1250,16 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     sku: "DV-CHECKOUT-M", size: "M", color: "Navy", initial_stock: 5,
   }, headers), env(db));
   const variantId = (await variantResponse.json()).variant.id;
+  await handleRequest(request("/api/admin/products/" + productId + "/variants", "POST", {
+    sku: "DV-CHECKOUT-S", size: "S", color: "Navy", initial_stock: 0,
+  }, headers), env(db));
 
   const catalogue = await handleRequest(new Request(origin + "/api/products?limit=12"), env(db));
   assert.equal(catalogue.status, 200);
-  assert.equal((await catalogue.json()).products[0].variants[0].available_quantity, 5);
+  const publicVariants = (await catalogue.json()).products[0].variants;
+  assert.equal(publicVariants.length, 2, "sold-out sizes remain visible as disabled customer choices");
+  assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-M").available_quantity, 5);
+  assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-S").available_quantity, 0);
 
   const payload = {
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
