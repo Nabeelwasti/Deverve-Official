@@ -119,3 +119,11 @@ npm run test:e2e
 ```
 
 Work directly on `main`. Do not create or switch to feature branches, force-push, reset, or discard existing work. Keep secrets and private customer/business data out of GitHub and chat. Treat implemented, tested, deployed and live as separate states.
+
+
+### Rental booking and identity verification
+
+- Rental requests require the front and back of the customer CNIC in the same multipart submission. The Worker validates file type/signature and size, then stores images in private R2 and metadata in D1. A request is not accepted unless both document records are committed.
+- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The scheduled retention Worker remains responsible for automatic deletion.
+- Vehicle pricing supports a self-drive daily rate and an optional separate with-driver daily rate. If the latter is blank, the self-drive rate is used. The server independently calculates full 24-hour days (rounded up), daily rate and total; browser estimates are only a preview.
+- Available vehicles must have a self-drive rate. Add vehicles and both rate options in Admin → Vehicle fleet before expecting an automatic price estimate. If no vehicle is selected, the rental team must quote manually.
