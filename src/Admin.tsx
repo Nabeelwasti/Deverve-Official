@@ -361,6 +361,14 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+  const verifyManualPayment = async (order:AdminOrder) => {
+    const reference=window.prompt("Enter the bank/wallet transaction reference after checking your business account (optional):")??"";
+    if(!window.confirm("Have you independently confirmed receipt of the full payment for "+order.order_number+"?"))return;
+    setBusy(true);setMessage("");
+    try{await api("/api/admin/orders/"+order.id,{method:"PATCH",body:JSON.stringify({payment_status:"paid",payment_reference:reference})});await Promise.all([loadOrders(),loadOverview()]);setMessage("Direct payment verified for "+order.order_number+".");}
+    catch(error){setMessage(error instanceof Error?error.message:"Payment could not be verified.");}
+    finally{setBusy(false);}
+  };
   const updateOrderStatus = async (order: AdminOrder, order_status: AdminOrder["order_status"]) => {
     if (order_status === order.order_status) return;
     setBusy(true); setMessage("");
@@ -624,11 +632,11 @@ export default function Admin() {
           <div className="admin-panel-heading"><div><h2>Customer orders</h2><p className="admin-muted">Review COD orders, contact customers and move each order through fulfilment.</p></div><span className="admin-enquiry-count">{orders.length} recent</span></div>
           {orders.length === 0 ? <div className="admin-empty"><strong>No orders yet</strong><p>New website checkout requests will appear here.</p></div> : <div className="admin-order-list">{orders.map((order) => {
             const next: AdminOrder["order_status"][] = (order.order_status === "pending" ? ["confirmed", "cancelled"] : order.order_status === "confirmed" ? ["processing", "cancelled"] : order.order_status === "processing" ? ["dispatched", "cancelled"] : order.order_status === "dispatched" ? ["delivered"] : []) as AdminOrder["order_status"][];
-            const canFulfil = order.delivery_fee_status === "accepted" && (order.payment_provider !== "safepay" || order.payment_status === "paid");
+            const canFulfil = order.delivery_fee_status === "accepted" && ((order.payment_provider === "manual" && order.payment_method === "cod") || order.payment_status === "paid");
             const allowedNext = canFulfil ? next : next.filter((status) => status !== "processing" && status !== "dispatched");
             return <article className="admin-order-card" key={order.id}>
               <div className="admin-order-heading"><div><strong>{order.order_number}</strong><span>{new Date(order.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${order.order_status}`}>{order.order_status}</span></div>
-              <div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span><a className="admin-secondary" href={whatsappHref(order.phone, `Assalamu Alaikum ${order.customer_name}, this is De VERVE regarding your order ${order.order_number}. Current status: ${order.order_status}. Please reply here if you need assistance.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
+              <div className="admin-order-payment"><strong>Payment: {order.payment_method||"cod"}</strong><span>Status: {order.payment_status}</span>{admin.role==="owner"&&order.payment_provider==="manual"&&order.payment_method!=="cod"&&order.payment_status==="pending"&&<button type="button" className="admin-primary" disabled={busy} onClick={()=>void verifyManualPayment(order)}>Verify received transfer</button>}</div><div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span><a className="admin-secondary" href={whatsappHref(order.phone, `Assalamu Alaikum ${order.customer_name}, this is De VERVE regarding your order ${order.order_number}. Current status: ${order.order_status}. Please reply here if you need assistance.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
               <div className="admin-order-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
               <div className="admin-delivery-quote">
                 <div><strong>Delivery fee approval</strong><span className={`admin-delivery-state state-${order.delivery_fee_status}`}>{order.delivery_fee_status === "pending_quote" ? "Needs a delivery quotation" : order.delivery_fee_status === "awaiting_customer" ? "Waiting for customer approval" : order.delivery_fee_status === "accepted" ? "Customer approved the final total" : "Customer declined the quotation"}</span></div>
