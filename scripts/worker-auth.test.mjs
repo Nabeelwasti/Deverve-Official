@@ -392,7 +392,7 @@ class FakeStatement {
       const admin = session && this.db.admins.get(session.admin_user_id);
       return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
     }
-    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.wholesale_price_paisa")) {
+    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.wholesale_price_paisa")) {
       const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, wholesale_price_paisa: product.wholesale_price_paisa, retail_price_paisa: product.retail_price_paisa } : null;
     }
@@ -403,7 +403,7 @@ class FakeStatement {
     if (q.startsWith("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token")) {
       return [...this.db.orders.values()].find((row) => row.checkout_token === v[0]) ?? null;
     }
-    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.retail_price_paisa")) {
+    if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.retail_price_paisa")) {
       const variant = this.db.variants.get(v[0]);
       const product = variant && this.db.products.get(variant.product_id);
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, retail_price_paisa: product.retail_price_paisa } : null;
