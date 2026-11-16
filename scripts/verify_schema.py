@@ -13,7 +13,7 @@ required_tables = {
     "products", "product_variants", "enquiries", "orders", "order_items",
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
-    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "admin_sessions",
+    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "pos_sale_voids", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
@@ -175,8 +175,13 @@ for table, columns in {
     "pos_sale_items": {"id", "sale_id", "variant_id", "quantity", "unit_price_paisa", "unit_cost_paisa"},
     "pos_payments": {"id", "sale_id", "account_id", "amount_paisa", "tendered_paisa", "change_paisa"},
     "business_expenses": {"id", "category", "amount_paisa", "account_id", "financial_transaction_id", "status"},
+    "pos_sale_voids": {"sale_id", "voided_by_admin_id", "reason", "created_at"},
 }.items():
     actual = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
     assert columns <= actual, f"{table} is missing required fields: {columns - actual}"
 assert any(row[1] == "idx_pos_one_open_session" and row[2] == 1 for row in db.execute("PRAGMA index_list(pos_sessions)")), "Only one open session per register must be allowed"
 assert any(row[1] == "idx_financial_transactions_account_date" for row in db.execute("PRAGMA index_list(financial_transactions)")), "Financial ledger account/date index is missing"
+
+order_item_columns = {row[1] for row in db.execute("PRAGMA table_info(order_items)")}
+assert {"unit_cost_paisa"} <= order_item_columns, "Website order item cost snapshots are missing"
+assert any(row[1] == "idx_financial_transaction_reversal" and row[2] == 1 for row in db.execute("PRAGMA index_list(financial_transactions)")), "Refunds must not reverse the same financial entry twice"
