@@ -1176,7 +1176,7 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   const status = cleanText(body.status, 20) || "draft";
   const description = cleanText(body.description, 1000);
   const imageId = body.image_key ? cleanText(body.image_key, 64) : null;
-  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, daily rate and status", 400);
+  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || (status === "available" && rate === null) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, and rates. An available vehicle must have a self-drive daily rate.", 400);
   if (imageId && !/^[a-f0-9-]{36}$/i.test(imageId)) return error("Choose a valid vehicle image", 400);
   if (request.method === "POST" && collection) {
     const id = crypto.randomUUID();
