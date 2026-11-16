@@ -1097,7 +1097,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
       vehicle = await env.DB.prepare("SELECT id, daily_rate_paisa, with_driver_daily_rate_paisa FROM vehicles WHERE id = ? AND status = 'available' LIMIT 1").bind(vehicleId).first<{ id: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null }>();
     } catch { return error("Vehicle pricing is temporarily unavailable", 503); }
     if (!vehicle) return error("This vehicle is no longer available. Please refresh and choose another vehicle.", 409);
-    estimatedDailyRatePaisa = driver === "with_driver" ? (vehicle.with_driver_daily_rate_paisa ?? vehicle.daily_rate_paisa) : vehicle.daily_rate_paisa;
+    estimatedDailyRatePaisa = driver === "with_driver" ? vehicle.with_driver_daily_rate_paisa : vehicle.daily_rate_paisa;
     if (estimatedDailyRatePaisa === null || !Number.isSafeInteger(estimatedDailyRatePaisa) || estimatedDailyRatePaisa < 0) return error("This vehicle's selected rental rate has not been configured yet. Please contact De VERVE.", 409);
   }
   const estimatedTotalPaisa = estimatedDailyRatePaisa === null ? null : estimatedDailyRatePaisa * rentalDays;
@@ -1176,7 +1176,7 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   const status = cleanText(body.status, 20) || "draft";
   const description = cleanText(body.description, 1000);
   const imageId = body.image_key ? cleanText(body.image_key, 64) : null;
-  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || (status === "available" && rate === null) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, and rates. An available vehicle must have a self-drive daily rate.", 400);
+  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || (status === "available" && (rate === null || withDriverRate === null)) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, and rates. An available vehicle must have both self-drive and with-driver daily rates.", 400);
   if (imageId && !/^[a-f0-9-]{36}$/i.test(imageId)) return error("Choose a valid vehicle image", 400);
   if (request.method === "POST" && collection) {
     const id = crypto.randomUUID();
