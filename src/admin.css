@@ -280,3 +280,12 @@
 .admin-payment-verify-controls .admin-primary{min-height:38px}
 .pos-metrics{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 @media(max-width:600px){.admin-payment-verify-controls{display:grid;grid-template-columns:1fr}.admin-payment-verify-controls select{width:100%;min-width:0}}
+
+.pos-modal-backdrop{position:fixed;inset:0;z-index:2000;display:grid;place-items:center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));background:rgba(4,17,31,.64);backdrop-filter:blur(8px);overscroll-behavior:contain}
+.pos-modal{width:min(520px,100%);max-height:calc(100dvh - 24px);overflow:auto;padding:22px;border:1px solid rgba(255,255,255,.8);border-radius:20px;background:#fff;box-shadow:0 28px 90px rgba(0,0,0,.28);animation:dvModalIn .2s ease both}
+.pos-modal .admin-panel-heading{align-items:flex-start;gap:12px}
+.pos-modal .admin-panel-heading h3{margin:0 0 8px;color:#14375b}
+.pos-modal .pos-form{display:grid;gap:16px}
+.pos-modal textarea{width:100%;min-height:110px;resize:vertical}
+.pos-modal .admin-form-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+@media(max-width:600px){.pos-modal-backdrop{padding:12px}.pos-modal{max-height:calc(100dvh - 24px);padding:16px;border-radius:18px}.pos-modal .admin-panel-heading h3{font-size:20px}}
