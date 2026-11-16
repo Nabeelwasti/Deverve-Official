@@ -19,9 +19,9 @@ export default function ProductPage(){
  const addToCart=()=>{
   if(!selected||product.retail_price_paisa===null||selected.available_quantity<1)return;
   let current:CartLine[]=[];
-  try{const parsed:unknown=JSON.parse(localStorage.getItem("deverve-cart")||"[]");if(Array.isArray(parsed))current=parsed.filter((item):item is CartLine=>Boolean(item&&typeof item==="object"&&typeof item.variant_id==="string"&&typeof item.product_id==="string"&&Number.isInteger(item.quantity)&&item.quantity>0));}catch{}
+  try{const parsed:unknown=JSON.parse(localStorage.getItem("deverve-cart")||"[]");if(Array.isArray(parsed))current=parsed.filter((item):item is CartLine=>Boolean(item&&typeof item==="object"&&typeof item.variant_id==="string"&&/^[a-f0-9-]{36}$/i.test(item.variant_id)&&typeof item.product_id==="string"&&typeof item.name==="string"&&(item.sku===null||typeof item.sku==="string")&&typeof item.size==="string"&&typeof item.color==="string"&&Number.isInteger(item.quantity)&&item.quantity>0&&item.quantity<=10&&Number.isSafeInteger(item.unit_price_paisa)&&item.unit_price_paisa>=0&&Number.isInteger(item.available_quantity)&&item.available_quantity>0));}catch{}
   const existing=current.find(item=>item.variant_id===selected.id);
-  const line:CartLine={variant_id:selected.id,product_id:product.id,name:product.name,sku:selected.sku,size:selected.size,color:selected.color,quantity:existing?Math.min(existing.quantity+1,selected.available_quantity):1,unit_price_paisa:product.retail_price_paisa!,available_quantity:selected.available_quantity};
+  const line:CartLine={variant_id:selected.id,product_id:product.id,name:product.name,sku:selected.sku,size:selected.size,color:selected.color,quantity:existing?Math.min(10,existing.quantity+1,selected.available_quantity):1,unit_price_paisa:product.retail_price_paisa!,available_quantity:selected.available_quantity};
   current=existing?current.map(item=>item.variant_id===selected.id?line:item):[...current,line];
   localStorage.setItem("deverve-cart",JSON.stringify(current.slice(0,20)));
   window.location.href="/?cart=open";
