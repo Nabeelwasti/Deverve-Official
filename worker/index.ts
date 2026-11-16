@@ -815,7 +815,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const limitValue = Number(url.searchParams.get("limit") ?? "50");
     const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
     try {
-      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
+      const result = await env.DB.prepare("SELECT id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, financial_account_id, financial_transaction_id, order_status, delivery_fee_status, delivery_fee_expires_at, customer_note, created_at, updated_at FROM orders ORDER BY created_at DESC LIMIT ?")
         .bind(limit).all<OrderRow>();
       const orders = result.results ?? [];
       if (!orders.length) return json({ orders: [] });
@@ -2993,7 +2993,7 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
       const transactionId = crypto.randomUUID();
       const results = await env.DB.batch([
         env.DB.prepare("UPDATE payment_attempts SET status = 'succeeded', updated_at = ? WHERE id = ? AND status IN ('created','pending')").bind(now, attempt.id),
-        env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND payment_status != 'paid' AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(transactionId,now,attempt.order_id,attempt.amount_paisa),
+        env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND (payment_status != 'paid' OR financial_transaction_id IS NULL) AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(transactionId,now,attempt.order_id,attempt.amount_paisa),
         env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,'gateway-clearing','in',?,'website_order','order',?,'Safepay online payment',NULL WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?)").bind(transactionId,attempt.amount_paisa,attempt.order_id,attempt.order_id,transactionId),
       ]);
       if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order and cashbook");
