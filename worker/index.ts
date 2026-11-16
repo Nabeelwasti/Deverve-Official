@@ -1033,61 +1033,118 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
 
 async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/rentals" || request.method !== "POST") return null;
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const limited = await enforcePublicRateLimit(request, env, "rental-request", 5);
   if (limited) return limited;
-  const body = await readJson(request, 12_000);
-  if (!body) return error("Please submit valid rental request details", 400);
-  if (cleanText(body.website, 120)) return json({ accepted: true });
-  if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
-  const name = cleanText(body.customer_name, 100);
-  const phone = cleanText(body.phone, 24);
-  const email = cleanText(body.email, 160).toLowerCase();
-  const vehicleId = cleanText(body.vehicle_id, 64) || null;
-  const pickupCity = cleanText(body.pickup_city, 80);
-  const pickupAddress = cleanText(body.pickup_address, 300);
-  const destinationCity = cleanText(body.destination_city, 80);
-  const destinationAddress = cleanText(body.destination_address, 300);
-  const pickup = cleanText(pickupAddress + ", " + pickupCity, 420);
-  const destination = cleanText(destinationAddress + ", " + destinationCity, 420);
-  const pickupAt = cleanText(body.pickup_at, 40);
-  const returnAt = cleanText(body.return_at, 40);
-  const driver = cleanText(body.driver_option, 20);
-  const note = cleanText(body.customer_note, 500);
-  const pickupTime = parseRentalDateTime(pickupAt);
-  const returnTime = parseRentalDateTime(returnAt);
-  if (name.length < 2 || !validPhone(phone) || pickupCity.length < 2 || pickupAddress.length < 8 || destinationCity.length < 2 || destinationAddress.length < 5 || !["self_drive", "with_driver"].includes(driver)) return error("Enter your name, phone, complete pickup and destination addresses, and driver option", 400);
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Enter a valid email address", 400);
-  if (!Number.isFinite(pickupTime) || !Number.isFinite(returnTime) || pickupTime <= Date.now() || returnTime <= pickupTime || returnTime - pickupTime > 60 * 86400000) return error("Choose a future pickup and a return time within 60 days", 400);
-  if (vehicleId && !/^[a-f0-9-]{36}$/i.test(vehicleId)) return error("Choose a valid vehicle", 400);
-  const id = crypto.randomUUID();
-  const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
-  const now = new Date().toISOString();
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > 8_600_000) return error("The two CNIC images and rental details must be under 8 MB in total", 413);
+  let form: FormData;
+  try { form = await request.formData(); } catch { return error("Submit the rental form with both CNIC images attached", 400); }
+  if (cleanText(form.get("website"), 120)) return json({ accepted: true });
   let documentUploadsEnabled = false;
   try {
     const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
     documentUploadsEnabled = setting?.setting_value_json === "true";
   } catch { return error("Rental document settings are temporarily unavailable", 503); }
-  const uploadToken = documentUploadsEnabled ? base64Url(crypto.getRandomValues(new Uint8Array(32))) : "";
-  const uploadTokenHash = documentUploadsEnabled ? await sha256(uploadToken) : null;
-  const uploadExpiresAt = documentUploadsEnabled ? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString() : null;
-  let signedInCustomer: CustomerSessionRow | null = null;
+  if (!documentUploadsEnabled) return error("Secure CNIC uploads are currently unavailable. Please contact De VERVE.", 503);
+  if (!(await verifyTurnstile(request, form.get("turnstile_token")))) return error("Please complete the security check and try again.", 403);
+
+  const front = form.get("cnic_front");
+  const back = form.get("cnic_back");
+  if (form.get("cnic_consent") !== "true") return error("Confirm consent to the secure processing of your CNIC images", 400);
+  if (!(front instanceof File) || !(back instanceof File)) return error("Both the front and back of your CNIC are required", 400);
+  const files = [{ side: "cnic_front", file: front }, { side: "cnic_back", file: back }];
+  for (const item of files) {
+    if (item.file.size < 1 || item.file.size > 4_000_000) return error("Each CNIC image must be no larger than 4 MB", 413);
+    if (!["image/jpeg", "image/png", "image/webp"].includes(item.file.type)) return error("CNIC files must be JPG, PNG or WebP images", 415);
+  }
+  const bytes = await Promise.all(files.map((item) => item.file.arrayBuffer()));
+  for (let i = 0; i < files.length; i++) {
+    const b = new Uint8Array(bytes[i]);
+    const type = files[i].file.type;
+    const valid = (type === "image/jpeg" && b[0] === 255 && b[1] === 216 && b[2] === 255)
+      || (type === "image/png" && b[0] === 137 && b[1] === 80 && b[2] === 78 && b[3] === 71)
+      || (type === "image/webp" && String.fromCharCode(...b.slice(8, 12)) === "WEBP");
+    if (!valid) return error("A CNIC file does not match its declared image type", 415);
+  }
+
+  const name = cleanText(form.get("customer_name"), 100);
+  const phone = cleanText(form.get("phone"), 24);
+  const email = cleanText(form.get("email"), 160).toLowerCase();
+  const vehicleId = cleanText(form.get("vehicle_id"), 64) || null;
+  const pickupCity = cleanText(form.get("pickup_city"), 80);
+  const pickupAddress = cleanText(form.get("pickup_address"), 300);
+  const destinationCity = cleanText(form.get("destination_city"), 80);
+  const destinationAddress = cleanText(form.get("destination_address"), 300);
+  const pickup = cleanText(pickupAddress + ", " + pickupCity, 420);
+  const destination = cleanText(destinationAddress + ", " + destinationCity, 420);
+  const pickupAt = cleanText(form.get("pickup_at"), 40);
+  const returnAt = cleanText(form.get("return_at"), 40);
+  const driver = cleanText(form.get("driver_option"), 20);
+  const note = cleanText(form.get("customer_note"), 500);
+  const pickupTime = parseRentalDateTime(pickupAt);
+  const returnTime = parseRentalDateTime(returnAt);
+  if (name.length < 2 || !validPhone(phone) || pickupCity.length < 2 || pickupAddress.length < 8 || destinationCity.length < 2 || destinationAddress.length < 5 || !["self_drive", "with_driver"].includes(driver)) return error("Complete all required customer, address and driver fields", 400);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Enter a valid email address", 400);
+  if (!Number.isFinite(pickupTime) || !Number.isFinite(returnTime) || pickupTime <= Date.now() || returnTime <= pickupTime || returnTime - pickupTime > 60 * 86400000) return error("Choose a future pickup and a return time within 60 days", 400);
+  if (vehicleId && !/^[a-f0-9-]{36}$/i.test(vehicleId)) return error("Choose a valid vehicle", 400);
+
+  const rentalDays = Math.ceil((returnTime - pickupTime) / 86400000);
+  let estimatedDailyRatePaisa: number | null = null;
+  if (vehicleId) {
+    let vehicle: { id: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null } | null;
+    try {
+      vehicle = await env.DB.prepare("SELECT id, daily_rate_paisa, with_driver_daily_rate_paisa FROM vehicles WHERE id = ? AND status = 'available' LIMIT 1").bind(vehicleId).first<{ id: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null }>();
+    } catch { return error("Vehicle pricing is temporarily unavailable", 503); }
+    if (!vehicle) return error("This vehicle is no longer available. Please refresh and choose another vehicle.", 409);
+    estimatedDailyRatePaisa = driver === "with_driver" ? (vehicle.with_driver_daily_rate_paisa ?? vehicle.daily_rate_paisa) : vehicle.daily_rate_paisa;
+    if (estimatedDailyRatePaisa === null || !Number.isSafeInteger(estimatedDailyRatePaisa) || estimatedDailyRatePaisa < 0) return error("This vehicle's selected rental rate has not been configured yet. Please contact De VERVE.", 409);
+  }
+  const estimatedTotalPaisa = estimatedDailyRatePaisa === null ? null : estimatedDailyRatePaisa * rentalDays;
+  if (estimatedTotalPaisa !== null && !Number.isSafeInteger(estimatedTotalPaisa)) return error("The rental estimate exceeds the supported amount", 400);
+
+  let signedInCustomer: CustomerSessionRow | null;
   try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
+  const id = crypto.randomUUID();
+  const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
+  const now = new Date().toISOString();
+  const objects = files.map((item) => {
+    const ext = item.file.type === "image/jpeg" ? "jpg" : item.file.type === "image/png" ? "png" : "webp";
+    const objectId = crypto.randomUUID();
+    return { id: objectId, key: "rental-private/" + id + "/" + objectId + "-" + item.side + "." + ext, side: item.side, file: item.file };
+  });
   try {
-    const result = await env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, document_upload_token_hash, document_upload_expires_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
-      .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, uploadTokenHash, uploadExpiresAt, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()).run();
-    if ((result.meta?.changes ?? 0) !== 1) return error("That vehicle is not available for the selected dates. Please choose another vehicle or contact us.", 409);
-    if (signedInCustomer) await env.DB.prepare("UPDATE rental_requests SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id).run();
-    try{await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a vehicle rental request. Review the requested dates and availability.",entity_type:"rental_request",entity_id:id});}catch{}
-    try{await env.DB.prepare("INSERT INTO notification_outbox (id,rental_request_id,channel,template_key) VALUES (?, ?, 'email', 'owner_rental_created')").bind(crypto.randomUUID(),id).run();}catch{}
-    return json({
-      accepted: true,
-      reference_code: reference,
-      ...(documentUploadsEnabled ? { document_upload_token: uploadToken } : {}),
-      message: documentUploadsEnabled
-        ? "Your rental request has been received. Availability and terms will be confirmed by De VERVE. Upload CNIC images only if our rental team requests them."
-        : "Your rental request has been received. Availability and terms will be confirmed by De VERVE. Please do not send CNIC documents yet; secure uploads are temporarily disabled while our document-retention policy is finalized.",
-    }, 201);
-  } catch { return error("Rental request could not be submitted. Please contact De VERVE.", 503); }
+    for (let i = 0; i < objects.length; i++) {
+      await env.MEDIA.put(objects[i].key, bytes[i], { httpMetadata: { contentType: objects[i].file.type }, customMetadata: { rentalRequestId: id, documentSide: objects[i].side } });
+    }
+    const results = await env.DB.batch([
+      env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
+        .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, signedInCustomer?.customer_id ?? null, rentalDays, estimatedDailyRatePaisa, estimatedTotalPaisa, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()),
+      env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ?)")
+        .bind(objects[0].id, id, objects[0].side, objects[0].key, objects[0].file.type, objects[0].file.size, id),
+      env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ?)")
+        .bind(objects[1].id, id, objects[1].side, objects[1].key, objects[1].file.type, objects[1].file.size, id),
+      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'rental.created_with_cnic','rental_request',?,?)")
+        .bind(crypto.randomUUID(), id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"], rental_days: rentalDays, estimated_daily_rate_paisa: estimatedDailyRatePaisa, estimated_total_paisa: estimatedTotalPaisa, driver_option: driver })),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) {
+      for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+      return error("That vehicle is not available for the selected dates. Please refresh and submit again.", 409);
+    }
+  } catch {
+    for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+    return error("Your rental request and CNIC images could not be stored securely. Please try again.", 503);
+  }
+  try { await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a rental request with both CNIC images. Review the request and verify the documents.",entity_type:"rental_request",entity_id:id}); } catch {}
+  try { await env.DB.prepare("INSERT INTO notification_outbox (id,rental_request_id,channel,template_key) VALUES (?, ?, 'email', 'owner_rental_created')").bind(crypto.randomUUID(),id).run(); } catch {}
+  return json({
+    accepted: true,
+    reference_code: reference,
+    rental_days: rentalDays,
+    estimated_daily_rate_paisa: estimatedDailyRatePaisa,
+    estimated_total_paisa: estimatedTotalPaisa,
+    message: "Your rental request and both CNIC images have been received securely. De VERVE will verify the documents, availability and final terms before confirming your booking.",
+  }, 201);
 }
 
 async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
