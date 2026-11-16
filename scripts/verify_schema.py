@@ -13,7 +13,7 @@ required_tables = {
     "products", "product_variants", "enquiries", "orders", "order_items",
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
-    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "admin_sessions",
+    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
@@ -162,3 +162,21 @@ print(
     f"Schema smoke check passed: {len(migrations)} migrations, "
     f"{len(required_tables)} tables, constraints and foreign keys verified."
 )
+
+# POS and cashbook foundations are append-only and share the same stock ledger.
+variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
+assert {"barcode", "cost_price_paisa", "reorder_level"} <= variant_columns, "Inventory/POS variant fields are missing"
+for table, columns in {
+    "financial_accounts": {"id", "name", "kind", "opening_balance_paisa", "is_active"},
+    "financial_transactions": {"id", "account_id", "direction", "amount_paisa", "category", "reference_type", "reference_id", "register_session_id"},
+    "pos_registers": {"id", "name", "is_active"},
+    "pos_sessions": {"id", "register_id", "opening_cash_paisa", "status", "expected_cash_paisa", "counted_cash_paisa"},
+    "pos_sales": {"id", "receipt_number", "session_id", "subtotal_paisa", "total_paisa", "idempotency_key", "status"},
+    "pos_sale_items": {"id", "sale_id", "variant_id", "quantity", "unit_price_paisa", "unit_cost_paisa"},
+    "pos_payments": {"id", "sale_id", "account_id", "amount_paisa", "tendered_paisa", "change_paisa"},
+    "business_expenses": {"id", "category", "amount_paisa", "account_id", "financial_transaction_id", "status"},
+}.items():
+    actual = {row[1] for row in db.execute(f"PRAGMA table_info({table})")}
+    assert columns <= actual, f"{table} is missing required fields: {columns - actual}"
+assert any(row[1] == "idx_pos_one_open_session" and row[2] == 1 for row in db.execute("PRAGMA index_list(pos_sessions)")), "Only one open session per register must be allowed"
+assert any(row[1] == "idx_financial_transactions_account_date" for row in db.execute("PRAGMA index_list(financial_transactions)")), "Financial ledger account/date index is missing"
