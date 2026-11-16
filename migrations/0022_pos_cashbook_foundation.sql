@@ -149,3 +149,10 @@ WHEN NEW.stock_on_hand < NEW.reserved_quantity
 BEGIN
   SELECT RAISE(ABORT, 'stock cannot be reduced below reserved quantity');
 END;
+
+CREATE TRIGGER IF NOT EXISTS pos_sale_item_stock_check
+BEFORE INSERT ON pos_sale_items
+WHEN (SELECT stock_on_hand - reserved_quantity FROM product_variants WHERE id = NEW.variant_id) < NEW.quantity
+BEGIN
+  SELECT RAISE(ABORT, 'insufficient available stock');
+END;
