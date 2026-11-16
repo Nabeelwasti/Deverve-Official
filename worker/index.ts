@@ -1816,7 +1816,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const kind=body?.kind;
     const masked=typeof body?.masked_reference==="string"?body.masked_reference.trim().slice(0,40):"";
     const opening=body?.opening_balance_paisa;
-    if(name.length<2||!["cash","bank","wallet","gateway"].includes(kind)||!Number.isSafeInteger(opening)||Number(opening)<0||Number(opening)>1_000_000_000_000)return error("Enter a valid account name, type and opening balance",400);
+    if(name.length<2||typeof kind!=="string"||!["cash","bank","wallet","gateway"].includes(kind)||!Number.isSafeInteger(opening)||Number(opening)<0||Number(opening)>1_000_000_000_000)return error("Enter a valid account name, type and opening balance",400);
     try{
       const id=crypto.randomUUID();
       await env.DB.batch([
@@ -1989,7 +1989,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const amount=body?.amount_paisa;
     const accountId=typeof body?.account_id==="string"?body.account_id:"";
     const note=typeof body?.note==="string"?body.note.trim().slice(0,300):"";
-    if (!["in","out"].includes(direction) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !accountId || note.length<3) return error("Enter a valid amount, account and reason",400);
+    if (typeof direction!=="string" || !["in","out"].includes(direction) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !accountId || note.length<3) return error("Enter a valid amount, account and reason",400);
     try {
       const account=await env.DB.prepare("SELECT id,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;kind:string}>();
       if(!account)return error("Financial account not found",404);
