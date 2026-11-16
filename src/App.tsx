@@ -90,22 +90,63 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
   tokenCallback.current = onToken;
   useEffect(() => {
     let active = true;
+    let widgetState: "loading" | "ready" | "verified" | "error" = "loading";
+    let observer: MutationObserver | null = null;
+    let renderTimeout: number | null = null;
+    const update = (next: typeof widgetState, message: string) => {
+      if (!active) return;
+      widgetState = next;
+      if (next !== "loading") {
+        if (renderTimeout !== null) { window.clearTimeout(renderTimeout); renderTimeout = null; }
+        observer?.disconnect(); observer = null;
+      }
+      setStatus(next); setDetail(message);
+    };
     setStatus("loading"); setDetail("Loading Cloudflare security verification…"); tokenCallback.current("");
     if (host.current) host.current.replaceChildren();
     void ensureTurnstileLoaded().then(() => {
       if (!active || !host.current || !window.turnstile) throw new Error("Cloudflare verification API is unavailable after loading.");
-      const id = window.turnstile.render(host.current, {
+      const container = host.current;
+      const id = window.turnstile.render(container, {
         sitekey: TURNSTILE_SITEKEY, theme: "light", size: "flexible", appearance: "always",
-        callback: (token) => { setStatus("verified"); setDetail("Security check complete. Your request can now be submitted."); tokenCallback.current(token); },
-        "expired-callback": () => { setStatus("ready"); setDetail("Your security check expired. Complete it again to continue."); tokenCallback.current(""); },
-        "error-callback": (code) => { setStatus("error"); setDetail(code ? "Cloudflare verification error (" + code + "). Retry the check or contact us if it continues." : "Cloudflare could not complete the security check. Check your connection or browser settings, then retry."); tokenCallback.current(""); },
-        "timeout-callback": () => { setStatus("error"); setDetail("Cloudflare verification timed out. Please retry the security check."); tokenCallback.current(""); },
-        "unsupported-callback": () => { setStatus("error"); setDetail("This browser cannot run Cloudflare security verification. Update your browser or try another browser."); tokenCallback.current(""); },
+        callback: (token) => { update("verified", "Security check complete. Your request can now be submitted."); tokenCallback.current(token); },
+        "expired-callback": () => { update("ready", "Your security check expired. Complete it again to continue."); tokenCallback.current(""); },
+        "error-callback": (code) => { update("error", code ? "Cloudflare verification error (" + code + "). Retry the check or contact us if it continues." : "Cloudflare could not complete the security check. Check your connection or browser settings, then retry."); tokenCallback.current(""); },
+        "timeout-callback": () => { update("error", "Cloudflare verification timed out. Please retry the security check."); tokenCallback.current(""); },
+        "unsupported-callback": () => { update("error", "This browser cannot run Cloudflare security verification. Update your browser or try another browser."); tokenCallback.current(""); },
       });
       if (!id) throw new Error("Cloudflare did not create a verification widget.");
-      widgetId.current = id; setStatus("ready"); setDetail("Complete the security check above. Rental requests cannot be submitted without verification.");
-    }).catch((caught) => { if (active) { setStatus("error"); setDetail(caught instanceof Error ? caught.message : "Cloudflare security verification failed to load. Please retry."); tokenCallback.current(""); } });
-    return () => { active = false; if (widgetId.current) window.turnstile?.remove?.(widgetId.current); widgetId.current = null; };
+      widgetId.current = id;
+      const confirmWidgetMounted = () => {
+        if (!active || widgetState !== "loading") return;
+        if (container.querySelector("iframe")) {
+          update("ready", "Security check loaded. Complete the challenge above before submitting your request.");
+        }
+      };
+      confirmWidgetMounted();
+      if (widgetState === "loading") {
+        observer = new MutationObserver(confirmWidgetMounted);
+        observer.observe(container, { childList: true, subtree: true });
+        renderTimeout = window.setTimeout(() => {
+          if (widgetState === "loading") {
+            update("error", "Cloudflare loaded, but its security challenge did not appear within 12 seconds. Check your connection, disable content blockers for this site, or retry.");
+            tokenCallback.current("");
+          }
+        }, 12000);
+      }
+    }).catch((caught) => {
+      if (active) {
+        update("error", caught instanceof Error ? caught.message : "Cloudflare security verification failed to load. Please retry.");
+        tokenCallback.current("");
+      }
+    });
+    return () => {
+      active = false;
+      if (renderTimeout !== null) window.clearTimeout(renderTimeout);
+      observer?.disconnect();
+      if (widgetId.current) window.turnstile?.remove?.(widgetId.current);
+      widgetId.current = null;
+    };
   }, [resetKey, attempt]);
   return <div className="turnstile-shell" data-state={status}>
     <div className="turnstile-widget" ref={host} role="group" aria-label="Cloudflare security verification" />
@@ -153,6 +194,8 @@ function Storefront() {
   const [rentalDocsMessage, setRentalDocsMessage] = useState("");
   const [rentalCnicUploadsEnabled, setRentalCnicUploadsEnabled] = useState(false);
   const [rentalSettingsLoading, setRentalSettingsLoading] = useState(true);
+  const [rentalSettingsError, setRentalSettingsError] = useState("");
+  const rentalSettingsRequest = useRef(0);
   const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
@@ -259,10 +302,30 @@ function Storefront() {
     finally { setCheckoutBusy(false); setCheckoutTurnstileToken(""); setCheckoutTurnstileReset((value) => value + 1); }
   };
 
+  const loadRentalSettings = async () => {
+    const requestId = ++rentalSettingsRequest.current;
+    setRentalSettingsLoading(true); setRentalSettingsError(""); setRentalCnicUploadsEnabled(false);
+    try {
+      const response = await fetch("/api/rentals/settings", { headers: { accept: "application/json" } });
+      const settings = await response.json() as { cnic_uploads_enabled?: boolean; error?: string };
+      if (!response.ok) throw new Error(settings.error || "Rental settings returned HTTP " + response.status + ".");
+      if (requestId !== rentalSettingsRequest.current) return;
+      if (settings.cnic_uploads_enabled !== true) {
+        setRentalSettingsError("The owner has not enabled secure CNIC uploads for rental requests. Please contact De VERVE.");
+        return;
+      }
+      setRentalCnicUploadsEnabled(true);
+    } catch (error) {
+      if (requestId !== rentalSettingsRequest.current) return;
+      setRentalSettingsError(error instanceof Error ? "We could not confirm rental security settings: " + error.message : "We could not confirm rental security settings. Please retry.");
+    } finally {
+      if (requestId === rentalSettingsRequest.current) setRentalSettingsLoading(false);
+    }
+  };
   const openRentalRequest = (vehicleId = "") => {
     setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
-    setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsLoading(true); setRentalOpen(true);
-    void fetch("/api/rentals/settings", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) throw new Error("Rental settings unavailable"); const settings = await response.json() as { cnic_uploads_enabled?: boolean }; setRentalCnicUploadsEnabled(settings.cnic_uploads_enabled === true); }).catch(() => setRentalCnicUploadsEnabled(false)).finally(() => setRentalSettingsLoading(false));
+    setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsError(""); setRentalSettingsLoading(true); setRentalOpen(true);
+    void loadRentalSettings();
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
   const rentalDurationDays = (() => { const start = new Date(rentalForm.pickup_at).getTime(); const end = new Date(rentalForm.return_at).getTime(); return Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.ceil((end - start) / 86400000) : 0; })();
@@ -563,7 +626,7 @@ function Storefront() {
           <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will verify documents, vehicle availability, final price and rental terms before confirmation.</p>
           <p className="checkout-policy-note">Please review the rental and privacy policies before submitting. <button type="button" onClick={() => { setRentalOpen(false); navigate("policies"); }}>Read rental terms</button>.</p>
           {rentalSettingsLoading && <p className="checkout-message" role="status">Checking secure rental settings…</p>}
-          {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <p className="checkout-message" role="alert">Secure CNIC uploads are currently unavailable. Please contact De VERVE.</p>}
+          {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <div className="checkout-message" role="alert"><p>{rentalSettingsError || "Secure CNIC uploads are not enabled. Your rental request cannot be submitted until this is resolved."}</p><button type="button" className="turnstile-retry" onClick={() => void loadRentalSettings()}>Retry rental security settings</button></div>}
           <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
         </form>}
       </section></div>}
