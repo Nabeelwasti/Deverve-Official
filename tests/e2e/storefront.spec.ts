@@ -87,6 +87,7 @@ test("rental request requires both CNIC images and sends them with the request",
   await page.getByRole("button", { name: "Request a rental" }).click();
   const dialog = page.getByRole("dialog", { name: "Request a rental." });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId("turnstile-test-widget")).toBeVisible();
   await dialog.getByLabel(/Your name/).fill("Browser Test Customer");
   await dialog.getByLabel(/Phone \/ WhatsApp/).fill("+923001234567");
   await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
@@ -172,4 +173,39 @@ test("bilingual customer policies are accessible from the storefront", async ({ 
   await expect(page.getByRole("heading", { name: "Exchange-only policy & complaints" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "صرف تبدیلی کی پالیسی اور شکایات" })).toBeVisible();
   await expect(page.getByText(/CNIC documents/i)).toBeVisible();
+});
+
+
+test("product page supports auto-advancing galleries, selectable variants and direct cart addition", async ({ page }) => {
+  const imageA = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23142b4d'/%3E%3C/svg%3E";
+  const imageB = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%2370263d'/%3E%3C/svg%3E";
+  await page.route("**/api/products?slug=navy-hoodie", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", slug: "navy-hoodie", name: "De VERVE Hoodie",
+      description: "Test product", category: "Hoodies", audience: "unisex", retail_price_paisa: 350000,
+      image_key: null, seo_title: "De VERVE Hoodie", seo_description: "Test hoodie",
+      media: [
+        { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", media_type: "image", alt_text: "Front view", is_primary: 1, url: imageA },
+        { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", media_type: "image", alt_text: "Back view", is_primary: 0, url: imageB },
+      ],
+      variants: [
+        { id: "11111111-1111-4111-8111-111111111111", sku: "DV-HOOD-NAV-S", size: "S", color: "Navy", available_quantity: 4 },
+        { id: "22222222-2222-4222-8222-222222222222", sku: "DV-HOOD-NAV-L", size: "L", color: "Navy", available_quantity: 3 },
+        { id: "33333333-3333-4333-8333-333333333333", sku: "DV-HOOD-BLK-S", size: "S", color: "Black", available_quantity: 2 },
+        { id: "44444444-4444-4444-8444-444444444444", sku: "DV-HOOD-BLK-L", size: "L", color: "Black", available_quantity: 5 },
+      ],
+    }] }) });
+  });
+  await page.goto("/product/navy-hoodie");
+  await expect(page.getByRole("heading", { name: "De VERVE Hoodie" })).toBeVisible();
+  await expect(page.locator(".dv-gallery-meta")).toHaveText("1 / 2");
+  await page.waitForTimeout(4400);
+  await expect(page.locator(".dv-gallery-meta")).toHaveText("2 / 2");
+  await page.getByRole("button", { name: "Colour Black" }).click();
+  await page.getByRole("button", { name: "Size L" }).click();
+  await expect(page.getByText("5 in stock for selected option")).toBeVisible();
+  await page.getByRole("button", { name: /Add to cart/ }).click();
+  const checkout = page.getByRole("dialog", { name: "Choose how to pay" });
+  await expect(checkout).toBeVisible();
+  await expect(checkout).toContainText("De VERVE Hoodie");
 });
