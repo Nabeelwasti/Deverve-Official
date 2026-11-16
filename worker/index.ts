@@ -534,6 +534,15 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   const requestedPaymentProvider = cleanText(body.payment_provider, 20) || "manual";
   if (!["manual", "safepay"].includes(requestedPaymentProvider)) return error("Choose a valid payment method", 400);
   if (requestedPaymentProvider === "safepay" && !getSafepayConfig(env)) return error("Online payment is not enabled yet. Please choose cash on delivery.", 503);
+  const requestedPaymentMethod = cleanText(body.payment_method, 40).toLowerCase() || "cod";
+  let selectedPaymentMethod:{id:string;kind:string;label:string}|null=null;
+  try {
+    const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='payment_methods' LIMIT 1").first<{setting_value_json:string}>();
+    const config=saved?JSON.parse(saved.setting_value_json) as {methods?:Array<{id?:string;kind?:string;label?:string;enabled?:boolean}>}:null;
+    selectedPaymentMethod=config?.methods?.find(method=>method.id===requestedPaymentMethod&&method.enabled===true) as {id:string;kind:string;label:string}|undefined??null;
+  } catch { return error("Payment options are temporarily unavailable",503); }
+  if(!selectedPaymentMethod)return error("This payment option is no longer available. Refresh checkout and choose another option.",400);
+  if(requestedPaymentProvider==="safepay"&&selectedPaymentMethod.kind!=="cod")return error("Gateway checkout must be selected through its verified provider flow.",400);
   let signedInCustomer: CustomerSessionRow | null = null;
   try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
   try {
@@ -602,6 +611,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
         .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
     }
+    statements.push(env.DB.prepare("UPDATE orders SET payment_method = ?, payment_provider = 'manual', payment_status = 'pending' WHERE id = ? AND payment_provider = 'manual'").bind(selectedPaymentMethod.id,id));
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
