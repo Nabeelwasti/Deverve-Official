@@ -1861,14 +1861,17 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const periodValue = period === "today" ? pakistanDate : period === "month" ? pakistanDate.slice(0, 7) : pakistanDate.slice(0, 4);
     const dateExpression = period === "today" ? "date(datetime(created_at,'+5 hours')) = ?" : period === "month" ? "strftime('%Y-%m',datetime(created_at,'+5 hours')) = ?" : "strftime('%Y',datetime(created_at,'+5 hours')) = ?";
     try {
-      const [sales, expenses, cashFlow, balances, topItems] = await Promise.all([
+      const [sales, websiteSales, expenses, cashFlow, balances, topItems] = await Promise.all([
         env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(total_paisa),0) AS total FROM pos_sales WHERE status = 'completed' AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(total_paisa),0) AS total FROM orders WHERE payment_status='paid' AND financial_transaction_id IS NOT NULL AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
         env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount_paisa),0) AS total FROM business_expenses WHERE status = 'posted' AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
-        env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_paisa ELSE 0 END),0) AS money_in, COALESCE(SUM(CASE WHEN direction='out' THEN amount_paisa ELSE 0 END),0) AS money_out FROM financial_transactions WHERE " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
-        env.DB.prepare("SELECT a.id,a.name,a.kind,a.opening_balance_paisa, COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS movement_paisa FROM financial_accounts a LEFT JOIN financial_transactions t ON t.account_id=a.id WHERE a.is_active=1 GROUP BY a.id ORDER BY a.kind,a.name").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_paisa ELSE 0 END),0) AS money_in, COALESCE(SUM(CASE WHEN direction='out' THEN amount_paisa ELSE 0 END),0) AS money_out FROM financial_transactions WHERE category NOT IN ('opening_float','opening_float_adjustment') AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT a.id,a.name,a.kind,a.masked_reference,a.opening_balance_paisa, COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS movement_paisa FROM financial_accounts a LEFT JOIN financial_transactions t ON t.account_id=a.id WHERE a.is_active=1 GROUP BY a.id ORDER BY a.kind,a.name").all<Record<string, unknown>>(),
         env.DB.prepare("SELECT product_name_snapshot AS product_name, SUM(quantity) AS units, SUM(line_total_paisa) AS revenue_paisa FROM pos_sale_items i JOIN pos_sales s ON s.id=i.sale_id WHERE s.status='completed' AND " + dateExpression.replaceAll("created_at", "s.created_at") + " GROUP BY product_name_snapshot ORDER BY units DESC LIMIT 5").bind(periodValue).all<Record<string, unknown>>(),
       ]);
-      return json({ period, period_value: periodValue, sales: sales ?? { count: 0, total: 0 }, expenses: expenses ?? { count: 0, total: 0 }, cash_flow: cashFlow ?? { money_in: 0, money_out: 0 }, accounts: (balances.results ?? []).map(a => ({ ...a, balance_paisa: Number(a.opening_balance_paisa ?? 0) + Number(a.movement_paisa ?? 0) })), top_items: topItems.results ?? [] });
+      const posSales = sales ?? { count: 0, total: 0 };
+      const webSales = websiteSales ?? { count: 0, total: 0 };
+      return json({ period, period_value: periodValue, sales: { count:Number(posSales.count??0)+Number(webSales.count??0), total:Number(posSales.total??0)+Number(webSales.total??0) }, pos_sales:posSales, website_sales:webSales, expenses: expenses ?? { count: 0, total: 0 }, cash_flow: cashFlow ?? { money_in: 0, money_out: 0 }, accounts: (balances.results ?? []).map(a => ({ ...a, balance_paisa: Number(a.opening_balance_paisa ?? 0) + Number(a.movement_paisa ?? 0) })), top_items: topItems.results ?? [] });
     } catch { return error("POS financial summary could not be calculated", 503); }
   }
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
