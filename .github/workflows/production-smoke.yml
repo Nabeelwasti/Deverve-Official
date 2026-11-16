@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://deverve-official.pages.dev"
-          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges"; do
+          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges" "/api/admin/inventory" "/api/admin/pos/bootstrap" "/api/admin/pos/summary" "/api/admin/pos/expenses" "/api/admin/vehicles/00000000-0000-4000-8000-000000000000/media"; do
             status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-route.json -w '%{http_code}' "$base$route")"
             if [[ "$status" != "401" ]]; then
               echo "Expected unauthenticated access to $route to return 401, received HTTP $status:"
@@ -57,8 +57,8 @@ jobs:
           set -euo pipefail
           base="https://deverve-official.pages.dev"
           products="$(curl --fail --silent --show-error --max-time 15 "$base/api/products")"
-          if [[ "$products" != *'"products"'* ]]; then
-            echo "Public product catalogue API did not return the expected JSON."
+          if [[ "$products" != *'"products"'* ]] || ! jq -e '.products | type == "array" and all(.[]; (has("cost_price_paisa") | not) and all(.variants[]?; (has("cost_price_paisa") | not)))' <<<"$products" >/dev/null; then
+            echo "Public product catalogue API did not return the expected safe product JSON."
             exit 1
           fi
           status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-page.json -w '%{http_code}' "$base/api/pages/production-smoke-page-that-does-not-exist")"
@@ -127,8 +127,8 @@ jobs:
             exit 1
           fi
           fleet="$(curl --fail --silent --show-error --max-time 15 "$base/api/vehicles")"
-          if ! jq -e '.vehicles | type == "array"' <<<"$fleet" >/dev/null; then
-            echo "Public fleet endpoint did not return the expected vehicle list: $fleet"
+          if ! jq -e '.vehicles | type == "array" and all(.[]; (.media | type) == "array")' <<<"$fleet" >/dev/null; then
+            echo "Public fleet endpoint did not return the expected vehicle galleries: $fleet"
             exit 1
           fi
           echo "Public rental settings and fleet endpoint are healthy."
