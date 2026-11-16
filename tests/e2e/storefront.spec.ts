@@ -134,9 +134,9 @@ test("rental estimate recalculates for the selected vehicle and driver option", 
   const dialog = page.getByRole("dialog", { name: "Request a rental." });
   await expect(dialog.getByLabel(/Vehicle/)).toContainText("Test Sedan");
   await dialog.getByLabel(/Vehicle/).selectOption("11111111-1111-4111-8111-111111111111");
-  await expect(dialog.getByText(/12,000/)).toBeVisible();
+  await expect(dialog.locator(".rental-estimate-total")).toContainText("12,000");
   await dialog.getByLabel(/Driver option/).selectOption("self_drive");
-  await expect(dialog.getByText(/8,500/)).toBeVisible();
+  await expect(dialog.locator(".rental-estimate-total")).toContainText("8,500");
 });
 
 
