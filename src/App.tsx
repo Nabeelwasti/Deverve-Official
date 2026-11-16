@@ -523,6 +523,7 @@ function Storefront() {
           {rentalMessage && <p className="checkout-message" role="alert">{rentalMessage}</p>}
           <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will verify documents, vehicle availability, final price and rental terms before confirmation.</p>
           <p className="checkout-policy-note">Please review the rental and privacy policies before submitting. <button type="button" onClick={() => { setRentalOpen(false); navigate("policies"); }}>Read rental terms</button>.</p>
+          <p className="required-fields-note">Security verification<span className="required-star" aria-hidden="true"> *</span> is required to protect both parties.</p>
           <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
           {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <p className="checkout-message" role="alert">Secure CNIC uploads are currently unavailable. Please contact De VERVE.</p>}
           <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
