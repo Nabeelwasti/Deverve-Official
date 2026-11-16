@@ -243,6 +243,35 @@ test.describe("Pakistan rental time handling", () => {
   });
 });
 
+test("product gallery switches to the selected colour's own photos", async ({ page }) => {
+  const navyImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23142b4d'/%3E%3C/svg%3E";
+  const blackImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%230b0b0b'/%3E%3C/svg%3E";
+  await page.route("**/api/products*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ products: [{
+        id: "88888888-8888-4888-8888-888888888888", slug: "colour-gallery-test", name: "Colour Gallery Hoodie",
+        description: "Colour-specific image test", category: "Hoodies", audience: "unisex", retail_price_paisa: 350000,
+        image_key: null, seo_title: "Colour Gallery Hoodie", seo_description: "Test colour-specific gallery",
+        media: [
+          { id: "99999999-9999-4999-8999-999999999999", media_type: "image", alt_text: "Navy front view", caption: "", is_primary: 1, color: "Navy", url: navyImage },
+          { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", media_type: "image", alt_text: "Black front view", caption: "", is_primary: 0, color: "Black", url: blackImage },
+        ],
+        variants: [
+          { id: "11111111-1111-4111-8111-111111111111", sku: "DV-HOOD-NAV-M", size: "M", color: "Navy", available_quantity: 4 },
+          { id: "22222222-2222-4222-8222-222222222222", sku: "DV-HOOD-BLK-M", size: "M", color: "Black", available_quantity: 5 },
+        ],
+      }] }),
+    });
+  });
+  await page.goto("/product/colour-gallery-test");
+  const gallery = page.locator(".product-page-gallery");
+  await expect(gallery.locator(".dv-gallery-stage img")).toHaveAttribute("alt", "Navy front view");
+  await page.getByRole("button", { name: "Colour Black" }).click();
+  await expect(gallery.locator(".dv-gallery-stage img")).toHaveAttribute("alt", "Black front view");
+});
+
 test("vehicle fleet galleries auto-advance and support manual navigation", async ({ page }) => {
   const imageA = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%23142b4d'/%3E%3C/svg%3E";
   const imageB = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%2370263d'/%3E%3C/svg%3E";
