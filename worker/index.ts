@@ -1768,6 +1768,211 @@ interface AdminInventoryMovementRow {
   created_at: string;
 }
 
+async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const path = url.pathname;
+  if (!path.startsWith("/api/admin/pos/")) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("POS service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to use the POS", 403);
+  const canManageMoney = ["owner", "manager"].includes(admin.role);
+  if (request.method === "GET" && path === "/api/admin/pos/bootstrap") {
+    try {
+      const [accounts, registers, session, products] = await Promise.all([
+        env.DB.prepare("SELECT id, name, kind, masked_reference, opening_balance_paisa FROM financial_accounts WHERE is_active = 1 ORDER BY kind, name").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT id, name, location_label FROM pos_registers WHERE is_active = 1 ORDER BY name").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT id, register_id, opening_cash_paisa, expected_cash_paisa, status, opened_at FROM pos_sessions WHERE status = 'open' ORDER BY opened_at DESC LIMIT 1").first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.retail_price_paisa, v.id AS variant_id, v.sku, v.barcode, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.reorder_level, v.cost_price_paisa FROM products p JOIN product_variants v ON v.product_id = p.id WHERE p.status = 'published' AND v.is_active = 1 ORDER BY p.name, v.size, v.color LIMIT 500").all<Record<string, unknown>>(),
+      ]);
+      const items = (products.results ?? []).map(row => ({ ...row, available_quantity: Math.max(0, Number(row.stock_on_hand ?? 0) - Number(row.reserved_quantity ?? 0)), cost_price_paisa: canManageMoney ? Number(row.cost_price_paisa ?? 0) : undefined }));
+      return json({ accounts: accounts.results ?? [], registers: registers.results ?? [], session: session ?? null, items });
+    } catch { return error("POS catalogue or register settings could not be loaded", 503); }
+  }
+  if (request.method === "GET" && path === "/api/admin/pos/sales") {
+    const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 50) || 50));
+    try {
+      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.name AS cashier_name FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
+      return json({ sales: rows.results ?? [] });
+    } catch { return error("POS sales history could not be loaded", 503); }
+  }
+  if (request.method === "GET" && path === "/api/admin/pos/summary") {
+    const period = url.searchParams.get("period") ?? "today";
+    if (!["today", "month", "year"].includes(period)) return error("Choose today, month or year", 400);
+    const pakistanDate = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const periodValue = period === "today" ? pakistanDate : period === "month" ? pakistanDate.slice(0, 7) : pakistanDate.slice(0, 4);
+    const dateExpression = period === "today" ? "date(datetime(created_at,'+5 hours')) = ?" : period === "month" ? "strftime('%Y-%m',datetime(created_at,'+5 hours')) = ?" : "strftime('%Y',datetime(created_at,'+5 hours')) = ?";
+    try {
+      const [sales, expenses, cashFlow, balances, topItems] = await Promise.all([
+        env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(total_paisa),0) AS total FROM pos_sales WHERE status = 'completed' AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount_paisa),0) AS total FROM business_expenses WHERE status = 'posted' AND " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN direction='in' THEN amount_paisa ELSE 0 END),0) AS money_in, COALESCE(SUM(CASE WHEN direction='out' THEN amount_paisa ELSE 0 END),0) AS money_out FROM financial_transactions WHERE " + dateExpression).bind(periodValue).first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT a.id,a.name,a.kind,a.opening_balance_paisa, COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS movement_paisa FROM financial_accounts a LEFT JOIN financial_transactions t ON t.account_id=a.id WHERE a.is_active=1 GROUP BY a.id ORDER BY a.kind,a.name").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT product_name_snapshot AS product_name, SUM(quantity) AS units, SUM(line_total_paisa) AS revenue_paisa FROM pos_sale_items i JOIN pos_sales s ON s.id=i.sale_id WHERE s.status='completed' AND " + dateExpression.replaceAll("created_at", "s.created_at") + " GROUP BY product_name_snapshot ORDER BY units DESC LIMIT 5").bind(periodValue).all<Record<string, unknown>>(),
+      ]);
+      return json({ period, period_value: periodValue, sales: sales ?? { count: 0, total: 0 }, expenses: expenses ?? { count: 0, total: 0 }, cash_flow: cashFlow ?? { money_in: 0, money_out: 0 }, accounts: (balances.results ?? []).map(a => ({ ...a, balance_paisa: Number(a.opening_balance_paisa ?? 0) + Number(a.movement_paisa ?? 0) })), top_items: topItems.results ?? [] });
+    } catch { return error("POS financial summary could not be calculated", 503); }
+  }
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (request.method === "POST" && path === "/api/admin/pos/sessions/open") {
+    const body = await readJson(request);
+    const registerId = typeof body?.register_id === "string" ? body.register_id : "main-register";
+    const openingCash = body?.opening_cash_paisa;
+    const note = typeof body?.note === "string" ? body.note.trim().slice(0, 500) : "";
+    if (!Number.isSafeInteger(openingCash) || Number(openingCash) < 0) return error("Enter a valid opening cash amount", 400);
+    try {
+      const register = await env.DB.prepare("SELECT id FROM pos_registers WHERE id=? AND is_active=1").bind(registerId).first<{id:string}>();
+      if (!register) return error("POS register not found", 404);
+      const open = await env.DB.prepare("SELECT id FROM pos_sessions WHERE register_id=? AND status='open' LIMIT 1").bind(registerId).first<{id:string}>();
+      if (open) return error("This register already has an open session", 409);
+      const previous = await env.DB.prepare("SELECT counted_cash_paisa FROM pos_sessions WHERE register_id=? AND status='closed' ORDER BY closed_at DESC LIMIT 1").bind(registerId).first<{counted_cash_paisa:number|null}>();
+      const sessionId = crypto.randomUUID();
+      const statements = [env.DB.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status,opening_note) VALUES (?,?,?,?,?,'open',?)").bind(sessionId,registerId,admin.admin_user_id,Number(openingCash),Number(openingCash),note)];
+      if (!previous) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',?,'opening_float','pos_session',?,?,?,?)").bind(crypto.randomUUID(),Number(openingCash),sessionId,sessionId,note || "Opening cash float",admin.admin_user_id));
+      else if (previous.counted_cash_paisa !== null && Number(previous.counted_cash_paisa) !== Number(openingCash)) {
+        const difference = Number(openingCash) - Number(previous.counted_cash_paisa);
+        statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main',?,?, 'opening_float_adjustment','pos_session',?,?,?,?)").bind(crypto.randomUUID(),difference >= 0 ? "in" : "out",Math.abs(difference),sessionId,sessionId,note || "Opening float reconciliation",admin.admin_user_id));
+      }
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.session_opened','pos_session',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,sessionId,JSON.stringify({register_id:registerId,opening_cash_paisa:Number(openingCash)})));
+      await env.DB.batch(statements);
+      return json({ session: { id:sessionId,register_id:registerId,opening_cash_paisa:Number(openingCash),expected_cash_paisa:Number(openingCash),status:"open" } },201);
+    } catch { return error("POS session could not be opened",503); }
+  }
+  if (request.method === "POST" && path === "/api/admin/pos/sessions/close") {
+    const body = await readJson(request);
+    const sessionId = typeof body?.session_id === "string" ? body.session_id : "";
+    const counted = body?.counted_cash_paisa;
+    const note = typeof body?.note === "string" ? body.note.trim().slice(0,500) : "";
+    if (!/^[a-f0-9-]{36}$/i.test(sessionId) || !Number.isSafeInteger(counted) || Number(counted)<0) return error("Enter a valid counted cash amount",400);
+    try {
+      const session = await env.DB.prepare("SELECT id,opening_cash_paisa FROM pos_sessions WHERE id=? AND status='open'").bind(sessionId).first<{id:string;opening_cash_paisa:number}>();
+      if (!session) return error("Open POS session not found",404);
+      const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(sessionId).first<{net:number}>();
+      const expected = Number(session.opening_cash_paisa)+Number(movement?.net??0);
+      const variance = Number(counted)-expected;
+      const statements = [];
+      if (variance !== 0) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main',?,?,?,'pos_session',?,?,?,?)").bind(crypto.randomUUID(),variance>0?"in":"out",Math.abs(variance),variance>0?"cash_overage":"cash_shortage",sessionId,sessionId,note || "Cash count reconciliation",admin.admin_user_id));
+      statements.push(env.DB.prepare("UPDATE pos_sessions SET expected_cash_paisa=?,counted_cash_paisa=?,variance_paisa=?,status='closed',closing_note=?,closed_by_admin_id=?,closed_at=? WHERE id=? AND status='open'").bind(expected,Number(counted),variance,note,admin.admin_user_id,new Date().toISOString(),sessionId));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.session_closed','pos_session',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,sessionId,JSON.stringify({expected_cash_paisa:expected,counted_cash_paisa:Number(counted),variance_paisa:variance})));
+      await env.DB.batch(statements);
+      return json({ closed:true,expected_cash_paisa:expected,counted_cash_paisa:Number(counted),variance_paisa:variance });
+    } catch { return error("POS session could not be closed",503); }
+  }
+  if (request.method === "POST" && path === "/api/admin/pos/sales") {
+    const body = await readJson(request);
+    const idempotency = typeof body?.idempotency_key === "string" ? body.idempotency_key : "";
+    const customerName = typeof body?.customer_name === "string" && body.customer_name.trim() ? body.customer_name.trim().slice(0,120) : "Walk-in customer";
+    const customerPhone = typeof body?.customer_phone === "string" ? body.customer_phone.trim().slice(0,40) : "";
+    const lines = Array.isArray(body?.items) ? body.items : [];
+    const payments = Array.isArray(body?.payments) ? body.payments : [];
+    if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
+    try {
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
+      if (duplicate) return json({ sale:duplicate,duplicate:true });
+      const session = await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>();
+      if (!session) return error("Open the cash register before completing a sale",409);
+      const combined = new Map<string,number>();
+      for (const item of lines) {
+        if (!item || typeof item.variant_id!=="string" || !/^[a-f0-9-]{36}$/i.test(item.variant_id) || !Number.isSafeInteger(item.quantity) || Number(item.quantity)<1 || Number(item.quantity)>100) return error("One or more sale quantities are invalid",400);
+        combined.set(item.variant_id,(combined.get(item.variant_id)??0)+Number(item.quantity));
+      }
+      const resolved = [];
+      let subtotal=0;
+      for (const [variantId,quantity] of combined) {
+        const row = await env.DB.prepare("SELECT p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa,v.id AS variant_id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,v.cost_price_paisa,v.is_active FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=? LIMIT 1").bind(variantId).first<Record<string,unknown>>();
+        if (!row || row.product_status!=="published" || Number(row.is_active)!==1 || row.retail_price_paisa===null) return error("A selected product or variant is no longer available",409);
+        if (Number(row.stock_on_hand)-Number(row.reserved_quantity)<quantity) return error("Not enough available stock for "+String(row.product_name)+" "+String(row.size??"")+" "+String(row.color??""),409);
+        const unitPrice=Number(row.retail_price_paisa);
+        const lineTotal=unitPrice*quantity;
+        if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal+lineTotal)) return error("Sale total is too large",400);
+        subtotal+=lineTotal;
+        resolved.push({...row,quantity,unit_price_paisa:unitPrice,line_total_paisa:lineTotal});
+      }
+      let applied=0,change=0;
+      const resolvedPayments=[];
+      for (const payment of payments) {
+        const accountId=typeof payment?.account_id==="string"?payment.account_id:"";
+        const method=payment?.payment_method;
+        const amount=payment?.amount_paisa;
+        const tendered=payment?.tendered_paisa;
+        if (!accountId || !["cash","bank_transfer","mobile_wallet","card"].includes(method) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !Number.isSafeInteger(tendered) || Number(tendered)<Number(amount)) return error("A payment entry is invalid",400);
+        if (method!=="cash" && Number(tendered)!==Number(amount)) return error("Only cash payments can include change",400);
+        const account=await env.DB.prepare("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;name:string;kind:string}>();
+        const expectedKind=method==="cash"?"cash":method==="bank_transfer"?"bank":method==="mobile_wallet"?"wallet":"gateway";
+        if (!account || account.kind!==expectedKind) return error("Choose an account that matches the payment method",400);
+        applied+=Number(amount);
+        change+=Number(tendered)-Number(amount);
+        resolvedPayments.push({account,method,amount:Number(amount),tendered:Number(tendered),change:Number(tendered)-Number(amount),reference:typeof payment.reference==="string"?payment.reference.trim().slice(0,120):""});
+      }
+      if (applied!==subtotal) return error("Payment amounts must add up exactly to the sale total",400);
+      const saleId=crypto.randomUUID();
+      const receipt="DV-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+crypto.randomUUID().slice(0,6).toUpperCase();
+      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,subtotal,subtotal,idempotency,admin.admin_user_id)];
+      for (const item of resolved) {
+        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=? AND stock_on_hand-reserved_quantity>=?").bind(item.quantity,item.variant_id,item.quantity));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'sold',?,'order',?,?,?)").bind(crypto.randomUUID(),item.variant_id,-item.quantity,saleId,"POS receipt "+receipt,admin.admin_user_id));
+        statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa));
+      }
+      for (const payment of resolvedPayments) {
+        statements.push(env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,payment.account.id,payment.method,payment.amount,payment.tendered,payment.change,payment.reference));
+        statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?,'in',?,'pos_sale','pos_sale',?,?,?,?)").bind(crypto.randomUUID(),payment.account.id,payment.amount,saleId,session.id,"POS "+receipt,admin.admin_user_id));
+      }
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length})));
+      await env.DB.batch(statements);
+      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
+    } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
+  }
+  if (request.method === "POST" && path === "/api/admin/pos/cash-movements") {
+    const body = await readJson(request);
+    const direction=body?.direction;
+    const amount=body?.amount_paisa;
+    const accountId=typeof body?.account_id==="string"?body.account_id:"";
+    const note=typeof body?.note==="string"?body.note.trim().slice(0,300):"";
+    if (!["in","out"].includes(direction) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !accountId || note.length<3) return error("Enter a valid amount, account and reason",400);
+    try {
+      const account=await env.DB.prepare("SELECT id,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;kind:string}>();
+      if(!account)return error("Financial account not found",404);
+      const session=account.kind==="cash"?await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>():null;
+      if(account.kind==="cash"&&!session)return error("Open the cash register before recording cash movement",409);
+      const txId=crypto.randomUUID();
+      await env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?,?,? ,?,'manual',?,?,?,?)").bind(txId,accountId,direction,Number(amount),direction==="in"?"cash_in":"cash_out",txId,session?.id??null,note,admin.admin_user_id).run();
+      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.cash_movement','financial_transaction',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,txId,JSON.stringify({direction,amount_paisa:Number(amount),account_id:accountId,note})).run();
+      return json({ recorded:true,transaction_id:txId });
+    } catch { return error("Cash movement could not be recorded",503); }
+  }
+  if (request.method === "POST" && path === "/api/admin/pos/expenses") {
+    if (!canManageMoney) return error("Only an owner or manager can record expenses",403);
+    const body=await readJson(request);
+    const category=typeof body?.category==="string"?body.category.trim().slice(0,80):"";
+    const description=typeof body?.description==="string"?body.description.trim().slice(0,500):"";
+    const amount=body?.amount_paisa;
+    const accountId=typeof body?.account_id==="string"?body.account_id:"";
+    const date=typeof body?.expense_date==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(body.expense_date)?body.expense_date:new Date(Date.now()+5*3600000).toISOString().slice(0,10);
+    const receipt=typeof body?.receipt_media_id==="string"&&/^[a-f0-9-]{36}$/i.test(body.receipt_media_id)?body.receipt_media_id:null;
+    if(category.length<2||description.length<2||!Number.isSafeInteger(amount)||Number(amount)<=0||!accountId)return error("Enter an expense category, description, amount and account",400);
+    try{
+      const account=await env.DB.prepare("SELECT id,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;kind:string}>();
+      if(!account)return error("Financial account not found",404);
+      const session=account.kind==="cash"?await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>():null;
+      if(account.kind==="cash"&&!session)return error("Open the cash register before recording a cash expense",409);
+      if(receipt){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND status='ready' AND media_type='image'").bind(receipt).first<{id:string}>();if(!media)return error("Expense receipt image not found",404);}
+      const expenseId=crypto.randomUUID(),txId=crypto.randomUUID(),expenseNo="EX-"+date.replaceAll("-","")+"-"+expenseId.slice(0,6).toUpperCase();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?, 'out', ?, 'business_expense','expense',?,?,?,?,?)").bind(txId,accountId,Number(amount),expenseId,session?.id??null,description,admin.admin_user_id),
+        env.DB.prepare("INSERT INTO business_expenses (id,expense_number,category,description,amount_paisa,account_id,financial_transaction_id,register_session_id,receipt_media_id,expense_date,created_by_admin_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)").bind(expenseId,expenseNo,category,description,Number(amount),accountId,txId,session?.id??null,receipt,date,admin.admin_user_id),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'finance.expense_created','business_expense',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,expenseId,JSON.stringify({category,amount_paisa:Number(amount),account_id:accountId})),
+      ]);
+      return json({expense:{id:expenseId,expense_number:expenseNo,category,description,amount_paisa:Number(amount),expense_date:date,status:"posted"}},201);
+    }catch{return error("Expense could not be recorded",503);}
+  }
+  if (request.method === "GET" && path === "/api/admin/pos/expenses") {
+    try {
+      const rows=await env.DB.prepare("SELECT e.id,e.expense_number,e.category,e.description,e.amount_paisa,e.expense_date,e.status,a.name AS account_name,ad.name AS created_by FROM business_expenses e JOIN financial_accounts a ON a.id=e.account_id LEFT JOIN admin_users ad ON ad.id=e.created_by_admin_id ORDER BY e.expense_date DESC,e.created_at DESC LIMIT 100").all<Record<string,unknown>>();
+      return json({expenses:rows.results??[]});
+    }catch{return error("Expenses could not be loaded",503);}
+  }
+  return error("Method not allowed",405);
+}
+
 async function adminInventoryOverviewRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/admin/inventory" || request.method !== "GET") return null;
   let admin: SessionRow | null;
@@ -2523,6 +2728,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
 
   const productImageResponse = await adminProductImageRoutes(request, env, url);
   if (productImageResponse) return productImageResponse;
+
+  const posResponse = await adminPosRoutes(request, env, url);
+  if (posResponse) return posResponse;
 
   const inventoryOverviewResponse = await adminInventoryOverviewRoutes(request, env, url);
   if (inventoryOverviewResponse) return inventoryOverviewResponse;

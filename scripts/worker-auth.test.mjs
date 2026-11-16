@@ -11,6 +11,11 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
+test("POS endpoints require an authenticated staff session", async () => {
+  const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
+  assert.equal(response.status, 401);
+});
+
 test("inventory overview requires an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/inventory", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);
