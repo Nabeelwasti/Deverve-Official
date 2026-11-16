@@ -856,6 +856,25 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request);
+  if(body?.payment_status!==undefined){
+    if(admin.role!=="owner")return error("Only the owner can verify direct customer payments",403);
+    if(body.payment_status!=="paid")return error("Only a verified payment can be marked as received",400);
+    const reference=cleanText(body.payment_reference,100);
+    try{
+      const current=await env.DB.prepare("SELECT id,order_number,payment_method,payment_provider,payment_status FROM orders WHERE id=? LIMIT 1").bind(match[1]).first<{id:string;order_number:string;payment_method:string;payment_provider:string;payment_status:string}>();
+      if(!current)return error("Order not found",404);
+      if(current.payment_provider!=="manual"||current.payment_method==="cod")return error("This order is not awaiting a manual transfer verification",409);
+      if(current.payment_status==="paid")return json({updated:true,payment_status:"paid",already_verified:true});
+      if(current.payment_status!=="pending")return error("This payment cannot be verified from its current status",409);
+      const now=new Date().toISOString();
+      const result=await env.DB.batch([
+        env.DB.prepare("UPDATE orders SET payment_status='paid',updated_at=? WHERE id=? AND payment_provider='manual' AND payment_method!='cod' AND payment_status='pending'").bind(now,match[1]),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'order.manual_payment_verified','order',?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid')").bind(crypto.randomUUID(),admin.admin_user_id,match[1],JSON.stringify({order_number:current.order_number,reference:reference||null}),match[1])
+      ]);
+      if((result[0]?.meta?.changes??0)!==1)return error("Payment status changed. Refresh the order and try again.",409);
+      return json({updated:true,payment_status:"paid"});
+    }catch{return error("Payment verification could not be saved",503);}
+  }
   const nextStatus = cleanText(body?.order_status, 20);
   const statusNote = cleanText(body?.status_note, 300) || "Order status updated by De VERVE team";
   if (!["confirmed", "processing", "dispatched", "delivered", "cancelled"].includes(nextStatus)) return error("Choose a valid order status", 400);
@@ -878,9 +897,9 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const lines = items.results ?? [];
     if (!lines.length) return error("This order has no valid line items", 409);
     const guard = nextStatus === "processing"
-      ? "orders.delivery_fee_status = 'accepted' AND (orders.payment_provider = 'manual' OR orders.payment_status = 'paid')"
+      ? "orders.delivery_fee_status = 'accepted' AND ((orders.payment_provider = 'manual' AND orders.payment_method = 'cod') OR orders.payment_status = 'paid')"
       : nextStatus === "dispatched"
-        ? "orders.delivery_fee_status = 'accepted' AND (orders.payment_provider = 'manual' OR orders.payment_status = 'paid') AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
+        ? "orders.delivery_fee_status = 'accepted' AND ((orders.payment_provider = 'manual' AND orders.payment_method = 'cod') OR orders.payment_status = 'paid') AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
         : nextStatus === "cancelled"
         ? "orders.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id = orders.id AND pa.provider = 'safepay' AND pa.status IN ('created','pending','succeeded')) AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
         : "1 = 1";
