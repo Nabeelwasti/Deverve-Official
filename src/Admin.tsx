@@ -18,7 +18,8 @@ type Product = {
 
 type ProductForm = { name: string; slug: string; description: string; category: string; audience: Product["audience"]; status: Product["status"]; retail_price_paisa: string; wholesale_price_paisa: string; seo_title: string; seo_description: string };
 type Overview = { published_products: number; draft_products: number; new_enquiries: number; pending_orders: number; rental_requests: number };
-type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; discount_code: string; discount_label: string; discount_amount_paisa: number; free_delivery: number; delivery_fee_status: "pending_quote" | "awaiting_customer" | "accepted" | "declined"; delivery_fee_expires_at: string | null; payment_method: string; payment_provider: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
+type FinancialAccount = {id:string;name:string;kind:"cash"|"bank"|"wallet"|"gateway";masked_reference:string};
+type AdminOrder = { id: string; order_number: string; customer_name: string; phone: string; email: string | null; financial_account_id?: string | null; delivery_address: string; city: string; subtotal_paisa: number; delivery_fee_paisa: number; total_paisa: number; discount_code: string; discount_label: string; discount_amount_paisa: number; free_delivery: number; delivery_fee_status: "pending_quote" | "awaiting_customer" | "accepted" | "declined"; delivery_fee_expires_at: string | null; payment_method: string; payment_provider: string; payment_status: string; order_status: "pending" | "confirmed" | "processing" | "dispatched" | "delivered" | "cancelled"; customer_note: string; created_at: string; items: Array<{ id: string; product_name_snapshot: string; sku_snapshot: string | null; size_snapshot: string; color_snapshot: string; quantity: number; unit_price_paisa: number; line_total_paisa: number }> };
 type FollowUpItem = { key: string; kind: "enquiry" | "order" | "return" | "rental" | "wholesale"; title: string; contact: string; phone: string; email: string | null; status: string; summary: string; created_at: string; screen: string; priority: number };
 type AuditEvent = { id: string; action: string; entity_type: string; entity_id: string | null; metadata_json: string; created_at: string; actor_email: string | null };
 type CustomerRecord = { id: string; full_name: string; email: string; phone: string; status: string; email_verified_at: string | null; created_at: string; last_login_at: string | null; order_count: number; paid_total_paisa: number; last_order_at: string | null; rental_count: number };
@@ -86,6 +87,8 @@ export default function Admin() {
   const [products, setProducts] = useState<Product[]>([]);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
+  const [paymentAccountDrafts, setPaymentAccountDrafts] = useState<Record<string,string>>({});
   const [returns, setReturns] = useState<AdminReturn[]>([]);
   const [exchanges, setExchanges] = useState<AdminExchange[]>([]);
   const [exchangeNotes, setExchangeNotes] = useState<Record<string, string>>({});
@@ -206,6 +209,15 @@ export default function Admin() {
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
     }
   }, [admin]);
+
+  useEffect(() => {
+    if (!admin || admin.role !== "owner" || activeAdminScreen !== "orders") return;
+    let active = true;
+    void api<{accounts:FinancialAccount[]}>("/api/admin/pos/bootstrap").then((result) => {
+      if (active) setFinancialAccounts(result.accounts);
+    }).catch(() => { if (active) setMessage("Financial accounts could not be loaded. Refresh before verifying a payment."); });
+    return () => { active = false; };
+  }, [admin, activeAdminScreen]);
 
   const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{const secondary=ownerSecondaryEmails.split(/[;,\n]/).map((item)=>item.trim()).filter(Boolean);await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,cnic_uploads_enabled:cnicUploadsEnabled,notification_emails:{primary:ownerPrimaryEmail,secondary,enabled:ownerEmailsEnabled},payment_methods:{methods:paymentMethods}})});setMessage("Website, owner notification email and brand settings saved.");}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
   const uploadBrandAsset = async (kind:"logo"|"favicon",file:File|null) => {
@@ -418,10 +430,15 @@ export default function Admin() {
   };
 
   const verifyManualPayment = async (order:AdminOrder) => {
-    const reference=window.prompt("Enter the bank/wallet transaction reference after checking your business account (optional):")??"";
-    if(!window.confirm("Have you independently confirmed receipt of the full payment for "+order.order_number+"?"))return;
+    const available=financialAccounts.filter(account=>order.payment_method==="cod"||account.kind!=="cash");
+    const defaultAccount=order.payment_method==="cod"?"cash-main":available.find(account=>account.kind==="bank"||account.kind==="wallet")?.id||available[0]?.id;
+    const accountId=paymentAccountDrafts[order.id]||defaultAccount;
+    if(!accountId){setMessage("Add or activate the business account that received this payment.");return;}
+    const reference=window.prompt("Enter the transaction reference after checking the actual business account (optional):")??"";
+    const prompt=order.payment_method==="cod"?"Confirm that the customer paid the full COD amount on delivery for "+order.order_number+"?":"Confirm that the full bank or wallet transfer for "+order.order_number+" is visible in your business account?";
+    if(!window.confirm(prompt))return;
     setBusy(true);setMessage("");
-    try{await api("/api/admin/orders/"+order.id,{method:"PATCH",body:JSON.stringify({payment_status:"paid",payment_reference:reference})});await Promise.all([loadOrders(),loadOverview()]);setMessage("Direct payment verified for "+order.order_number+".");}
+    try{await api("/api/admin/orders/"+order.id,{method:"PATCH",body:JSON.stringify({payment_status:"paid",payment_reference:reference,financial_account_id:accountId})});await Promise.all([loadOrders(),loadOverview()]);setMessage("Payment recorded in the business cashbook for "+order.order_number+".");}
     catch(error){setMessage(error instanceof Error?error.message:"Payment could not be verified.");}
     finally{setBusy(false);}
   };
@@ -693,7 +710,7 @@ export default function Admin() {
             const allowedNext = canFulfil ? next : next.filter((status) => status !== "processing" && status !== "dispatched");
             return <article className="admin-order-card" key={order.id}>
               <div className="admin-order-heading"><div><strong>{order.order_number}</strong><span>{new Date(order.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${order.order_status}`}>{order.order_status}</span></div>
-              <div className="admin-order-payment"><strong>Payment: {order.payment_method||"cod"}</strong><span>Status: {order.payment_status}</span>{admin.role==="owner"&&order.payment_provider==="manual"&&order.payment_method!=="cod"&&order.payment_status==="pending"&&<button type="button" className="admin-primary" disabled={busy} onClick={()=>void verifyManualPayment(order)}>Verify received transfer</button>}</div><div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span><a className="admin-secondary" href={whatsappHref(order.phone, `Assalamu Alaikum ${order.customer_name}, this is De VERVE regarding your order ${order.order_number}. Current status: ${order.order_status}. Please reply here if you need assistance.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
+              <div className="admin-order-payment"><strong>Payment: {order.payment_method||"cod"}</strong><span>Status: {order.payment_status}</span>{admin.role==="owner"&&order.payment_provider==="manual"&&order.payment_status==="pending"&&(order.payment_method!=="cod"||order.order_status==="delivered")&&<div className="admin-payment-verify-controls"><select aria-label={"Account receiving payment for "+order.order_number} value={paymentAccountDrafts[order.id]||(order.payment_method==="cod"?"cash-main":financialAccounts.find(account=>account.kind==="bank"||account.kind==="wallet")?.id||"")} onChange={event=>setPaymentAccountDrafts(current=>({...current,[order.id]:event.target.value}))}><option value="">Choose receiving account</option>{financialAccounts.filter(account=>order.payment_method==="cod"||account.kind!=="cash").map(account=><option key={account.id} value={account.id}>{account.name} · {account.kind}</option>)}</select><button type="button" className="admin-primary" disabled={busy||!financialAccounts.length} onClick={()=>void verifyManualPayment(order)}>{order.payment_method==="cod"?"Record COD payment received":"Verify received transfer"}</button></div>}{order.financial_account_id&&<small>Recorded to {financialAccounts.find(account=>account.id===order.financial_account_id)?.name||"business account"}</small>}</div><div className="admin-order-customer"><strong>{order.customer_name}</strong><a href={`tel:${order.phone}`}>{order.phone}</a>{order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}<span>{order.delivery_address}, {order.city}</span><a className="admin-secondary" href={whatsappHref(order.phone, `Assalamu Alaikum ${order.customer_name}, this is De VERVE regarding your order ${order.order_number}. Current status: ${order.order_status}. Please reply here if you need assistance.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a>{order.customer_note && <small>Note: {order.customer_note}</small>}</div>
               <div className="admin-order-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
               <div className="admin-delivery-quote">
                 <div><strong>Delivery fee approval</strong><span className={`admin-delivery-state state-${order.delivery_fee_status}`}>{order.delivery_fee_status === "pending_quote" ? "Needs a delivery quotation" : order.delivery_fee_status === "awaiting_customer" ? "Waiting for customer approval" : order.delivery_fee_status === "accepted" ? "Customer approved the final total" : "Customer declined the quotation"}</span></div>
