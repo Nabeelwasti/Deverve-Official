@@ -207,6 +207,42 @@ test("rental estimate recalculates for the selected vehicle and driver option", 
 });
 
 
+test.describe("Pakistan rental time handling", () => {
+  test.use({ timezoneId: "America/New_York" });
+
+  test("submits rental wall-clock times as Pakistan time, independent of the visitor timezone", async ({ page }) => {
+    let submitted = "";
+    await page.route("**/api/rentals", async (route) => {
+      submitted = route.request().postData() ?? "";
+      await route.fulfill({
+        status: 201,
+        contentType: "application/json",
+        body: JSON.stringify({ accepted: true, reference_code: "DV-R-TZ-TEST-123456789012", rental_days: 1, estimated_daily_rate_paisa: null, estimated_total_paisa: null }),
+      });
+    });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Toggle navigation" }).click();
+    await page.getByRole("button", { name: "Car rental", exact: true }).click();
+    await page.getByRole("button", { name: "Request a rental" }).click();
+    const dialog = page.getByRole("dialog", { name: "Request a rental." });
+    await dialog.getByLabel(/Your name/).fill("Timezone Test Customer");
+    await dialog.getByLabel(/Phone \/ WhatsApp/).fill("+923001234567");
+    await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
+    await dialog.getByLabel(/Destination complete address/).fill("20 Test Road, Lahore");
+    await dialog.getByLabel(/Pickup date & time/).fill("2026-12-10T10:00");
+    await dialog.getByLabel(/Return date & time/).fill("2026-12-11T10:00");
+    const png = { name: "cnic.png", mimeType: "image/png", buffer: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]) };
+    await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
+    await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
+    await dialog.getByLabel(/I confirm these are my documents/).check();
+    await dialog.getByRole("button", { name: /Submit rental request/ }).click();
+    await expect(dialog.getByText("DV-R-TZ-TEST-123456789012")).toBeVisible();
+    expect(submitted).toContain("2026-12-10T10:00");
+    expect(submitted).toContain("2026-12-11T10:00");
+    expect(submitted).not.toContain("2026-12-10T15:00:00.000Z");
+  });
+});
+
 test("bilingual customer policies are accessible from the storefront", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Toggle navigation" }).click();
