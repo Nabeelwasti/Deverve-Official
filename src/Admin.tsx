@@ -780,7 +780,7 @@ export default function Admin() {
             </article>)}</div>}
         </section>
         )}
-        {["owner", "manager", "orders", "catalogue"].includes(admin.role) && <section id="inventory" className="admin-panel"><InventoryWorkspace onManageProduct={(productId) => { const product = products.find((item) => item.id === productId); setActiveAdminScreen("products"); if (product) startProductEditor(product); }} /></section>}
+        {["owner", "manager", "orders", "catalogue"].includes(admin.role) && <section id="inventory" className="admin-panel"><InventoryWorkspace onManageProduct={(productId) => { const product = products.find((item) => item.id === productId); setActiveAdminScreen("products"); if (product) startEdit(product); }} /></section>}
         <section id="products" className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, images and stock from one place.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
