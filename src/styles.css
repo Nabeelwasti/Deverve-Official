@@ -425,3 +425,16 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .checkout-payment-instructions p{margin:7px 0;overflow-wrap:anywhere}.checkout-payment-instructions a{display:inline-block;margin:8px 0;color:#123f78;font-weight:700;text-decoration:underline}
 .checkout-payment-instructions img{display:block;width:min(220px,100%);height:auto;max-height:220px;object-fit:contain;margin:12px 0;background:#fff;border-radius:8px}
 .checkout-payment-instructions small{display:block;margin-top:12px;line-height:1.5;color:#52677d}
+
+
+/* Rental form clarity: required markers and live price summary. */
+.required-star{display:inline;color:#c62828;font-weight:900;margin-left:2px}
+.required-fields-note{grid-column:1/-1;margin:0;color:#53657a;font-size:12px;font-weight:700}
+.rental-price-estimate{grid-column:1/-1;display:grid;gap:8px;padding:16px;border:1px solid #cbd9e8;border-radius:12px;background:#f4f8fc;color:#173454}
+.rental-price-estimate>strong:first-child{font-size:14px}
+.rental-price-estimate p{margin:0;color:#53657a;font-size:13px}
+.rental-price-estimate .rental-estimate-total{font-size:24px;letter-spacing:-.03em}
+.rental-price-estimate small{color:#64758a;font-size:11px;line-height:1.6}
+.rental-documents-upload .rental-consent{display:flex;align-items:flex-start;gap:8px}
+.rental-documents-upload .rental-consent input{flex:0 0 auto;margin-top:3px}
+.admin-vehicle-meta small{display:block;margin-top:4px;color:#64758a;font-size:11px}
