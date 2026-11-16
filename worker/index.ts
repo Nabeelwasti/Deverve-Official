@@ -1620,8 +1620,8 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
       const removed = await env.DB.prepare("DELETE FROM product_media_assets WHERE product_id = ? AND media_asset_id = ?").bind(asset[1], asset[2]).run();
       if ((removed.meta?.changes ?? 0) !== 1) return error("Product media item not found", 404);
       await env.DB.batch([
-        env.DB.prepare("UPDATE product_media_assets SET is_primary = 1 WHERE product_id = ? AND media_asset_id = (SELECT pm.media_asset_id FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = ? AND a.media_type = 'image' ORDER BY pm.position, a.created_at LIMIT 1) AND NOT EXISTS (SELECT 1 FROM product_media_assets WHERE product_id = ? AND is_primary = 1)").bind(asset[1], asset[1], asset[1]),
-        env.DB.prepare("UPDATE products SET image_key = (SELECT pm.media_asset_id FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = products.id AND pm.is_primary = 1 AND a.media_type = 'image' LIMIT 1), updated_at = ? WHERE id = ?").bind(new Date().toISOString(), asset[1]),
+        env.DB.prepare("UPDATE product_media_assets SET is_primary = 1 WHERE product_id = ? AND media_asset_id = (SELECT pm.media_asset_id FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = ? AND a.media_type = 'image' AND pm.color = '' ORDER BY pm.position, a.created_at LIMIT 1) AND NOT EXISTS (SELECT 1 FROM product_media_assets WHERE product_id = ? AND is_primary = 1)").bind(asset[1], asset[1], asset[1]),
+        env.DB.prepare("UPDATE products SET image_key = (SELECT pm.media_asset_id FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = products.id AND pm.is_primary = 1 AND pm.color = '' AND a.media_type = 'image' LIMIT 1), updated_at = ? WHERE id = ?").bind(new Date().toISOString(), asset[1]),
         env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'product.media_removed', 'product', ?, ?)")
           .bind(crypto.randomUUID(), admin.admin_user_id, asset[1], JSON.stringify({ media_id: asset[2] })),
       ]);
@@ -1749,7 +1749,7 @@ async function adminProductImageRoutes(request: Request, env: Env, url: URL): Pr
       if (!media) return error("Image not found or unavailable", 404);
     }
     const statements = [env.DB.prepare("UPDATE product_media_assets SET is_primary = 0 WHERE product_id = ?").bind(match[1])];
-    if (body.image_id) statements.push(env.DB.prepare("INSERT INTO product_media_assets (product_id, media_asset_id, position, is_primary) VALUES (?, ?, COALESCE((SELECT MAX(position)+1 FROM product_media_assets WHERE product_id=?),0), 1) ON CONFLICT(product_id,media_asset_id) DO UPDATE SET is_primary=1")
+    if (body.image_id) statements.push(env.DB.prepare("INSERT INTO product_media_assets (product_id, media_asset_id, position, is_primary) VALUES (?, ?, COALESCE((SELECT MAX(position)+1 FROM product_media_assets WHERE product_id=?),0), 1) ON CONFLICT(product_id,media_asset_id) DO UPDATE SET color='',is_primary=1")
       .bind(match[1], body.image_id, match[1]));
     statements.push(env.DB.prepare("UPDATE products SET image_key = ?, updated_at = ? WHERE id = ?").bind(body.image_id, new Date().toISOString(), match[1]));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, "product.image_changed", "product", match[1], JSON.stringify({ image_id: body.image_id })));
@@ -3546,7 +3546,6 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variants.results ?? []) {
         const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
-        if (available < 1) continue;
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
       }
       return json({ products: products.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [], media: mediaByProduct.get(product.id) ?? [] })) });
