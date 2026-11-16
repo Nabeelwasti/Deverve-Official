@@ -21,7 +21,12 @@ const categories = [
 
 const phone = "923197553705";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
-const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const localDateTime = (date: Date) => {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Karachi", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
+};
+const pakistanDateTimeMs = (value: string) => Date.parse(value + "+05:00");
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
 type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; color?: string; url: string };
@@ -328,7 +333,7 @@ function Storefront() {
     void loadRentalSettings();
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
-  const rentalDurationDays = (() => { const start = new Date(rentalForm.pickup_at).getTime(); const end = new Date(rentalForm.return_at).getTime(); return Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.ceil((end - start) / 86400000) : 0; })();
+  const rentalDurationDays = (() => { const start = pakistanDateTimeMs(rentalForm.pickup_at); const end = pakistanDateTimeMs(rentalForm.return_at); return Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.ceil((end - start) / 86400000) : 0; })();
   const rentalDailyRatePaisa = rentalSelectedVehicle ? (rentalForm.driver_option === "with_driver" ? rentalSelectedVehicle.with_driver_daily_rate_paisa ?? null : rentalSelectedVehicle.daily_rate_paisa) : null;
   const rentalEstimatedTotalPaisa = rentalDailyRatePaisa !== null && rentalDailyRatePaisa !== undefined && rentalDurationDays > 0 ? rentalDailyRatePaisa * rentalDurationDays : null;
 
@@ -343,8 +348,10 @@ function Storefront() {
     try {
       const data = new FormData();
       Object.entries(rentalForm).forEach(([key, value]) => data.append(key, value));
-      data.set("pickup_at", new Date(rentalForm.pickup_at).toISOString());
-      data.set("return_at", new Date(rentalForm.return_at).toISOString());
+      // Keep datetime-local values timezone-less: the Worker interprets them as Asia/Karachi (UTC+05:00).
+      // Converting with the visitor's device timezone would silently shift rental times for overseas customers.
+      data.set("pickup_at", rentalForm.pickup_at);
+      data.set("return_at", rentalForm.return_at);
       data.append("turnstile_token", rentalTurnstileToken);
       data.append("cnic_front", rentalFrontFile);
       data.append("cnic_back", rentalBackFile);
