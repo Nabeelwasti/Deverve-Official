@@ -1430,6 +1430,16 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   const firstId = [...db.rentalRequests.keys()][0];
   assert.equal([...db.rentalDocuments.values()].filter((doc) => doc.rental_request_id === firstId).length, 2);
   assert.equal(db.rentalRequests.get(firstId).estimated_total_paisa, 1200000);
+  const privateDocument = await handleRequest(new Request(origin + "/api/admin/rentals/" + firstId + "/documents/cnic_front"), env(db));
+  assert.equal(privateDocument.status, 401);
+
+  const legacyId = crypto.randomUUID();
+  db.rentalRequests.set(legacyId, { id: legacyId, vehicle_id: vehicleTwo, pickup_at: pickup, return_at: returning, status: "requested" });
+  const legacyReview = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "reviewing", vehicle_id: vehicleTwo }, headers), env(db));
+  assert.equal(legacyReview.status, 200);
+  const legacyConfirm = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "confirmed", vehicle_id: vehicleTwo }, headers), env(db));
+  assert.equal(legacyConfirm.status, 409);
+  assert.match((await legacyConfirm.json()).error, /both CNIC images/i);
 
   const second = await sendForm(makeForm("", "Second Customer", "self_drive"));
   assert.equal(second.status, 201);
