@@ -127,7 +127,7 @@ test("rental form explains blocked Turnstile and keeps the request safely blocke
   await expect(dialog.getByText(/Cloudflare security verification was blocked/i)).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Retry security check" })).toBeVisible();
   await dialog.getByLabel(/Your name/).fill("Browser Test Customer");
-  await dialog.getByLabel(/Phone \\/ WhatsApp/).fill("+923001234567");
+  await dialog.getByLabel("Phone / WhatsApp").fill("+923001234567");
   await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
   await dialog.getByLabel(/Destination complete address/).fill("20 Test Road, Lahore");
   const png = { name: "cnic.png", mimeType: "image/png", buffer: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]) };
