@@ -379,9 +379,10 @@ export default function Admin() {
     if (!variantProduct) return;
     setBusy(true); setMessage("");
     try {
-      await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify({ ...variantForm, initial_stock: Number(variantForm.initial_stock), cost_price_paisa: Math.round(Number(variantForm.cost_price || 0) * 100), reorder_level: Number(variantForm.reorder_level) }) });
+      const payload = { ...variantForm, initial_stock: Number(variantForm.initial_stock), reorder_level: Number(variantForm.reorder_level), ...( ["owner","manager"].includes(admin.role) ? { cost_price_paisa: Math.round(Number(variantForm.cost_price || 0) * 100) } : {}) };
+      await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify(payload) });
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
-      setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", initial_stock: "0" }); setMessage("Product variant added.");
+      setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" }); setMessage("Product variant added.");
       await loadProducts();
     } catch (error) { setMessage(error instanceof Error ? error.message : "Variant could not be added."); }
     finally { setBusy(false); }
@@ -396,7 +397,7 @@ export default function Admin() {
     if (!variantEditTarget) return;
     setBusy(true); setMessage("");
     try {
-      const payload = { ...variantEditForm, cost_price_paisa: Math.round(Number(variantEditForm.cost_price || 0) * 100), reorder_level: Number(variantEditForm.reorder_level) };
+      const payload = { ...variantEditForm, reorder_level: Number(variantEditForm.reorder_level), ...( ["owner","manager"].includes(admin.role) ? { cost_price_paisa: Math.round(Number(variantEditForm.cost_price || 0) * 100) } : {}) };
       await api(`/api/admin/variants/${variantEditTarget.id}`, { method: "PATCH", body: JSON.stringify(payload) });
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantEditTarget.product_id}/variants`);
       setVariants(result.variants); setVariantEditTarget(null); setMessage("Variant details saved.");
@@ -800,7 +801,7 @@ export default function Admin() {
             </article>)}</div>}
         </section>
         )}
-        {["owner", "manager", "orders", "catalogue"].includes(admin.role) && activeAdminScreen === "inventory" && <section id="inventory" className="admin-panel"><InventoryWorkspace onManageProduct={(productId) => { const product = products.find((item) => item.id === productId); setActiveAdminScreen("products"); if (product) startEdit(product); }} /></section>}
+        {["owner", "manager", "orders", "catalogue"].includes(admin.role) && activeAdminScreen === "inventory" && <section id="inventory" className="admin-panel"><InventoryWorkspace canManageMoney={["owner","manager"].includes(admin.role)} onManageProduct={(productId) => { const product = products.find((item) => item.id === productId); setActiveAdminScreen("products"); if (product) startEdit(product); }} /></section>}
         {["owner", "manager", "orders"].includes(admin.role) && activeAdminScreen === "pos" && <section id="pos" className="admin-panel"><POSWorkspace canManageMoney={["owner", "manager"].includes(admin.role)} /></section>}
         <section id="products" className="admin-panel">
           <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, images and stock from one place.</p></div><select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div>
@@ -880,7 +881,7 @@ export default function Admin() {
           {mediaProduct.image_key && <button type="button" className="admin-danger-button" disabled={busy} onClick={() => void attachMedia(null)}>Clear cover image</button>}
         </section></div>}
         {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
-          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); }} aria-label="Close">×</button></div>
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); setVariantEditTarget(null); }} aria-label="Close">×</button></div>
           <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
             <div><strong>{variant.sku || "No SKU"}</strong><span>{[variant.size, variant.color].filter(Boolean).join(" · ") || "General option"}</span><small>{variant.is_active ? "Active" : "Inactive"}</small></div>
             <div className="admin-variant-stock"><strong>{variant.available_quantity}</strong><span>available</span><small>{variant.reserved_quantity} reserved · {variant.stock_on_hand} physical</small></div>
