@@ -1608,7 +1608,7 @@ test("only the owner can verify a pending direct transfer and COD cannot be manu
   assert.equal(db.audits.some(row=>JSON.stringify(row).includes("DV-DIRECT-VERIFY")),true);
   const codId=crypto.randomUUID();
   db.orders.set(codId,{id:codId,order_number:"DV-COD-VERIFY",payment_method:"cod",payment_provider:"manual",payment_status:"pending"});
-  const rejected=await handleRequest(request("/api/admin/orders/"+codId,"PATCH",{payment_status:"paid"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const rejected=await handleRequest(request("/api/admin/orders/"+codId,"PATCH",{payment_status:"paid",financial_account_id:"cash-main"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(rejected.status,409);
   [...db.admins.values()][0].role="manager";
   const denied=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
