@@ -300,6 +300,14 @@ test("vehicle fleet galleries auto-advance and support manual navigation", async
   await expect(gallery.locator(".dv-gallery-meta")).toHaveText("2 / 2");
   await gallery.getByRole("button", { name: "Previous product image" }).click();
   await expect(gallery.locator(".dv-gallery-meta")).toHaveText("1 / 2");
+  const stage = gallery.locator(".dv-gallery-stage");
+  const bounds = await stage.boundingBox();
+  if (!bounds) throw new Error("Vehicle gallery stage is not measurable.");
+  await page.mouse.move(bounds.x + bounds.width * 0.75, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(bounds.x + bounds.width * 0.25, bounds.y + bounds.height / 2, { steps: 5 });
+  await page.mouse.up();
+  await expect(gallery.locator(".dv-gallery-meta")).toHaveText("2 / 2");
 });
 
 test("bilingual customer policies are accessible from the storefront", async ({ page }) => {
