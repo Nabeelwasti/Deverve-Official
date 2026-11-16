@@ -1431,7 +1431,7 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   assert.equal(publicFleet.find((v) => v.id === vehicleOne).with_driver_daily_rate_paisa, 1200000);
 
   const pickup = new Date(Date.now() + 2 * 86400000).toISOString();
-  const returning = new Date(Date.now() + 3 * 86400000).toISOString();
+  const returning = new Date(Date.parse(pickup) + 86400000).toISOString();
   const makeForm = (vehicleId, customerName, driver = "with_driver", includeDocuments = true) => {
     const form = new FormData();
     for (const [key, value] of Object.entries({
