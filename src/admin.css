@@ -253,3 +253,24 @@
 
 .admin-dashboard[data-admin-screen="inventory"] .admin-panel:not(#inventory){display:none!important}
 .admin-dashboard[data-admin-screen="inventory"] .admin-panel#inventory{display:block!important}
+
+.admin-dashboard[data-admin-screen="pos"] .admin-panel:not(#pos){display:none!important}
+.admin-dashboard[data-admin-screen="pos"] .admin-panel#pos{display:block!important}
+.pos-workspace{display:grid;gap:18px}.pos-tabs{display:flex;gap:7px;overflow-x:auto;padding:3px 0}.pos-tabs button{flex:0 0 auto;min-height:42px;padding:9px 14px;border:1px solid #d9e3ed;border-radius:11px;background:#fff;color:#36536f;font-weight:750}.pos-tabs button[aria-pressed=true]{background:#eaf3fc;border-color:#1d65a4;color:#164d80}
+.pos-session-bar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;padding:15px;border:1px solid #dbe6f0;border-radius:15px;background:#f7faff}
+.pos-session-bar strong{color:#173e64}.pos-session-bar small{display:block;color:#71839a;margin-top:3px}
+.pos-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:16px;align-items:start}
+.pos-card{padding:16px;border:1px solid #dfe7ef;border-radius:15px;background:#fff;min-width:0}.pos-card h3{margin:0 0 12px;color:#183d62;font-size:16px}
+.pos-search{display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:12px}.pos-search input,.pos-form input,.pos-form select,.pos-form textarea{min-height:42px;padding:10px 12px;border:1px solid #d6e1eb;border-radius:10px;min-width:0;width:100%}
+.pos-products{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;max-height:560px;overflow:auto}
+.pos-product{display:grid;gap:7px;padding:11px;border:1px solid #e3eaf1;border-radius:12px;background:#fbfcfe;min-width:0}.pos-product strong{font-size:13px;color:#193d62}.pos-product small{font-size:11px;color:#71839a}.pos-product button{justify-self:start;min-height:34px;padding:7px 10px;border:0;border-radius:9px;background:#153f68;color:#fff;font-size:11px;font-weight:800}
+.pos-cart-lines{display:grid;gap:9px}.pos-cart-line{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;padding:10px 0;border-bottom:1px solid #edf1f5}.pos-cart-line strong{display:block;font-size:12px;color:#1d4267}.pos-cart-line small{display:block;color:#77889a;font-size:10px;margin-top:3px}.pos-qty{display:flex;align-items:center;gap:6px}.pos-qty button{width:28px;height:28px;border:1px solid #d9e3ed;border-radius:8px;background:#fff}.pos-total{display:flex;justify-content:space-between;gap:12px;padding-top:14px;margin-top:10px;border-top:1px solid #dfe7ef;font-size:18px;font-weight:900;color:#143d66}
+.pos-form{display:grid;gap:11px}.pos-form label{display:grid;gap:5px;font-size:11px;font-weight:750;color:#52677f}.pos-form .admin-primary{min-height:44px}
+.pos-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.pos-metric{padding:14px;border:1px solid #e0e8f0;border-radius:13px;background:#f9fbfd}.pos-metric span{display:block;color:#687d92;font-size:11px}.pos-metric strong{display:block;margin-top:6px;color:#183e63;font-size:22px;font-variant-numeric:tabular-nums}
+.pos-table{width:100%;border-collapse:collapse;min-width:600px}.pos-table th,.pos-table td{padding:10px;text-align:left;border-bottom:1px solid #edf1f5;font-size:12px}.pos-table th{color:#6b7d90;font-size:10px;text-transform:uppercase;letter-spacing:.06em;background:#f8fafc}
+.pos-table-wrap{overflow-x:auto;border:1px solid #e3eaf1;border-radius:12px}
+.pos-message{padding:11px 13px;border-radius:10px;background:#eef6ff;color:#174d7e;font-size:12px;line-height:1.5}.pos-message.is-error{background:#fff0ef;color:#a42e28}
+.pos-receipt{width:min(360px,100%);margin:0 auto;padding:18px;border:1px dashed #9aaabd;background:#fff;color:#111;font-family:ui-monospace,monospace}.pos-receipt h3,.pos-receipt p{text-align:center}.pos-receipt table{width:100%;font-size:11px}.pos-receipt td{padding:4px 0}.pos-receipt-total{border-top:1px dashed #555;font-weight:900}
+@media(max-width:900px){.pos-grid{grid-template-columns:1fr}.pos-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.pos-products{grid-template-columns:1fr}.pos-card{padding:12px}.pos-session-bar{align-items:stretch}.pos-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media print{body *{visibility:hidden!important}.pos-receipt,.pos-receipt *{visibility:visible!important}.pos-receipt{position:absolute;inset:0;margin:0;border:0;width:80mm;padding:3mm}.pos-receipt button{display:none!important}}
