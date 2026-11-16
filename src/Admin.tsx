@@ -379,7 +379,7 @@ export default function Admin() {
     if (!variantProduct) return;
     setBusy(true); setMessage("");
     try {
-      const payload = { ...variantForm, initial_stock: Number(variantForm.initial_stock), reorder_level: Number(variantForm.reorder_level), ...( ["owner","manager"].includes(admin.role) ? { cost_price_paisa: Math.round(Number(variantForm.cost_price || 0) * 100) } : {}) };
+      const payload = { ...variantForm, initial_stock: Number(variantForm.initial_stock), reorder_level: Number(variantForm.reorder_level), ...( ["owner","manager"].includes(admin?.role || "") ? { cost_price_paisa: Math.round(Number(variantForm.cost_price || 0) * 100) } : {}) };
       await api(`/api/admin/products/${variantProduct.id}/variants`, { method: "POST", body: JSON.stringify(payload) });
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
       setVariants(result.variants); setVariantForm({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" }); setMessage("Product variant added.");
@@ -397,7 +397,7 @@ export default function Admin() {
     if (!variantEditTarget) return;
     setBusy(true); setMessage("");
     try {
-      const payload = { ...variantEditForm, reorder_level: Number(variantEditForm.reorder_level), ...( ["owner","manager"].includes(admin.role) ? { cost_price_paisa: Math.round(Number(variantEditForm.cost_price || 0) * 100) } : {}) };
+      const payload = { ...variantEditForm, reorder_level: Number(variantEditForm.reorder_level), ...( ["owner","manager"].includes(admin?.role || "") ? { cost_price_paisa: Math.round(Number(variantEditForm.cost_price || 0) * 100) } : {}) };
       await api(`/api/admin/variants/${variantEditTarget.id}`, { method: "PATCH", body: JSON.stringify(payload) });
       const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantEditTarget.product_id}/variants`);
       setVariants(result.variants); setVariantEditTarget(null); setMessage("Variant details saved.");
