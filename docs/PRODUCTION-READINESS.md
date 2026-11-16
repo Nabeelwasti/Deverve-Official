@@ -12,8 +12,11 @@
 - Production D1 contains promotion columns from migration `0017_single_promotion_per_order.sql` and all three exchange tables from `0018_exchange_case_management.sql`. Direct `sqlite_master` queries confirm the exchange tables. There is no migration-tracking table; production migrations must be verified by direct schema inspection. Current table count: 45.
 - Production data snapshot: 1 active owner, 3 media assets, 0 products, 0 variants, 0 vehicles, 0 customers, 0 orders, 0 rental requests, 0 exchange requests and 0 CMS pages.
 - Turnstile verifier Worker has its secret binding. CNIC-retention Worker has D1/R2 bindings and a daily schedule; CNIC upload remains disabled.
-- Pages production variables currently expose only `ADMIN_BOOTSTRAP_TOKEN`; Safepay and Resend credentials are not configured. COD remains the only active checkout method.
-- Safepay adapter code supports sandbox and separately gated production, but no merchant credentials or successful sandbox transaction are present. PayFast is not integrated; merchant-specific hosted OneCheckout documentation is required before safe implementation. Never collect PAN/CVV on De VERVE pages.
+- Pages production variables currently expose only `ADMIN_BOOTSTRAP_TOKEN`; Safepay and Resend credentials are not configured. COD is the default until the owner activates direct payment methods.
+- Owner-only Website Settings now manages up to 12 direct payment methods: COD, bank transfers, wallets (e.g. SadaPay/JazzCash/Easypaisa), hosted HTTPS payment URLs and QR images. The owner can upload a QR image, enter account title/bank/account number/IBAN/instructions, and activate or disable each method. Only active methods are returned to the public checkout.
+- Direct-transfer orders store the selected method and stay pending. Only the absolute owner can manually verify receipt; fulfilment is blocked until the payment is verified. This is manual reconciliation, not an automatic bank or wallet API connection.
+- Safepay adapter code supports sandbox and separately gated production, but no merchant credentials or successful sandbox transaction are present. Safepay API secrets are not yet editable in the owner dashboard. A provider-supplied hosted HTTPS link can be published as a manual method while dynamic per-order checkout remains pending integration and onboarding.
+- PayFast is not integrated as a dynamic per-order gateway. Obtain the merchant-specific hosted OneCheckout contract and credentials before implementation. Never collect PAN/CVV on De VERVE pages.
 - Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery needs a verified sender domain/address and API key.
 - The in-site exchange workflow is implemented, but no production exchange cases exist. Real order/item/stock acceptance tests still require actual business data.
 - Direct HTTP checks from this assistant's verification environment are blocked with a tool-side 403. GitHub-hosted production smoke workflows can reach the real origin; rely on their results for public endpoint and response-header verification.
@@ -23,7 +26,8 @@
 | Priority | Blocker | Required closure |
 |---|---|---|
 | Critical | No live catalogue or fleet data | Owner/staff must enter verified products, variants, sizes, colours, retail/wholesale prices, physical stock, genuine photos, vehicles, rates and availability. |
-| High | Payment onboarding | Configure Safepay sandbox secrets, run an actual sandbox payment and webhook reconciliation, then complete provider live approval before enabling production. Obtain PayFast's official hosted OneCheckout contract before implementing it. |
+| High | Direct payment activation | Owner must enter verified bank/wallet details, hosted links and QR images in Website Settings, then test customer display and manual reconciliation. |
+| High | Gateway onboarding | Configure Safepay sandbox secrets, run an actual sandbox payment and webhook reconciliation, then complete provider live approval before enabling production. Obtain PayFast's official hosted OneCheckout contract before implementing it. |
 | High | Email delivery | Verify a sending domain, add Resend API key and sender address as Cloudflare secrets, then test delivery and retry handling. |
 | High | Business/legal data | Owner must approve contact details, delivery coverage/fees, wholesale minimums, rental terms, exchange terms, privacy notice and CNIC-retention wording. |
 | High | Account lifecycle | Customer email verification and email-based password recovery are not active. |
