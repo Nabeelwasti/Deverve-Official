@@ -2128,6 +2128,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       return json({ created: true, variant: created }, 201);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "";
+      console.error("[variant-create] failed", message || "unknown error");
       if (/unique|constraint/i.test(message)) return error("That SKU or barcode is already in use", 409);
       return error("Variant could not be created", 503);
     }
