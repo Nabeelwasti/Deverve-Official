@@ -250,3 +250,6 @@
 .inventory-state.low_stock{background:#fff4dd;color:#8b5a12}.inventory-state.out_of_stock{background:#fff0ee;color:#a82f2b}
 .inventory-footnote{margin-top:14px;font-size:11px}
 @media(max-width:800px){.inventory-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.inventory-summary-grid article:last-child{grid-column:span 2}.inventory-toolbar{align-items:stretch}.inventory-search{min-width:100%}.inventory-filters{width:100%;overflow-x:auto;flex-wrap:nowrap}.inventory-filters button{flex:1;white-space:nowrap}}
+
+.admin-dashboard[data-admin-screen="inventory"] .admin-panel:not(#inventory){display:none!important}
+.admin-dashboard[data-admin-screen="inventory"] .admin-panel#inventory{display:block!important}
