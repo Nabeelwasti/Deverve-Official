@@ -1446,7 +1446,7 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   const secondPayload = await second.json();
   assert.equal(secondPayload.estimated_daily_rate_paisa, 800000);
   assert.equal(secondPayload.estimated_total_paisa, 800000);
-  const secondId = [...db.rentalRequests.keys()][1];
+  const secondId = [...db.rentalRequests.keys()][2];
 
   const reviewingFirst = await handleRequest(request("/api/admin/rentals/" + firstId, "PATCH", { status: "reviewing", vehicle_id: vehicleOne }, headers), env(db));
   assert.equal(reviewingFirst.status, 200);
