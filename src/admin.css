@@ -196,3 +196,6 @@
 .admin-payment-settings{margin:28px 0;padding:22px;border:1px solid rgba(20,55,90,.16);border-radius:16px;background:#f7faff}
 .admin-payment-settings>h3{margin:0 0 8px;color:#12345a}.admin-payment-method{margin:16px 0;padding:18px;border:1px solid rgba(20,55,90,.14);border-radius:12px;background:#fff}
 .admin-payment-method-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:14px}.admin-payment-method-head strong{margin-right:auto}.admin-payment-method-head label{display:flex;align-items:center;gap:8px}
+
+.admin-order-payment{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;margin:12px 0;border-radius:10px;background:#f2f6fb;color:#183a60}
+.admin-order-payment strong{font-weight:700}.admin-order-payment span{color:#52677d;font-size:.9rem}
