@@ -213,13 +213,10 @@
 @media(max-width:640px){
  .admin-dashboard .admin-quick-nav{position:relative!important;top:auto!important;flex-wrap:nowrap;max-width:100%;margin:8px 0 16px;padding:9px 2px}
  .admin-dashboard .admin-quick-nav button{min-height:42px}
- .admin-topbar{align-items:center;flex-wrap:wrap;gap:12px}
- .admin-user{flex-direction:row;align-items:center;max-width:100%;min-width:0}
- .admin-user span{overflow-wrap:anywhere}
- .admin-modal-backdrop{align-items:center;padding:10px}
+ .admin-topbar{align-items:center;flex-wrap:wrap;gap:12px}.admin-user{flex-direction:row;align-items:center;max-width:100%;min-width:0}
+ .admin-user span{overflow-wrap:anywhere}.admin-modal-backdrop{align-items:center;padding:10px}
  .admin-editor{max-height:calc(100dvh - 20px);padding:16px;border-radius:16px}
- .admin-form-actions{flex-wrap:wrap}
- .admin-form-actions>*{min-height:42px}
+ .admin-form-actions{flex-wrap:wrap}.admin-form-actions>*{min-height:42px}
  .admin-panel{min-width:0;overflow-wrap:anywhere}
 }
 @media(prefers-reduced-motion:reduce){.admin-editor{animation:none}}

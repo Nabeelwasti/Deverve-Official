@@ -1,0 +1,37 @@
+name: Build and type-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Type-check and build
+        run: npm run check
+      - name: Verify Pages security headers are included in build output
+        run: |
+          test -s dist/_headers
+          grep -q "Content-Security-Policy: default-src 'self'" dist/_headers
+      - name: Test Worker authentication behavior
+        run: npm run test:worker
+      - name: Validate D1 schema and constraints
+        run: python scripts/verify_schema.py
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Run storefront browser tests
+        run: npm run test:e2e

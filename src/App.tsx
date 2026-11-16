@@ -82,23 +82,14 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
     void ensureTurnstileLoaded().then(() => {
       if (!active || !host.current || !window.turnstile) throw new Error("Security verification is unavailable.");
       widgetId.current = window.turnstile.render(host.current, {
-        sitekey: TURNSTILE_SITEKEY,
-        theme: "light",
-        size: "flexible",
-        appearance: "always",
+        sitekey: TURNSTILE_SITEKEY, theme: "light", size: "flexible", appearance: "always",
         callback: (token) => { setStatus("verified"); tokenCallback.current(token); },
         "expired-callback": () => { setStatus("ready"); tokenCallback.current(""); },
         "error-callback": () => { setStatus("error"); tokenCallback.current(""); },
       });
       setStatus("ready");
-    }).catch(() => {
-      if (active) { setStatus("error"); tokenCallback.current(""); }
-    });
-    return () => {
-      active = false;
-      if (widgetId.current) window.turnstile?.remove?.(widgetId.current);
-      widgetId.current = null;
-    };
+    }).catch(() => { if (active) { setStatus("error"); tokenCallback.current(""); } });
+    return () => { active = false; if (widgetId.current) window.turnstile?.remove?.(widgetId.current); widgetId.current = null; };
   }, [resetKey, attempt]);
   return <div className="turnstile-shell">
     <div className="turnstile-widget" ref={host} role="group" aria-label="Cloudflare security verification" />
