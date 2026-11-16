@@ -930,7 +930,7 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
 
 interface VehicleRow {
   id: string; name: string; vehicle_type: string; transmission: string; seats: number;
-  fuel_type: string; daily_rate_paisa: number | null; status: string; image_key: string | null;
+  fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null; status: string; image_key: string | null;
   description: string; created_at: string; updated_at: string;
 }
 interface RentalRequestRow {
@@ -943,7 +943,7 @@ interface RentalRequestRow {
 async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/vehicles" || request.method !== "GET") return null;
   try {
-    const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available' ORDER BY vehicle_type, name LIMIT 50").all<VehicleRow>();
+    const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available' ORDER BY vehicle_type, name LIMIT 50").all<VehicleRow>();
     return json({ vehicles: (result.results ?? []).map((vehicle) => ({ ...vehicle, image_url: vehicle.image_key ? "/media/" + vehicle.image_key : null })) });
   } catch { return error("Vehicle catalogue is temporarily unavailable", 503); }
 }
@@ -1158,7 +1158,7 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to view the fleet", 403);
   if (collection && request.method === "GET") {
     try {
-      const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles ORDER BY created_at DESC LIMIT 100").all<VehicleRow>();
+      const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles ORDER BY created_at DESC LIMIT 100").all<VehicleRow>();
       return json({ vehicles: result.results ?? [] });
     } catch { return error("Fleet could not be loaded", 503); }
   }
@@ -1172,10 +1172,11 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   const fuel = cleanText(body.fuel_type, 30) || "unspecified";
   const seats = Number(body.seats);
   const rate = body.daily_rate_paisa === null || body.daily_rate_paisa === "" ? null : Number(body.daily_rate_paisa);
+  const withDriverRate = body.with_driver_daily_rate_paisa === null || body.with_driver_daily_rate_paisa === "" || body.with_driver_daily_rate_paisa === undefined ? null : Number(body.with_driver_daily_rate_paisa);
   const status = cleanText(body.status, 20) || "draft";
   const description = cleanText(body.description, 1000);
   const imageId = body.image_key ? cleanText(body.image_key, 64) : null;
-  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, daily rate and status", 400);
+  if (name.length < 2 || type.length < 2 || !Number.isInteger(seats) || seats < 1 || seats > 30 || (rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || !["draft", "available", "maintenance", "retired"].includes(status)) return error("Check the vehicle name, type, seats, daily rate and status", 400);
   if (imageId && !/^[a-f0-9-]{36}$/i.test(imageId)) return error("Choose a valid vehicle image", 400);
   if (request.method === "POST" && collection) {
     const id = crypto.randomUUID();
@@ -1184,8 +1185,8 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
         const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
         if (!media) return error("Vehicle image not found", 404);
       }
-      await env.DB.prepare("INSERT INTO vehicles (id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, status, image_key, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(id, name, type, transmission, seats, fuel, rate, status, imageId, description).run();
+      await env.DB.prepare("INSERT INTO vehicles (id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .bind(id, name, type, transmission, seats, fuel, rate, withDriverRate, status, imageId, description).run();
       await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.created', 'vehicle', ?, ?)")
         .bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ status, vehicle_type: type })).run();
       return json({ created: true, vehicle_id: id }, 201);
@@ -1197,8 +1198,8 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
       const media = await env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(imageId).first<{ id: string }>();
       if (!media) return error("Vehicle image not found", 404);
     }
-    const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ? AND (? = 'available' OR NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = vehicles.id AND status IN ('confirmed','active')))")
-      .bind(name, type, transmission, seats, fuel, rate, status, imageId, description, new Date().toISOString(), match[1], status).run();
+    const result = await env.DB.prepare("UPDATE vehicles SET name = ?, vehicle_type = ?, transmission = ?, seats = ?, fuel_type = ?, daily_rate_paisa = ?, with_driver_daily_rate_paisa = ?, status = ?, image_key = ?, description = ?, updated_at = ? WHERE id = ? AND (? = 'available' OR NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = vehicles.id AND status IN ('confirmed','active')))")
+      .bind(name, type, transmission, seats, fuel, rate, withDriverRate, status, imageId, description, new Date().toISOString(), match[1], status).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("Vehicle not found or it has a confirmed or active rental and cannot be taken out of service.", 409);
     await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.updated', 'vehicle', ?, ?)")
       .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ status, vehicle_type: type })).run();
