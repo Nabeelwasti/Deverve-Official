@@ -118,6 +118,7 @@ function Storefront() {
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
   const [rentalReference, setRentalReference] = useState("");
+  const [rentalSubmittedEstimatePaisa, setRentalSubmittedEstimatePaisa] = useState<number | null>(null);
   const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
   const [rentalBackFile, setRentalBackFile] = useState<File | null>(null);
   const [rentalDocsConsent, setRentalDocsConsent] = useState(false);
@@ -230,7 +231,7 @@ function Storefront() {
 
   const openRentalRequest = (vehicleId = "") => {
     setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
-    setRentalMessage(""); setRentalReference(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsLoading(true); setRentalOpen(true);
+    setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsLoading(true); setRentalOpen(true);
     void fetch("/api/rentals/settings", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) throw new Error("Rental settings unavailable"); const settings = await response.json() as { cnic_uploads_enabled?: boolean }; setRentalCnicUploadsEnabled(settings.cnic_uploads_enabled === true); }).catch(() => setRentalCnicUploadsEnabled(false)).finally(() => setRentalSettingsLoading(false));
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
@@ -258,6 +259,7 @@ function Storefront() {
       const result = await response.json() as { accepted?: boolean; reference_code?: string; rental_days?: number; estimated_daily_rate_paisa?: number | null; estimated_total_paisa?: number | null; message?: string; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
       setRentalReference(result.reference_code ?? "");
+      setRentalSubmittedEstimatePaisa(result.estimated_total_paisa ?? null);
       setRentalMessage(result.message || "Your rental request and both CNIC images have been received securely.");
       setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
     } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
@@ -500,7 +502,7 @@ function Storefront() {
 
       {rentalOpen && <div className="checkout-backdrop"><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title">
         <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p>Complete the details and identity verification. Your booking is not confirmed until De VERVE approves it.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close">×</button></div>
-        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalEstimatedTotalPaisa !== null ? "Your current estimate: " + formatPrice(rentalEstimatedTotalPaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
+        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
           <p className="required-fields-note"><span className="required-star">*</span> Required fields. Email and additional details are optional.</p>
           <div className="checkout-fields">
             <label>Vehicle{vehicles.length > 0 && <span className="required-star" aria-hidden="true"> *</span>}<select required={vehicles.length > 0} value={rentalForm.vehicle_id} onChange={(e) => setRentalForm({ ...rentalForm, vehicle_id: e.target.value })}><option value="">{vehicles.length > 0 ? "Select a vehicle" : "Any available vehicle"}</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.vehicle_type}</option>)}</select></label>
