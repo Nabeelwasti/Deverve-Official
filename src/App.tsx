@@ -109,8 +109,6 @@ function Storefront() {
   const [checkoutTurnstileReset, setCheckoutTurnstileReset] = useState(0);
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
-  const [rentalDocsTurnstileToken, setRentalDocsTurnstileToken] = useState("");
-  const [rentalDocsTurnstileReset, setRentalDocsTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
@@ -120,11 +118,9 @@ function Storefront() {
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
   const [rentalReference, setRentalReference] = useState("");
-  const [rentalDocumentToken, setRentalDocumentToken] = useState("");
   const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
   const [rentalBackFile, setRentalBackFile] = useState<File | null>(null);
   const [rentalDocsConsent, setRentalDocsConsent] = useState(false);
-  const [rentalDocsBusy, setRentalDocsBusy] = useState(false);
   const [rentalDocsMessage, setRentalDocsMessage] = useState("");
   const [rentalCnicUploadsEnabled, setRentalCnicUploadsEnabled] = useState(false);
   const [rentalSettingsLoading, setRentalSettingsLoading] = useState(true);
@@ -234,7 +230,7 @@ function Storefront() {
 
   const openRentalRequest = (vehicleId = "") => {
     setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
-    setRentalMessage(""); setRentalReference(""); setRentalDocumentToken(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsLoading(true); setRentalOpen(true);
+    setRentalMessage(""); setRentalReference(""); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsLoading(true); setRentalOpen(true);
     void fetch("/api/rentals/settings", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) throw new Error("Rental settings unavailable"); const settings = await response.json() as { cnic_uploads_enabled?: boolean }; setRentalCnicUploadsEnabled(settings.cnic_uploads_enabled === true); }).catch(() => setRentalCnicUploadsEnabled(false)).finally(() => setRentalSettingsLoading(false));
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
@@ -262,7 +258,6 @@ function Storefront() {
       const result = await response.json() as { accepted?: boolean; reference_code?: string; rental_days?: number; estimated_daily_rate_paisa?: number | null; estimated_total_paisa?: number | null; message?: string; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
       setRentalReference(result.reference_code ?? "");
-      setRentalDocumentToken("");
       setRentalMessage(result.message || "Your rental request and both CNIC images have been received securely.");
       setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
     } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
