@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: 'window.turnstile = { render: function (element, options) { var badge = document.createElement("div"); badge.textContent = "Test security verification"; badge.setAttribute("data-testid", "turnstile-test-widget"); element.appendChild(badge); window.setTimeout(function () { options.callback("e2e-turnstile-token"); }, 0); return "e2e-widget"; }, reset: function () {}, remove: function () {} };',
+      body: 'window.turnstile = { render: function (element, options) { var badge = document.createElement("div"); badge.textContent = "Test security verification"; badge.setAttribute("data-testid", "turnstile-test-widget"); element.appendChild(badge); var frame = document.createElement("iframe"); frame.setAttribute("aria-hidden", "true"); frame.style.display = "none"; element.appendChild(frame); window.setTimeout(function () { options.callback("e2e-turnstile-token"); }, 0); return "e2e-widget"; }, reset: function () {}, remove: function () {} };',
     });
   });
   await page.route("**/api/**", async (route) => {
@@ -97,6 +97,7 @@ test("rental request requires both CNIC images and sends them with the request",
   await expect(submitButton).toBeEnabled();
   await submitButton.click();
   await expect(dialog.getByLabel(/CNIC front image/)).toHaveJSProperty("validity.valid", false);
+  await expect(page.locator(".dv-toast")).toContainText(/CNIC front image/i);
   expect(submitted).toBeUndefined();
 
   const png = {
@@ -114,6 +115,46 @@ test("rental request requires both CNIC images and sends them with the request",
   expect(submitted).toContain("cnic_back");
   expect(submitted).toContain("cnic_consent");
   expect(submitted).toContain("e2e-turnstile-token");
+});
+
+test("rental settings failures explain the cause and can be retried", async ({ page }) => {
+  let available = false;
+  await page.route("**/api/rentals/settings", async (route) => {
+    if (route.request().method() !== "GET") return route.continue();
+    if (!available) {
+      await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Database temporarily unavailable" }) });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ cnic_uploads_enabled: true }) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  await page.getByRole("button", { name: "Request a rental" }).click();
+  const dialog = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(dialog.getByRole("alert")).toContainText("Database temporarily unavailable");
+  await expect(dialog.getByRole("button", { name: "Retry rental security settings" })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /Submit rental request/ })).toBeDisabled();
+  available = true;
+  await dialog.getByRole("button", { name: "Retry rental security settings" }).click();
+  await expect(dialog.getByRole("button", { name: /Submit rental request/ })).toBeEnabled();
+});
+
+test("rental form reports when Turnstile loads but never mounts its challenge", async ({ page }) => {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/javascript",
+      body: 'window.turnstile = { render: function () { return "stalled-widget"; }, reset: function () {}, remove: function () {} };',
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  await page.getByRole("button", { name: "Request a rental" }).click();
+  const dialog = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(dialog.getByText(/challenge did not appear within 12 seconds/i)).toBeVisible({ timeout: 16000 });
+  await expect(dialog.getByRole("button", { name: "Retry security check" })).toBeVisible();
 });
 
 test("rental form explains blocked Turnstile and keeps the request safely blocked", async ({ page }) => {
