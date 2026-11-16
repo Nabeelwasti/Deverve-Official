@@ -25,7 +25,7 @@ test("Safepay webhook HMAC-SHA512 verification accepts the exact raw payload and
 test("Safepay checkout stays unavailable unless all sandbox credentials are configured", async () => {
   const response = await handleRequest(request("/api/storefront/payment-options", "GET"), env(new FakeD1()));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { online_payment_available: false, environment: null });
+  assert.deepEqual(await response.json(), { online_payment_available: false, environment: null, methods: [{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}] });
   const webhook = await handleRequest(request("/api/webhooks/safepay", "POST", {}), env(new FakeD1()));
   assert.equal(webhook.status, 503);
 });
@@ -741,6 +741,20 @@ class FakeStatement {
       this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
+    if (q.startsWith("UPDATE orders SET payment_method = ?")) {
+      const [payment_method,id] = v;
+      const order=this.db.orders.get(id);
+      if(!order||order.payment_provider!=="manual")return {success:true,meta:{changes:0}};
+      order.payment_method=payment_method;order.payment_status="pending";
+      return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("UPDATE orders SET payment_status='paid'")) {
+      const [updated_at,id] = v;
+      const order=this.db.orders.get(id);
+      if(!order||order.payment_provider!=="manual"||order.payment_method==="cod"||order.payment_status!=="pending")return {success:true,meta:{changes:0}};
+      order.payment_status="paid";order.updated_at=updated_at;
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?")) {
       const row = this.db.variants.get(v[2]);
       if (!row || row.stock_on_hand - (row.reserved_quantity ?? 0) < v[3] || !this.db.orders.has(v[4])) return { success: true, meta: { changes: 0 } };
@@ -1410,9 +1424,9 @@ test("owner notifications are private, readable and can be marked as read", asyn
 test("Safepay production credentials remain disabled until the explicit live switch is enabled", async () => {
   const base = { ...env(new FakeD1()), SAFEPAY_ENV:"production", SAFEPAY_MERCHANT_API_KEY:"production-public-key", SAFEPAY_SECRET_KEY:"production-secret", SAFEPAY_WEBHOOK_SECRET:"production-webhook-secret" };
   const disabled = await handleRequest(request("/api/storefront/payment-options","GET"),base);
-  assert.deepEqual(await disabled.json(),{online_payment_available:false,environment:null});
+  assert.deepEqual(await disabled.json(),{online_payment_available:false,environment:null,methods:[{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}]});
   const enabled = await handleRequest(request("/api/storefront/payment-options","GET"),{...base,SAFEPAY_LIVE_ENABLED:"true"});
-  assert.deepEqual(await enabled.json(),{online_payment_available:true,environment:"production"});
+  assert.deepEqual(await enabled.json(),{online_payment_available:true,environment:"production",methods:[{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}]});
 });
 
 
