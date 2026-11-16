@@ -234,6 +234,12 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   assert.equal(repeat.status, 410);
 });
 
+test("public rental settings expose only whether optional CNIC uploads are enabled", async () => {
+  const response = await handleRequest(request("/api/rentals/settings", "GET"), env(new FakeD1()));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { cnic_uploads_enabled: false });
+});
+
 test("CNIC document uploads stay disabled until a retention policy is approved", async () => {
   const db = new FakeD1();
   const response = await handleRequest(request("/api/rentals/DV-R-20261115-ABC123/documents", "POST", {}), env(db));
