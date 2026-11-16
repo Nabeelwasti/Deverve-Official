@@ -186,7 +186,7 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 
 - Customer rental submission is now a single multipart request. Both CNIC sides and explicit consent are mandatory; images are validated and stored in private R2 in the same workflow as the rental record. The public flow no longer treats post-request CNIC upload as optional.
 - Authorized rental staff can only confirm a rental after both CNIC document records exist. Existing admin document access and deletion permissions remain enforced.
-- Vehicle records now support with_driver_daily_rate_paisa in addition to the existing self-drive daily_rate_paisa. With-driver rate falls back to self-drive rate when left blank. Available vehicles require a self-drive daily rate.
+- Vehicle records now support with_driver_daily_rate_paisa in addition to the existing self-drive daily_rate_paisa. Both self-drive and with-driver rates are required before a vehicle can be published as available; the selected mode always uses its own configured rate.
 - The customer sees a live estimate based on selected vehicle, driver option and full 24-hour periods rounded up. The Worker independently recalculates and stores rental days, daily rate and total; client-submitted totals are never trusted.
 - Production D1 currently has zero vehicle records. Automatic price estimates will only appear after the owner adds vehicles with rates in Admin → Vehicle fleet. With no selected vehicle, the request can still be sent and the team must quote manually.
 - New migration: migrations/0020_rental_pricing.sql. It must be applied to production D1 before deploying the Worker code that selects/writes the new columns. Backup and read-back verification are required.
