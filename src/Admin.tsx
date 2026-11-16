@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import "./admin.css";
 import ContentStudio from "./ContentStudio";
 import NotificationCenter from "./NotificationCenter";
+import VehicleGalleryManager from "./VehicleGalleryManager";
 
 type AdminUser = { id: string; email: string; role: string };
 type AdminPaymentMethod = {id:string;label:string;kind:"cod"|"bank"|"wallet"|"link"|"qr";provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null};
@@ -100,6 +101,7 @@ export default function Admin() {
   const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", with_driver_daily_rate: "", status: "draft" as Vehicle["status"], description: "", image_key: "" });
   const [vehicleMediaAssets,setVehicleMediaAssets]=useState<MediaAsset[]>([]);
+  const [vehicleGalleryTarget,setVehicleGalleryTarget]=useState<Vehicle|null>(null);
   const [showQuoteEditor, setShowQuoteEditor] = useState(false);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
   const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
@@ -722,7 +724,7 @@ export default function Admin() {
           {vehicles.length === 0 ? <div className="admin-empty"><strong>No vehicles added yet</strong><p>Add a vehicle before customers can request it from the rental section.</p></div> : <div className="admin-vehicle-list">{vehicles.map((vehicle) => <article className="admin-vehicle-card" key={vehicle.id}>
             <div><strong>{vehicle.name}</strong><span>{vehicle.vehicle_type} · {vehicle.seats} seats · {vehicle.transmission} · {vehicle.fuel_type}</span><small>{vehicle.description || "No description added."}</small></div>
             <div className="admin-vehicle-meta"><strong>Self: {vehicle.daily_rate_paisa === null ? "Rate on request" : `Rs. ${Math.round(vehicle.daily_rate_paisa / 100).toLocaleString("en-PK")} / day`}</strong><small>With driver: {vehicle.with_driver_daily_rate_paisa === null ? "Rate not configured" : `Rs. ${Math.round(vehicle.with_driver_daily_rate_paisa / 100).toLocaleString("en-PK")} / day`}</small><span className={`admin-enquiry-status status-${vehicle.status}`}>{vehicle.status}</span></div>
-            {["owner", "manager"].includes(admin.role) && <button type="button" className="admin-secondary" onClick={() => startVehicleEditor(vehicle)}>Edit</button>}
+            {["owner", "manager"].includes(admin.role) && <><button type="button" className="admin-secondary" onClick={() => setVehicleGalleryTarget(vehicle)}>Photos</button><button type="button" className="admin-secondary" onClick={() => startVehicleEditor(vehicle)}>Edit</button></>}
           </article>)}</div>}
         </section>}
         {["owner", "manager", "rental"].includes(admin.role) && <section id="rentals" className="admin-panel admin-rentals-panel">
@@ -782,6 +784,7 @@ export default function Admin() {
           {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Start by adding a product. You can save it as a draft before publishing.</p>{canEditProducts && <button className="admin-primary" onClick={startNew}>Add your first product</button>}</div> :
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions"><button type="button" onClick={() => void openMediaLibrary(product)}>Images</button><button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{product.status !== "archived" && admin.role !== "catalogue" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
         </section>
+        {vehicleGalleryTarget && <VehicleGalleryManager vehicle={vehicleGalleryTarget} onClose={() => setVehicleGalleryTarget(null)} onChanged={() => void loadVehicles()} />}
         {showVehicleEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="vehicle-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">DE VERVE MOBILITY</p><h2 id="vehicle-editor-title">{editingVehicleId ? "Edit vehicle" : "Add vehicle"}</h2></div><button type="button" className="admin-close" onClick={() => setShowVehicleEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={saveVehicle}>

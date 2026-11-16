@@ -26,7 +26,7 @@ const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezone
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
 type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; url: string };
 type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; seo_title: string; seo_description: string; variants: StoreVariant[]; media: StoreProductMedia[] };
-type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa?: number | null; image_key: string | null; image_url: string | null; description: string };
+type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa?: number | null; image_key: string | null; image_url: string | null; description: string; media?: Array<{id:string;url:string;alt_text:string;position:number;is_primary:number}> };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
 
 function readStoredCart(): CartLine[] {
@@ -484,7 +484,7 @@ function Storefront() {
           <div><p className="eyebrow">03 — DE VERVE MOBILITY</p><h2>Make room for<br /><em>the journey.</em></h2></div>
           <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Browse the available fleet or send a date-based rental request. Availability, rates, documents and rental terms are confirmed by our team before any booking is accepted.</p><button type="button" className="button button-light" onClick={() => openRentalRequest()}>Request a rental <span>↗</span></button></div>
           {vehicles.length > 0 && <div className="mobility-fleet"><div className="mobility-fleet-heading"><span>AVAILABLE FLEET</span><p>Choose a vehicle to start your request.</p></div><div className="mobility-vehicle-grid">{vehicles.map((vehicle) => <article className="mobility-vehicle-card" key={vehicle.id}>
-            {vehicle.image_url ? <img src={vehicle.image_url} alt={vehicle.name} loading="lazy" /> : <div className="mobility-vehicle-placeholder">DV<span>.</span></div>}
+            {vehicle.media?.length ? <ProductGallery className="mobility-vehicle-gallery" images={vehicle.media.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || vehicle.name }))} /> : vehicle.image_url ? <img src={vehicle.image_url} alt={vehicle.name} loading="lazy" /> : <div className="mobility-vehicle-placeholder">DV<span>.</span></div>}
             <div><small>{vehicle.vehicle_type} · {vehicle.seats} seats</small><h3>{vehicle.name}</h3><p>{vehicle.description || [vehicle.transmission, vehicle.fuel_type].filter(Boolean).join(" · ")}</p><strong>{vehicle.daily_rate_paisa === null ? "Rate on request" : formatPrice(vehicle.daily_rate_paisa) + " / day"}</strong><button type="button" onClick={() => openRentalRequest(vehicle.id)}>Request this vehicle ↗</button></div>
           </article>)}</div></div>}
         </section>
