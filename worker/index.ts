@@ -1801,6 +1801,43 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       return json({ accounts: visibleAccounts, registers: registers.results ?? [], session: openSession, items });
     } catch { return error("POS catalogue or register settings could not be loaded", 503); }
   }
+  if (request.method === "POST" && path === "/api/admin/pos/accounts") {
+    if (!canManageMoney) return error("Only an owner or manager can manage financial accounts",403);
+    const body=await readJson(request);
+    const name=typeof body?.name==="string"?body.name.trim().slice(0,100):"";
+    const kind=body?.kind;
+    const masked=typeof body?.masked_reference==="string"?body.masked_reference.trim().slice(0,40):"";
+    const opening=body?.opening_balance_paisa;
+    if(name.length<2||!["cash","bank","wallet","gateway"].includes(kind)||!Number.isSafeInteger(opening)||Number(opening)<0||Number(opening)>1_000_000_000_000)return error("Enter a valid account name, type and opening balance",400);
+    try{
+      const id=crypto.randomUUID();
+      await env.DB.batch([
+        env.DB.prepare("INSERT INTO financial_accounts (id,name,kind,masked_reference,opening_balance_paisa,is_active) VALUES (?,?,?,?,?,1)").bind(id,name,kind,masked,Number(opening)),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'finance.account_created','financial_account',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({name,kind,opening_balance_paisa:Number(opening)})),
+      ]);
+      return json({account:{id,name,kind,masked_reference:masked,opening_balance_paisa:Number(opening)}},201);
+    }catch{return error("Financial account could not be created",503);}
+  }
+  const accountMatch=path.match(/^\/api\/admin\/pos\/accounts\/([a-f0-9-]{36})$/i);
+  if(request.method==="PATCH"&&accountMatch){
+    if(!canManageMoney)return error("Only an owner or manager can manage financial accounts",403);
+    const body=await readJson(request);
+    const name=typeof body?.name==="string"?body.name.trim().slice(0,100):undefined;
+    const masked=typeof body?.masked_reference==="string"?body.masked_reference.trim().slice(0,40):undefined;
+    const active=body?.is_active;
+    if((name!==undefined&&name.length<2)||(active!==undefined&&active!==0&&active!==1&&active!==false&&active!==true))return error("Enter valid account details",400);
+    try{
+      const current=await env.DB.prepare("SELECT id,name,masked_reference,is_active FROM financial_accounts WHERE id=?").bind(accountMatch[1]).first<{id:string;name:string;masked_reference:string;is_active:number}>();
+      if(!current)return error("Financial account not found",404);
+      const nextName=name??current.name,nextMasked=masked??current.masked_reference,nextActive=active===undefined?current.is_active:(active===true||active===1?1:0);
+      if(nextActive===0&&current.id==="cash-main")return error("The primary cash drawer cannot be deactivated",409);
+      await env.DB.batch([
+        env.DB.prepare("UPDATE financial_accounts SET name=?,masked_reference=?,is_active=?,updated_at=? WHERE id=?").bind(nextName,nextMasked,nextActive,new Date().toISOString(),accountMatch[1]),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'finance.account_updated','financial_account',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,accountMatch[1],JSON.stringify({name:nextName,masked_reference:nextMasked,is_active:nextActive})),
+      ]);
+      return json({updated:true,id:accountMatch[1]});
+    }catch{return error("Financial account could not be updated",503);}
+  }
   if (request.method === "GET" && path === "/api/admin/pos/sales") {
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 50) || 50));
     try {
