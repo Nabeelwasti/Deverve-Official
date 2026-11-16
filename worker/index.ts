@@ -539,7 +539,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   try {
     const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='payment_methods' LIMIT 1").first<{setting_value_json:string}>();
     const config=saved?JSON.parse(saved.setting_value_json) as {methods?:Array<{id?:string;kind?:string;label?:string;enabled?:boolean}>}:null;
-    selectedPaymentMethod=config?.methods?.find(method=>method.id===requestedPaymentMethod&&method.enabled===true) as {id:string;kind:string;label:string}|undefined??null;
+    selectedPaymentMethod=(config?.methods??[{id:"cod",kind:"cod",label:"Cash on delivery",enabled:true}]).find(method=>method.id===requestedPaymentMethod&&method.enabled===true) as {id:string;kind:string;label:string}|undefined??null;
   } catch { return error("Payment options are temporarily unavailable",503); }
   if(!selectedPaymentMethod)return error("This payment option is no longer available. Refresh checkout and choose another option.",400);
   if(requestedPaymentProvider==="safepay"&&selectedPaymentMethod.kind!=="cod")return error("Gateway checkout must be selected through its verified provider flow.",400);
