@@ -420,3 +420,8 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .checkout-policy-note{margin:.75rem 0;color:#5b687a;font-size:.86rem;line-height:1.6}.checkout-policy-note button{border:0;background:transparent;color:#1d5d9f;text-decoration:underline;text-underline-offset:3px;font:inherit;font-weight:700;cursor:pointer;padding:0}
 
 .checkout-payment-options{display:grid;gap:.7rem;margin:1rem 0;padding:1rem;border:1px solid #dce5f0;border-radius:12px}.checkout-payment-options legend{font-weight:800;color:#183b67;padding:0 .35rem}.checkout-payment-options label{display:flex;align-items:center;gap:.55rem;color:#33445c;font-size:.92rem}.checkout-payment-options input{accent-color:#1b5fa8}.checkout-payment-options small{color:#73839a;font-size:.75rem}.customer-pay-button{margin-top:.8rem;width:100%;max-width:260px}
+
+.checkout-payment-instructions{margin:14px 0;padding:16px;border:1px solid rgba(18,52,90,.18);border-radius:12px;background:#f6f9fc;color:#173b62}
+.checkout-payment-instructions p{margin:7px 0;overflow-wrap:anywhere}.checkout-payment-instructions a{display:inline-block;margin:8px 0;color:#123f78;font-weight:700;text-decoration:underline}
+.checkout-payment-instructions img{display:block;width:min(220px,100%);height:auto;max-height:220px;object-fit:contain;margin:12px 0;background:#fff;border-radius:8px}
+.checkout-payment-instructions small{display:block;margin-top:12px;line-height:1.5;color:#52677d}
