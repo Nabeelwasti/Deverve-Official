@@ -408,7 +408,6 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variantRows.results ?? []) {
         const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
-        if (available < 1) continue;
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
       }
       return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })) });
