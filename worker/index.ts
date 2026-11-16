@@ -2013,6 +2013,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       ]);
       if(existingVoid)return error("This receipt has already been voided or refunded",409);
       if(!items.results?.length||!payments.results?.length)return error("Receipt lines or original payments are missing; ask the owner to reconcile it",409);
+      if(payments.results.some(payment=>payment.kind==="cash")&&!session)return error("Open the cash register before refunding a cash payment so the refund is included in the shift cash count",409);
       const usedOriginals=new Set<string>();
       const reversals:Array<{account_id:string;amount_paisa:number;kind:string;account_name:string;original_id:string}>=[];
       for(const payment of payments.results){
@@ -2029,7 +2030,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       ];
       for(const item of items.results){
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand+?,updated_at=? WHERE id=?").bind(item.quantity,now,item.variant_id));
-        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'customer_return',?,'order',?,?,?)").bind(crypto.randomUUID(),item.variant_id,item.quantity,sale.id,"POS full refund "+sale.receipt_number,admin.admin_user_id));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'customer_return',?,'return',?,?,?)").bind(crypto.randomUUID(),item.variant_id,item.quantity,sale.id,"POS full refund "+sale.receipt_number,admin.admin_user_id));
       }
       for(const payment of reversals){
         statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id,reverses_transaction_id) VALUES (?,?,'out',?,'pos_refund','pos_sale',?,?,?,?,?)").bind(crypto.randomUUID(),payment.account_id,payment.amount_paisa,sale.id,payment.kind==="cash"?(session?.id??null):null,"Refund "+sale.receipt_number+" · "+reason,admin.admin_user_id,payment.original_id));
