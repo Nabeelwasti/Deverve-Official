@@ -99,10 +99,10 @@ The direct SQLite catalogue query reports 45 tables. Cloudflare's D1 metadata `n
 5. Owner must configure actual bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images in Website Settings, then test a customer checkout and manual reconciliation.
 6. Configure Safepay sandbox merchant credentials in Cloudflare secrets and complete an end-to-end sandbox payment plus webhook/reconciliation tests before considering live onboarding.
 7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before building or enabling that provider.
-7. Configure a verified sending domain, Resend API key and sender address; test delivery and retry records.
-8. Implement and test the dedicated exchange case-management workflow if the business wants exchanges handled inside the customer/admin portal rather than WhatsApp.
-9. Complete real-device customer/admin acceptance tests against production D1/R2. Current Playwright tests mock public API responses and do not replace live order, payment, media or staff acceptance.
-10. Connect a custom domain only after the owner supplies a domain they control and DNS access.
+8. Configure a verified sending domain, Resend API key and sender address; test delivery and retry records.
+9. Implement and test the dedicated exchange case-management workflow if the business wants exchanges handled inside the customer/admin portal rather than WhatsApp.
+10. Complete real-device customer/admin acceptance tests against production D1/R2. Current Playwright tests mock public API responses and do not replace live order, payment, media or staff acceptance.
+11. Connect a custom domain only after the owner supplies a domain they control and DNS access.
 
 Paid services, live payment methods, external account connections and sensitive-document collection must not be enabled without owner approval. Do not call the site unrestricted-commerce-ready until the blockers above are closed.
 
