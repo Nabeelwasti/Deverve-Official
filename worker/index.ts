@@ -861,13 +861,13 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     if(body.payment_status!=="paid")return error("Only a verified payment can be marked as received",400);
     const reference=cleanText(body.payment_reference,100);
     const accountId=typeof body.financial_account_id==="string"?body.financial_account_id:"";
-    if(!/^[a-zA-Z0-9-]{2,64}$/.test(accountId))return error("Choose the business account that received this payment",400);
     try{
       const current=await env.DB.prepare("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=? LIMIT 1").bind(match[1]).first<{id:string;order_number:string;payment_method:string;payment_provider:string;payment_status:string;order_status:string;total_paisa:number;financial_transaction_id:string|null}>();
       if(!current)return error("Order not found",404);
       if(current.payment_provider!=="manual")return error("Safepay payments are reconciled automatically by the verified webhook",409);
       const isCod=current.payment_method==="cod";
       if(isCod&&current.order_status!=="delivered")return error("COD payment can only be recorded after the order is marked delivered",409);
+      if(!/^[a-zA-Z0-9-]{2,64}$/.test(accountId))return error("Choose the business account that received this payment",400);
       if(!isCod&&current.payment_status!=="pending"&&!(current.payment_status==="paid"&&!current.financial_transaction_id))return error("This payment cannot be verified from its current status",409);
       if(current.payment_status==="paid"&&current.financial_transaction_id)return json({updated:true,payment_status:"paid",already_verified:true});
       const account=await env.DB.prepare("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;name:string;kind:string}>();
