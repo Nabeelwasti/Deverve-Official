@@ -1,3 +1,38 @@
+## Resumed-session handoff — 16 November 2026 (Asia/Karachi)
+
+Latest verified `main` commit: `5832559831526b6bf8eb35675a2e6056d39f75a4`.
+
+### Work completed in this resumed session
+- `ddbb6e8`: Hardened the Turnstile widget so the frontend waits for the actual challenge iframe to mount; a stalled render now produces an actionable error and retry.
+- `e619ba2`: Added browser coverage for blocked/stalled Turnstile and rental-settings failures.
+- `b429038`: Made notification assertions resilient to native browser validation order and explicitly tested visible failure toasts.
+- `dee739b`: Fixed rental datetime handling. The UI now formats and estimates in Asia/Karachi time and submits timezone-less wall-clock values for the Worker’s Pakistan-time parser.
+- `2b244a5`: Added cross-timezone regression coverage using an America/New_York browser context.
+- `5832559`: Added customer-facing vehicle gallery auto-advance and manual-navigation regression coverage.
+- Latest CI run #588 passed all 13 steps. Production smoke run #301 passed all eight checks. Cloudflare Pages deployment for the latest commit succeeded.
+- Do not interpret the mocked Turnstile browser test as proof that a real human challenge was completed. Production smoke confirms verifier/Siteverify connectivity; a real-device visual challenge check remains necessary.
+
+### Production state — read-only verification
+- Pages project: `deverve-official`, connected to GitHub `Nabeelwasti/Deverve-Official`, production branch `main`.
+- D1: `deverve-production`, ID `355da876-17c4-4762-a59d-bb85f2e4551b`; private R2 bucket: `deverve-media-private`.
+- Direct `sqlite_master` query: 55 application tables. D1 metadata `num_tables` may incorrectly report 0.
+- Current counts: 1 active owner, 7 media assets, 1 product, 1 variant, 1 vehicle, 1 rental request, 1 owner notification; 0 customers, orders, exchange requests, CMS pages and POS sales.
+- Production `cnic_uploads_enabled` is `true`. Do not toggle or change retention settings casually. Both sides and consent are mandatory. Retention Worker is bound to D1/private R2 and scheduled; policy is 30 days after completed/cancelled requests and 90 days for unresolved requests. Health/bindings passed smoke; a real-document purge was not tested.
+- This session performed read-only D1 queries only. No production business records or customer documents were created, updated or deleted.
+
+### Next work and release gates
+1. Keep working directly on `main` only. No feature branches, force-push, reset, or destructive migrations.
+2. Continue code-completable hardening and test real customer/admin flows without inserting synthetic production records.
+3. Owner must complete verified catalogue/fleet data, business details and policy approval.
+4. Owner/provider tasks remain: bank/wallet setup and reconciliation; Safepay sandbox credentials and webhook test; PayFast merchant docs/credentials; verified Resend sender/API key; optional custom domain.
+5. Confirm owner-approved CNIC privacy/retention wording and verify scheduled deletion in a controlled environment.
+6. Real-device acceptance is still required for the live Turnstile challenge and complete customer/admin flows. Current Playwright tests mock the public APIs and challenge.
+7. Customer email verification/password recovery and automated WhatsApp/SMS are not active; decide whether they are required before implementing provider-dependent workflows.
+
+Never claim 100% production readiness while the owner/provider/live-device gates remain open. Preserve all existing D1/R2 records and secrets.
+
+---
+
 # Main-only handoff — 16 November 2026 (Asia/Karachi)
 
 ## Latest payment-management work

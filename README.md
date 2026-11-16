@@ -53,58 +53,70 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Server-side role checks, hashed random session tokens, HttpOnly/Secure/SameSite=Strict cookies and same-origin mutation checks.
 - Cloudflare Turnstile verification through a separate Worker and D1-backed public rate limits.
 - Security response headers and Content Security Policy.
-- Separate scheduled CNIC-retention Worker with D1/R2 bindings. CNIC uploads remain disabled until the owner approves the retention policy.
+- Separate scheduled CNIC-retention Worker with D1/R2 bindings. Production CNIC uploads are currently enabled, require both CNIC sides and consent, and use the scheduled 30-day closed-request / 90-day unresolved-request retention policy. Owner policy sign-off and a verified live deletion cycle remain launch checks.
 - GitHub Actions build, type-check, Worker tests, schema checks and desktop/mobile browser tests.
 
-## Production snapshot — 15 November 2026
+## Production snapshot — 16 November 2026
 
-The payments, promotions, owner-notification and exchange-policy change set was merged into `main` as `4feb999f0332a6ef5234bb9a6faf985c94268b78`. The exchange case-management workflow was then added directly on `main`. Main commit `ec367c3c9caa19bf19ce68ff7d9d990f10c771c1` passed CI run #428 and production smoke run #141. The subsequent exchange delivery-window fix, regression test, smoke-workflow update and readiness documentation are all on `main`. Latest main CI run #434 (`43736877794`) passed all 13 steps, and production smoke run #147 (`43736962128`) passed all eight steps, including health/D1 connectivity, exchange-route authentication, CMS/sitemap, Turnstile, CNIC service bindings and deployed security headers. Cloudflare Pages deployment for commit `22758a9323e8ab62554c28ae304a91d094239505` is successful.
+Latest verified source on `main`: `5832559831526b6bf8eb35675a2e6056d39f75a4`. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
 
-The production D1 schema includes the four promotion columns from migration `0017_single_promotion_per_order.sql` and the three exchange case tables from migration `0018_exchange_case_management.sql`. The exchange tables were confirmed present by direct SQLite metadata queries. The database has no migration-tracking table, so production schema verification is performed by querying `sqlite_master` and table columns. No customer, order, product or rental records were created by these schema changes.
+CI run #588 passed all 13 steps: type-check/build, security-header output, Worker authentication tests, D1 schema/constraint validation, and desktop/mobile Playwright browser tests. Production smoke run #301 passed all eight checks: production health/D1 connectivity, protected exchange/return routes, CMS/SEO/sitemap/notification routes, Turnstile verifier/Siteverify connectivity, scheduled CNIC-retention service bindings, rental settings/fleet pricing, and deployed security headers. Cloudflare Pages production deployment for this commit completed successfully.
 
-Current read-only production counts:
-| Record type | Count |
+The current production D1 database was inspected using read-only SQL. It contains 55 application tables. The live records below were preserved; this session did not insert, update, or delete business records.
+
+| Record type | Current count |
 |---|---:|
 | Active owner accounts | 1 |
-| Media assets | 3 |
-| Products / variants | 0 / 0 |
-| Vehicles | 0 |
+| Media assets | 7 |
+| Products / variants | 1 / 1 |
+| Vehicles | 1 |
 | Customers / orders | 0 / 0 |
-| Rental requests | 0 |
-| Owner notifications | 0 |
+| Rental requests | 1 |
+| Owner notifications | 1 |
 | Exchange requests | 0 |
 | CMS pages | 0 |
+| POS sales | 0 |
 
-The direct SQLite catalogue query reports 45 tables. Cloudflare's D1 metadata `num_tables` field has previously returned 0 despite the tables being present; use direct SQL schema queries for verification.
+Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadata `num_tables` field has returned 0 despite the tables being present.
 
 ## What is actually active
 
-- **Checkout:** COD plus owner-configurable direct payment instructions are supported. The owner can publish bank/wallet account details, IBANs, hosted HTTPS links and QR images from Website Settings without a code change. SadaPay, JazzCash and Easypaisa can be offered as manually reconciled wallet/account methods when the owner has an eligible account. Direct transfers stay pending until the owner verifies receipt.
-- **Safepay:** The existing gateway adapter supports sandbox and separately gated production credentials held as Cloudflare secrets. The owner dashboard does not yet edit Safepay API secrets, and no live merchant credentials or end-to-end transaction have been verified. Keep the gateway disabled until onboarding and sandbox/webhook reconciliation pass. The owner can still publish a provider-supplied HTTPS payment link as a manual payment option.
-- **PayFast:** Not yet integrated as a dynamic per-order gateway. A merchant-supplied hosted payment URL can be published as a manual link, but dynamic checkout, signed callbacks and reconciliation require the official merchant-specific hosted OneCheckout contract and credentials. Do not collect card numbers or CVV on De VERVE pages.
-- **Email:** In-app owner notifications work. Resend delivery is not active because no Resend API key or verified sender address is configured in the Pages production environment. The owner recipient defaults to `deverve61@gmail.com` and can be managed in the owner settings.
+- **Checkout:** COD and owner-configurable direct payment instructions are supported. The owner can publish bank/wallet details, IBANs, hosted HTTPS links and QR images from Website Settings. Direct transfers stay pending until the owner independently verifies receipt.
+- **Safepay:** The gateway adapter exists, but no merchant credentials or successful sandbox/webhook transaction have been verified. Keep dynamic Safepay checkout disabled until onboarding and reconciliation tests pass.
+- **PayFast:** Not integrated as a dynamic per-order gateway. Obtain the official merchant-specific hosted OneCheckout contract and credentials first. Never collect card numbers or CVV on De VERVE pages.
+- **Email:** In-app owner notifications work. Resend delivery is not active because a verified sender and API key are not configured.
 - **WhatsApp/SMS:** Customer contact links open WhatsApp; automated WhatsApp Business or SMS delivery is not connected.
-- **Social accounts:** Only public profile URLs are stored. OAuth, publishing, inbox management, ad management and analytics imports are not part of this website.
-- **Domain:** The production site currently uses the Cloudflare Pages hostname. No custom domain is connected.
+- **Social accounts:** Public profile URLs can be stored. OAuth, publishing, inbox management, ad management and analytics imports are not part of this website.
+- **Domain:** The production site uses the Cloudflare Pages hostname. No custom domain is connected.
 - **Customer email lifecycle:** Email verification and email-based password recovery are not active.
-- **CNIC:** Uploads remain disabled. Do not enable them until the owner approves the retention period, customer notice, access policy and purge schedule, and the deletion workflow is verified.
-- **Business data:** There are no live product or fleet records. Never invent product names, prices, stock, vehicle availability, reviews or brand-authenticity claims.
+- **CNIC:** The production setting `cnic_uploads_enabled` is currently `true`. Both CNIC sides and consent are mandatory; documents are stored in private R2 and the scheduled retention Worker is healthy. Its policy is 30 days after completed/cancelled requests and 90 days for unresolved requests. The production smoke check verifies service bindings, not deletion of a real customer document. Confirm owner-approved wording/retention and verify deletion in a controlled test before treating this as fully closed.
+- **Business data:** One product with one stock variant and one vehicle are currently present, alongside seven media assets and one rental request. Do not overwrite or delete these records. The catalogue and fleet still need the owner's complete, verified product, price, stock, vehicle, availability and photo information.
+
+## Latest code and regression coverage
+
+- Turnstile now reports ready only after its challenge iframe mounts. A stalled render produces a clear error and retry action.
+- Rental settings failures show the server-provided reason and a retry action; stale settings responses cannot overwrite a newer request.
+- Native required-field validation and blocked Turnstile submissions have visible notification coverage.
+- Rental date fields, duration and estimates use Asia/Karachi time regardless of the visitor's device timezone. Timezone-less form values are sent to the Worker, which parses them as Pakistan wall-clock time.
+- Browser tests cover the stalled/blocked challenge, settings retry, mandatory CNIC, rental estimate, cross-timezone date handling, product gallery rotation, and vehicle gallery rotation/manual navigation.
+- Product and vehicle gallery managers already support batches of up to 50 images (with per-gallery limits), colour-specific product media, manual navigation and automatic rotation.
 
 ## Remaining release blockers
 
-1. Enter verified products, sizes, colours, variants, actual retail/wholesale prices, physical stock and genuine photos.
-2. Enter the actual rental fleet, rates, availability, photos and owner-approved rental terms.
-3. Confirm business phone/WhatsApp, address, email, opening hours, delivery coverage/fees and wholesale minimums.
-4. Obtain owner approval for customer policies, privacy notice, exchange terms, rental terms and CNIC retention policy.
-5. Owner must configure actual bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images in Website Settings, then test a customer checkout and manual reconciliation.
-6. Configure Safepay sandbox merchant credentials in Cloudflare secrets and complete an end-to-end sandbox payment plus webhook/reconciliation tests before considering live onboarding.
-7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before building or enabling that provider.
-8. Configure a verified sending domain, Resend API key and sender address; test delivery and retry records.
-9. Implement and test the dedicated exchange case-management workflow if the business wants exchanges handled inside the customer/admin portal rather than WhatsApp.
-10. Complete real-device customer/admin acceptance tests against production D1/R2. Current Playwright tests mock public API responses and do not replace live order, payment, media or staff acceptance.
-11. Connect a custom domain only after the owner supplies a domain they control and DNS access.
+1. Complete and verify the product catalogue, exact sizes/colours/variants, retail and wholesale prices, stock, and genuine product photos.
+2. Complete the vehicle fleet, self-drive/with-driver rates, availability, photos and owner-approved rental terms.
+3. Confirm the business phone/WhatsApp, address, email, opening hours, delivery coverage/fees and wholesale minimums.
+4. Obtain owner approval for customer policies, privacy notice, exchange terms, rental terms and CNIC retention wording.
+5. Configure real bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images, then test checkout and manual reconciliation without using fake production transactions.
+6. Configure Safepay sandbox merchant credentials and complete an end-to-end sandbox payment plus webhook/reconciliation test before considering live onboarding.
+7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before implementing or enabling that provider.
+8. Configure a verified sender domain, Resend API key and sender address; test delivery, failure handling and retries.
+9. Verify the scheduled CNIC deletion process in a controlled environment and confirm the owner-approved retention policy. Do not use real customer documents as test fixtures.
+10. Complete real-device acceptance on Android/iOS and desktop, including a real visible Turnstile challenge. Playwright mocks the challenge/API and does not replace a real human challenge or real transaction.
+11. Decide whether customer email verification/password recovery and automated WhatsApp/SMS messaging are required; those provider-backed workflows are not active.
+12. Connect a custom domain only when the owner supplies a domain they control and DNS access.
 
-Paid services, live payment methods, external account connections and sensitive-document collection must not be enabled without owner approval. Do not call the site unrestricted-commerce-ready until the blockers above are closed.
+Do not call the site unrestricted-commerce-ready until the relevant owner/provider/data gates above are closed. Never fabricate credentials, payment confirmations, customer records, catalogue data or vehicle availability.
 
 ## Local development and verification
 
