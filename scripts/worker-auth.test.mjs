@@ -360,7 +360,9 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
-    if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, name, kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
     if (q.startsWith("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ?")) { const row = this.db.orders.get(v[0]); return row?.customer_id === v[1] ? row : null; }
@@ -605,11 +607,11 @@ class FakeStatement {
       Object.assign(row, { status: "succeeded", updated_at: v[0] });
       return { success: true, meta: { changes: 1 } };
     }
-    if (q.startsWith("UPDATE orders SET payment_status = 'paid'")) {
-      const [updatedAt, id, amount] = v;
+    if (q.startsWith("UPDATE orders SET payment_status = 'paid', financial_account_id")) {
+      const [transactionId, updatedAt, id, amount] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.payment_provider !== "safepay" || row.payment_status === "paid" || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
-      Object.assign(row, { payment_status: "paid", updated_at: updatedAt });
+      if (!row || row.payment_provider !== "safepay" || (row.payment_status === "paid" && row.financial_transaction_id) || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { payment_status: "paid", financial_account_id:"gateway-clearing", financial_transaction_id:transactionId, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'processed'")) {
@@ -785,11 +787,17 @@ class FakeStatement {
       return {success:true,meta:{changes:1}};
     }
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.manual_payment_verified'")) { this.db.audits.push(v); return {success:true,meta:{changes:1}}; }
-    if (q.startsWith("UPDATE orders SET payment_status='paid'")) {
-      const [updated_at,id] = v;
+    if (q.startsWith("UPDATE orders SET payment_status='paid',financial_account_id")) {
+      const [accountId,transactionId,updated_at,id,requiresDelivered] = v;
       const order=this.db.orders.get(id);
-      if(!order||order.payment_provider!=="manual"||order.payment_method==="cod"||order.payment_status!=="pending")return {success:true,meta:{changes:0}};
-      order.payment_status="paid";order.updated_at=updated_at;
+      if(!order||order.payment_provider!=="manual"||(order.payment_status!=="pending"&&!(order.payment_status==="paid"&&!order.financial_transaction_id))||(requiresDelivered===1&&order.order_status!=="delivered"))return {success:true,meta:{changes:0}};
+      Object.assign(order,{payment_status:"paid",financial_account_id:accountId,financial_transaction_id:transactionId,updated_at});
+      return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("INSERT INTO financial_transactions")) {
+      const id=v[0];
+      const gateway=q.includes("'gateway-clearing'");
+      this.db.financialTransactions.push({id,account_id:gateway?"gateway-clearing":v[1],amount_paisa:gateway?v[1]:v[2],reference_id:gateway?v[2]:v[3]});
       return {success:true,meta:{changes:1}};
     }
     if (q.startsWith("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?")) {
@@ -952,6 +960,13 @@ class FakeD1 {
   sessions = new Map();
   attempts = new Map();
   paymentAttempts = new Map();
+  financialAccounts = new Map([
+    ["cash-main",{id:"cash-main",name:"Main cash drawer",kind:"cash",masked_reference:"",is_active:1,opening_balance_paisa:0}],
+    ["bank-clearing",{id:"bank-clearing",name:"Bank transfer clearing",kind:"bank",masked_reference:"",is_active:1,opening_balance_paisa:0}],
+    ["wallet-clearing",{id:"wallet-clearing",name:"Mobile wallet clearing",kind:"wallet",masked_reference:"",is_active:1,opening_balance_paisa:0}],
+    ["gateway-clearing",{id:"gateway-clearing",name:"Online payment clearing",kind:"gateway",masked_reference:"",is_active:1,opening_balance_paisa:0}],
+  ]);
+  financialTransactions = [];
   paymentWebhookEvents = new Map();
   returnRequests = new Map();
   returnRequestItems = [];
@@ -1585,7 +1600,8 @@ test("only the owner can verify a pending direct transfer and COD cannot be manu
   const cookie=setup.headers.get("set-cookie").split(";")[0];
   const transferId=crypto.randomUUID();
   db.orders.set(transferId,{id:transferId,order_number:"DV-DIRECT-VERIFY",payment_method:"sadapay",payment_provider:"manual",payment_status:"pending"});
-  const verified=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-001"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  db.orders.get(transferId).order_status="confirmed";db.orders.get(transferId).total_paisa=250000;db.orders.get(transferId).financial_transaction_id=null;
+  const verified=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-001",financial_account_id:"bank-clearing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(verified.status,200);
   assert.equal(db.orders.get(transferId).payment_status,"paid");
   assert.equal(db.audits.some(row=>JSON.stringify(row).includes("DV-DIRECT-VERIFY")),true);
@@ -1622,7 +1638,7 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   assert.equal(confirmed.status,200);
   const blocked=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(blocked.status,409);
-  const verified=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-ORDER-1"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const verified=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-ORDER-1",financial_account_id:"bank-clearing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(verified.status,200);
   const processing=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(processing.status,200);
