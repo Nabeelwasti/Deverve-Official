@@ -1994,6 +1994,56 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
     } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
   }
+  const voidMatch = path.match(/^\/api\/admin\/pos\/sales\/([a-f0-9-]{36})\/void$/i);
+  if (request.method === "POST" && voidMatch) {
+    if (!canManageMoney) return error("Only an owner or manager can void a POS sale",403);
+    const body=await readJson(request);
+    const reason=typeof body?.reason==="string"?body.reason.trim().slice(0,300):"";
+    if(reason.length<3)return error("Enter a clear reason for the full sale refund",400);
+    try{
+      const sale=await env.DB.prepare("SELECT id,receipt_number,status,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(voidMatch[1]).first<{id:string;receipt_number:string;status:string;total_paisa:number}>();
+      if(!sale)return error("POS receipt not found",404);
+      if(sale.status!=="completed")return error("Only a completed sale can be refunded once",409);
+      const [items,payments,existingVoid,session]=await Promise.all([
+        env.DB.prepare("SELECT variant_id,quantity FROM pos_sale_items WHERE sale_id=?").bind(sale.id).all<{variant_id:string;quantity:number}>(),
+        env.DB.prepare("SELECT p.account_id,p.amount_paisa,a.kind,a.name AS account_name FROM pos_payments p JOIN financial_accounts a ON a.id=p.account_id WHERE p.sale_id=?").bind(sale.id).all<{account_id:string;amount_paisa:number;kind:string;account_name:string}>(),
+        env.DB.prepare("SELECT sale_id FROM pos_sale_voids WHERE sale_id=?").bind(sale.id).first<{sale_id:string}>(),
+        env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>(),
+      ]);
+      if(existingVoid)return error("This receipt has already been voided or refunded",409);
+      if(!items.results?.length||!payments.results?.length)return error("Receipt lines or original payments are missing; ask the owner to reconcile it",409);
+      const usedOriginals=new Set<string>();
+      const reversals:Array<{account_id:string;amount_paisa:number;kind:string;account_name:string;original_id:string}>=[];
+      for(const payment of payments.results){
+        const originals=await env.DB.prepare("SELECT t.id FROM financial_transactions t WHERE t.reference_type='pos_sale' AND t.reference_id=? AND t.category='pos_sale' AND t.account_id=? AND t.amount_paisa=? AND NOT EXISTS (SELECT 1 FROM financial_transactions r WHERE r.reverses_transaction_id=t.id) ORDER BY t.created_at LIMIT 20").bind(sale.id,payment.account_id,payment.amount_paisa).all<{id:string}>();
+        const original=(originals.results??[]).find(row=>!usedOriginals.has(row.id));
+        if(!original)return error("The original payment ledger entry could not be matched. No refund was made.",409);
+        usedOriginals.add(original.id);
+        reversals.push({...payment,original_id:original.id});
+      }
+      const now=new Date().toISOString();
+      const statements=[
+        env.DB.prepare("INSERT INTO pos_sale_voids (sale_id,voided_by_admin_id,reason,created_at) VALUES (?,?,?,?)").bind(sale.id,admin.admin_user_id,reason,now),
+        env.DB.prepare("UPDATE pos_sales SET status='voided',voided_by_admin_id=?,void_reason=?,voided_at=? WHERE id=? AND status='completed'").bind(admin.admin_user_id,reason,now,sale.id),
+      ];
+      for(const item of items.results){
+        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand+?,updated_at=? WHERE id=?").bind(item.quantity,now,item.variant_id));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'customer_return',?,'order',?,?,?)").bind(crypto.randomUUID(),item.variant_id,item.quantity,sale.id,"POS full refund "+sale.receipt_number,admin.admin_user_id));
+      }
+      for(const payment of reversals){
+        statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id,reverses_transaction_id) VALUES (?,?,'out',?,'pos_refund','pos_sale',?,?,?,?,?)").bind(crypto.randomUUID(),payment.account_id,payment.amount_paisa,sale.id,payment.kind==="cash"?(session?.id??null):null,"Refund "+sale.receipt_number+" · "+reason,admin.admin_user_id,payment.original_id));
+      }
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_voided','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,sale.id,JSON.stringify({receipt_number:sale.receipt_number,total_paisa:sale.total_paisa,reason})));
+      const result=await env.DB.batch(statements);
+      if((result[1]?.meta?.changes??0)!==1)return error("Receipt status changed. Refresh and try again.",409);
+      return json({voided:true,receipt_number:sale.receipt_number,refunded_paisa:sale.total_paisa,stock_restored:true});
+    }catch(caught){
+      const detail=caught instanceof Error?caught.message:"";
+      if(/unique|constraint/i.test(detail))return error("This receipt has already been voided or one of its payments has already been reversed",409);
+      console.error("[pos_sale_void] failed",detail||"unknown error");
+      return error("Sale refund could not be completed. Stock and account entries were not changed.",503);
+    }
+  }
   if (request.method === "POST" && path === "/api/admin/pos/cash-movements") {
     const body = await readJson(request);
     const direction=body?.direction;
