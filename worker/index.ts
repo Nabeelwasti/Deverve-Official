@@ -1915,10 +1915,37 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   const hasBrand=body?.brand_assets!==undefined;
   const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
   const hasNotificationEmails=body?.notification_emails!==undefined;
-  if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails)return error("Submit website settings to save",400);
+  const hasPaymentMethods=body?.payment_methods!==undefined;
+  if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
   if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid primary email, up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address))return error("One of the secondary email addresses is invalid",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
+  let paymentMethods: {methods:Array<{id:string;label:string;kind:string;provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>}|undefined;
+  if(hasPaymentMethods){
+    const raw=body?.payment_methods;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw)||!Array.isArray((raw as Record<string,unknown>).methods)||(raw as {methods:unknown[]}).methods.length>12)return error("Add up to 12 valid payment options",400);
+    const methods:NonNullable<typeof paymentMethods>["methods"]=[];
+    const ids=new Set<string>();
+    for(const item of (raw as {methods:unknown[]}).methods){
+      if(!item||typeof item!=="object"||Array.isArray(item))return error("One payment option is invalid",400);
+      const source=item as Record<string,unknown>;
+      const id=cleanText(source.id,40).toLowerCase();
+      const label=cleanText(source.label,80);
+      const kind=cleanText(source.kind,12);
+      if(!/^[a-z0-9][a-z0-9_-]{1,39}$/.test(id)||ids.has(id)||label.length<2||!["cod","bank","wallet","link","qr"].includes(kind)||typeof source.enabled!=="boolean")return error("Check each payment option's ID, name, type and status",400);
+      ids.add(id);
+      const account_title=cleanText(source.account_title,100),bank_name=cleanText(source.bank_name,100),account_number=cleanText(source.account_number,80),iban=cleanText(source.iban,40),instructions=cleanText(source.instructions,500);
+      let payment_url="";
+      if(source.payment_url){try{const parsed=new URL(cleanText(source.payment_url,500));if(parsed.protocol!=="https:"||!parsed.hostname.includes("."))return error("Payment links must use a valid HTTPS address",400);payment_url=parsed.toString();}catch{return error("One payment link is invalid",400);}}
+      const qr_media_id=source.qr_media_id?cleanText(source.qr_media_id,64):null;
+      if(qr_media_id){if(!/^[a-f0-9-]{36}$/i.test(qr_media_id))return error("Choose a valid QR image",400);const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(qr_media_id).first<{id:string}>();if(!media)return error("A selected payment QR image is unavailable",404);}
+      if(kind==="cod"&&methods.some(m=>m.kind==="cod"))return error("Only one cash-on-delivery option is allowed",400);
+      if(source.enabled&&kind!=="cod"&&!account_number&&!iban&&!payment_url&&!qr_media_id)return error("An active direct payment option needs an account number, IBAN, payment URL or QR image",400);
+      methods.push({id,label,kind,provider:cleanText(source.provider,40),enabled:source.enabled,account_title,bank_name,account_number,iban,payment_url,instructions,qr_media_id});
+    }
+    if(!methods.some(m=>m.kind==="cod"))methods.unshift({id:"cod",label:"Cash on delivery",kind:"cod",provider:"",enabled:true,account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null});
+    paymentMethods={methods};
+  }
   const statements: D1PreparedStatement[]=[];
   const now=new Date().toISOString();
   let links:SocialLinks|undefined;
@@ -1931,6 +1958,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('social_links',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(links),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.social_links_updated','store_settings','social_links',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({platforms:Object.keys(links)})));
   }
+  if(paymentMethods){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('payment_methods',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(paymentMethods),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.payment_methods_updated','store_settings','payment_methods',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({method_count:paymentMethods.methods.length,enabled_count:paymentMethods.methods.filter(m=>m.enabled).length})));}
   if(hasNotificationEmails&&notificationEmails){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('notification_emails',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(notificationEmails),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.notification_emails_updated','store_settings','notification_emails',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({primary:notificationEmails.primary,secondary_count:notificationEmails.secondary.length,enabled:notificationEmails.enabled})));}
   if(hasCnicUploads){
     const enabled=body?.cnic_uploads_enabled===true;
@@ -1959,7 +1987,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
     try{
-      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets')").all<{setting_key:string;setting_value_json:string}>();
+      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','payment_methods')").all<{setting_key:string;setting_value_json:string}>();
       const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
@@ -2482,7 +2510,14 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
 
 async function customerAccountRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
-  if (path === "/api/storefront/payment-options" && request.method === "GET") return json({ online_payment_available: Boolean(getSafepayConfig(env)), environment: getSafepayConfig(env) ? env.SAFEPAY_ENV : null });
+  if (path === "/api/storefront/payment-options" && request.method === "GET") {
+    try {
+      const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='payment_methods' LIMIT 1").first<{setting_value_json:string}>();
+      const parsed=saved?JSON.parse(saved.setting_value_json) as {methods?:unknown[]}:null;
+      const methods=Array.isArray(parsed?.methods)?parsed!.methods.filter((item):item is Record<string,unknown>=>Boolean(item)&&typeof item==="object"&&!Array.isArray(item)&&item.enabled===true).map(item=>({id:String(item.id??""),label:String(item.label??""),kind:String(item.kind??""),provider:String(item.provider??""),account_title:String(item.account_title??""),bank_name:String(item.bank_name??""),account_number:String(item.account_number??""),iban:String(item.iban??""),payment_url:String(item.payment_url??""),instructions:String(item.instructions??""),qr_media_id:typeof item.qr_media_id==="string"?item.qr_media_id:null})): [{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}];
+      return json({methods,online_payment_available:Boolean(getSafepayConfig(env)),environment:getSafepayConfig(env)?env.SAFEPAY_ENV:null});
+    } catch { return error("Payment options are temporarily unavailable",503); }
+  }
   const paymentMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/payment$/i);
   const customerReturnMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/returns$/i);
   const customerExchangeMatch = path.match(/^\/api\/customer\/orders\/([a-f0-9-]{36})\/exchanges$/i);
