@@ -948,6 +948,14 @@ async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promis
   } catch { return error("Vehicle catalogue is temporarily unavailable", 503); }
 }
 
+async function publicRentalSettingsRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/rentals/settings" || request.method !== "GET") return null;
+  try {
+    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
+    return json({ cnic_uploads_enabled: setting?.setting_value_json === "true" });
+  } catch { return error("Rental document settings are temporarily unavailable", 503); }
+}
+
 async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
   if (!match || request.method !== "POST") return null;
@@ -3011,6 +3019,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const publicVehicles = await publicVehicleRoutes(request, env, url);
   if (publicVehicles) return publicVehicles;
+
+  const publicRentalSettings = await publicRentalSettingsRoute(request, env, url);
+  if (publicRentalSettings) return publicRentalSettings;
 
   const publicRentalDocuments = await publicRentalDocumentRoutes(request, env, url);
   if (publicRentalDocuments) return publicRentalDocuments;
