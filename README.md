@@ -58,9 +58,9 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 
 ## Production snapshot — 16 November 2026
 
-Latest verified source on `main`: `5832559831526b6bf8eb35675a2e6056d39f75a4`. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
+Latest verified source on `main`: `925d729be765af907a150290a2b739520e364bf9`. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
 
-CI run #588 passed all 13 steps: type-check/build, security-header output, Worker authentication tests, D1 schema/constraint validation, and desktop/mobile Playwright browser tests. Production smoke run #301 passed all eight checks: production health/D1 connectivity, protected exchange/return routes, CMS/SEO/sitemap/notification routes, Turnstile verifier/Siteverify connectivity, scheduled CNIC-retention service bindings, rental settings/fleet pricing, and deployed security headers. Cloudflare Pages production deployment for this commit completed successfully.
+CI run #590 passed all 13 steps: type-check/build, security-header output, Worker authentication tests, D1 schema/constraint validation, and desktop/mobile Playwright browser tests. Production smoke run #302 passed all eight checks: production health/D1 connectivity, protected exchange/return routes, CMS/SEO/sitemap/notification routes, Turnstile verifier/Siteverify connectivity, scheduled CNIC-retention service bindings, rental settings/fleet pricing, and deployed security headers. Cloudflare Pages production deployment for this commit completed successfully.
 
 The current production D1 database was inspected using read-only SQL. It contains 55 application tables. The live records below were preserved; this session did not insert, update, or delete business records.
 
@@ -98,7 +98,7 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 - Rental settings failures show the server-provided reason and a retry action; stale settings responses cannot overwrite a newer request.
 - Native required-field validation and blocked Turnstile submissions have visible notification coverage.
 - Rental date fields, duration and estimates use Asia/Karachi time regardless of the visitor's device timezone. Timezone-less form values are sent to the Worker, which parses them as Pakistan wall-clock time.
-- Browser tests cover the stalled/blocked challenge, settings retry, mandatory CNIC, rental estimate, cross-timezone date handling, product gallery rotation, and vehicle gallery rotation/manual navigation.
+- Browser tests cover the stalled/blocked challenge, settings retry, mandatory CNIC, rental estimate, cross-timezone date handling, product gallery rotation and colour-specific image filtering, and vehicle gallery rotation/manual navigation.
 - Product and vehicle gallery managers already support batches of up to 50 images (with per-gallery limits), colour-specific product media, manual navigation and automatic rotation.
 
 ## Remaining release blockers

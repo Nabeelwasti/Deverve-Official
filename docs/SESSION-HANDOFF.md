@@ -1,6 +1,6 @@
 ## Resumed-session handoff — 16 November 2026 (Asia/Karachi)
 
-Latest verified `main` commit: `5832559831526b6bf8eb35675a2e6056d39f75a4`.
+Latest verified source commit on `main`: `925d729be765af907a150290a2b739520e364bf9`.
 
 ### Work completed in this resumed session
 - `ddbb6e8`: Hardened the Turnstile widget so the frontend waits for the actual challenge iframe to mount; a stalled render now produces an actionable error and retry.
@@ -9,7 +9,8 @@ Latest verified `main` commit: `5832559831526b6bf8eb35675a2e6056d39f75a4`.
 - `dee739b`: Fixed rental datetime handling. The UI now formats and estimates in Asia/Karachi time and submits timezone-less wall-clock values for the Worker’s Pakistan-time parser.
 - `2b244a5`: Added cross-timezone regression coverage using an America/New_York browser context.
 - `5832559`: Added customer-facing vehicle gallery auto-advance and manual-navigation regression coverage.
-- Latest CI run #588 passed all 13 steps. Production smoke run #301 passed all eight checks. Cloudflare Pages deployment for the latest commit succeeded.
+- `925d729`: Added regression coverage that selecting a colour displays only matching product photos; CI #590 and production smoke #302 passed.
+- Latest CI run #590 passed all 13 steps. Production smoke run #302 passed all eight checks. Cloudflare Pages deployment for the latest source commit succeeded.
 - Do not interpret the mocked Turnstile browser test as proof that a real human challenge was completed. Production smoke confirms verifier/Siteverify connectivity; a real-device visual challenge check remains necessary.
 
 ### Production state — read-only verification
