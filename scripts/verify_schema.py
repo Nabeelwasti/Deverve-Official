@@ -182,6 +182,8 @@ for table, columns in {
 assert any(row[1] == "idx_pos_one_open_session" and row[2] == 1 for row in db.execute("PRAGMA index_list(pos_sessions)")), "Only one open session per register must be allowed"
 assert any(row[1] == "idx_financial_transactions_account_date" for row in db.execute("PRAGMA index_list(financial_transactions)")), "Financial ledger account/date index is missing"
 
+quote_item_columns = {row[1] for row in db.execute("PRAGMA table_info(wholesale_quote_items)")}
+assert {"unit_cost_paisa"} <= quote_item_columns, "Wholesale quotation cost snapshots are missing"
 order_item_columns = {row[1] for row in db.execute("PRAGMA table_info(order_items)")}
 assert {"unit_cost_paisa"} <= order_item_columns, "Website order item cost snapshots are missing"
 assert any(row[1] == "idx_financial_transaction_reversal" and row[2] == 1 for row in db.execute("PRAGMA index_list(financial_transactions)")), "Refunds must not reverse the same financial entry twice"

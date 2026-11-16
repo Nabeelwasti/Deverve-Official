@@ -13,3 +13,5 @@ CREATE INDEX IF NOT EXISTS idx_pos_sale_voids_created ON pos_sale_voids(created_
 CREATE UNIQUE INDEX IF NOT EXISTS idx_financial_transaction_reversal
 ON financial_transactions(reverses_transaction_id)
 WHERE reverses_transaction_id IS NOT NULL;
+
+ALTER TABLE wholesale_quote_items ADD COLUMN unit_cost_paisa INTEGER NOT NULL DEFAULT 0 CHECK (unit_cost_paisa >= 0);

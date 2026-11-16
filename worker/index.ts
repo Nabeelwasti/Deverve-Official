@@ -491,7 +491,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
 
 interface CheckoutVariantRow {
   id: string; product_id: string; name: string; sku: string | null; size: string; color: string;
-  retail_price_paisa: number | null; stock_on_hand: number; reserved_quantity: number;
+  retail_price_paisa: number | null; cost_price_paisa: number; stock_on_hand: number; reserved_quantity: number;
 }
 interface OrderRow {
   id: string; order_number: string; customer_name: string; phone: string; email: string | null;
@@ -580,7 +580,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   try {
     for (const [variantId, quantity] of quantities) {
       const variant = await env.DB.prepare(
-        "SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1",
+        "SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1",
       ).bind(variantId).first<CheckoutVariantRow>();
       if (!variant || variant.retail_price_paisa === null || !Number.isSafeInteger(variant.retail_price_paisa) || variant.retail_price_paisa < 0) {
         return error("A product in your cart is no longer available for online checkout", 409);
@@ -608,8 +608,8 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     for (const line of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
         .bind(line.quantity, now, line.variant.id, line.quantity, id));
-      statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
-        .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.lineTotal, id));
+      statements.push(env.DB.prepare("undefined")
+        .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.variant.cost_price_paisa ?? 0, line.lineTotal, id));
     }
     statements.push(env.DB.prepare("UPDATE orders SET payment_method = ?, payment_provider = 'manual', payment_status = 'pending' WHERE id = ? AND payment_provider = 'manual'").bind(selectedPaymentMethod.id,id));
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
@@ -1398,11 +1398,11 @@ interface WholesaleQuoteRow {
 interface WholesaleQuoteItemRow {
   id: string; quote_id: string; variant_id: string | null; product_name_snapshot: string;
   sku_snapshot: string | null; size_snapshot: string; color_snapshot: string;
-  quantity: number; unit_price_paisa: number; line_total_paisa: number;
+  quantity: number; unit_price_paisa: number; unit_cost_paisa: number; line_total_paisa: number;
 }
 interface WholesaleVariantRow {
   id: string; product_id: string; name: string; sku: string | null; size: string; color: string;
-  wholesale_price_paisa: number | null; retail_price_paisa: number | null; stock_on_hand: number; reserved_quantity: number;
+  wholesale_price_paisa: number | null; retail_price_paisa: number | null; cost_price_paisa: number; stock_on_hand: number; reserved_quantity: number;
 }
 
 async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
@@ -1461,7 +1461,7 @@ async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): 
         if ((quantities.get(variantId) ?? 0) > 10000) return error("Combined quantity for an item is too high", 400);
       }
       for (const [variantId, quantity] of quantities) {
-        const variant = await env.DB.prepare("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, p.name, p.wholesale_price_paisa, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1").bind(variantId).first<WholesaleVariantRow>();
+        const variant = await env.DB.prepare("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.wholesale_price_paisa, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1").bind(variantId).first<WholesaleVariantRow>();
         if (!variant) return error("A selected product option is no longer available", 409);
         if (variant.stock_on_hand - variant.reserved_quantity < quantity) return error("There is not enough available stock for one of the requested quantities", 409);
         const supplied = (body.items as Array<Record<string, unknown>>).find((x) => cleanText(x?.variant_id, 64) === variantId);
@@ -1479,7 +1479,7 @@ async function adminWholesaleQuoteRoutes(request: Request, env: Env, url: URL): 
         env.DB.prepare("INSERT INTO wholesale_quotes (id, enquiry_id, business_name, contact_name, phone, email, requested_items, quoted_total_paisa, status, valid_until, delivery_address, city, customer_note, approval_token, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?)")
           .bind(id, enquiryId, businessName, contactName, phone, email || null, JSON.stringify(lines.map((line) => ({ product: line.variant.name, sku: line.variant.sku, size: line.variant.size, color: line.variant.color, quantity: line.quantity }))), total, validUntil, address, city, note, token, now),
       ];
-      for (const line of lines) statements.push(env.DB.prepare("INSERT INTO wholesale_quote_items (id, quote_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ?)").bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.unitPrice, line.lineTotal, id));
+      for (const line of lines) statements.push(env.DB.prepare("undefined").bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.unitPrice, line.variant.cost_price_paisa ?? 0, line.lineTotal, id));
       statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'wholesale_quote.created', 'wholesale_quote', ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, id, JSON.stringify({ item_count: lines.length, total_paisa: total })));
       const results = await env.DB.batch(statements);
       if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Quotation could not be saved", 409);
@@ -1514,7 +1514,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     if (!quote) return error("Quotation not found", 404);
     if (quote.status === "accepted" && quote.converted_order_id) {
       const order = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ? LIMIT 1").bind(quote.converted_order_id).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
-      const acceptedItems = await env.DB.prepare("SELECT product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id">>();
+      const acceptedItems = await env.DB.prepare("undefined").bind(quote.id).all<Omit<WholesaleQuoteItemRow, "id" | "quote_id" | "variant_id" | "unit_cost_paisa">>();
       return json({ quote: { business_name: quote.business_name, contact_name: quote.contact_name, items: acceptedItems.results ?? [], quoted_total_paisa: quote.quoted_total_paisa, status: quote.status, valid_until: quote.valid_until, city: quote.city }, accepted: true, order });
     }
     if (["declined", "expired"].includes(quote.status)) {
@@ -1538,7 +1538,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
       return json({ declined: true });
     }
     if (action !== "accept") return error("Unsupported action", 404);
-    const lines = await env.DB.prepare("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<WholesaleQuoteItemRow>();
+    const lines = await env.DB.prepare("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<WholesaleQuoteItemRow>();
     const quoteLines = lines.results ?? [];
     if (!quoteLines.length || quoteLines.some((line) => !line.variant_id)) return error("Some quoted items are no longer available. Please contact De VERVE.", 409);
     const orderId = crypto.randomUUID();
@@ -1551,7 +1551,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     const statements = [env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'sent' AND (valid_until IS NULL OR valid_until > ?)) AND " + conditions).bind(...orderValues, quote.id, now, ...stockChecks)];
     for (const line of quoteLines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(line.quantity, now, line.variant_id, line.quantity, orderId, quote.id));
-      statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(crypto.randomUUID(), orderId, line.variant_id, line.product_name_snapshot, line.sku_snapshot, line.size_snapshot, line.color_snapshot, line.quantity, line.unit_price_paisa, line.line_total_paisa, orderId, quote.id));
+      statements.push(env.DB.prepare("undefined").bind(crypto.randomUUID(), orderId, line.variant_id, line.product_name_snapshot, line.sku_snapshot, line.size_snapshot, line.color_snapshot, line.quantity, line.unit_price_paisa, line.unit_cost_paisa ?? 0, line.line_total_paisa, orderId, quote.id));
     }
     statements.push(env.DB.prepare("UPDATE wholesale_quotes SET status = 'accepted', converted_order_id = ?, updated_at = ? WHERE id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(orderId, now, quote.id, orderId, quote.id));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'wholesale_quote.accepted', 'wholesale_quote', ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'accepted')").bind(crypto.randomUUID(), quote.id, JSON.stringify({ order_id: orderId, order_number: orderNumber }), quote.id));
