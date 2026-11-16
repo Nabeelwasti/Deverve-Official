@@ -534,3 +534,18 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .dv-gallery-lightbox-count{position:absolute;bottom:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:12px;letter-spacing:.12em}
 .dv-gallery-zoom-trigger:focus-visible,.dv-gallery-lightbox button:focus-visible{outline:3px solid #8fc6ff;outline-offset:3px}
 @media(max-width:640px){.dv-gallery-lightbox{padding:48px 12px 58px}.dv-gallery-lightbox>img{max-width:96vw;max-height:78vh}.dv-gallery-lightbox-nav{width:38px;height:48px}.dv-gallery-lightbox-nav.is-prev{left:5px}.dv-gallery-lightbox-nav.is-next{right:5px}}
+
+.product-specifications{margin:26px 0 18px;padding:18px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.product-specifications h2{margin:0 0 14px;font-size:19px;color:var(--deep-blue)}
+.product-specifications dl{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin:0}
+.product-specifications dl>div{min-width:0}.product-specifications dt{font-size:10px;color:var(--muted);margin-bottom:4px}.product-specifications dd{margin:0;font-size:12px;font-weight:700;color:var(--ink);overflow-wrap:anywhere}
+.product-quantity-control{display:flex;align-items:center;justify-content:space-between;margin:20px 0;color:var(--ink);font-size:12px;font-weight:700}
+.product-quantity-control>div{display:flex;align-items:center;border:1px solid var(--line)}
+.product-quantity-control button{width:38px;height:36px;border:0;background:var(--ice);color:var(--blue);font-size:20px;cursor:pointer}
+.product-quantity-control button:disabled{opacity:.35;cursor:not-allowed}
+.product-quantity-control output{min-width:40px;text-align:center;font-variant-numeric:tabular-nums}
+.product-page-add{width:100%;margin:6px 0 10px}
+.product-added-message{padding:12px;background:#edf7f0;color:#17633a;font-size:12px}
+.product-added-message a{text-decoration:underline;font-weight:700}
+.product-page-details>.button-outline{width:100%;margin-top:8px}
+@media(max-width:640px){.product-specifications dl{grid-template-columns:1fr 1fr;gap:10px 12px}}
