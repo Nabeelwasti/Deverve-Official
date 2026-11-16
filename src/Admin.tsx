@@ -28,7 +28,7 @@ type AdminExchange = { id: string; order_id: string; customer_id: string; exchan
 type Enquiry = { id: string; enquiry_type: "retail" | "wholesale" | "rental" | "general"; customer_name: string; phone: string; email: string | null; message: string; status: "new" | "contacted" | "qualified" | "closed" | "spam"; source: string; created_at: string };
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; barcode?: string | null; cost_price_paisa?: number; reorder_level?: number; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
-type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string };
+type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string; color?: string };
 type QuoteLineDraft = { product_id: string; variant_id: string; quantity: string; unit_price: string; variants: Variant[] };
 type Vehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null; status: "draft" | "available" | "maintenance" | "retired"; image_key: string | null; description: string };
 type RentalRequest = { id: string; vehicle_id: string | null; vehicle_name: string | null; vehicle_type: string | null; customer_name: string; phone: string; email: string | null; pickup_location: string; destination: string | null; pickup_city?: string; pickup_address?: string; destination_city?: string; destination_address?: string; cnic_front_uploaded?: number; cnic_back_uploaded?: number; rental_days?: number | null; estimated_daily_rate_paisa?: number | null; estimated_total_paisa?: number | null; pickup_at: string; return_at: string; driver_option: "self_drive" | "with_driver"; status: "requested" | "reviewing" | "confirmed" | "active" | "completed" | "cancelled"; customer_note: string; admin_note: string; reference_code: string; created_at: string };
@@ -116,6 +116,8 @@ export default function Admin() {
   const [mediaProduct, setMediaProduct] = useState<Product | null>(null);
   const [mediaAssets, setMediaAssets] = useState<MediaAsset[]>([]);
   const [productMedia, setProductMedia] = useState<MediaAsset[]>([]);
+  const [mediaVariants, setMediaVariants] = useState<Variant[]>([]);
+  const [mediaColor, setMediaColor] = useState("");
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
@@ -298,11 +300,12 @@ export default function Admin() {
   const openMediaLibrary = async (product: Product) => {
     setBusy(true); setMessage("");
     try {
-      const [result, attached] = await Promise.all([
+      const [result, attached, variantResult] = await Promise.all([
         api<{ media: MediaAsset[] }>("/api/admin/media"),
         api<{ media: MediaAsset[] }>(`/api/admin/products/${product.id}/media`),
+        api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`),
       ]);
-      setMediaAssets(result.media); setProductMedia(attached.media); setMediaProduct(product); setMediaFiles([]); setMediaAlt(""); setMediaUploadProgress("");
+      setMediaAssets(result.media); setProductMedia(attached.media); setMediaVariants(variantResult.variants); setMediaColor(""); setMediaProduct(product); setMediaFiles([]); setMediaAlt(""); setMediaUploadProgress("");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Media library could not be loaded."); }
     finally { setBusy(false); }
   };
@@ -328,8 +331,8 @@ export default function Admin() {
           const result = await response.json() as { error?: string; media?: MediaAsset };
           if (!response.ok || !result.media) throw new Error(result.error || "Upload failed.");
           setMediaAssets((current) => [result.media!, ...current.filter((item) => item.id !== result.media!.id)]);
-          const makeCover = !mediaProduct.image_key && attachedCount === 0;
-          await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, is_primary: makeCover, position: productMedia.length + attachedCount }) });
+          const makeCover = !mediaProduct.image_key && attachedCount === 0 && !mediaColor;
+          await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: mediaColor, is_primary: makeCover, position: productMedia.length + attachedCount }) });
           attachedCount++; if (makeCover) setMediaProduct((current) => current ? { ...current, image_key: result.media!.id } : current);
         } catch (error) { failures.push(file.name + ": " + (error instanceof Error ? error.message : "Upload failed")); }
       }
@@ -347,7 +350,7 @@ export default function Admin() {
       if (!asset) {
         await api(`/api/admin/products/${mediaProduct.id}/image`, { method: "PATCH", body: JSON.stringify({ image_id: null }) });
       } else {
-        await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: asset.id, is_primary: makeCover, position: productMedia.length }) });
+        await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: asset.id, color: mediaColor, is_primary: makeCover && !mediaColor, position: productMedia.length }) });
       }
       const [attached] = await Promise.all([
         api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`),
@@ -871,6 +874,7 @@ export default function Admin() {
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
             <label>Choose product images (up to 50 at once)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); setMediaFiles(files.slice(0, 50)); if (files.length > 50) setMessage("Only the first 50 selected images were kept."); }} /></label>
+            <label>Gallery colour<select value={mediaColor} onChange={(event) => setMediaColor(event.target.value)}><option value="">General photos · all colours</option>{[...new Set(mediaVariants.map((variant) => variant.color.trim()).filter(Boolean))].sort().map((color) => <option key={color} value={color}>{color} only</option>)}</select><small>Choose a colour to show these photos only when customers select that colour. Keep “General photos” for images shared by every colour.</small></label>
             <label>Media description<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
             <button className="admin-primary" disabled={busy || !mediaFiles.length}>{busy ? "Please wait…" : "Upload & add " + mediaFiles.length + " images"}</button>
             {mediaFiles.length > 0 && <p className="admin-muted admin-media-selected">{mediaFiles.length} images selected · JPG, PNG or WebP · maximum 5 MB each · 50 per batch</p>}
@@ -880,8 +884,8 @@ export default function Admin() {
           <div className="admin-media-grid">
             {productMedia.length === 0 ? <div className="admin-empty"><strong>No gallery items yet</strong><p>Add product photos or a short product video from your media library below.</p></div> : productMedia.map((asset) => <article className={(asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
               {asset.media_type === "video" ? <video src={asset.url} controls preload="metadata" /> : <img src={asset.url} alt={asset.alt_text || "Product media"} loading="lazy" />}
-              <div><span>{asset.alt_text || (asset.media_type === "video" ? "Product video" : "Product image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {(asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "Cover image" : asset.media_type}</small></div>
-              <div className="admin-media-actions">{asset.media_type === "image" && <button type="button" disabled={busy || (asset as MediaAsset & {is_primary?:number}).is_primary === 1} className="admin-secondary" onClick={() => void attachMedia(asset, true)}>Set as cover</button>}<button type="button" disabled={busy} className="admin-danger-button" onClick={() => void removeProductMedia(asset)}>Remove</button></div>
+              <div><span>{asset.alt_text || (asset.media_type === "video" ? "Product video" : "Product image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {asset.color ? asset.color + " colour" : (asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "Cover image" : asset.media_type}</small></div>
+              <div className="admin-media-actions">{asset.media_type === "image" && !asset.color && <button type="button" disabled={busy || (asset as MediaAsset & {is_primary?:number}).is_primary === 1} className="admin-secondary" onClick={() => void attachMedia(asset, true)}>Set as cover</button>}<button type="button" disabled={busy} className="admin-danger-button" onClick={() => void removeProductMedia(asset)}>Remove</button></div>
             </article>)}
           </div>
           <h3 className="admin-media-subheading">Media library</h3>

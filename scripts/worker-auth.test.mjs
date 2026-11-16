@@ -480,7 +480,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_number, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method, payment_provider, payment_status, order_status, delivery_fee_status, created_at, updated_at FROM orders WHERE customer_id = ?")) return { success: true, results: [...this.db.orders.values()].filter((row) => row.customer_id === v[0]) };
     if (q.startsWith("SELECT id, order_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, line_total_paisa FROM order_items WHERE order_id IN")) { const ids = new Set(v); return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) }; }
     if (q.startsWith("SELECT id, reference_code, vehicle_id, customer_name, pickup_city, pickup_address, destination_city, destination_address, pickup_at, return_at, driver_option, status, created_at FROM rental_requests WHERE customer_id = ?")) return { success: true, results: [...this.db.rentalRequests.values()].filter((row) => row.customer_id === v[0]) };
-    if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.position, pm.is_primary FROM product_media_assets")) {
+    if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.color, pm.position, pm.is_primary FROM product_media_assets")) {
       return { success: true, results: [] };
     }
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {

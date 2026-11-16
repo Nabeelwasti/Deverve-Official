@@ -24,10 +24,20 @@ const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURICo
 const localDateTime = (date: Date) => new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
-type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; url: string };
+type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; color?: string; url: string };
 type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; seo_title: string; seo_description: string; variants: StoreVariant[]; media: StoreProductMedia[] };
 type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa?: number | null; image_key: string | null; image_url: string | null; description: string; media?: Array<{id:string;url:string;alt_text:string;position:number;is_primary:number}> };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
+
+function productGalleryImages(product: StoreProduct, selectedVariantId?: string) {
+  const selected = product.variants.find((variant) => variant.id === selectedVariantId && variant.available_quantity > 0)
+    || product.variants.find((variant) => variant.available_quantity > 0)
+    || product.variants.find((variant) => variant.id === selectedVariantId);
+  const colour = selected?.color.trim().toLowerCase() || "";
+  const relevant = product.media.filter((item) => item.media_type === "image" && (!item.color || !colour || item.color.trim().toLowerCase() === colour));
+  if (relevant.length) return relevant.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
+  return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
+}
 
 function readStoredCart(): CartLine[] {
   try {
@@ -413,7 +423,7 @@ function Storefront() {
             {catalogueState === "ready" && <div className="product-grid">
               {products.slice(0,visibleProductCount).map((product) => (
                 <article className="product-card" key={product.id}>
-                  {product.media?.some((item) => item.media_type === "image") ? <ProductGallery className="product-visual product-photo dv-gallery-card" images={product.media.filter((item) => item.media_type === "image").map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }))} /> : product.image_key ? <div className="product-visual product-photo"><img src={`/media/${product.image_key}`} alt={product.name} loading="lazy" /></div> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
+                  {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" images={productGalleryImages(product, selectedVariants[product.id])} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
                     <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
                     <span className="product-audience">{product.audience} · {product.category}</span>
@@ -431,7 +441,7 @@ function Storefront() {
 
         {detailProduct && <div className="checkout-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDetailProduct(null); }}><section className="checkout-modal product-detail-modal" role="dialog" aria-modal="true" aria-labelledby="product-detail-title">
           <div className="checkout-modal-heading"><div><p className="eyebrow">PRODUCT DETAILS</p><h2 id="product-detail-title">{detailProduct.name}</h2><p>{detailProduct.audience} · {detailProduct.category}</p></div><button type="button" className="checkout-close" onClick={() => setDetailProduct(null)} aria-label="Close product details">×</button></div>
-          {detailProduct.media?.some((item) => item.media_type === "image") ? <ProductGallery className="product-detail-gallery" images={detailProduct.media.filter((item) => item.media_type === "image").map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || detailProduct.name }))} /> : detailProduct.image_key && <img className="product-detail-image" src={`/media/${detailProduct.image_key}`} alt={detailProduct.name} />}
+          {productGalleryImages(detailProduct, selectedVariants[detailProduct.id]).length ? <ProductGallery className="product-detail-gallery" images={productGalleryImages(detailProduct, selectedVariants[detailProduct.id])} /> : <div className="product-detail-image product-visual"><span>DE VERVE</span></div>}
           <p>{detailProduct.description || "Please contact our team for more product information."}</p>
           <div className="product-detail-price">{formatPrice(detailProduct.retail_price_paisa)}</div>
           {detailProduct.variants.length > 0 ? <ProductVariantPicker variants={detailProduct.variants} selectedVariantId={selectedVariants[detailProduct.id] || detailProduct.variants[0].id} onChange={(variantId) => setSelectedVariants((current) => ({ ...current, [detailProduct.id]: variantId }))} /> : <p className="product-stock-note">No purchasable size or colour option is currently listed. Ask our team to confirm availability.</p>}

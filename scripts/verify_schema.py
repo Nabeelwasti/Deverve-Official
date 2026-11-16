@@ -187,3 +187,6 @@ assert {"unit_cost_paisa"} <= quote_item_columns, "Wholesale quotation cost snap
 order_item_columns = {row[1] for row in db.execute("PRAGMA table_info(order_items)")}
 assert {"unit_cost_paisa"} <= order_item_columns, "Website order item cost snapshots are missing"
 assert any(row[1] == "idx_financial_transaction_reversal" and row[2] == 1 for row in db.execute("PRAGMA index_list(financial_transactions)")), "Refunds must not reverse the same financial entry twice"
+
+product_media_columns = {row[1] for row in db.execute("PRAGMA table_info(product_media_assets)")}
+assert {"color"} <= product_media_columns, "Colour-specific product gallery metadata is missing"

@@ -1580,7 +1580,7 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
   if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to manage product media", 403);
   if (request.method === "GET" && collection) {
     try {
-      const rows = await env.DB.prepare("SELECT a.id, a.media_type, a.mime_type, a.byte_size, a.alt_text, a.caption, a.status, pm.position, pm.is_primary FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = ? AND a.status = 'ready' ORDER BY pm.position, a.created_at")
+      const rows = await env.DB.prepare("SELECT a.id, a.media_type, a.mime_type, a.byte_size, a.alt_text, a.caption, a.status, pm.color, pm.position, pm.is_primary FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE pm.product_id = ? AND a.status = 'ready' ORDER BY pm.position, a.created_at")
         .bind(collection[1]).all<Record<string, unknown>>();
       return json({ media: (rows.results ?? []).map((row) => ({ ...row, url: "/api/admin/media/" + row.id + "/file" })) });
     } catch { return error("Product media could not be loaded", 503); }
@@ -1590,6 +1590,7 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
     const body = await readJson(request);
     const mediaId = cleanText(body?.media_id, 64);
     const isPrimary = body?.is_primary === true;
+    const color = cleanText(body?.color, 32);
     const position = body?.position === undefined ? 0 : Number(body.position);
     if (!body || !/^[a-f0-9-]{36}$/i.test(mediaId) || !Number.isInteger(position) || position < 0 || position > 100) return error("Choose valid media and position values", 400);
     try {
@@ -1598,13 +1599,18 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
       if (isPrimary && media.media_type !== "image") return error("Only an image can be the product cover", 400);
       const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(collection[1]).first<{ id: string }>();
       if (!product) return error("Product not found", 404);
+      if (color) {
+        const colourExists = await env.DB.prepare("SELECT id FROM product_variants WHERE product_id = ? AND lower(color) = lower(?) AND is_active = 1 LIMIT 1").bind(collection[1], color).first<{id:string}>();
+        if (!colourExists) return error("Choose a colour that exists in this product's active variants", 400);
+      }
+      if (isPrimary && color) return error("A colour-specific photo cannot be the shared product cover", 400);
       const statements = [];
       if (isPrimary) statements.push(env.DB.prepare("UPDATE product_media_assets SET is_primary = 0 WHERE product_id = ?").bind(collection[1]));
-      statements.push(env.DB.prepare("INSERT INTO product_media_assets (product_id, media_asset_id, position, is_primary) VALUES (?, ?, ?, ?) ON CONFLICT(product_id, media_asset_id) DO UPDATE SET position = excluded.position, is_primary = excluded.is_primary")
-        .bind(collection[1], mediaId, position, isPrimary ? 1 : 0));
+      statements.push(env.DB.prepare("INSERT INTO product_media_assets (product_id, media_asset_id, color, position, is_primary) VALUES (?, ?, ?, ?, ?) ON CONFLICT(product_id, media_asset_id) DO UPDATE SET color = excluded.color, position = excluded.position, is_primary = excluded.is_primary")
+        .bind(collection[1], mediaId, color, position, isPrimary ? 1 : 0));
       if (isPrimary) statements.push(env.DB.prepare("UPDATE products SET image_key = ?, updated_at = ? WHERE id = ?").bind(mediaId, new Date().toISOString(), collection[1]));
       statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'product.media_attached', 'product', ?, ?)")
-        .bind(crypto.randomUUID(), admin.admin_user_id, collection[1], JSON.stringify({ media_id: mediaId, media_type: media.media_type, is_primary: isPrimary, position })));
+        .bind(crypto.randomUUID(), admin.admin_user_id, collection[1], JSON.stringify({ media_id: mediaId, media_type: media.media_type, color, is_primary: isPrimary, position })));
       await env.DB.batch(statements);
       return json({ attached: true, media_id: mediaId, is_primary: isPrimary }, 201);
     } catch { return error("Media could not be attached to this product", 503); }
@@ -3528,11 +3534,11 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
       if (!products.length) return json({ products: [] });
       const productIds = products.map((product) => product.id);
       const placeholders = productIds.map(() => "?").join(",");
-      const mediaRows = await env.DB.prepare("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.position, pm.is_primary FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE a.status = 'ready' AND pm.product_id IN (" + placeholders + ") ORDER BY pm.position, a.created_at").bind(...productIds).all<Record<string, unknown>>();
+      const mediaRows = await env.DB.prepare("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.color, pm.position, pm.is_primary FROM product_media_assets pm JOIN media_assets a ON a.id = pm.media_asset_id WHERE a.status = 'ready' AND pm.product_id IN (" + placeholders + ") ORDER BY pm.position, a.created_at").bind(...productIds).all<Record<string, unknown>>();
       const mediaByProduct = new Map<string, Array<Record<string, unknown>>>();
       for (const media of mediaRows.results ?? []) {
         const productId = String(media.product_id);
-        mediaByProduct.set(productId, [...(mediaByProduct.get(productId) ?? []), { id: media.id, media_type: media.media_type, mime_type: media.mime_type, alt_text: media.alt_text, caption: media.caption, is_primary: media.is_primary, url: "/media/" + media.id }]);
+        mediaByProduct.set(productId, [...(mediaByProduct.get(productId) ?? []), { id: media.id, media_type: media.media_type, mime_type: media.mime_type, alt_text: media.alt_text, caption: media.caption, is_primary: media.is_primary, color: media.color || "", url: "/media/" + media.id }]);
       }
       const variants = await env.DB.prepare(
         "SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500",
