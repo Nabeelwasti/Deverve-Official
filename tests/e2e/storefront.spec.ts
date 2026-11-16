@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: 'window.turnstile = { render: function (_element, options) { window.setTimeout(function () { options.callback("e2e-turnstile-token"); }, 0); return "e2e-widget"; }, reset: function () {}, remove: function () {} };',
+      body: 'window.turnstile = { render: function (element, options) { var badge = document.createElement("div"); badge.textContent = "Test security verification"; badge.setAttribute("data-testid", "turnstile-test-widget"); element.appendChild(badge); window.setTimeout(function () { options.callback("e2e-turnstile-token"); }, 0); return "e2e-widget"; }, reset: function () {}, remove: function () {} };',
     });
   });
   await page.route("**/api/**", async (route) => {
@@ -113,6 +113,30 @@ test("rental request requires both CNIC images and sends them with the request",
   expect(submitted).toContain("cnic_back");
   expect(submitted).toContain("cnic_consent");
   expect(submitted).toContain("e2e-turnstile-token");
+});
+
+test("rental form explains blocked Turnstile and keeps the request safely blocked", async ({ page }) => {
+  await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => route.abort("blockedbyclient"));
+  let submitted = false;
+  await page.route("**/api/rentals", async (route) => { submitted = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ accepted: true }) }); });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  await page.getByRole("button", { name: "Request a rental" }).click();
+  const dialog = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(dialog.getByText(/Cloudflare security verification was blocked/i)).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Retry security check" })).toBeVisible();
+  await dialog.getByLabel(/Your name/).fill("Browser Test Customer");
+  await dialog.getByLabel(/Phone \\/ WhatsApp/).fill("+923001234567");
+  await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
+  await dialog.getByLabel(/Destination complete address/).fill("20 Test Road, Lahore");
+  const png = { name: "cnic.png", mimeType: "image/png", buffer: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]) };
+  await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
+  await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
+  await dialog.getByLabel(/I confirm these are my documents/).check();
+  await dialog.getByRole("button", { name: /Submit rental request/ }).click();
+  await expect(dialog.getByRole("alert")).toContainText(/Security verification is not complete/i);
+  expect(submitted).toBe(false);
 });
 
 test("rental estimate recalculates for the selected vehicle and driver option", async ({ page }) => {

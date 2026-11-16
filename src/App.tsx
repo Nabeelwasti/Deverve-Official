@@ -45,7 +45,7 @@ function readStoredCart(): CartLine[] {
 const socialGlyphs: Record<string, string> = { facebook: "f", instagram: "◎", tiktok: "♪", youtube: "▶", linkedin: "in", pinterest: "p", threads: "@", x: "𝕏" };
 
 type TurnstileApi = {
-  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void; theme?: "light" | "dark" | "auto"; size?: "normal" | "flexible" | "compact"; appearance?: "always" | "execute" | "interaction-only" }) => string;
+  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": (errorCode?: string) => void; "timeout-callback"?: () => void; "unsupported-callback"?: () => void; theme?: "light" | "dark" | "auto"; size?: "normal" | "flexible" | "compact"; appearance?: "always" | "execute" | "interaction-only" }) => string;
   reset: (widgetId: string) => void;
   remove?: (widgetId: string) => void;
 };
@@ -60,8 +60,9 @@ function ensureTurnstileLoaded(): Promise<void> {
       script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
       script.async = true;
       script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = () => { turnstileScriptPromise = null; script.remove(); reject(new Error("Security verification could not be loaded.")); };
+      const timeout = window.setTimeout(() => { turnstileScriptPromise = null; script.remove(); reject(new Error("Cloudflare security verification timed out while loading. Check your connection or browser content blockers, then retry.")); }, 12000);
+      script.onload = () => { window.clearTimeout(timeout); if (window.turnstile) resolve(); else { turnstileScriptPromise = null; reject(new Error("Cloudflare loaded without its verification API. Please retry.")); } };
+      script.onerror = () => { window.clearTimeout(timeout); turnstileScriptPromise = null; script.remove(); reject(new Error("Cloudflare security verification was blocked or could not load. Check your connection, browser content blockers and site access, then retry.")); };
       document.head.appendChild(script);
     });
   }
@@ -73,29 +74,30 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
   const tokenCallback = useRef(onToken);
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<"loading" | "ready" | "verified" | "error">("loading");
+  const [detail, setDetail] = useState("Preparing Cloudflare security verification…");
   tokenCallback.current = onToken;
   useEffect(() => {
     let active = true;
-    setStatus("loading");
-    tokenCallback.current("");
+    setStatus("loading"); setDetail("Loading Cloudflare security verification…"); tokenCallback.current("");
     if (host.current) host.current.replaceChildren();
     void ensureTurnstileLoaded().then(() => {
-      if (!active || !host.current || !window.turnstile) throw new Error("Security verification is unavailable.");
-      widgetId.current = window.turnstile.render(host.current, {
+      if (!active || !host.current || !window.turnstile) throw new Error("Cloudflare verification API is unavailable after loading.");
+      const id = window.turnstile.render(host.current, {
         sitekey: TURNSTILE_SITEKEY, theme: "light", size: "flexible", appearance: "always",
-        callback: (token) => { setStatus("verified"); tokenCallback.current(token); },
-        "expired-callback": () => { setStatus("ready"); tokenCallback.current(""); },
-        "error-callback": () => { setStatus("error"); tokenCallback.current(""); },
+        callback: (token) => { setStatus("verified"); setDetail("Security check complete. Your request can now be submitted."); tokenCallback.current(token); },
+        "expired-callback": () => { setStatus("ready"); setDetail("Your security check expired. Complete it again to continue."); tokenCallback.current(""); },
+        "error-callback": (code) => { setStatus("error"); setDetail(code ? "Cloudflare verification error (" + code + "). Retry the check or contact us if it continues." : "Cloudflare could not complete the security check. Check your connection or browser settings, then retry."); tokenCallback.current(""); },
+        "timeout-callback": () => { setStatus("error"); setDetail("Cloudflare verification timed out. Please retry the security check."); tokenCallback.current(""); },
+        "unsupported-callback": () => { setStatus("error"); setDetail("This browser cannot run Cloudflare security verification. Update your browser or try another browser."); tokenCallback.current(""); },
       });
-      setStatus("ready");
-    }).catch(() => { if (active) { setStatus("error"); tokenCallback.current(""); } });
+      if (!id) throw new Error("Cloudflare did not create a verification widget.");
+      widgetId.current = id; setStatus("ready"); setDetail("Complete the security check above. Rental requests cannot be submitted without verification.");
+    }).catch((caught) => { if (active) { setStatus("error"); setDetail(caught instanceof Error ? caught.message : "Cloudflare security verification failed to load. Please retry."); tokenCallback.current(""); } });
     return () => { active = false; if (widgetId.current) window.turnstile?.remove?.(widgetId.current); widgetId.current = null; };
   }, [resetKey, attempt]);
-  return <div className="turnstile-shell">
+  return <div className="turnstile-shell" data-state={status}>
     <div className="turnstile-widget" ref={host} role="group" aria-label="Cloudflare security verification" />
-    <p className={status === "verified" ? "turnstile-status is-verified" : "turnstile-status"} aria-live="polite">
-      {status === "loading" ? "Loading secure verification…" : status === "verified" ? "Security check complete." : status === "error" ? "Security check could not load. Check your connection and try again." : "Complete the security check above to submit your request."}
-    </p>
+    <p className={status === "verified" ? "turnstile-status is-verified" : status === "error" ? "turnstile-status is-error" : "turnstile-status"} aria-live="polite">{detail}</p>
     {status === "error" && <button type="button" className="turnstile-retry" onClick={() => setAttempt(value => value + 1)}>Retry security check</button>}
   </div>;
 }
@@ -125,6 +127,7 @@ function Storefront() {
   const [rentalOpen, setRentalOpen] = useState(false);
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
+  const [rentalNotice, setRentalNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   const [rentalReference, setRentalReference] = useState("");
   const [rentalSubmittedEstimatePaisa, setRentalSubmittedEstimatePaisa] = useState<number | null>(null);
   const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
@@ -149,6 +152,7 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
+  useEffect(() => { if (!rentalNotice) return; const timeout = window.setTimeout(() => setRentalNotice(null), 6500); return () => window.clearTimeout(timeout); }, [rentalNotice]);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => {
@@ -249,10 +253,11 @@ function Storefront() {
 
   const submitRentalRequest = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!rentalCnicUploadsEnabled) { setRentalMessage("Secure CNIC upload is not enabled. Please contact De VERVE."); return; }
-    if (!rentalFrontFile || !rentalBackFile) { setRentalMessage("Both front and back CNIC images are required."); return; }
-    if (!rentalDocsConsent) { setRentalMessage("Please confirm consent for secure CNIC storage."); return; }
-    if (!rentalTurnstileToken) { setRentalMessage("Complete the Cloudflare security check above. If it is not appearing, refresh the page and try again."); return; }
+    const rejectRental = (message: string) => { setRentalMessage(message); setRentalNotice({ kind: "error", message }); };
+    if (!rentalCnicUploadsEnabled) { rejectRental("Secure CNIC upload is not enabled. Please contact De VERVE."); return; }
+    if (!rentalFrontFile || !rentalBackFile) { rejectRental("Both front and back CNIC images are required."); return; }
+    if (!rentalDocsConsent) { rejectRental("Please confirm consent for secure CNIC storage."); return; }
+    if (!rentalTurnstileToken) { rejectRental("Security verification is not complete. Complete the Cloudflare check above. If it is missing or shows an error, use Retry security check or try another browser/network. Your request has not been sent."); return; }
     setRentalBusy(true); setRentalMessage(""); setRentalReference("");
     try {
       const data = new FormData();
@@ -268,9 +273,13 @@ function Storefront() {
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your rental request could not be submitted.");
       setRentalReference(result.reference_code ?? "");
       setRentalSubmittedEstimatePaisa(result.estimated_total_paisa ?? null);
-      setRentalMessage(result.message || "Your rental request and both CNIC images have been received securely.");
-      setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
-    } catch (error) { setRentalMessage(error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp."); }
+      const successMessage = result.message || "Your rental request and both CNIC images have been received securely.";
+      setRentalMessage(successMessage); setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
+      setRentalNotice({ kind: "success", message: result.reference_code ? "Rental request received. Reference: " + result.reference_code : "Rental request received successfully." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Rental request unavailable. Please contact us on WhatsApp.";
+      setRentalMessage(message); setRentalNotice({ kind: "error", message });
+    }
     finally { setRentalBusy(false); setRentalTurnstileToken(""); setRentalTurnstileReset((value) => value + 1); }
   };
 
@@ -537,9 +546,10 @@ function Storefront() {
           <p className="required-fields-note">Security verification<span className="required-star" aria-hidden="true"> *</span> is required to protect both parties.</p>
           <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
           {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <p className="checkout-message" role="alert">Secure CNIC uploads are currently unavailable. Please contact De VERVE.</p>}
-          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled || !rentalTurnstileToken}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
+          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
         </form>}
       </section></div>}
+      {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
