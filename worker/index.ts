@@ -1790,7 +1790,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(openSession.id).first<{net:number}>();
         openSession = { ...openSession, expected_cash_paisa: Number(openSession.opening_cash_paisa ?? 0) + Number(movement?.net ?? 0) };
       }
-      return json({ accounts: accounts.results ?? [], registers: registers.results ?? [], session: openSession, items });
+      const visibleAccounts = (accounts.results ?? []).map(account => {
+        if (canManageMoney) return account;
+        const { opening_balance_paisa: _openingBalance, ...safeAccount } = account;
+        return safeAccount;
+      });
+      return json({ accounts: visibleAccounts, registers: registers.results ?? [], session: openSession, items });
     } catch { return error("POS catalogue or register settings could not be loaded", 503); }
   }
   if (request.method === "GET" && path === "/api/admin/pos/sales") {
@@ -1801,6 +1806,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     } catch { return error("POS sales history could not be loaded", 503); }
   }
   if (request.method === "GET" && path === "/api/admin/pos/summary") {
+    if (!canManageMoney) return error("Only an owner or manager can view financial reports",403);
     const period = url.searchParams.get("period") ?? "today";
     if (!["today", "month", "year"].includes(period)) return error("Choose today, month or year", 400);
     const pakistanDate = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -1939,6 +1945,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     try {
       const account=await env.DB.prepare("SELECT id,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;kind:string}>();
       if(!account)return error("Financial account not found",404);
+      if(!canManageMoney && account.kind!=="cash")return error("Cashiers can only record movements in the cash drawer",403);
       const session=account.kind==="cash"?await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>():null;
       if(account.kind==="cash"&&!session)return error("Open the cash register before recording cash movement",409);
       if(direction==="out"){const balance=await env.DB.prepare("SELECT a.opening_balance_paisa+COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS balance FROM financial_accounts a LEFT JOIN financial_transactions t ON t.account_id=a.id WHERE a.id=? GROUP BY a.id").bind(accountId).first<{balance:number}>();if(Number(balance?.balance??0)<Number(amount))return error("The selected account does not have enough recorded balance",409);}
@@ -1976,6 +1983,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     }catch{return error("Expense could not be recorded",503);}
   }
   if (request.method === "GET" && path === "/api/admin/pos/expenses") {
+    if (!canManageMoney) return error("Only an owner or manager can view business expenses",403);
     try {
       const rows=await env.DB.prepare("SELECT e.id,e.expense_number,e.category,e.description,e.amount_paisa,e.expense_date,e.status,a.name AS account_name,ad.name AS created_by FROM business_expenses e JOIN financial_accounts a ON a.id=e.account_id LEFT JOIN admin_users ad ON ad.id=e.created_by_admin_id ORDER BY e.expense_date DESC,e.created_at DESC LIMIT 100").all<Record<string,unknown>>();
       return json({expenses:rows.results??[]});
