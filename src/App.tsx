@@ -235,7 +235,7 @@ function Storefront() {
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
   const rentalDurationDays = (() => { const start = new Date(rentalForm.pickup_at).getTime(); const end = new Date(rentalForm.return_at).getTime(); return Number.isFinite(start) && Number.isFinite(end) && end > start ? Math.ceil((end - start) / 86400000) : 0; })();
-  const rentalDailyRatePaisa = rentalSelectedVehicle ? (rentalForm.driver_option === "with_driver" ? rentalSelectedVehicle.with_driver_daily_rate_paisa ?? rentalSelectedVehicle.daily_rate_paisa : rentalSelectedVehicle.daily_rate_paisa) : null;
+  const rentalDailyRatePaisa = rentalSelectedVehicle ? (rentalForm.driver_option === "with_driver" ? rentalSelectedVehicle.with_driver_daily_rate_paisa ?? null : rentalSelectedVehicle.daily_rate_paisa) : null;
   const rentalEstimatedTotalPaisa = rentalDailyRatePaisa !== null && rentalDailyRatePaisa !== undefined && rentalDurationDays > 0 ? rentalDailyRatePaisa * rentalDurationDays : null;
 
   const submitRentalRequest = async (event: FormEvent<HTMLFormElement>) => {
