@@ -45,7 +45,7 @@ function readStoredCart(): CartLine[] {
 const socialGlyphs: Record<string, string> = { facebook: "f", instagram: "◎", tiktok: "♪", youtube: "▶", linkedin: "in", pinterest: "p", threads: "@", x: "𝕏" };
 
 type TurnstileApi = {
-  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void }) => string;
+  render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": () => void; theme?: "light" | "dark" | "auto"; size?: "normal" | "flexible" | "compact"; appearance?: "always" | "execute" | "interaction-only" }) => string;
   reset: (widgetId: string) => void;
   remove?: (widgetId: string) => void;
 };
@@ -61,7 +61,7 @@ function ensureTurnstileLoaded(): Promise<void> {
       script.async = true;
       script.defer = true;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Security verification could not be loaded."));
+      script.onerror = () => { turnstileScriptPromise = null; script.remove(); reject(new Error("Security verification could not be loaded.")); };
       document.head.appendChild(script);
     });
   }
@@ -71,25 +71,42 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
   const host = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const tokenCallback = useRef(onToken);
+  const [attempt, setAttempt] = useState(0);
+  const [status, setStatus] = useState<"loading" | "ready" | "verified" | "error">("loading");
   tokenCallback.current = onToken;
   useEffect(() => {
     let active = true;
+    setStatus("loading");
+    tokenCallback.current("");
+    if (host.current) host.current.replaceChildren();
     void ensureTurnstileLoaded().then(() => {
-      if (!active || !host.current || !window.turnstile) return;
+      if (!active || !host.current || !window.turnstile) throw new Error("Security verification is unavailable.");
       widgetId.current = window.turnstile.render(host.current, {
         sitekey: TURNSTILE_SITEKEY,
-        callback: (token) => tokenCallback.current(token),
-        "expired-callback": () => tokenCallback.current(""),
-        "error-callback": () => tokenCallback.current(""),
+        theme: "light",
+        size: "flexible",
+        appearance: "always",
+        callback: (token) => { setStatus("verified"); tokenCallback.current(token); },
+        "expired-callback": () => { setStatus("ready"); tokenCallback.current(""); },
+        "error-callback": () => { setStatus("error"); tokenCallback.current(""); },
       });
-    }).catch(() => tokenCallback.current(""));
+      setStatus("ready");
+    }).catch(() => {
+      if (active) { setStatus("error"); tokenCallback.current(""); }
+    });
     return () => {
       active = false;
       if (widgetId.current) window.turnstile?.remove?.(widgetId.current);
       widgetId.current = null;
     };
-  }, [resetKey]);
-  return <div className="turnstile-widget" ref={host} role="group" aria-label="Security verification" />;
+  }, [resetKey, attempt]);
+  return <div className="turnstile-shell">
+    <div className="turnstile-widget" ref={host} role="group" aria-label="Cloudflare security verification" />
+    <p className={status === "verified" ? "turnstile-status is-verified" : "turnstile-status"} role="status" aria-live="polite">
+      {status === "loading" ? "Loading secure verification…" : status === "verified" ? "Security check complete." : status === "error" ? "Security check could not load. Check your connection and try again." : "Complete the security check above to submit your request."}
+    </p>
+    {status === "error" && <button type="button" className="turnstile-retry" onClick={() => setAttempt(value => value + 1)}>Retry security check</button>}
+  </div>;
 }
 
 function Storefront() {
@@ -318,6 +335,7 @@ function Storefront() {
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
+        {menuOpen && <button type="button" className="menu-dismiss" aria-label="Close navigation menu" onClick={closeMenu} />}
         <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
         <div className="header-actions"><button className="header-cart" type="button" onClick={() => { setCheckoutOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
       </header>
@@ -500,8 +518,8 @@ function Storefront() {
         {activeScreen === "policies" && <Policies />}
       </main>
 
-      {rentalOpen && <div className="checkout-backdrop"><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title">
-        <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p>Complete the details and identity verification. Your booking is not confirmed until De VERVE approves it.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close">×</button></div>
+      {rentalOpen && <div className="checkout-backdrop rental-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !rentalBusy) setRentalOpen(false); }}><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title" aria-describedby="rental-modal-description">
+        <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p id="rental-modal-description">Complete the details and identity verification. Your booking is not confirmed until De VERVE approves it.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close rental request">×</button></div>
         {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
           <p className="required-fields-note"><span className="required-star">*</span> Required fields. Email and additional details are optional.</p>
           <div className="checkout-fields">
@@ -528,7 +546,7 @@ function Storefront() {
           <p className="required-fields-note">Security verification<span className="required-star" aria-hidden="true"> *</span> is required to protect both parties.</p>
           <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
           {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <p className="checkout-message" role="alert">Secure CNIC uploads are currently unavailable. Please contact De VERVE.</p>}
-          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
+          <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled || !rentalTurnstileToken}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
         </form>}
       </section></div>}
       <footer className="site-footer">

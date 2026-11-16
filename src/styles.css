@@ -438,3 +438,85 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 .rental-documents-upload .rental-consent{display:flex;align-items:flex-start;gap:8px}
 .rental-documents-upload .rental-consent input{flex:0 0 auto;margin-top:3px}
 .admin-vehicle-meta small{display:block;margin-top:4px;color:#64758a;font-size:11px}
+
+
+/* De VERVE responsive premium interaction layer — mobile-first modal, menu and motion refinements. */
+:root{--dv-ease:cubic-bezier(.2,.75,.25,1);--dv-shadow:0 24px 70px rgba(5,30,58,.18)}
+button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}
+button,a{touch-action:manipulation}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid rgba(40,116,199,.35);outline-offset:3px}
+.site-shell{overflow:clip}
+.site-header{isolation:isolate}
+.site-header .menu-dismiss{position:fixed;inset:0;z-index:1;border:0;background:rgba(4,19,37,.42);backdrop-filter:blur(3px);cursor:pointer;animation:dvFadeIn .18s ease both}
+.site-header .main-nav.is-open{z-index:3;right:clamp(12px,4vw,40px);top:calc(100% + 10px);width:min(340px,calc(100vw - 24px));padding:10px;border:1px solid rgba(255,255,255,.8);border-radius:20px;background:rgba(255,255,255,.97);box-shadow:0 24px 70px rgba(5,30,58,.24);backdrop-filter:blur(22px);animation:dvMenuIn .22s var(--dv-ease) both}
+.site-header .menu-toggle,.site-header .main-nav button{position:relative;z-index:3}
+.site-header .menu-toggle{width:46px;height:46px;border-radius:14px;box-shadow:0 4px 14px rgba(10,42,75,.07);transition:transform .2s var(--dv-ease),background .2s}
+.site-header .menu-toggle:active{transform:scale(.94)}
+.site-header .main-nav button{display:flex;align-items:center;justify-content:space-between;min-height:48px;padding:12px 14px;border-radius:12px;transition:background .18s,color .18s,transform .18s}
+.site-header .main-nav button:hover{transform:translateX(3px);background:#edf5ff;color:#0b4b88}
+.checkout-backdrop{padding:clamp(10px,3vw,24px);padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom));overscroll-behavior:contain}
+.checkout-modal,.checkout-panel{width:min(760px,100%);max-height:calc(100dvh - max(24px,env(safe-area-inset-top)) - max(24px,env(safe-area-inset-bottom)));max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;box-shadow:var(--dv-shadow);animation:dvModalIn .24s var(--dv-ease) both}
+.checkout-modal-heading{position:sticky;top:calc(-1 * clamp(18px,4vw,32px));z-index:6;align-items:flex-start;background:rgba(255,255,255,.97);backdrop-filter:blur(14px);padding-top:clamp(18px,4vw,32px);margin-top:calc(-1 * clamp(18px,4vw,32px))}
+.checkout-close{flex:0 0 46px;width:46px;height:46px;min-width:46px;min-height:46px;display:grid;place-items:center;border:1px solid #dbe5ef;border-radius:14px;background:#f3f7fb;color:#173d65;font-size:28px;line-height:1;cursor:pointer;box-shadow:0 3px 12px rgba(9,40,72,.08);transition:transform .18s,background .18s}
+.checkout-close:hover{background:#e7f1fc;transform:rotate(90deg)}
+.rental-modal{width:min(780px,100%);max-height:calc(100dvh - 24px);border:1px solid rgba(255,255,255,.75);border-radius:22px}
+.rental-modal .checkout-modal-heading{gap:12px}
+.rental-modal .checkout-fields{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.rental-modal .checkout-fields>label,.rental-modal .rental-documents-upload,.rental-modal .rental-price-estimate,.rental-modal .checkout-disclaimer{min-width:0}
+.rental-modal input,.rental-modal select,.rental-modal textarea{min-height:46px}
+.rental-modal .rental-documents-upload{grid-column:1/-1;padding:16px;border:1px solid #dce7f2;border-radius:16px;background:linear-gradient(145deg,#f7fbff,#fff)}
+.rental-modal .rental-documents-upload p{font-size:12px;line-height:1.65;color:#5b7087}
+.rental-modal .rental-documents-upload label{display:grid;gap:7px;margin-top:12px}
+.rental-modal .rental-documents-upload input[type=file]{width:100%;min-height:44px;padding:8px;background:#fff}
+.rental-modal .rental-consent{display:flex;align-items:flex-start;gap:9px;line-height:1.55}
+.rental-modal .rental-consent input{width:20px;min-width:20px;height:20px;min-height:20px;margin-top:1px}
+.rental-price-estimate{border:1px solid #cbdced;border-radius:16px;background:linear-gradient(135deg,#f0f7ff,#fff);padding:16px}
+.turnstile-shell{display:grid;gap:6px;padding:12px;border:1px solid #dce7f2;border-radius:14px;background:#f8fbff;max-width:100%}
+.turnstile-widget{min-height:72px;display:flex;align-items:center;justify-content:flex-start;margin:0;overflow:visible}
+.turnstile-widget iframe{max-width:100%}
+.turnstile-status{margin:0;color:#52677f;font-size:12px;line-height:1.5}
+.turnstile-status.is-verified{color:#176b46;font-weight:750}
+.turnstile-retry{justify-self:start;border:1px solid #bfd3e8;border-radius:9px;background:#fff;color:#164f83;padding:9px 12px;font-weight:750;cursor:pointer}
+.required-fields-note{line-height:1.55}
+.product-card,.collection-card,.admin-panel,.admin-stat-grid article{transition:transform .22s var(--dv-ease),box-shadow .22s var(--dv-ease),border-color .22s}
+.product-card:hover,.collection-card:hover{transform:translateY(-4px);box-shadow:0 18px 42px rgba(8,43,85,.1)}
+.button,.header-cta,.header-cart,.catalogue-more{transition:transform .18s var(--dv-ease),box-shadow .18s,background .18s}
+.button:active,.header-cart:active,.catalogue-more:active{transform:scale(.98)}
+img,video{max-width:100%}
+input,select,textarea{max-width:100%}
+@keyframes dvFadeIn{from{opacity:0}to{opacity:1}}
+@keyframes dvMenuIn{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes dvModalIn{from{opacity:0;transform:translateY(12px) scale(.99)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(max-width:760px){
+ .site-header{min-height:72px;height:auto;padding:10px 14px;gap:8px}
+ .site-header .brand-lockup{flex:1;min-width:0}
+ .site-header .header-actions{gap:6px}
+ .site-header .header-cta{display:none}
+ .site-header .header-cart{padding:9px 11px;font-size:11px}
+ .site-header .menu-toggle{flex:0 0 44px}
+ .site-header .main-nav.is-open{right:8px;top:calc(100% + 8px);width:min(360px,calc(100vw - 16px))}
+ .checkout-backdrop{display:flex;align-items:center;justify-content:center;padding:12px;padding-top:max(12px,env(safe-area-inset-top));padding-bottom:max(12px,env(safe-area-inset-bottom))}
+ .checkout-modal,.checkout-panel{width:100%;max-height:calc(100dvh - 24px);border-radius:20px;padding:18px}
+ .checkout-modal-heading{top:-18px;padding-top:18px;margin-top:-18px;gap:10px}
+ .checkout-close{width:48px;height:48px;min-width:48px;min-height:48px;flex-basis:48px;border-radius:14px}
+ .rental-modal{max-height:calc(100dvh - 20px);padding:16px}
+ .rental-modal .checkout-fields{grid-template-columns:minmax(0,1fr)}
+ .rental-modal .rental-documents-upload{grid-column:auto}
+ .rental-modal .checkout-modal-heading{padding-bottom:14px;margin-bottom:14px}
+ .rental-modal .checkout-modal-heading h2{font-size:clamp(24px,7vw,32px)}
+ .rental-modal .checkout-form{gap:13px}
+ .rental-modal .checkout-submit{position:sticky;bottom:0;z-index:4;box-shadow:0 -8px 22px rgba(255,255,255,.9),0 8px 24px rgba(8,43,85,.16);margin-top:4px}
+ .turnstile-shell{padding:10px}
+ .turnstile-widget{min-height:70px}
+}
+@media(max-width:380px){
+ .announcement{font-size:8px;letter-spacing:.06em;padding:0 10px}
+ .site-header{padding-inline:10px}
+ .wordmark{font-size:20px}
+ .checkout-modal,.checkout-panel{padding:14px}
+ .rental-modal{padding:13px}
+ .rental-modal .checkout-fields{gap:11px}
+}
+@media(prefers-reduced-motion:reduce){
+ *,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+}

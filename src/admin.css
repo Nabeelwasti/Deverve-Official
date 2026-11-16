@@ -199,3 +199,27 @@
 
 .admin-order-payment{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;margin:12px 0;border-radius:10px;background:#f2f6fb;color:#183a60}
 .admin-order-payment strong{font-weight:700}.admin-order-payment span{color:#52677d;font-size:.9rem}
+
+
+/* Admin workspace: keep navigation in document flow and make dialogs reachable on every screen. */
+.admin-dashboard .admin-quick-nav{position:relative!important;top:auto!important;z-index:2!important;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:thin}
+.admin-modal-backdrop{z-index:1100;align-items:center;justify-items:center;padding:max(12px,env(safe-area-inset-top)) 12px max(12px,env(safe-area-inset-bottom));overscroll-behavior:contain}
+.admin-editor{width:min(100%,860px);max-height:calc(100dvh - 24px);overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;box-shadow:0 26px 90px rgba(5,25,50,.28);animation:dvModalIn .22s cubic-bezier(.2,.75,.25,1) both}
+.admin-close{width:44px;min-width:44px;height:44px;display:grid;place-items:center;position:sticky;top:0;margin-left:auto;z-index:4}
+.admin-screen button,.admin-screen a,.admin-screen input,.admin-screen select,.admin-screen textarea{touch-action:manipulation}
+.admin-screen input,.admin-screen select,.admin-screen textarea{max-width:100%;min-width:0}
+.admin-panel,.admin-stat-grid article,.admin-product-row,.admin-order-card,.admin-rental-card{min-width:0}
+.admin-content{width:min(1280px,calc(100% - 32px))}
+@media(max-width:640px){
+ .admin-dashboard .admin-quick-nav{position:relative!important;top:auto!important;flex-wrap:nowrap;max-width:100%;margin:8px 0 16px;padding:9px 2px}
+ .admin-dashboard .admin-quick-nav button{min-height:42px}
+ .admin-topbar{align-items:center;flex-wrap:wrap;gap:12px}
+ .admin-user{flex-direction:row;align-items:center;max-width:100%;min-width:0}
+ .admin-user span{overflow-wrap:anywhere}
+ .admin-modal-backdrop{align-items:center;padding:10px}
+ .admin-editor{max-height:calc(100dvh - 20px);padding:16px;border-radius:16px}
+ .admin-form-actions{flex-wrap:wrap}
+ .admin-form-actions>*{min-height:42px}
+ .admin-panel{min-width:0;overflow-wrap:anywhere}
+}
+@media(prefers-reduced-motion:reduce){.admin-editor{animation:none}}
