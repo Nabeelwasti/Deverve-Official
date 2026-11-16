@@ -336,7 +336,7 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
-    if (q.startsWith("SELECT id, order_number, payment_method, payment_provider, payment_status FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
     if (q.startsWith("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ?")) { const row = this.db.orders.get(v[0]); return row?.customer_id === v[1] ? row : null; }
