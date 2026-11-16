@@ -2066,7 +2066,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
       const id = crypto.randomUUID();
       const statements = [
-        env.DB.prepare("undefined")
+        env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand, barcode, cost_price_paisa, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
           .bind(id, productId, sku, size, color, Number(initialStock), barcode, Number(costPrice), Number(reorderLevel)),
       ];
       if (Number(initialStock) > 0) {
