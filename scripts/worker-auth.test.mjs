@@ -774,7 +774,7 @@ class FakeStatement {
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
       const [status, updated_at, id, expected] = v;
       const order = this.db.orders.get(id);
-      if (!order || order.order_status !== expected || (["processing", "dispatched"].includes(status) && order.delivery_fee_status !== "accepted")) return { success: true, meta: { changes: 0 } };
+      if (!order || order.order_status !== expected || (["processing", "dispatched"].includes(status) && order.delivery_fee_status !== "accepted") || (["processing", "dispatched"].includes(status) && order.payment_provider === "manual" && order.payment_method !== "cod" && order.payment_status !== "paid")) return { success: true, meta: { changes: 0 } };
       const items = this.db.orderItems.filter((item) => item.order_id === id);
       if (status === "cancelled" && items.some((item) => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) < item.quantity)) return { success: true, meta: { changes: 0 } };
       if (status === "dispatched" && items.some((item) => { const variant = this.db.variants.get(item.variant_id); return !variant || variant.stock_on_hand < item.quantity || (variant.reserved_quantity ?? 0) < item.quantity; })) return { success: true, meta: { changes: 0 } };
@@ -1518,4 +1518,34 @@ test("only the owner can verify a pending direct transfer and COD cannot be manu
   [...db.admins.values()][0].role="manager";
   const denied=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(denied.status,403);
+});
+
+
+test("direct bank checkout persists the selected method and blocks fulfilment until owner verifies payment", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  db.storeSettings.set("payment_methods",{setting_value_json:JSON.stringify({methods:[
+    {id:"cod",kind:"cod",label:"Cash on delivery",enabled:true},
+    {id:"bank-transfer",kind:"bank",label:"Bank transfer",enabled:true}
+  ]})});
+  const productResponse=await handleRequest(request("/api/admin/products","POST",{name:"Payment Test Hoodie",category:"hoodies",audience:"unisex",retail_price_paisa:600001},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const productId=(await productResponse.json()).id;
+  await handleRequest(request("/api/admin/products/"+productId,"PATCH",{status:"published"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const variantResponse=await handleRequest(request("/api/admin/products/"+productId+"/variants","POST",{sku:"DV-PAY-M",size:"M",color:"Navy",initial_stock:3},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  const variantId=(await variantResponse.json()).variant.id;
+  const placed=await handleRequest(request("/api/orders","POST",{checkout_token:"123e4567-e89b-42d3-a456-426614174099",customer_name:"Direct Pay Buyer",phone:"+923001234567",delivery_address:"House 10, Street 2, Model Town",city:"Jhelum",payment_method:"bank-transfer",items:[{variant_id:variantId,quantity:1}]}),env(db));
+  assert.equal(placed.status,201);
+  const order=[...db.orders.values()][0];
+  assert.equal(order.payment_method,"bank-transfer");
+  assert.equal(order.payment_status,"pending");
+  assert.equal(order.delivery_fee_status,"accepted");
+  const confirmed=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"confirmed"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(confirmed.status,200);
+  const blocked=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(blocked.status,409);
+  const verified=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-ORDER-1"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(verified.status,200);
+  const processing=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(processing.status,200);
 });
