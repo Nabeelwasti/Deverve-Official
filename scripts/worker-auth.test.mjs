@@ -421,6 +421,7 @@ class FakeStatement {
     }
     if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) return this.db.enquiries.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status FROM products WHERE id = ?")) { const row = this.db.products.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, stock_on_hand, is_active FROM product_variants WHERE id = ?")) { const row = this.db.variants.get(v[0]); return row ? { id: row.id, stock_on_hand: row.stock_on_hand, is_active: row.is_active } : null; }
     if (q.startsWith("SELECT id FROM product_variants WHERE id = ?")) { const row = this.db.variants.get(v[0]); return row ? { id: row.id } : null; }
@@ -511,7 +512,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?")) {
       return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]) };
     }
-    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
     }
     if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
