@@ -1997,7 +1997,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
     try{
-      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','payment_methods')").all<{setting_key:string;setting_value_json:string}>();
+      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets')").all<{setting_key:string;setting_value_json:string}>();
       const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
