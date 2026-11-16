@@ -130,6 +130,11 @@ function Storefront() {
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
   const [rentalNotice, setRentalNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
+  useEffect(() => {
+    if (!rentalNotice) return;
+    const timeout = window.setTimeout(() => setRentalNotice(null), rentalNotice.kind === "success" ? 5500 : 8000);
+    return () => window.clearTimeout(timeout);
+  }, [rentalNotice]);
   const [rentalReference, setRentalReference] = useState("");
   const [rentalSubmittedEstimatePaisa, setRentalSubmittedEstimatePaisa] = useState<number | null>(null);
   const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
@@ -523,7 +528,7 @@ function Storefront() {
 
       {rentalOpen && <div className="checkout-backdrop rental-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !rentalBusy) setRentalOpen(false); }}><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title" aria-describedby="rental-modal-description">
         <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p id="rental-modal-description">Complete the details and identity verification. Your booking is not confirmed until De VERVE approves it.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close rental request">×</button></div>
-        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest}>
+        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest} onInvalidCapture={(event) => { const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; const message = field.validationMessage || "Please complete all required fields before submitting."; setRentalNotice({ kind: "error", message }); }}>
           <p className="required-fields-note"><span className="required-star">*</span> Required fields. Email and additional details are optional.</p>
           <div className="checkout-fields">
             <label>Vehicle{vehicles.length > 0 && <span className="required-star" aria-hidden="true"> *</span>}<select required={vehicles.length > 0} value={rentalForm.vehicle_id} onChange={(e) => setRentalForm({ ...rentalForm, vehicle_id: e.target.value })}><option value="">{vehicles.length > 0 ? "Select a vehicle" : "Any available vehicle"}</option>{vehicles.map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name} · {vehicle.vehicle_type}</option>)}</select></label>
@@ -546,7 +551,8 @@ function Storefront() {
           {rentalMessage && <p className="checkout-message" role="alert">{rentalMessage}</p>}
           <p className="checkout-disclaimer">This is a request, not a confirmed booking. De VERVE will verify documents, vehicle availability, final price and rental terms before confirmation.</p>
           <p className="checkout-policy-note">Please review the rental and privacy policies before submitting. <button type="button" onClick={() => { setRentalOpen(false); navigate("policies"); }}>Read rental terms</button>.</p>
-          <p className="required-fields-note">Security verification<span className="required-star" aria-hidden="true"> *</span> is required to protect both parties.</p>
+          <p className="required-fields-note">Security verification<span className="required-star" aria-hidden="true"> *</span> is required to protect both parties. The submit button will explain what is missing if verification has not completed.</p>
+          {rentalSettingsLoading && <p className="checkout-message" role="status">Checking secure rental settings…</p>}
           <TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} />
           {!rentalCnicUploadsEnabled && !rentalSettingsLoading && <p className="checkout-message" role="alert">Secure CNIC uploads are currently unavailable. Please contact De VERVE.</p>}
           <button type="submit" className="button button-primary checkout-submit" disabled={rentalBusy || rentalSettingsLoading || !rentalCnicUploadsEnabled}>{rentalBusy ? "Submitting securely…" : "Submit rental request"} <span>↗</span></button>
