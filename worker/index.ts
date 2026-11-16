@@ -1252,7 +1252,7 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
   if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to manage rentals", 403);
   if (collection && request.method === "GET") {
     try {
-      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_city, r.pickup_address, r.destination_city, r.destination_address, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.created_at, r.updated_at, v.name AS vehicle_name, v.vehicle_type, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_front') AS cnic_front_uploaded, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_back') AS cnic_back_uploaded FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
+      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_city, r.pickup_address, r.destination_city, r.destination_address, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.rental_days, r.estimated_daily_rate_paisa, r.estimated_total_paisa, r.created_at, r.updated_at, v.name AS vehicle_name, v.vehicle_type, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_front') AS cnic_front_uploaded, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_back') AS cnic_back_uploaded FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
       return json({ rentals: result.results ?? [] });
     } catch { return error("Rental requests could not be loaded", 503); }
   }
@@ -1272,6 +1272,10 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
       confirmed: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [],
     };
     if (!allowed[current.status]?.includes(nextStatus)) return error("That rental status change is not allowed", 409);
+    if (nextStatus === "confirmed") {
+      const documents = await env.DB.prepare("SELECT COUNT(*) AS document_count FROM rental_documents WHERE rental_request_id = ? AND document_side IN ('cnic_front','cnic_back')").bind(match[1]).first<{ document_count: number }>();
+      if ((documents?.document_count ?? 0) !== 2) return error("Both CNIC images must be received and verified before confirming this rental", 409);
+    }
     const targetVehicleId = requestedVehicle === undefined ? current.vehicle_id : requestedVehicle;
     if (targetVehicleId) {
       const vehicle = await env.DB.prepare("SELECT id, status FROM vehicles WHERE id = ? LIMIT 1").bind(targetVehicleId).first<{ id: string; status: string }>();
