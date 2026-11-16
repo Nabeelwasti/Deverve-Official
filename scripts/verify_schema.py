@@ -13,7 +13,7 @@ required_tables = {
     "products", "product_variants", "enquiries", "orders", "order_items",
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
-    "collections", "collection_products", "inventory_movements", "admin_sessions",
+    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
@@ -46,6 +46,9 @@ media_gallery_columns = {row[1] for row in db.execute("PRAGMA table_info(product
 assert {"product_id", "media_asset_id", "position", "is_primary"} <= media_gallery_columns, "Product media gallery fields are missing"
 assert any(row[1] == "idx_product_media_one_primary" and row[2] == 1 for row in db.execute("PRAGMA index_list(product_media_assets)")), "Each product must have at most one primary media item"
 assert "wholesale_quote_items" in actual_tables, "Wholesale quote item table is missing"
+vehicle_media_columns = {row[1] for row in db.execute("PRAGMA table_info(vehicle_media_assets)")}
+assert {"vehicle_id", "media_asset_id", "position", "is_primary"} <= vehicle_media_columns, "Vehicle media gallery fields are missing"
+assert any(row[1] == "idx_vehicle_media_one_primary" and row[2] == 1 for row in db.execute("PRAGMA index_list(vehicle_media_assets)")), "Each vehicle must have at most one primary media item"
 vehicle_columns = {row[1] for row in db.execute("PRAGMA table_info(vehicles)")}
 rental_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
 assert "description" in vehicle_columns, "Vehicle description column is missing"

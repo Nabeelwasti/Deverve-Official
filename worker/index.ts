@@ -943,8 +943,22 @@ interface RentalRequestRow {
 async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/vehicles" || request.method !== "GET") return null;
   try {
-    const result = await env.DB.prepare("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available' ORDER BY vehicle_type, name LIMIT 50").all<VehicleRow>();
-    return json({ vehicles: (result.results ?? []).map((vehicle) => ({ ...vehicle, image_url: vehicle.image_key ? "/media/" + vehicle.image_key : null })) });
+    const result = await env.DB.prepare("SELECT v.id, v.name, v.vehicle_type, v.transmission, v.seats, v.fuel_type, v.daily_rate_paisa, v.with_driver_daily_rate_paisa, v.image_key, v.description, vm.media_asset_id, ma.alt_text AS media_alt_text, vm.position AS media_position, vm.is_primary AS media_is_primary FROM vehicles v LEFT JOIN vehicle_media_assets vm ON vm.vehicle_id = v.id LEFT JOIN media_assets ma ON ma.id = vm.media_asset_id AND ma.status = 'ready' WHERE v.status = 'available' ORDER BY v.vehicle_type, v.name, vm.position LIMIT 250").all<Record<string, unknown>>();
+    const grouped = new Map<string, Record<string, unknown> & { media: Array<Record<string, unknown>> }>();
+    for (const row of result.results ?? []) {
+      const id = String(row.id);
+      let vehicle = grouped.get(id);
+      if (!vehicle) {
+        vehicle = { id, name: row.name, vehicle_type: row.vehicle_type, transmission: row.transmission, seats: row.seats, fuel_type: row.fuel_type, daily_rate_paisa: row.daily_rate_paisa, with_driver_daily_rate_paisa: row.with_driver_daily_rate_paisa, image_key: row.image_key, description: row.description, image_url: row.image_key ? "/media/" + row.image_key : null, media: [] };
+        grouped.set(id, vehicle);
+      }
+      if (typeof row.media_asset_id === "string") {
+        const item = { id: row.media_asset_id, url: "/media/" + row.media_asset_id, alt_text: typeof row.media_alt_text === "string" ? row.media_alt_text : String(row.name), position: row.media_position, is_primary: row.media_is_primary };
+        vehicle.media.push(item);
+        if (row.media_is_primary === 1 || !vehicle.image_url) vehicle.image_url = item.url;
+      }
+    }
+    return json({ vehicles: Array.from(grouped.values()) });
   } catch { return error("Vehicle catalogue is temporarily unavailable", 503); }
 }
 
@@ -1145,6 +1159,75 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
     estimated_total_paisa: estimatedTotalPaisa,
     message: "Your rental request and both CNIC images have been received securely. De VERVE will verify the documents, availability and final terms before confirming your booking.",
   }, 201);
+}
+
+async function adminVehicleMediaRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const match = url.pathname.match(/^\/api\/admin\/vehicles\/([a-f0-9-]{36})\/media(?:\/([a-f0-9-]{36}))?$/i);
+  if (!match) return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Vehicle gallery service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can manage vehicle photos", 403);
+  const vehicleId = match[1];
+  if (request.method === "GET") {
+    try {
+      const vehicle = await env.DB.prepare("SELECT id FROM vehicles WHERE id = ? LIMIT 1").bind(vehicleId).first<{ id: string }>();
+      if (!vehicle) return error("Vehicle not found", 404);
+      const rows = await env.DB.prepare("SELECT ma.id, ma.alt_text, ma.caption, ma.mime_type, ma.byte_size, vm.position, vm.is_primary FROM vehicle_media_assets vm JOIN media_assets ma ON ma.id = vm.media_asset_id WHERE vm.vehicle_id = ? AND ma.status = 'ready' ORDER BY vm.position, ma.created_at").bind(vehicleId).all<Record<string, unknown>>();
+      return json({ media: (rows.results ?? []).map(item => ({ ...item, url: "/api/admin/media/" + item.id + "/file" })) });
+    } catch { return error("Vehicle gallery could not be loaded", 503); }
+  }
+  if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+  if (request.method === "POST" && !match[2]) {
+    const body = await readJson(request);
+    const mediaId = typeof body?.media_id === "string" ? body.media_id : "";
+    const position = body?.position === undefined ? 0 : body.position;
+    const makePrimary = body?.is_primary === true;
+    if (!/^[a-f0-9-]{36}$/i.test(mediaId) || !Number.isSafeInteger(position) || Number(position) < 0 || Number(position) > 100) return error("Choose a valid image and gallery position", 400);
+    try {
+      const [vehicle, media] = await Promise.all([
+        env.DB.prepare("SELECT id, image_key FROM vehicles WHERE id = ? LIMIT 1").bind(vehicleId).first<{ id: string; image_key: string | null }>(),
+        env.DB.prepare("SELECT id FROM media_assets WHERE id = ? AND media_type = 'image' AND status = 'ready' LIMIT 1").bind(mediaId).first<{ id: string }>(),
+      ]);
+      if (!vehicle) return error("Vehicle not found", 404);
+      if (!media) return error("Image not found or unavailable", 404);
+      const primary = makePrimary || !vehicle.image_key;
+      const statements = [];
+      if (primary) statements.push(env.DB.prepare("UPDATE vehicle_media_assets SET is_primary = 0 WHERE vehicle_id = ?").bind(vehicleId));
+      statements.push(env.DB.prepare("INSERT INTO vehicle_media_assets (vehicle_id, media_asset_id, position, is_primary) VALUES (?, ?, ?, ?) ON CONFLICT(vehicle_id,media_asset_id) DO UPDATE SET position=excluded.position, is_primary=excluded.is_primary").bind(vehicleId, mediaId, Number(position), primary ? 1 : 0));
+      if (primary) statements.push(env.DB.prepare("UPDATE vehicles SET image_key = ?, updated_at = ? WHERE id = ?").bind(mediaId, new Date().toISOString(), vehicleId));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.gallery_image_added', 'vehicle', ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, vehicleId, JSON.stringify({ media_id: mediaId, position: Number(position), is_primary: primary })));
+      await env.DB.batch(statements);
+      return json({ attached: true, is_primary: primary, media_id: mediaId }, 201);
+    } catch { return error("Vehicle photo could not be added", 503); }
+  }
+  if (request.method === "PATCH" && match[2]) {
+    const body = await readJson(request);
+    const position = body?.position;
+    if (!Number.isSafeInteger(position) || Number(position) < 0 || Number(position) > 100) return error("Choose a valid gallery position", 400);
+    try {
+      const relation = await env.DB.prepare("SELECT media_asset_id FROM vehicle_media_assets WHERE vehicle_id = ? AND media_asset_id = ?").bind(vehicleId, match[2]).first<{ media_asset_id: string }>();
+      if (!relation) return error("Vehicle photo not found", 404);
+      await env.DB.prepare("UPDATE vehicle_media_assets SET position = ? WHERE vehicle_id = ? AND media_asset_id = ?").bind(Number(position), vehicleId, match[2]).run();
+      return json({ updated: true });
+    } catch { return error("Vehicle photo order could not be updated", 503); }
+  }
+  if (request.method === "DELETE" && match[2]) {
+    try {
+      const relation = await env.DB.prepare("SELECT is_primary FROM vehicle_media_assets WHERE vehicle_id = ? AND media_asset_id = ?").bind(vehicleId, match[2]).first<{ is_primary: number }>();
+      if (!relation) return error("Vehicle photo not found", 404);
+      const next = relation.is_primary ? await env.DB.prepare("SELECT media_asset_id FROM vehicle_media_assets WHERE vehicle_id = ? AND media_asset_id <> ? ORDER BY position, created_at LIMIT 1").bind(vehicleId, match[2]).first<{ media_asset_id: string }>() : null;
+      const statements = [env.DB.prepare("DELETE FROM vehicle_media_assets WHERE vehicle_id = ? AND media_asset_id = ?").bind(vehicleId, match[2])];
+      if (relation.is_primary) {
+        statements.push(env.DB.prepare("UPDATE vehicle_media_assets SET is_primary = 1 WHERE vehicle_id = ? AND media_asset_id = ?").bind(vehicleId, next?.media_asset_id ?? ""));
+        statements.push(env.DB.prepare("UPDATE vehicles SET image_key = ?, updated_at = ? WHERE id = ?").bind(next?.media_asset_id ?? null, new Date().toISOString(), vehicleId));
+      }
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'vehicle.gallery_image_removed', 'vehicle', ?, ?)").bind(crypto.randomUUID(), admin.admin_user_id, vehicleId, JSON.stringify({ media_id: match[2], replacement_primary: next?.media_asset_id ?? null })));
+      await env.DB.batch(statements);
+      return json({ removed: true, image_key: relation.is_primary ? next?.media_asset_id ?? null : undefined });
+    } catch { return error("Vehicle photo could not be removed", 503); }
+  }
+  return error("Method not allowed", 405);
 }
 
 async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
@@ -2417,6 +2500,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
 
+  const vehicleMediaAdminResponse = await adminVehicleMediaRoutes(request, env, url);
+  if (vehicleMediaAdminResponse) return vehicleMediaAdminResponse;
+
   const vehicleAdminResponse = await adminVehicleRoutes(request, env, url);
   if (vehicleAdminResponse) return vehicleAdminResponse;
 
@@ -3035,7 +3121,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   const publicMedia = url.pathname.match(/^\/media\/([a-f0-9-]{36})$/i);
   if (publicMedia && request.method === "GET") {
     try {
-      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM product_media_assets pm JOIN products p ON p.id = pm.product_id WHERE pm.media_asset_id = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM store_settings s WHERE s.setting_key='brand_assets' AND s.is_public=1 AND (json_extract(s.setting_value_json,'$.logo_id')=m.id OR json_extract(s.setting_value_json,'$.favicon_id')=m.id)) OR EXISTS (SELECT 1 FROM store_settings s, json_each(s.setting_value_json,'$.methods') pm WHERE s.setting_key='payment_methods' AND s.is_public=1 AND json_extract(pm.value,'$.enabled')=1 AND json_extract(pm.value,'$.qr_media_id')=m.id)) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
+      const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM product_media_assets pm JOIN products p ON p.id = pm.product_id WHERE pm.media_asset_id = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM vehicle_media_assets vm JOIN vehicles v ON v.id = vm.vehicle_id WHERE vm.media_asset_id = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM store_settings s WHERE s.setting_key='brand_assets' AND s.is_public=1 AND (json_extract(s.setting_value_json,'$.logo_id')=m.id OR json_extract(s.setting_value_json,'$.favicon_id')=m.id)) OR EXISTS (SELECT 1 FROM store_settings s, json_each(s.setting_value_json,'$.methods') pm WHERE s.setting_key='payment_methods' AND s.is_public=1 AND json_extract(pm.value,'$.enabled')=1 AND json_extract(pm.value,'$.qr_media_id')=m.id)) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
       if (!asset) return error("Media not found", 404);
       const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
       return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
