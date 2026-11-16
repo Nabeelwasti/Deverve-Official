@@ -243,6 +243,36 @@ test.describe("Pakistan rental time handling", () => {
   });
 });
 
+test("vehicle fleet galleries auto-advance and support manual navigation", async ({ page }) => {
+  const imageA = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%23142b4d'/%3E%3C/svg%3E";
+  const imageB = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='180'%3E%3Crect width='320' height='180' fill='%2370263d'/%3E%3C/svg%3E";
+  await page.route("**/api/vehicles", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ vehicles: [{
+        id: "55555555-5555-4555-8555-555555555555", name: "Gallery Test Sedan", vehicle_type: "Sedan",
+        transmission: "Automatic", seats: 5, fuel_type: "Petrol", daily_rate_paisa: 850000,
+        with_driver_daily_rate_paisa: 1200000, image_key: null, image_url: null, description: "Gallery test vehicle",
+        media: [
+          { id: "66666666-6666-4666-8666-666666666666", url: imageA, alt_text: "Front vehicle view", position: 0, is_primary: 1 },
+          { id: "77777777-7777-4777-8777-777777777777", url: imageB, alt_text: "Side vehicle view", position: 1, is_primary: 0 },
+        ],
+      }] }),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  const gallery = page.locator(".mobility-vehicle-gallery");
+  await gallery.scrollIntoViewIfNeeded();
+  await expect(gallery.locator(".dv-gallery-meta")).toHaveText("1 / 2");
+  await page.waitForTimeout(4400);
+  await expect(gallery.locator(".dv-gallery-meta")).toHaveText("2 / 2");
+  await gallery.getByRole("button", { name: "Previous product image" }).click();
+  await expect(gallery.locator(".dv-gallery-meta")).toHaveText("1 / 2");
+});
+
 test("bilingual customer policies are accessible from the storefront", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Toggle navigation" }).click();
