@@ -92,8 +92,10 @@ test("rental request requires both CNIC images and sends them with the request",
   await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
   await dialog.getByLabel(/Destination complete address/).fill("20 Test Road, Lahore");
 
-  await dialog.getByRole("button", { name: /Submit rental request/ }).click();
-  await expect(dialog.getByText(/Both front and back CNIC images are required/)).toBeVisible();
+  const submitButton = dialog.getByRole("button", { name: /Submit rental request/ });
+  await expect(submitButton).toBeEnabled();
+  await submitButton.click();
+  await expect(dialog.getByLabel(/CNIC front image/)).toHaveJSProperty("validity.valid", false);
   expect(submitted).toBeUndefined();
 
   const png = {
@@ -104,7 +106,7 @@ test("rental request requires both CNIC images and sends them with the request",
   await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
   await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
   await dialog.getByLabel(/I confirm these are my documents/).check();
-  await dialog.getByRole("button", { name: /Submit rental request/ }).click();
+  await submitButton.click();
 
   await expect(dialog.getByText("DV-R-TEST-123456789012")).toBeVisible();
   expect(submitted).toContain("cnic_front");
@@ -130,10 +132,11 @@ test("rental estimate recalculates for the selected vehicle and driver option", 
   await page.getByRole("button", { name: "Car rental", exact: true }).click();
   await page.getByRole("button", { name: "Request a rental" }).click();
   const dialog = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(dialog.getByLabel(/Vehicle/)).toContainText("Test Sedan");
   await dialog.getByLabel(/Vehicle/).selectOption("11111111-1111-4111-8111-111111111111");
-  await expect(dialog.getByText(/PKR\s*12,000/)).toBeVisible();
+  await expect(dialog.getByText(/(?:Rs|PKR)\s*12,000/)).toBeVisible();
   await dialog.getByLabel(/Driver option/).selectOption("self_drive");
-  await expect(dialog.getByText(/PKR\s*8,500/)).toBeVisible();
+  await expect(dialog.getByText(/(?:Rs|PKR)\s*8,500/)).toBeVisible();
 });
 
 
