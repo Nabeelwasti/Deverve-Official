@@ -1434,10 +1434,10 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   assert.equal(privateDocument.status, 401);
 
   const legacyId = crypto.randomUUID();
-  db.rentalRequests.set(legacyId, { id: legacyId, vehicle_id: vehicleTwo, pickup_at: pickup, return_at: returning, status: "requested" });
-  const legacyReview = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "reviewing", vehicle_id: vehicleTwo }, headers), env(db));
+  db.rentalRequests.set(legacyId, { id: legacyId, vehicle_id: null, pickup_at: pickup, return_at: returning, status: "requested" });
+  const legacyReview = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "reviewing", vehicle_id: null }, headers), env(db));
   assert.equal(legacyReview.status, 200);
-  const legacyConfirm = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "confirmed", vehicle_id: vehicleTwo }, headers), env(db));
+  const legacyConfirm = await handleRequest(request("/api/admin/rentals/" + legacyId, "PATCH", { status: "confirmed", vehicle_id: null }, headers), env(db));
   assert.equal(legacyConfirm.status, 409);
   assert.match((await legacyConfirm.json()).error, /both CNIC images/i);
 
