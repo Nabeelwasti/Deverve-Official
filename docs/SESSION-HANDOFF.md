@@ -1,3 +1,37 @@
+# Main-only handoff — 16 November 2026 (Asia/Karachi)
+
+## Latest payment-management work
+- All changes were made directly on `main`; no feature branch was created or used.
+- Owner-only Website Settings now saves up to 12 customer-facing direct payment methods in the existing `store_settings` JSON row. Supported types: COD, bank transfer, wallet, HTTPS payment link and QR. Fields include display name, provider, account title, bank, account/wallet number, IBAN, URL, instructions and QR media asset ID.
+- The public payment-options endpoint returns only enabled methods. Payment URLs must be HTTPS. QR image files are served publicly only when referenced by an active payment method.
+- Checkout shows the owner-configured payment options and the account/URL/QR instructions. It repeats instructions after order submission and tells customers to wait for final delivery-fee confirmation and use the order number as the transfer reference.
+- The selected payment-method ID is stored on the order. Direct transfer orders remain pending. Only the absolute owner can manually mark a direct transfer paid after independently checking the business account; COD cannot be marked paid this way. Order processing/dispatch is blocked for unpaid direct-transfer orders.
+- Admin owner settings include QR image upload through the existing private media upload workflow. Owner role is enforced by the Worker; managers and staff cannot change payment settings or verify transfers.
+- Safepay's existing dynamic gateway adapter remains separately controlled by Cloudflare secrets. No Safepay merchant credentials or successful sandbox payment are configured. The owner dashboard does not yet store gateway API secrets. A provider-supplied HTTPS link can be configured as a manual option.
+- PayFast is not implemented as a dynamic per-order gateway. Obtain the merchant-specific hosted OneCheckout contract and credentials first. SadaPay/JazzCash/Easypaisa can be configured as manual wallet/account methods where the merchant has valid accounts.
+- Worker regression tests now cover owner-only payment-method configuration, public filtering, manual transfer verification and direct-payment fulfilment gating. The direct-payment checkout test was added; its FakeD1 fixture was corrected to model the production default `payment_provider='manual'`.
+- QR public-media access now checks that the QR belongs to an enabled payment method; inactive QR images remain private.
+
+## Recent verification
+- Run #451: all 10 CI steps passed.
+- Run #452: all 10 CI steps passed, including owner-configurable direct method test.
+- Run #453: all 10 CI steps passed, including customer post-order payment instructions.
+- Run #456: all 10 CI steps passed, including owner-only manual payment verification.
+- Run #460: all 10 CI steps passed, including direct payment checkout persistence and fulfilment gating.
+- Run #461: build/type-check, security header check, Worker tests and D1 schema validation passed; browser tests were still running at the time of this note.
+- The latest production smoke workflow before the QR-public-media allowlist change succeeded for commit `4e465358bcc6f44c31ff1515c16c09dfb76d3d7d`. The QR media allowlist change and later documentation changes still need their own completed deployment smoke evidence.
+- Latest code commit before this note: `df98b679083f4dd236caa93936282ca12491aa0e`; latest docs update: `5d20e85e63150d8c933d03522184a0af904fbdb1`.
+
+## Remaining external/owner tasks
+1. Owner enters actual bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images under Admin → Website settings, then tests the full checkout and reconciliation flow.
+2. Configure Safepay sandbox secrets and complete a real sandbox payment/webhook test before considering live credentials.
+3. Obtain PayFast's merchant-specific hosted checkout documentation before implementing a dynamic integration.
+4. Owner enters real catalogue and fleet data; the production database previously had zero products/variants and zero vehicles.
+5. Configure Resend sender domain/API key, legal/business policies, and custom domain if desired.
+6. Do not claim unrestricted live commerce readiness until real-device acceptance tests and payment/email provider verification pass.
+
+---
+
 # Current handoff — 15 November 2026 (Asia/Karachi)
 
 ## Binding workflow rule
