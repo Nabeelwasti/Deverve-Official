@@ -1372,45 +1372,74 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(db.variants.get(variantId).reserved_quantity, 12);
 });
 
-test("rental requests can be assigned and confirmed only when the vehicle has no overlapping confirmed booking", async () => {
+test("rental submission requires both CNIC images, calculates driver-specific pricing and blocks unverified confirmation", async () => {
   const db = new FakeD1();
+  db.storeSettings.set("cnic_uploads_enabled", { setting_value_json: "true" });
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const headers = { cookie, "sec-fetch-site": "same-origin" };
-  const createVehicle = async (name) => {
+  const createVehicle = async (name, selfRate, driverRate) => {
     const response = await handleRequest(request("/api/admin/vehicles", "POST", {
       name, vehicle_type: "Sedan", transmission: "Automatic", seats: 5, fuel_type: "Petrol",
-      daily_rate_paisa: 850000, status: "available", description: "Test fleet vehicle",
+      daily_rate_paisa: selfRate, with_driver_daily_rate_paisa: driverRate,
+      status: "available", description: "Test fleet vehicle",
     }, headers), env(db));
     assert.equal(response.status, 201);
     return (await response.json()).vehicle_id;
   };
-  const vehicleOne = await createVehicle("Fleet Sedan One");
-  const vehicleTwo = await createVehicle("Fleet Sedan Two");
+  const vehicleOne = await createVehicle("Fleet Sedan One", 850000, 1200000);
+  const vehicleTwo = await createVehicle("Fleet Sedan Two", 800000, 1300000);
   const fleet = await handleRequest(new Request(origin + "/api/vehicles"), env(db));
   assert.equal(fleet.status, 200);
-  assert.equal((await fleet.json()).vehicles.length, 2);
+  const publicFleet = (await fleet.json()).vehicles;
+  assert.equal(publicFleet.length, 2);
+  assert.equal(publicFleet.find((v) => v.id === vehicleOne).with_driver_daily_rate_paisa, 1200000);
+
   const pickup = new Date(Date.now() + 2 * 86400000).toISOString();
   const returning = new Date(Date.now() + 3 * 86400000).toISOString();
-  const requestBody = {
-    vehicle_id: vehicleOne, customer_name: "Rental Customer", phone: "+923001234567",
-    email: "renter@example.com", pickup_city: "Jhelum", pickup_address: "House 10, Main Road, Satellite Town",
-    destination_city: "Islamabad", destination_address: "Blue Area, Islamabad",
-    pickup_at: pickup, return_at: returning, driver_option: "with_driver",
+  const makeForm = (vehicleId, customerName, driver = "with_driver", includeDocuments = true) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries({
+      vehicle_id: vehicleId, customer_name: customerName, phone: "+923001234567",
+      email: "renter@example.com", pickup_city: "Jhelum", pickup_address: "House 10, Main Road, Satellite Town",
+      destination_city: "Islamabad", destination_address: "Blue Area, Islamabad",
+      pickup_at: pickup, return_at: returning, driver_option: driver, customer_note: "",
+      turnstile_token: "test-valid-token", cnic_consent: "true",
+    })) form.append(key, value);
+    if (includeDocuments) {
+      const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]);
+      form.append("cnic_front", new File([png], "front.png", { type: "image/png" }));
+      form.append("cnic_back", new File([png], "back.png", { type: "image/png" }));
+    }
+    return form;
   };
-  const first = await handleRequest(request("/api/rentals", "POST", requestBody), env(db));
+  const sendForm = (form) => handleRequest(new Request(origin + "/api/rentals", {
+    method: "POST", headers: { origin, "cf-connecting-ip": "203.0.113.122", "sec-fetch-site": "same-origin" }, body: form,
+  }), env(db));
+
+  const missingDocuments = await sendForm(makeForm(vehicleOne, "Missing CNIC", "with_driver", false));
+  assert.equal(missingDocuments.status, 400);
+  assert.equal(db.rentalRequests.size, 0);
+
+  const first = await sendForm(makeForm(vehicleOne, "Rental Customer", "with_driver"));
   assert.equal(first.status, 201);
   const firstPayload = await first.json();
-  assert.equal(firstPayload.document_upload_token, undefined);
-  assert.match(firstPayload.message, /temporarily disabled/i);
+  assert.equal(firstPayload.rental_days, 1);
+  assert.equal(firstPayload.estimated_daily_rate_paisa, 1200000);
+  assert.equal(firstPayload.estimated_total_paisa, 1200000);
   const firstId = [...db.rentalRequests.keys()][0];
-  const second = await handleRequest(request("/api/rentals", "POST", { ...requestBody, vehicle_id: null, customer_name: "Second Customer" }), env(db));
+  assert.equal([...db.rentalDocuments.values()].filter((doc) => doc.rental_request_id === firstId).length, 2);
+  assert.equal(db.rentalRequests.get(firstId).estimated_total_paisa, 1200000);
+
+  const second = await sendForm(makeForm("", "Second Customer", "self_drive"));
   assert.equal(second.status, 201);
   const secondId = [...db.rentalRequests.keys()][1];
+
   const reviewingFirst = await handleRequest(request("/api/admin/rentals/" + firstId, "PATCH", { status: "reviewing", vehicle_id: vehicleOne }, headers), env(db));
   assert.equal(reviewingFirst.status, 200);
   const confirmedFirst = await handleRequest(request("/api/admin/rentals/" + firstId, "PATCH", { status: "confirmed", vehicle_id: vehicleOne }, headers), env(db));
   assert.equal(confirmedFirst.status, 200);
+
   await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", { status: "reviewing", vehicle_id: vehicleOne }, headers), env(db));
   const conflict = await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", { status: "confirmed", vehicle_id: vehicleOne }, headers), env(db));
   assert.equal(conflict.status, 409);
@@ -1420,6 +1449,7 @@ test("rental requests can be assigned and confirmed only when the vehicle has no
   assert.equal(db.rentalRequests.get(secondId).vehicle_id, vehicleTwo);
   assert.equal(db.rentalRequests.get(secondId).status, "confirmed");
 });
+
 
 
 test("owner notifications are private, readable and can be marked as read", async () => {
