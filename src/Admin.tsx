@@ -350,15 +350,17 @@ export default function Admin() {
       if (!asset) {
         await api(`/api/admin/products/${mediaProduct.id}/image`, { method: "PATCH", body: JSON.stringify({ image_id: null }) });
       } else {
-        await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: asset.id, color: mediaColor, is_primary: makeCover && !mediaColor, position: productMedia.length }) });
+        const makePrimary = makeCover && !mediaColor;
+        await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: asset.id, color: mediaColor, is_primary: makePrimary, position: productMedia.length }) });
       }
       const [attached] = await Promise.all([
         api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`),
         loadProducts(),
       ]);
       setProductMedia(attached.media);
-      if (asset && makeCover) setMediaProduct((current) => current ? { ...current, image_key: asset.id } : current);
-      setMessage(asset ? (makeCover ? "Cover image updated and added to the gallery." : "Media added to the product gallery.") : "Product cover image removed.");
+      const makePrimary = Boolean(asset && makeCover && !mediaColor);
+      if (asset && makePrimary) setMediaProduct((current) => current ? { ...current, image_key: asset.id } : current);
+      setMessage(asset ? (makePrimary ? "Cover image updated and added to the gallery." : mediaColor ? "Media added to the " + mediaColor + " colour gallery." : "Media added to the product gallery.") : "Product cover image removed.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product media could not be updated."); }
     finally { setBusy(false); }
   };
@@ -874,7 +876,7 @@ export default function Admin() {
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
             <label>Choose product images (up to 50 at once)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); setMediaFiles(files.slice(0, 50)); if (files.length > 50) setMessage("Only the first 50 selected images were kept."); }} /></label>
-            <label>Gallery colour<select value={mediaColor} onChange={(event) => setMediaColor(event.target.value)}><option value="">General photos · all colours</option>{[...new Set(mediaVariants.map((variant) => variant.color.trim()).filter(Boolean))].sort().map((color) => <option key={color} value={color}>{color} only</option>)}</select><small>Choose a colour to show these photos only when customers select that colour. Keep “General photos” for images shared by every colour.</small></label>
+            <label>Gallery colour<select value={mediaColor} onChange={(event) => setMediaColor(event.target.value)}><option value="">General photos · all colours</option>{[...new Set(mediaVariants.filter((variant) => variant.is_active === 1).map((variant) => variant.color.trim()).filter(Boolean))].sort().map((color) => <option key={color} value={color}>{color} only</option>)}</select><small>Choose a colour to show these photos only when customers select that colour. Keep “General photos” for images shared by every colour.</small></label>
             <label>Media description<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
             <button className="admin-primary" disabled={busy || !mediaFiles.length}>{busy ? "Please wait…" : "Upload & add " + mediaFiles.length + " images"}</button>
             {mediaFiles.length > 0 && <p className="admin-muted admin-media-selected">{mediaFiles.length} images selected · JPG, PNG or WebP · maximum 5 MB each · 50 per batch</p>}
