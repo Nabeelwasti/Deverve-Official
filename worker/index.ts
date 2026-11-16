@@ -1832,8 +1832,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const previous = await env.DB.prepare("SELECT counted_cash_paisa FROM pos_sessions WHERE register_id=? AND status='closed' ORDER BY closed_at DESC LIMIT 1").bind(registerId).first<{counted_cash_paisa:number|null}>();
       const sessionId = crypto.randomUUID();
       const statements = [env.DB.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status,opening_note) VALUES (?,?,?,?,?,'open',?)").bind(sessionId,registerId,admin.admin_user_id,Number(openingCash),Number(openingCash),note)];
-      if (!previous && Number(openingCash) > 0) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',?,'opening_float','pos_session',?,NULL,?,?)").bind(crypto.randomUUID(),Number(openingCash),sessionId,note || "Opening cash float",admin.admin_user_id));
-      else if (previous.counted_cash_paisa !== null && Number(previous.counted_cash_paisa) !== Number(openingCash)) {
+      if (!previous) {
+        if (Number(openingCash) > 0) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',?,'opening_float','pos_session',?,NULL,?,?)").bind(crypto.randomUUID(),Number(openingCash),sessionId,note || "Opening cash float",admin.admin_user_id));
+      } else if (previous.counted_cash_paisa !== null && Number(previous.counted_cash_paisa) !== Number(openingCash)) {
         const difference = Number(openingCash) - Number(previous.counted_cash_paisa);
         statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main',?,?, 'opening_float_adjustment','pos_session',?,NULL,?,?)").bind(crypto.randomUUID(),difference >= 0 ? "in" : "out",Math.abs(difference),sessionId,note || "Opening float reconciliation",admin.admin_user_id));
       }
