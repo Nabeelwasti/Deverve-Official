@@ -116,6 +116,23 @@ jobs:
           fi
           echo "CNIC retention service has live D1 and private R2 bindings."
 
+      - name: Verify public rental settings and fleet pricing endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://deverve-official.pages.dev"
+          rental_settings="$(curl --fail --silent --show-error --max-time 15 "$base/api/rentals/settings")"
+          if ! jq -e '.cnic_uploads_enabled == true' <<<"$rental_settings" >/dev/null; then
+            echo "Rental CNIC uploads are not enabled in the public settings response: $rental_settings"
+            exit 1
+          fi
+          fleet="$(curl --fail --silent --show-error --max-time 15 "$base/api/vehicles")"
+          if ! jq -e '.vehicles | type == "array"' <<<"$fleet" >/dev/null; then
+            echo "Public fleet endpoint did not return the expected vehicle list: $fleet"
+            exit 1
+          fi
+          echo "Public rental settings and fleet endpoint are healthy."
+
       - name: Verify deployed security response headers
         shell: bash
         run: |
