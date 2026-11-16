@@ -11,6 +11,11 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
+test("inventory overview requires an authenticated staff session", async () => {
+  const response = await handleRequest(request("/api/admin/inventory", "GET"), env(new FakeD1()));
+  assert.equal(response.status, 401);
+});
+
 test("vehicle gallery management requires an authenticated owner or manager", async () => {
   const vehicleId = crypto.randomUUID();
   const response = await handleRequest(request(`/api/admin/vehicles/${vehicleId}/media`, "GET"), env(new FakeD1()));
