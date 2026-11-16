@@ -336,6 +336,7 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, order_number, payment_method, payment_provider, payment_status FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status, payment_provider, payment_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM payment_attempts WHERE order_id = ? AND provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.order_id === v[0] && item.provider === "safepay" && ["created", "pending", "succeeded"].includes(item.status)) ?? null;
     if (q.startsWith("SELECT id, order_number, order_status, updated_at FROM orders WHERE id = ? AND customer_id = ?")) { const row = this.db.orders.get(v[0]); return row?.customer_id === v[1] ? row : null; }
@@ -749,6 +750,7 @@ class FakeStatement {
       order.payment_method=payment_method;order.payment_status="pending";
       return {success:true,meta:{changes:1}};
     }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.manual_payment_verified'")) { this.db.audits.push(v); return {success:true,meta:{changes:1}}; }
     if (q.startsWith("UPDATE orders SET payment_status='paid'")) {
       const [updated_at,id] = v;
       const order=this.db.orders.get(id);
@@ -1495,5 +1497,25 @@ test("owner can configure public direct payment methods and disabled options sta
   assert.equal(result.methods.some(item=>item.id==="hidden-payfast"),false);
   [...db.admins.values()][0].role="manager";
   const denied=await handleRequest(request("/api/admin/settings","PATCH",{payment_methods:{methods}}, {cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(denied.status,403);
+});
+
+
+test("only the owner can verify a pending direct transfer and COD cannot be manually marked paid", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const transferId=crypto.randomUUID();
+  db.orders.set(transferId,{id:transferId,order_number:"DV-DIRECT-VERIFY",payment_method:"sadapay",payment_provider:"manual",payment_status:"pending"});
+  const verified=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-001"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(verified.status,200);
+  assert.equal(db.orders.get(transferId).payment_status,"paid");
+  assert.equal(db.audits.some(row=>JSON.stringify(row).includes("DV-DIRECT-VERIFY")),true);
+  const codId=crypto.randomUUID();
+  db.orders.set(codId,{id:codId,order_number:"DV-COD-VERIFY",payment_method:"cod",payment_provider:"manual",payment_status:"pending"});
+  const rejected=await handleRequest(request("/api/admin/orders/"+codId,"PATCH",{payment_status:"paid"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(rejected.status,409);
+  [...db.admins.values()][0].role="manager";
+  const denied=await handleRequest(request("/api/admin/orders/"+transferId,"PATCH",{payment_status:"paid"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(denied.status,403);
 });
