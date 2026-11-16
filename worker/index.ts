@@ -1768,6 +1768,26 @@ interface AdminInventoryMovementRow {
   created_at: string;
 }
 
+async function adminInventoryOverviewRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/admin/inventory" || request.method !== "GET") return null;
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request, env.DB); } catch { return error("Inventory service is temporarily unavailable", 503); }
+  if (!admin) return error("Authentication required", 401);
+  if (!["owner", "manager", "orders", "catalogue"].includes(admin.role)) return error("You do not have permission to view inventory", 403);
+  const search = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
+  try {
+    const result = await env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.status AS product_status, v.id AS variant_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.is_active AS variant_active, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE (? = '' OR p.name LIKE ? OR p.category LIKE ? OR COALESCE(v.sku,'') LIKE ? OR COALESCE(v.size,'') LIKE ? OR COALESCE(v.color,'') LIKE ?) ORDER BY p.name, v.size, v.color LIMIT 500")
+      .bind(search, "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%").all<Record<string, unknown>>();
+    const items = (result.results ?? []).map((row) => {
+      const stock = Number(row.stock_on_hand ?? 0);
+      const reserved = Number(row.reserved_quantity ?? 0);
+      const available = Math.max(0, stock - reserved);
+      return { ...row, stock_on_hand: stock, reserved_quantity: reserved, available_quantity: available, stock_state: available <= 0 ? "out_of_stock" : available <= 5 ? "low_stock" : "in_stock" };
+    });
+    return json({ items, summary: { variants: items.length, stock_units: items.reduce((sum, item) => sum + item.stock_on_hand, 0), reserved_units: items.reduce((sum, item) => sum + item.reserved_quantity, 0), available_units: items.reduce((sum, item) => sum + item.available_quantity, 0), low_stock_variants: items.filter(item => item.stock_state === "low_stock").length, out_of_stock_variants: items.filter(item => item.stock_state === "out_of_stock").length } });
+  } catch { return error("Inventory could not be loaded", 503); }
+}
+
 async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   const productVariants = path.match(/^\/api\/admin\/products\/([a-f0-9-]{36})\/variants$/i);
@@ -2503,6 +2523,9 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
 
   const productImageResponse = await adminProductImageRoutes(request, env, url);
   if (productImageResponse) return productImageResponse;
+
+  const inventoryOverviewResponse = await adminInventoryOverviewRoutes(request, env, url);
+  if (inventoryOverviewResponse) return inventoryOverviewResponse;
 
   const inventoryResponse = await adminInventoryRoutes(request, env, url);
   if (inventoryResponse) return inventoryResponse;
