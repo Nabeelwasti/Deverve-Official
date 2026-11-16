@@ -1753,6 +1753,9 @@ interface AdminVariantRow {
   color: string;
   stock_on_hand: number;
   reserved_quantity: number;
+  barcode?: string | null;
+  cost_price_paisa?: number;
+  reorder_level?: number;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -2000,13 +2003,14 @@ async function adminInventoryOverviewRoutes(request: Request, env: Env, url: URL
   if (!["owner", "manager", "orders", "catalogue"].includes(admin.role)) return error("You do not have permission to view inventory", 403);
   const search = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
   try {
-    const result = await env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.status AS product_status, v.id AS variant_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.is_active AS variant_active, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE (? = '' OR p.name LIKE ? OR p.category LIKE ? OR COALESCE(v.sku,'') LIKE ? OR COALESCE(v.size,'') LIKE ? OR COALESCE(v.color,'') LIKE ?) ORDER BY p.name, v.size, v.color LIMIT 500")
+    const result = await env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.status AS product_status, v.id AS variant_id, v.sku, v.barcode, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.reorder_level, v.cost_price_paisa, v.is_active AS variant_active, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE (? = '' OR p.name LIKE ? OR p.category LIKE ? OR COALESCE(v.sku,'') LIKE ? OR COALESCE(v.size,'') LIKE ? OR COALESCE(v.color,'') LIKE ?) ORDER BY p.name, v.size, v.color LIMIT 500")
       .bind(search, "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%").all<Record<string, unknown>>();
     const items = (result.results ?? []).map((row) => {
       const stock = Number(row.stock_on_hand ?? 0);
       const reserved = Number(row.reserved_quantity ?? 0);
       const available = Math.max(0, stock - reserved);
-      return { ...row, stock_on_hand: stock, reserved_quantity: reserved, available_quantity: available, stock_state: available <= 0 ? "out_of_stock" : available <= 5 ? "low_stock" : "in_stock" };
+      const reorder = Math.max(0, Number(row.reorder_level ?? 5));
+      return { ...row, stock_on_hand: stock, reserved_quantity: reserved, reorder_level: reorder, cost_price_paisa: ["owner","manager"].includes(admin.role) ? Number(row.cost_price_paisa ?? 0) : undefined, available_quantity: available, stock_state: available <= 0 ? "out_of_stock" : reorder > 0 && available <= reorder ? "low_stock" : "in_stock" };
     });
     return json({ items, summary: { variants: items.length, stock_units: items.reduce((sum, item) => sum + item.stock_on_hand, 0), reserved_units: items.reduce((sum, item) => sum + item.reserved_quantity, 0), available_units: items.reduce((sum, item) => sum + item.available_quantity, 0), low_stock_variants: items.filter(item => item.stock_state === "low_stock").length, out_of_stock_variants: items.filter(item => item.stock_state === "out_of_stock").length } });
   } catch { return error("Inventory could not be loaded", 503); }
@@ -2032,9 +2036,9 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     try {
       const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string }>();
       if (!product) return error("Product not found", 404);
-      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
+      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
         .bind(productId).all<AdminVariantRow>();
-      return json({ variants: (rows.results ?? []).map((variant) => ({ ...variant, available_quantity: Math.max(0, variant.stock_on_hand - variant.reserved_quantity) })) });
+      return json({ variants: (rows.results ?? []).map((variant) => ({ ...variant, cost_price_paisa: ["owner","manager"].includes(admin.role) ? Number(variant.cost_price_paisa ?? 0) : undefined, available_quantity: Math.max(0, variant.stock_on_hand - variant.reserved_quantity) })) });
     } catch { return error("Product variants could not be loaded", 503); }
   }
 
@@ -2048,17 +2052,22 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     const size = cleanText(body.size, 32);
     const color = cleanText(body.color, 32);
     const initialStock = body.initial_stock === undefined ? 0 : body.initial_stock;
-    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || size.length > 32 || color.length > 32 || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || (!size && !color && !sku)) {
-      return error("Enter a valid SKU, size or colour and a non-negative opening quantity", 400);
+    const barcodeText = cleanText(body.barcode, 64).toUpperCase();
+    const barcode = barcodeText || null;
+    const costPrice = body.cost_price_paisa === undefined ? 0 : body.cost_price_paisa;
+    const reorderLevel = body.reorder_level === undefined ? 5 : body.reorder_level;
+    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || size.length > 32 || color.length > 32 || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || !Number.isSafeInteger(costPrice) || Number(costPrice) < 0 || Number(costPrice) > 1_000_000_000_000 || !Number.isSafeInteger(reorderLevel) || Number(reorderLevel) < 0 || Number(reorderLevel) > 1_000_000 || (!size && !color && !sku && !barcode)) {
+      return error("Enter valid variant details, barcode, cost and reorder level", 400);
     }
+    if (body.cost_price_paisa !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can set purchase cost",403);
     try {
       const product = await env.DB.prepare("SELECT id, status FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string; status: string }>();
       if (!product) return error("Product not found", 404);
       if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
       const id = crypto.randomUUID();
       const statements = [
-        env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand) VALUES (?, ?, ?, ?, ?, ?)")
-          .bind(id, productId, sku, size, color, Number(initialStock)),
+        env.DB.prepare("undefined")
+          .bind(id, productId, sku, size, color, Number(initialStock), barcode, Number(costPrice), Number(reorderLevel)),
       ];
       if (Number(initialStock) > 0) {
         statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, note, actor_admin_id) VALUES (?, ?, 'opening', ?, 'manual', ?, ?)")
@@ -2067,7 +2076,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
         .bind(crypto.randomUUID(), admin.admin_user_id, "variant.created", "product_variant", id, JSON.stringify({ product_id: productId, sku, size, color, initial_stock: Number(initialStock) })));
       await env.DB.batch(statements);
-      const created = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1").bind(id).first<AdminVariantRow>();
+      const created = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1").bind(id).first<AdminVariantRow>();
       return json({ created: true, variant: created }, 201);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : "";
@@ -2096,9 +2105,14 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     const size = Object.prototype.hasOwnProperty.call(body, "size") ? cleanText(body.size, 32) : undefined;
     const color = Object.prototype.hasOwnProperty.call(body, "color") ? cleanText(body.color, 32) : undefined;
     const active = Object.prototype.hasOwnProperty.call(body, "is_active") ? body.is_active : undefined;
-    if ((sku !== undefined && sku !== null && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (active !== undefined && active !== 0 && active !== 1 && active !== false && active !== true)) return error("Enter valid variant details", 400);
+    const barcodeText = Object.prototype.hasOwnProperty.call(body,"barcode") ? cleanText(body.barcode,64).toUpperCase() : undefined;
+    const barcode = barcodeText === "" ? null : barcodeText;
+    const costPrice = Object.prototype.hasOwnProperty.call(body,"cost_price_paisa") ? body.cost_price_paisa : undefined;
+    const reorderLevel = Object.prototype.hasOwnProperty.call(body,"reorder_level") ? body.reorder_level : undefined;
+    if ((sku !== undefined && sku !== null && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode !== undefined && barcode !== null && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || (active !== undefined && active !== 0 && active !== 1 && active !== false && active !== true) || (costPrice !== undefined && (!Number.isSafeInteger(costPrice) || Number(costPrice)<0 || Number(costPrice)>1_000_000_000_000)) || (reorderLevel !== undefined && (!Number.isSafeInteger(reorderLevel) || Number(reorderLevel)<0 || Number(reorderLevel)>1_000_000))) return error("Enter valid variant details", 400);
+    if (costPrice !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can edit purchase cost",403);
     try {
-      const current = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1")
+      const current = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1")
         .bind(variantId).first<AdminVariantRow>();
       if (!current) return error("Variant not found", 404);
       const nextActive = active === undefined ? current.is_active : (active === true || active === 1 ? 1 : 0);
@@ -2106,12 +2120,15 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       const nextSku = sku === undefined ? current.sku : sku;
       const nextSize = size === undefined ? current.size : size;
       const nextColor = color === undefined ? current.color : color;
-      if (!nextSku && !nextSize && !nextColor) return error("A variant must have a SKU, size or colour", 400);
+      const nextBarcode = barcode === undefined ? current.barcode ?? null : barcode;
+      const nextCost = costPrice === undefined ? Number(current.cost_price_paisa ?? 0) : Number(costPrice);
+      const nextReorder = reorderLevel === undefined ? Number(current.reorder_level ?? 5) : Number(reorderLevel);
+      if (!nextSku && !nextSize && !nextColor && !nextBarcode) return error("A variant must have a SKU, size, colour or barcode", 400);
       await env.DB.batch([
-        env.DB.prepare("UPDATE product_variants SET sku = ?, size = ?, color = ?, is_active = ?, updated_at = ? WHERE id = ?")
-          .bind(nextSku, nextSize, nextColor, nextActive, new Date().toISOString(), variantId),
+        env.DB.prepare("UPDATE product_variants SET sku = ?, size = ?, color = ?, barcode = ?, cost_price_paisa = ?, reorder_level = ?, is_active = ?, updated_at = ? WHERE id = ?")
+          .bind(nextSku, nextSize, nextColor, nextBarcode, nextCost, nextReorder, nextActive, new Date().toISOString(), variantId),
         env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
-          .bind(crypto.randomUUID(), admin.admin_user_id, "variant.updated", "product_variant", variantId, JSON.stringify({ sku: nextSku, size: nextSize, color: nextColor, is_active: nextActive })),
+          .bind(crypto.randomUUID(), admin.admin_user_id, "variant.updated", "product_variant", variantId, JSON.stringify({ sku: nextSku, size: nextSize, color: nextColor, barcode: nextBarcode, cost_price_paisa: nextCost, reorder_level: nextReorder, is_active: nextActive })),
       ]);
       return json({ updated: true, id: variantId });
     } catch (caught) {
