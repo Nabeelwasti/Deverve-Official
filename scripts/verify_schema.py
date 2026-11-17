@@ -13,7 +13,7 @@ required_tables = {
     "products", "product_variants", "enquiries", "orders", "order_items",
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
-    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "pos_sale_voids", "admin_sessions",
+    "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "pos_sale_voids", "pos_receipt_outbox", "admin_sessions",
     "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
@@ -195,3 +195,10 @@ assert any(row[1] == "idx_financial_transaction_reversal" and row[2] == 1 for ro
 
 product_media_columns = {row[1] for row in db.execute("PRAGMA table_info(product_media_assets)")}
 assert {"color"} <= product_media_columns, "Colour-specific product gallery metadata is missing"
+
+# POS customer receipts are sent only after explicit channel-specific consent.
+pos_sale_columns = {row[1] for row in db.execute("PRAGMA table_info(pos_sales)")}
+assert {"customer_email", "email_receipt_consent", "whatsapp_receipt_consent"} <= pos_sale_columns, "POS receipt contact and consent fields are missing"
+receipt_outbox_columns = {row[1] for row in db.execute("PRAGMA table_info(pos_receipt_outbox)")}
+assert {"sale_id", "channel", "status", "attempts", "next_attempt_at", "provider_message_id", "last_error_code"} <= receipt_outbox_columns, "POS receipt delivery outbox fields are missing"
+assert any(row[1] == "idx_pos_receipt_outbox_due" for row in db.execute("PRAGMA index_list(pos_receipt_outbox)")), "POS receipt delivery queue index is missing"
