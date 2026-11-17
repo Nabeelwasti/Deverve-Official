@@ -31,6 +31,11 @@ export interface Env {
   AI_KEYS_ENCRYPTION_KEY?: string;
   NabeelG_Api_key1?: string;
   NabeelG_Api_key2?: string;
+  WHATSAPP_ACCESS_TOKEN?: string;
+  WHATSAPP_PHONE_NUMBER_ID?: string;
+  WHATSAPP_RECEIPT_TEMPLATE?: string;
+  WHATSAPP_RECEIPT_LANGUAGE?: string;
+  WHATSAPP_API_VERSION?: string;
 }
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
@@ -145,6 +150,72 @@ export async function processEnquiryEmailQueue(env:Env):Promise<void>{
   const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody,html}),signal:AbortSignal.timeout(8000)});const payload=await response.json().catch(()=>({})) as {id?:string};if(!response.ok)throw new Error("resend_http_"+response.status);
   await env.DB.prepare("UPDATE enquiry_email_queue SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id).run();
  }catch(caught){const next=new Date(Date.now()+Math.min(60,2**Math.min(attempts+1,6))*60_000).toISOString(),failed=attempts+1>=5,code=caught instanceof Error&&/^resend_http_\d+$/.test(caught.message)?caught.message:"provider_unavailable";try{await env.DB.prepare("UPDATE enquiry_email_queue SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}}
+ }
+}
+
+export async function processPosReceiptOutbox(env:Env):Promise<void>{
+ const emailApiKey=env.RESEND_API_KEY?.trim(),emailFrom=env.RESEND_FROM_EMAIL?.trim();
+ const waToken=env.WHATSAPP_ACCESS_TOKEN?.trim(),waPhoneId=env.WHATSAPP_PHONE_NUMBER_ID?.trim(),waTemplate=env.WHATSAPP_RECEIPT_TEMPLATE?.trim();
+ const waLanguage=env.WHATSAPP_RECEIPT_LANGUAGE?.trim()||"en";
+ const waVersion=env.WHATSAPP_API_VERSION?.trim()||"v27.0";
+ const emailReady=Boolean(emailApiKey&&emailFrom&&isValidEmailAddress(emailFrom));
+ const whatsappReady=Boolean(waToken&&waPhoneId&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
+ if(!emailReady&&!whatsappReady)return;
+ const now=new Date().toISOString();
+ let rows:Record<string,unknown>[]=[];
+ try{
+  const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 20").bind(now).all<Record<string,unknown>>();
+  rows=result.results??[];
+ }catch{return;}
+ const esc=(value:string)=>value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
+ for(const row of rows){
+  const channel=String(row.channel),id=String(row.id),saleId=String(row.sale_id);
+  if(channel==="email"&&!emailReady)continue;
+  if(channel==="whatsapp"&&!whatsappReady)continue;
+  if(channel!=="email"&&channel!=="whatsapp")continue;
+  const claimedAt=new Date().toISOString();
+  try{
+   const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(claimedAt,id,now).run();
+   if((claim.meta?.changes??0)!==1)continue;
+   const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+   if(!sale)throw new Error("receipt_sale_missing");
+   const itemsResult=await env.DB.prepare("SELECT product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(saleId).all<Record<string,unknown>>();
+   const items=itemsResult.results??[];
+   if(!items.length)throw new Error("receipt_items_missing");
+   const name=String(sale.customer_name||"Customer").slice(0,120);
+   const receipt=String(sale.receipt_number);
+   const total=Number(sale.total_paisa);
+   if(!Number.isSafeInteger(total)||total<0)throw new Error("receipt_total_invalid");
+   let providerId="";
+   if(channel==="email"){
+    const recipient=String(sale.customer_email||"");
+    if(Number(sale.email_receipt_consent)!==1||!isValidEmailAddress(recipient))throw new Error("email_consent_or_address_missing");
+    const subject="Your De VERVE receipt · "+receipt;
+    const textBody="Assalamu Alaikum "+name+",\n\nThank you for shopping with De VERVE. Your receipt "+receipt+" is below.\n\n"+items.map(item=>String(item.product_name_snapshot)+" · "+String(item.size_snapshot||"Standard")+" · Qty "+Number(item.quantity)+" · Rs. "+(Number(item.line_total_paisa)/100).toFixed(2)).join("\n")+"\n\nTotal paid: Rs. "+(total/100).toFixed(2)+"\n\nDe VERVE · +92 319 7553705";
+    const html="<div style='font-family:Arial,sans-serif;color:#12345a;max-width:680px;margin:auto'><h2>De VERVE · Payment receipt</h2><p>Assalamu Alaikum "+esc(name)+", thank you for shopping with De VERVE.</p><p><strong>Receipt:</strong> "+esc(receipt)+"</p><table style='width:100%;border-collapse:collapse'><thead><tr><th align='left'>Item</th><th align='right'>Qty</th><th align='right'>Amount</th></tr></thead><tbody>"+items.map(item=>"<tr><td>"+esc(String(item.product_name_snapshot))+" · "+esc(String(item.size_snapshot||"Standard"))+" · "+esc(String(item.color_snapshot||""))+"</td><td align='right'>"+Number(item.quantity)+"</td><td align='right'>Rs. "+(Number(item.line_total_paisa)/100).toFixed(2)+"</td></tr>").join("")+"</tbody></table><h3>Total paid: Rs. "+(total/100).toFixed(2)+"</h3><p>Please retain this email as proof of purchase.</p><p>De VERVE · +92 319 7553705</p></div>";
+    const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+emailApiKey,"content-type":"application/json"},body:JSON.stringify({from:emailFrom,to:[recipient],subject,text:textBody,html}),signal:AbortSignal.timeout(8000)});
+    const payload=await response.json().catch(()=>({})) as {id?:string};
+    if(!response.ok)throw new Error("resend_http_"+response.status);
+    if(!payload.id)throw new Error("resend_response_invalid");
+    providerId=payload.id;
+   }else{
+    if(Number(sale.whatsapp_receipt_consent)!==1)throw new Error("whatsapp_consent_missing");
+    const rawPhone=String(sale.customer_phone||"").replace(/\D/g,"");
+    const recipient=rawPhone.startsWith("0")?"92"+rawPhone.slice(1):rawPhone;
+    if(recipient.length<8||recipient.length>15)throw new Error("whatsapp_phone_invalid");
+    const endpoint="https://graph.facebook.com/"+waVersion+"/"+waPhoneId+"/messages";
+    const response=await fetch(endpoint,{method:"POST",headers:{"authorization":"Bearer "+waToken,"content-type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",recipient_type:"individual",to:recipient,type:"template",template:{name:waTemplate,language:{code:waLanguage},components:[{type:"body",parameters:[{type:"text",text:name},{type:"text",text:receipt},{type:"text",text:"PKR "+(total/100).toFixed(2)}]}]}}),signal:AbortSignal.timeout(8000)});
+    const payload=await response.json().catch(()=>({})) as {messages?:Array<{id?:string}>};
+    if(!response.ok)throw new Error("whatsapp_http_"+response.status);
+    if(!payload.messages?.[0]?.id)throw new Error("whatsapp_response_invalid");
+    providerId=payload.messages[0].id;
+   }
+   await env.DB.prepare("UPDATE pos_receipt_outbox SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL,processing_started_at=NULL WHERE id=? AND status='processing'").bind(providerId,new Date().toISOString(),id).run();
+  }catch(caught){
+   const attempts=Number(row.attempts??0)+1,failed=attempts>=5,next=new Date(Date.now()+Math.min(60,2**attempts)*60_000).toISOString();
+   const code=caught instanceof Error&&/^(?:resend|whatsapp)_http_\d+$/.test(caught.message)?caught.message:"provider_unavailable";
+   try{await env.DB.prepare("UPDATE pos_receipt_outbox SET status=?,next_attempt_at=?,last_error_code=?,processing_started_at=NULL WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}
+  }
  }
 }
 
@@ -2051,6 +2122,11 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const idempotency = typeof body?.idempotency_key === "string" ? body.idempotency_key : "";
     const customerName = typeof body?.customer_name === "string" && body.customer_name.trim() ? body.customer_name.trim().slice(0,120) : "Walk-in customer";
     const customerPhone = typeof body?.customer_phone === "string" ? body.customer_phone.trim().slice(0,40) : "";
+    const emailReceiptConsent = body?.email_receipt_consent === true;
+    const whatsappReceiptConsent = body?.whatsapp_receipt_consent === true;
+    const customerEmail = emailReceiptConsent && typeof body?.customer_email === "string" ? body.customer_email.trim().slice(0,160) : "";
+    if (emailReceiptConsent && !isValidEmailAddress(customerEmail)) return error("Enter a valid customer email address to send the receipt",400);
+    if (whatsappReceiptConsent && !validPhone(customerPhone)) return error("Enter a valid customer WhatsApp number to send the receipt",400);
     const lines = Array.isArray(body?.items) ? body.items : [];
     const payments = Array.isArray(body?.payments) ? body.payments : [];
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
@@ -2097,7 +2173,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       if (applied!==subtotal) return error("Payment amounts must add up exactly to the sale total",400);
       const saleId=crypto.randomUUID();
       const receipt="DV-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+crypto.randomUUID().slice(0,6).toUpperCase();
-      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,subtotal,subtotal,idempotency,admin.admin_user_id)];
+      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptConsent?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id)];
       for (const item of resolved) {
         statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa));
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=? AND stock_on_hand-reserved_quantity>=?").bind(item.quantity,item.variant_id,item.quantity));
@@ -2107,9 +2183,11 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         statements.push(env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,payment.account.id,payment.method,payment.amount,payment.tendered,payment.change,payment.reference));
         statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?,'in',?,'pos_sale','pos_sale',?,?,?,?)").bind(crypto.randomUUID(),payment.account.id,payment.amount,saleId,session.id,"POS "+receipt,admin.admin_user_id));
       }
-      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length})));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length,email_receipt_consent:emailReceiptConsent,whatsapp_receipt_consent:whatsappReceiptConsent})));
+      if(emailReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'email')").bind(crypto.randomUUID(),saleId));
+      if(whatsappReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'whatsapp')").bind(crypto.randomUUID(),saleId));
       await env.DB.batch(statements);
-      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
+      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,customer_email:customerEmail,email_receipt_consent:emailReceiptConsent,whatsapp_receipt_consent:whatsappReceiptConsent,receipt_delivery:{email:emailReceiptConsent?"queued":"not_requested",whatsapp:whatsappReceiptConsent?"queued":"not_requested"},subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
     } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
   }
   const voidMatch = path.match(/^\/api\/admin\/pos\/sales\/([a-f0-9-]{36})\/void$/i);
