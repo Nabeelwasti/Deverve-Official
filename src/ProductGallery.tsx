@@ -57,7 +57,8 @@ export default function ProductGallery({ images, className = "", autoPlay = true
   const start = Math.max(0, Math.min(index - 2, images.length - 6));
   const visible = images.length <= 6 ? images : images.slice(start, start + 6);
 
-  return <div ref={rootRef} className={"dv-gallery " + className}
+  return <>
+  <div ref={rootRef} className={"dv-gallery " + className}
     onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
     onFocusCapture={() => setPaused(true)}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setPaused(false); }}
