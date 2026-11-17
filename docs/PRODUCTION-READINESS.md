@@ -23,7 +23,7 @@
 
 1. Configure a verified Resend sender, API key and sender address, then verify contact-form owner alerts and POS customer receipt delivery with controlled test addresses.
 2. Configure Meta WhatsApp Cloud API credentials and phone-number ID, create/approve the exact Utility template, and test delivery to an opted-in test number.
-3. Apply D1 migrations 0023 and 0024 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
+3. Apply D1 migration 0030 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
 4. Implement and verify the owner-approved CNIC retention/deletion policy before enabling public CNIC uploads. Do not infer a deletion schedule from the old documentation.
 5. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
 6. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.

@@ -13,7 +13,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
 - Main branch contains source changes that are not yet live. The production site remains on its previous deployment until the owner explicitly says “deploy now”.
-- Pending database changes: apply migrations 0023 and 0024 to production D1 before deploying the matching application code. They have not been applied to the live database.
+- Pending database change: apply migration 0030 to production D1 before deploying the matching application code. It has not been applied to the live database.
 
 ## Implemented
 
@@ -47,17 +47,17 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Owner-only in-app notification inbox and owner-managed primary/secondary email recipient settings.
 - Owner-managed customer payment methods: COD, bank transfers, mobile wallets (including SadaPay/JazzCash/Easypaisa account details), hosted HTTPS payment links and uploaded QR images. Each method can be added, edited, activated or disabled from Website Settings; checkout exposes enabled methods only.
 - Direct-transfer orders record the selected payment method and remain unpaid until the owner independently verifies receipt. Staff cannot mark payments paid; fulfilment is blocked until verification.
-- Resend notification outbox with retry/audit records. Contact-form enquiry emails and consent-based POS customer receipt emails are queued for delivery when a verified sender and Resend API key are configured.
-- POS customer receipts can also be queued to WhatsApp after explicit customer opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag. POS history shows per-channel delivery status and authorised staff can retry failed receipts.
+- Resend notification outbox with retry/audit records. Contact-form enquiry emails and transactional POS customer receipt emails are queued for delivery when a verified sender and Resend API key are configured.
+- POS customer receipts can also be queued to WhatsApp after recorded WhatsApp opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag. POS history shows per-channel delivery status and authorised staff can retry failed receipts.
 - Owner-managed brand assets and social profile URLs.
 
 ### POS receipt delivery setup
 
-- The cashier may enter a customer's email and/or WhatsApp number and must tick the matching consent checkbox before that channel is queued. Contact details are not stored for receipt delivery when consent is not given.
+- The customer email field is for a transactional invoice copy; entering an email address queues the receipt automatically. WhatsApp delivery is separate: Meta requires the customer to have provided their number and opted in to messages from De VERVE. The cashier records that permission before the WhatsApp channel is queued.
 - Email receipts use the existing Resend provider. Configure the Cloudflare Pages secrets RESEND_API_KEY and RESEND_FROM_EMAIL with a verified sender.
 - WhatsApp receipts use Meta's WhatsApp Cloud API. Configure WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_RECEIPT_TEMPLATE, and WHATSAPP_RECEIPT_LANGUAGE as Cloudflare Pages secrets. WHATSAPP_API_VERSION is optional and defaults to v27.0.
 - Create and get Meta approval for a Utility template named to match WHATSAPP_RECEIPT_TEMPLATE. Its body must contain three positional placeholders in this order: customer name, receipt number, and total. Suggested body: “Hello {{1}}, thank you for shopping with De VERVE. Your receipt {{2}} totals {{3}}. Please keep this message for your records.”
-- Receipt requests are written to a retryable D1 outbox in the same transaction as the sale. Provider credentials are never stored in D1. Queued receipts are retried with bounded backoff; delivery remains pending until provider setup, template approval and valid customer consent are all present.
+- Receipt requests are written to a retryable D1 outbox in the same transaction as the sale. Provider credentials are never stored in D1. Queued receipts are retried with bounded backoff; delivery remains pending until provider setup, template approval and valid WhatsApp opt-in is recorded.
 - Meta template messages are sent only to the phone number supplied for that sale and only when the cashier records the customer's explicit WhatsApp consent. A manual WhatsApp share link remains available as a fallback.
 
 ### Security and infrastructure
