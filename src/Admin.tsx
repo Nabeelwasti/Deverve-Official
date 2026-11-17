@@ -64,6 +64,9 @@ function readAdminDraft<T extends object>(key: string, fallback: T): T {
 function writeAdminDraft(key: string, data: object): void {
   try { sessionStorage.setItem("deverve:admin-draft:v1:" + key, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* Admin work must continue if storage is unavailable. */ }
 }
+function clearAdminFormDraft(key: string): void {
+  try { sessionStorage.removeItem("deverve:form-draft:v1:" + window.location.pathname + ":" + key); } catch { /* Storage may be unavailable. */ }
+}
 
 function whatsappHref(phone: string, message: string): string {
   const digits = phone.replace(/\D/g, "");
@@ -330,8 +333,9 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
-  const startNew = () => { setEditingId(null); setForm({ ...emptyProduct }); setShowEditor(true); };
+  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
+    clearAdminFormDraft("admin-product-editor");
     setEditingId(product.id);
     setForm({ name: product.name, slug: product.slug, description: product.description, category: product.category, audience: product.audience, status: product.status, retail_price_paisa: product.retail_price_paisa === null ? "" : String(product.retail_price_paisa / 100), wholesale_price_paisa: product.wholesale_price_paisa === null ? "" : String(product.wholesale_price_paisa / 100), seo_title: product.seo_title || "", seo_description: product.seo_description || "" });
     setShowEditor(true);
@@ -342,7 +346,7 @@ export default function Admin() {
     const payload = { ...form, retail_price_paisa: toPaisa(form.retail_price_paisa), wholesale_price_paisa: toPaisa(form.wholesale_price_paisa) };
     try {
       await api(editingId ? `/api/admin/products/${editingId}` : "/api/admin/products", { method: editingId ? "PATCH" : "POST", body: JSON.stringify(payload) });
-      await loadProducts(); setShowEditor(false); setMessage("Product saved successfully.");
+      await loadProducts(); clearAdminFormDraft("admin-product-editor"); setShowEditor(false); setMessage("Product saved successfully.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product could not be saved."); }
     finally { setBusy(false); }
   };
@@ -573,6 +577,7 @@ export default function Admin() {
 
 
   const openQuoteEditor = (enquiry?: Enquiry) => {
+    clearAdminFormDraft("admin-wholesale-quote");
     setQuoteForm({ business_name: "", contact_name: enquiry?.customer_name ?? "", phone: enquiry?.phone ?? "", email: enquiry?.email ?? "", delivery_address: "", city: "Jhelum", customer_note: enquiry?.message ?? "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: enquiry?.id ?? "" });
     setQuoteLines([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
     setShowQuoteEditor(true); setMessage("");
@@ -595,7 +600,7 @@ export default function Admin() {
     }
     try {
       await api("/api/admin/wholesale-quotes", { method: "POST", body: JSON.stringify({ ...quoteForm, valid_until: new Date(quoteForm.valid_until + "T23:59:59").toISOString(), items }) });
-      await loadWholesaleQuotes(); setShowQuoteEditor(false);
+      await loadWholesaleQuotes(); clearAdminFormDraft("admin-wholesale-quote"); setShowQuoteEditor(false);
       setMessage("Quotation prepared. Send its secure approval link to the customer from the quotation list.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Quotation could not be prepared."); }
     finally { setBusy(false); }
@@ -617,6 +622,7 @@ export default function Admin() {
 
 
   const startVehicleEditor = async (vehicle?: Vehicle) => {
+    clearAdminFormDraft("admin-vehicle-editor");
     setEditingVehicleId(vehicle?.id ?? null);
     setVehicleForm(vehicle ? { name: vehicle.name, vehicle_type: vehicle.vehicle_type, transmission: vehicle.transmission, seats: String(vehicle.seats), fuel_type: vehicle.fuel_type, daily_rate: vehicle.daily_rate_paisa === null ? "" : String(vehicle.daily_rate_paisa / 100), with_driver_daily_rate: vehicle.with_driver_daily_rate_paisa === null ? "" : String(vehicle.with_driver_daily_rate_paisa / 100), status: vehicle.status, description: vehicle.description, image_key: vehicle.image_key ?? "" } : { name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", with_driver_daily_rate: "", status: "draft", description: "", image_key: "" });
     setShowVehicleEditor(true); setMessage("");
@@ -644,7 +650,7 @@ export default function Admin() {
     if ((rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || (vehicleForm.status === "available" && (rate === null || withDriverRate === null))) { setMessage("Enter both self-drive and with-driver daily rates before making a vehicle available."); setBusy(false); return; }
     try {
       await api(editingVehicleId ? `/api/admin/vehicles/${editingVehicleId}` : "/api/admin/vehicles", { method: editingVehicleId ? "PATCH" : "POST", body: JSON.stringify({ ...vehicleForm, seats: Number(vehicleForm.seats), daily_rate_paisa: rate, with_driver_daily_rate_paisa: withDriverRate }) });
-      await loadVehicles(); setShowVehicleEditor(false); setMessage("Vehicle saved.");
+      await loadVehicles(); clearAdminFormDraft("admin-vehicle-editor"); setShowVehicleEditor(false); setMessage("Vehicle saved.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Vehicle could not be saved."); }
     finally { setBusy(false); }
   };
@@ -924,9 +930,9 @@ export default function Admin() {
         {vehicleGalleryTarget && <VehicleGalleryManager vehicle={vehicleGalleryTarget} onClose={() => setVehicleGalleryTarget(null)} onChanged={() => void loadVehicles()} />}
         {showVehicleEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="vehicle-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">DE VERVE MOBILITY</p><h2 id="vehicle-editor-title">{editingVehicleId ? "Edit vehicle" : "Add vehicle"}</h2></div><button type="button" className="admin-close" onClick={() => setShowVehicleEditor(false)} aria-label="Close">×</button></div>
-          <form className="admin-form admin-product-form" onSubmit={saveVehicle}>
+          <form className="admin-form admin-product-form" data-draft-key="admin-vehicle-editor" onSubmit={saveVehicle}>
             <label>Vehicle name<input required minLength={2} maxLength={100} value={vehicleForm.name} onChange={(e) => updateVehicleForm({ ...vehicleForm, name: e.target.value })} placeholder="e.g. Toyota Corolla 2022" /></label>
-            <label>Vehicle type<input required maxLength={60} value={vehicleForm.vehicle_type} onChange={(e) => setVehicleForm({ ...vehicleForm, vehicle_type: e.target.value })} placeholder="Sedan, SUV, Van" /></label>
+            <label>Vehicle type<input required maxLength={60} value={vehicleForm.vehicle_type} onChange={(e) => updateVehicleForm({ ...vehicleForm, vehicle_type: e.target.value })} placeholder="Sedan, SUV, Van" /></label>
             <label>Transmission<select value={vehicleForm.transmission} onChange={(e) => setVehicleForm({ ...vehicleForm, transmission: e.target.value })}><option>Automatic</option><option>Manual</option><option>Unspecified</option></select></label>
             <label>Fuel type<select value={vehicleForm.fuel_type} onChange={(e) => setVehicleForm({ ...vehicleForm, fuel_type: e.target.value })}><option>Petrol</option><option>Diesel</option><option>Hybrid</option><option>Electric</option><option>Unspecified</option></select></label>
             <label>Seats<input type="number" required min="1" max="30" step="1" value={vehicleForm.seats} onChange={(e) => setVehicleForm({ ...vehicleForm, seats: e.target.value })} /></label>
@@ -942,9 +948,9 @@ export default function Admin() {
         </section></div>}
         {showQuoteEditor && <div className="admin-modal-backdrop"><section className="admin-editor admin-quote-editor" role="dialog" aria-modal="true" aria-labelledby="quote-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">WHOLESALE SALES</p><h2 id="quote-editor-title">Prepare a quotation</h2><p className="admin-muted">Set the buyer details and agreed per-piece prices. Customer approval will reserve stock.</p></div><button type="button" className="admin-close" onClick={() => setShowQuoteEditor(false)} aria-label="Close">×</button></div>
-          <form className="admin-form admin-product-form" onSubmit={submitWholesaleQuote}>
+          <form className="admin-form admin-product-form" data-draft-key="admin-wholesale-quote" onSubmit={submitWholesaleQuote}>
             <label>Business / shop name<input required minLength={2} maxLength={120} value={quoteForm.business_name} onChange={(e) => updateQuoteForm({ ...quoteForm, business_name: e.target.value })} /></label>
-            <label>Contact person<input required minLength={2} maxLength={100} value={quoteForm.contact_name} onChange={(e) => setQuoteForm({ ...quoteForm, contact_name: e.target.value })} /></label>
+            <label>Contact person<input required minLength={2} maxLength={100} value={quoteForm.contact_name} onChange={(e) => updateQuoteForm({ ...quoteForm, contact_name: e.target.value })} /></label>
             <label>Phone / WhatsApp<input required maxLength={24} value={quoteForm.phone} onChange={(e) => setQuoteForm({ ...quoteForm, phone: e.target.value })} /></label>
             <label>Email (optional)<input type="email" maxLength={160} value={quoteForm.email} onChange={(e) => setQuoteForm({ ...quoteForm, email: e.target.value })} /></label>
             <label>Delivery city<input required maxLength={80} value={quoteForm.city} onChange={(e) => setQuoteForm({ ...quoteForm, city: e.target.value })} /></label>
@@ -1036,9 +1042,9 @@ export default function Admin() {
           </form>}
         </section></div>}
         {showEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="product-editor-title"><div className="admin-panel-heading"><div><p className="admin-eyebrow">CATALOGUE MANAGEMENT</p><h2 id="product-editor-title">{editingId ? "Edit product" : "Add a product"}</h2></div><button type="button" className="admin-close" onClick={() => setShowEditor(false)} aria-label="Close">×</button></div>
-          <form className="admin-form admin-product-form" onSubmit={saveProduct}>
+          <form className="admin-form admin-product-form" data-draft-key="admin-product-editor" onSubmit={saveProduct}>
             <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => updateProductForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
-            <label>URL slug<input required value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></label>
+            <label>URL slug<input required value={form.slug} onChange={(e) => updateProductForm({ ...form, slug: e.target.value })} /></label>
             <label>Category<input required minLength={2} maxLength={60} placeholder="e.g. Hoodies" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></label>
             <label>For<select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value as typeof form.audience })}><option value="men">Men</option><option value="women">Women</option><option value="kids">Kids</option><option value="unisex">Unisex</option></select></label>
             <label>Retail price (PKR, optional)<input type="number" min="0" step="1" value={form.retail_price_paisa} onChange={(e) => setForm({ ...form, retail_price_paisa: e.target.value })} /></label>
