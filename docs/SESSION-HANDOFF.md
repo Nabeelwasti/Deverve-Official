@@ -26,7 +26,7 @@ Latest verified source commit on `main`: `925d729be765af907a150290a2b739520e364b
 2. Continue code-completable hardening and test real customer/admin flows without inserting synthetic production records.
 3. Owner must complete verified catalogue/fleet data, business details and policy approval.
 4. Owner/provider tasks remain: bank/wallet setup and reconciliation; Safepay sandbox credentials and webhook test; PayFast merchant docs/credentials; verified Resend sender/API key; optional custom domain.
-5. Confirm owner-approved CNIC privacy/retention wording and verify scheduled deletion in a controlled environment.
+5. Confirm owner-approved CNIC privacy/retention wording and verify indefinite R2 Bucket Lock and independent backup restoration.
 6. Real-device acceptance is still required for the live Turnstile challenge and complete customer/admin flows. Current Playwright tests mock the public APIs and challenge.
 7. Customer email verification/password recovery and automated WhatsApp/SMS are not active; decide whether they are required before implementing provider-dependent workflows.
 
@@ -149,7 +149,7 @@ Customer account: https://deverve-official.pages.dev/account
 5. COD is the only active payment method. Safepay sandbox code is dormant; no sandbox or live transaction has been tested.
 6. Email verification/password recovery and transactional email/SMS/WhatsApp notifications are not connected.
 7. Returns/refunds are recorded manually; no automatic money transfer, Safepay refund or automatic restocking.
-8. CNIC uploads are disabled by default; successful real human Turnstile flow and actual scheduled deletion of a real document have not been exercised.
+8. CNIC uploads are disabled by default; successful real human Turnstile flow and permanent retention safeguards and the owner-configured R2 Bucket Lock have not been exercised.
 9. No custom domain. Delivery terms, prices, wholesale minimums, rental conditions, business contact details and legal policies need owner approval.
 10. Real-device customer/admin acceptance testing and backup/restore/incident readiness still need explicit verification.
 
@@ -244,7 +244,7 @@ After setting them, redeploy the Pages project and verify the owner panel shows 
 1. Confirm which merchant accounts De VERVE actually has (Safepay, JazzCash, Easypaisa, bank transfer) before implementing/enabling those methods.
 2. Provide a verified Resend sender domain, API key and owner notification inbox through Cloudflare secrets/variables — never paste API keys into GitHub or chat.
 3. Provide real product names, variants, stock, prices, media and actual vehicle/fleet data.
-4. Approve business policies, rental CNIC retention duration and the precise circumstances in which staff may request CNIC documents.
+4. Approve business policies, rental permanent CNIC evidence notice and the precise circumstances in which staff may request CNIC documents.
 5. Complete real-world end-to-end payment tests and manual bank reconciliation before enabling any live payment provider.
 
 
