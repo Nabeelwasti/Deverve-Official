@@ -63,7 +63,6 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
     name: "Browser Test Customer",
     phone: "+923001234567",
     website: "",
-    turnstile_token: "e2e-turnstile-token",
   });
 });
 
