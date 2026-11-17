@@ -997,7 +997,8 @@ class FakeD1 {
   orderStatusEvents = [];
   admins = new Map();
   sessions = new Map();
-  aiKeys = new Map();\n  failAiKeyRead = false;
+  aiKeys = new Map();
+  failAiKeyRead = false;
   attempts = new Map();
   paymentAttempts = new Map();
   financialAccounts = new Map([
