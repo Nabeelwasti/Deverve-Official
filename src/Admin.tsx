@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
 import "./admin.css";
 import ContentStudio from "./ContentStudio";
 import NotificationCenter from "./NotificationCenter";
@@ -74,6 +75,44 @@ function whatsappHref(phone: string, message: string): string {
   return international.length >= 10 && international.length <= 15
     ? "https://wa.me/" + international + "?text=" + encodeURIComponent(message)
     : "https://wa.me/";
+}
+
+function orderDocumentRows(order: AdminOrder, kind: "invoice" | "delivery"): Array<Array<string | number>> {
+  const money = (paisa: number) => Number((paisa / 100).toFixed(2));
+  const details = kind === "invoice"
+    ? [["Description","SKU","Size","Colour","Qty","Unit price (PKR)","Line total (PKR)"], ...order.items.map(item=>[item.product_name_snapshot,item.sku_snapshot||"",item.size_snapshot||"",item.color_snapshot||"",item.quantity,money(item.unit_price_paisa),money(item.line_total_paisa)])]
+    : [["Description","SKU","Size","Colour","Quantity"], ...order.items.map(item=>[item.product_name_snapshot,item.sku_snapshot||"",item.size_snapshot||"",item.color_snapshot||"",item.quantity])];
+  const meta: Array<Array<string|number>> = [
+    ["Document",kind==="invoice"?"Sales invoice":"Delivery / packing slip"],
+    ["Order reference",order.order_number],
+    ["Issue date",new Date(order.created_at).toLocaleString("en-PK")],
+    ["Customer",order.customer_name],
+    ["Phone",order.phone],
+    ["Email",order.email||"Not provided"],
+    ["Delivery address",order.delivery_address+", "+order.city],
+    ["Order status",order.order_status],
+    ["Payment",order.payment_method+" · "+order.payment_status],
+  ];
+  if(kind==="invoice")meta.push(["Subtotal (PKR)",money(order.subtotal_paisa)],["Discount",order.discount_amount_paisa>0?(order.discount_label+" · -PKR "+money(order.discount_amount_paisa)):"None"],["Delivery",order.free_delivery?"FREE":money(order.delivery_fee_paisa)],["Final total (PKR)",money(order.total_paisa)]);
+  return [...meta,[],...details];
+}
+
+function printOrderDocument(order: AdminOrder, kind: "invoice" | "delivery"): void {
+  const popup=window.open("","_blank");
+  if(!popup)throw new Error("Your browser blocked the print window. Allow pop-ups for this site and try again.");
+  popup.opener=null;
+  const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
+  const invoice=kind==="invoice";
+  const rows=order.items.map(item=>"<tr><td>"+esc(item.product_name_snapshot)+"<small>"+esc([item.sku_snapshot,item.size_snapshot,item.color_snapshot].filter(Boolean).join(" · "))+"</small></td><td>"+item.quantity+"</td>"+(invoice?"<td>PKR "+(item.unit_price_paisa/100).toFixed(2)+"</td><td>PKR "+(item.line_total_paisa/100).toFixed(2)+"</td>":"")+"</tr>").join("");
+  const total=Number(order.total_paisa/100).toLocaleString("en-PK",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const subtotal=Number(order.subtotal_paisa/100).toLocaleString("en-PK",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const discount=Number(order.discount_amount_paisa/100).toLocaleString("en-PK",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const delivery=Number(order.delivery_fee_paisa/100).toLocaleString("en-PK",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const title=invoice?"SALES INVOICE":"DELIVERY / PACKING SLIP";
+  const totals=invoice?"<section class='totals'><div><span>Subtotal</span><b>PKR "+subtotal+"</b></div>"+(order.discount_amount_paisa>0?"<div><span>"+esc(order.discount_label||"Discount")+"</span><b>- PKR "+discount+"</b></div>":"")+"<div><span>Delivery</span><b>"+(order.free_delivery?"FREE":"PKR "+delivery)+"</b></div><div class='grand'><span>AMOUNT DUE</span><b>PKR "+total+"</b></div></section>":"";
+  const html="<!doctype html><html><head><meta charset='utf-8'><title>"+esc(title)+" · "+esc(order.order_number)+"</title><style>@page{size:A4;margin:16mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#263b50;margin:0;font-size:12px}.top{height:8px;background:#163a5f;margin-bottom:28px}.brand{font-size:25px;font-weight:800;letter-spacing:2px;color:#102a43}.muted{color:#60758a}.title{display:flex;justify-content:space-between;align-items:end;margin:24px 0 18px}.title h1{font-size:25px;margin:0;color:#102a43}.ref{text-align:right}.ref strong{display:block;font-size:15px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#f1f5f9;padding:16px;border-radius:8px;margin-bottom:22px}.grid div{padding:4px 0}.grid small{display:block;text-transform:uppercase;color:#60758a;font-size:9px;letter-spacing:1px;margin-bottom:4px}.grid strong{font-size:12px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;margin:16px 0}th{background:#163a5f;color:#fff;text-align:left;padding:11px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.5px}td{padding:12px 9px;border-bottom:1px solid #d7e0e8;vertical-align:top}tbody tr:nth-child(even){background:#f7f9fb}td small{display:block;color:#60758a;margin-top:4px}.totals{width:48%;margin:18px 0 0 auto}.totals div{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #e3eaf0}.totals .grand{background:#163a5f;color:white;font-size:14px;font-weight:700;margin-top:6px}.note{margin-top:30px;padding-top:14px;border-top:1px solid #d7e0e8;color:#60758a;font-size:10px;line-height:1.6}.sign{display:flex;justify-content:space-between;margin-top:48px}.sign span{border-top:1px solid #8093a5;padding-top:8px;width:42%;color:#60758a}.footer{margin-top:30px;text-align:center;color:#60758a;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class='top'></div><div class='brand'>DE VERVE</div><div class='muted'>JHELUM · PAKISTAN · +92 319 7553705</div><div class='title'><h1>"+title+"</h1><div class='ref'><strong>"+esc(order.order_number)+"</strong><span class='muted'>"+esc(new Date(order.created_at).toLocaleString("en-PK"))+"</span></div></div><div class='grid'><div><small>Customer</small><strong>"+esc(order.customer_name)+"</strong></div><div><small>Contact</small><strong>"+esc(order.phone)+" · "+esc(order.email||"")+"</strong></div><div><small>Delivery address</small><strong>"+esc(order.delivery_address+", "+order.city)+"</strong></div><div><small>Order / payment status</small><strong>"+esc(order.order_status)+" · "+esc(order.payment_status)+"</strong></div></div><table><thead><tr><th>Item / variant</th><th>Qty</th>"+(invoice?"<th>Unit price</th><th>Amount</th>":"")+"</tr></thead><tbody>"+rows+"</tbody></table>"+totals+"<div class='sign'><span>Prepared by De VERVE</span><span>Received by customer</span></div><div class='note'>"+(invoice?"This is a system-generated sales invoice for the order shown above. Please retain it for your records. Delivery and payment are subject to the final confirmed order terms.":"Please verify the listed items and quantities at handover. This slip is not proof of payment. Any shortage or damage should be reported to the delivery representative before signing.")+"</div><div class='footer'>De VERVE · deverve-official.pages.dev · Thank you for choosing us.</div></body></html>";
+  popup.addEventListener("load",()=>{popup.focus();popup.print();},{once:true});
+  popup.document.open();popup.document.write(html);popup.document.close();
 }
 
 async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -830,6 +869,14 @@ export default function Admin() {
                 <small>Subtotal Rs. {Math.round(order.subtotal_paisa / 100).toLocaleString("en-PK")}{order.discount_amount_paisa>0 ? " · "+order.discount_label+" −Rs. "+Math.round(order.discount_amount_paisa/100).toLocaleString("en-PK") : ""} · Delivery {order.free_delivery ? "FREE" : "Rs. "+Math.round(order.delivery_fee_paisa/100).toLocaleString("en-PK")} · Final total Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}. Dispatch is blocked until the customer accepts the final total.</small>
               </div>
               <div className="admin-order-footer"><div><span>{order.payment_provider === "safepay" ? "Safepay sandbox" : "COD"} · {order.payment_status}</span><strong>Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}</strong></div><label>Status<select value={order.order_status} disabled={busy || !allowedNext.length} onChange={(event) => void updateOrderStatus(order, event.target.value as AdminOrder["order_status"])}><option value={order.order_status}>{order.order_status}</option>{allowedNext.map((status) => <option value={status} key={status}>{status}</option>)}</select></label></div>
+              <div className="admin-order-document-actions">
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeSpreadsheet("de-verve-invoice-"+order.order_number+".xlsx","Invoice",orderDocumentRows(order,"invoice"))}>Invoice · Excel</button>
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeDocument("de-verve-invoice-"+order.order_number+".docx","De VERVE · Sales invoice","Order "+order.order_number+" · "+new Date(order.created_at).toLocaleString("en-PK"),orderDocumentRows(order,"invoice"))}>Invoice · Word</button>
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeImage("de-verve-invoice-"+order.order_number+".jpg","Sales invoice · "+order.order_number,new Date(order.created_at).toLocaleString("en-PK"),orderDocumentRows(order,"invoice"))}>Invoice · JPG</button>
+                <button type="button" className="admin-secondary" onClick={()=>{try{printOrderDocument(order,"invoice");}catch(error){setMessage(error instanceof Error?error.message:"Invoice could not be printed.");}}}>Invoice · PDF / Print</button>
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeDocument("de-verve-delivery-slip-"+order.order_number+".docx","De VERVE · Delivery slip","Order "+order.order_number+" · "+new Date(order.created_at).toLocaleString("en-PK"),orderDocumentRows(order,"delivery"))}>Delivery slip · Word</button>
+                <button type="button" className="admin-secondary" onClick={()=>{try{printOrderDocument(order,"delivery");}catch(error){setMessage(error instanceof Error?error.message:"Delivery slip could not be printed.");}}}>Delivery slip · PDF / Print</button>
+              </div>
             </article>;
           })}</div>}
         </section>}
