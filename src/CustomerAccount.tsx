@@ -99,10 +99,11 @@ export default function CustomerAccount() {
   const updateExchangeDetails = (next: string) => { setExchangeDetails(next); saveExchangeDraft({ ...readCustomerDraft("exchange", initialExchangeDraft), details: next }); };
   const updateExchangeLines = (next: typeof exchangeLines) => { setExchangeLines(next); saveExchangeDraft({ ...readCustomerDraft("exchange", initialExchangeDraft), lines: next }); };
   const openExchangeRequest = (order: Order) => {
+    clearCustomerFormDraft("customer-exchange");
     const next = { orderId: order.id, reason: "size_issue", details: "", lines: Object.fromEntries(order.items.map((item) => [item.id, { quantity: "0", requested_size: item.size_snapshot || "", requested_color: item.color_snapshot || "" }])) };
     setExchangeTarget(order); setExchangeReason(next.reason); setExchangeDetails(next.details); setExchangeLines(next.lines); saveExchangeDraft(next);
   };
-  const closeExchangeRequest = () => { setExchangeTarget(null); clearCustomerDraft("exchange"); setExchangeReason("size_issue"); setExchangeDetails(""); setExchangeLines({}); };
+  const closeExchangeRequest = () => { setExchangeTarget(null); clearCustomerDraft("exchange"); clearCustomerFormDraft("customer-exchange"); setExchangeReason("size_issue"); setExchangeDetails(""); setExchangeLines({}); };
 
   const changeMode = (next: "login" | "register") => { setMode(next); const url = new URL(window.location.href); if (next === "register") url.searchParams.set("mode", "register"); else url.searchParams.delete("mode"); window.history.pushState({ mode: next }, "", url.pathname + url.search + url.hash); };
 
