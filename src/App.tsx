@@ -42,6 +42,7 @@ function productGalleryImages(product: StoreProduct, selectedVariantId?: string,
   const colour = (selectedColor || splitProductOptions(selected?.color || "")[0] || "").trim().toLowerCase();
   const relevant = product.media.filter((item) => item.media_type === "image" && (!item.color || !item.color.trim() || !colour || item.color.trim().toLowerCase() === colour));
   if (relevant.length) return relevant.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
+  if (product.media.some((item) => item.color?.trim())) return [];
   return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
 }
 
