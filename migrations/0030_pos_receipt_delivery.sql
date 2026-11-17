@@ -1,7 +1,7 @@
 -- Transactional delivery of POS receipts by email and WhatsApp, with WhatsApp policy opt-in.
 -- Delivery is queued transactionally with the sale and retried by the Pages Worker.
 ALTER TABLE pos_sales ADD COLUMN customer_email TEXT;
-ALTER TABLE pos_sales ADD COLUMN email_receipt_consent INTEGER NOT NULL DEFAULT 0 CHECK (email_receipt_consent IN (0,1));
+ALTER TABLE pos_sales ADD COLUMN email_receipt_requested INTEGER NOT NULL DEFAULT 0 CHECK (email_receipt_requested IN (0,1));
 ALTER TABLE pos_sales ADD COLUMN whatsapp_receipt_consent INTEGER NOT NULL DEFAULT 0 CHECK (whatsapp_receipt_consent IN (0,1));
 
 CREATE TABLE IF NOT EXISTS pos_receipt_outbox (

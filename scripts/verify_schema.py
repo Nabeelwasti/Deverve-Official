@@ -196,9 +196,9 @@ assert any(row[1] == "idx_financial_transaction_reversal" and row[2] == 1 for ro
 product_media_columns = {row[1] for row in db.execute("PRAGMA table_info(product_media_assets)")}
 assert {"color"} <= product_media_columns, "Colour-specific product gallery metadata is missing"
 
-# POS customer receipts are sent only after explicit channel-specific consent.
+# POS email invoices are transactional when a customer email is provided; WhatsApp receipts require a recorded platform opt-in.
 pos_sale_columns = {row[1] for row in db.execute("PRAGMA table_info(pos_sales)")}
-assert {"customer_email", "email_receipt_consent", "whatsapp_receipt_consent"} <= pos_sale_columns, "POS receipt contact and consent fields are missing"
+assert {"customer_email", "email_receipt_requested", "whatsapp_receipt_consent"} <= pos_sale_columns, "POS receipt contact and consent fields are missing"
 receipt_outbox_columns = {row[1] for row in db.execute("PRAGMA table_info(pos_receipt_outbox)")}
 assert {"sale_id", "channel", "status", "attempts", "next_attempt_at", "provider_message_id", "last_error_code"} <= receipt_outbox_columns, "POS receipt delivery outbox fields are missing"
 assert any(row[1] == "idx_pos_receipt_outbox_due" for row in db.execute("PRAGMA index_list(pos_receipt_outbox)")), "POS receipt delivery queue index is missing"

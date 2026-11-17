@@ -178,7 +178,7 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
   try{
    const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?))").bind(claimedAt,id,now,staleBefore).run();
    if((claim.meta?.changes??0)!==1)continue;
-   const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+   const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
    if(!sale)throw new Error("receipt_sale_missing");
    const itemsResult=await env.DB.prepare("SELECT product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(saleId).all<Record<string,unknown>>();
    const items=itemsResult.results??[];
@@ -190,7 +190,7 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
    let providerId="";
    if(channel==="email"){
     const recipient=String(sale.customer_email||"");
-    if(Number(sale.email_receipt_consent)!==1||!isValidEmailAddress(recipient))throw new Error("email_consent_or_address_missing");
+    if(Number(sale.email_receipt_requested)!==1||!isValidEmailAddress(recipient))throw new Error("email_address_missing");
     const subject="Your De VERVE receipt · "+receipt;
     const textBody="Assalamu Alaikum "+name+",\n\nThank you for shopping with De VERVE. Your receipt "+receipt+" is below.\n\n"+items.map(item=>String(item.product_name_snapshot)+" · "+String(item.size_snapshot||"Standard")+" · Qty "+Number(item.quantity)+" · Rs. "+(Number(item.line_total_paisa)/100).toFixed(2)).join("\n")+"\n\nTotal paid: Rs. "+(total/100).toFixed(2)+"\n\nDe VERVE · +92 319 7553705";
     const html="<div style='font-family:Arial,sans-serif;color:#12345a;max-width:680px;margin:auto'><h2>De VERVE · Payment receipt</h2><p>Assalamu Alaikum "+esc(name)+", thank you for shopping with De VERVE.</p><p><strong>Receipt:</strong> "+esc(receipt)+"</p><table style='width:100%;border-collapse:collapse'><thead><tr><th align='left'>Item</th><th align='right'>Qty</th><th align='right'>Amount</th></tr></thead><tbody>"+items.map(item=>"<tr><td>"+esc(String(item.product_name_snapshot))+" · "+esc(String(item.size_snapshot||"Standard"))+" · "+esc(String(item.color_snapshot||""))+"</td><td align='right'>"+Number(item.quantity)+"</td><td align='right'>Rs. "+(Number(item.line_total_paisa)/100).toFixed(2)+"</td></tr>").join("")+"</tbody></table><h3>Total paid: Rs. "+(total/100).toFixed(2)+"</h3><p>Please retain this email as proof of purchase.</p><p>De VERVE · +92 319 7553705</p></div>";
@@ -2049,9 +2049,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const channel=body?.channel;
     if(!/^[a-f0-9-]{36}$/i.test(saleId)||!(channel==="email"||channel==="whatsapp"))return error("Choose a valid sale and receipt channel",400);
     try{
-      const sale=await env.DB.prepare("SELECT customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+      const sale=await env.DB.prepare("SELECT customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
       if(!sale)return error("POS sale not found",404);
-      if(channel==="email"&&(Number(sale.email_receipt_consent)!==1||!isValidEmailAddress(String(sale.customer_email??""))))return error("This sale has no valid customer email consent",409);
+      if(channel==="email"&&(Number(sale.email_receipt_requested)!==1||!isValidEmailAddress(String(sale.customer_email??""))))return error("This sale has no valid customer email address for a receipt",409);
       if(channel==="whatsapp"&&(Number(sale.whatsapp_receipt_consent)!==1||!validPhone(String(sale.customer_phone??""))))return error("This sale has no valid WhatsApp consent",409);
       const queue=await env.DB.prepare("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed' LIMIT 1").bind(saleId,channel).first<{id:string}>();
       if(!queue)return error("There is no failed receipt to retry",409);
@@ -2142,16 +2142,16 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const idempotency = typeof body?.idempotency_key === "string" ? body.idempotency_key : "";
     const customerName = typeof body?.customer_name === "string" && body.customer_name.trim() ? body.customer_name.trim().slice(0,120) : "Walk-in customer";
     const customerPhone = typeof body?.customer_phone === "string" ? body.customer_phone.trim().slice(0,40) : "";
-    const emailReceiptConsent = body?.email_receipt_consent === true;
+    const customerEmail = typeof body?.customer_email === "string" ? body.customer_email.trim().slice(0,160) : "";
+    const emailReceiptRequested = customerEmail.length > 0;
     const whatsappReceiptConsent = body?.whatsapp_receipt_consent === true;
-    const customerEmail = emailReceiptConsent && typeof body?.customer_email === "string" ? body.customer_email.trim().slice(0,160) : "";
-    if (emailReceiptConsent && !isValidEmailAddress(customerEmail)) return error("Enter a valid customer email address to send the receipt",400);
+    if (emailReceiptRequested && !isValidEmailAddress(customerEmail)) return error("Enter a valid customer email address for the invoice copy",400);
     if (whatsappReceiptConsent && !validPhone(customerPhone)) return error("Enter a valid customer WhatsApp number to send the receipt",400);
     const lines = Array.isArray(body?.items) ? body.items : [];
     const payments = Array.isArray(body?.payments) ? body.payments : [];
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
     try {
-      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
       if (duplicate) {
         const [itemsResult,paymentsResult,deliveryResult] = await Promise.all([
           env.DB.prepare("SELECT product_name_snapshot AS product_name,sku_snapshot AS sku,size_snapshot AS size,color_snapshot AS color,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
@@ -2165,7 +2165,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           customer_name:String(duplicate.customer_name??"Walk-in customer"),
           customer_phone:String(duplicate.customer_phone??""),
           customer_email:String(duplicate.customer_email??""),
-          email_receipt_consent:Number(duplicate.email_receipt_consent)===1,
+          email_receipt_requested:Number(duplicate.email_receipt_requested)===1,
           whatsapp_receipt_consent:Number(duplicate.whatsapp_receipt_consent)===1,
           receipt_delivery:{email:delivery.get("email")??"not_requested",whatsapp:delivery.get("whatsapp")??"not_requested"},
           change_paisa:payments.reduce((sum,row)=>sum+Number(row.change_paisa??0),0),
@@ -2213,7 +2213,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       if (applied!==subtotal) return error("Payment amounts must add up exactly to the sale total",400);
       const saleId=crypto.randomUUID();
       const receipt="DV-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+crypto.randomUUID().slice(0,6).toUpperCase();
-      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptConsent?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id)];
+      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptRequested?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id)];
       for (const item of resolved) {
         statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa));
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=? AND stock_on_hand-reserved_quantity>=?").bind(item.quantity,item.variant_id,item.quantity));
@@ -2223,11 +2223,11 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         statements.push(env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,payment.account.id,payment.method,payment.amount,payment.tendered,payment.change,payment.reference));
         statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?,'in',?,'pos_sale','pos_sale',?,?,?,?)").bind(crypto.randomUUID(),payment.account.id,payment.amount,saleId,session.id,"POS "+receipt,admin.admin_user_id));
       }
-      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length,email_receipt_consent:emailReceiptConsent,whatsapp_receipt_consent:whatsappReceiptConsent})));
-      if(emailReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'email')").bind(crypto.randomUUID(),saleId));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length,email_receipt_requested:emailReceiptRequested,whatsapp_receipt_consent:whatsappReceiptConsent})));
+      if(emailReceiptRequested)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'email')").bind(crypto.randomUUID(),saleId));
       if(whatsappReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'whatsapp')").bind(crypto.randomUUID(),saleId));
       await env.DB.batch(statements);
-      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,customer_email:customerEmail,email_receipt_consent:emailReceiptConsent,whatsapp_receipt_consent:whatsappReceiptConsent,receipt_delivery:{email:emailReceiptConsent?"queued":"not_requested",whatsapp:whatsappReceiptConsent?"queued":"not_requested"},subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
+      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,customer_email:customerEmail,email_receipt_requested:emailReceiptRequested,whatsapp_receipt_consent:whatsappReceiptConsent,receipt_delivery:{email:emailReceiptRequested?"queued":"not_requested",whatsapp:whatsappReceiptConsent?"queued":"not_requested"},subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
     } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
   }
   const voidMatch = path.match(/^\/api\/admin\/pos\/sales\/([a-f0-9-]{36})\/void$/i);
