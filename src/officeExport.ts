@@ -1,9 +1,8 @@
 type OfficeCell = string | number | boolean | null | undefined;
 type OfficeRow = OfficeCell[];
 
-const xmlEscape = (value: string): string => value.replace(/[&<>"']/g, character => ({
-  "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;",
-}[character] ?? character));
+const xmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
+const xmlEscape = (value: string): string => value.replace(/[&<>"']/g, character => xmlEntities[character] ?? character);
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
