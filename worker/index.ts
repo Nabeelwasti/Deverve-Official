@@ -4056,7 +4056,7 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
 
 export default {
-  fetch(request: Request, env: Env): Promise<Response> {
-    return handleRequest(request, env);
+  fetch(request: Request, env: Env, ctx:WorkerExecutionContext): Promise<Response> {
+    return handleRequest(request, env, ctx);
   },
 };
