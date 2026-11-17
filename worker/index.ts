@@ -28,6 +28,8 @@ export interface Env {
   RESEND_FROM_EMAIL?: string;
   OWNER_NOTIFICATION_EMAIL?: string;
   AI_KEYS_ENCRYPTION_KEY?: string;
+  NabeelG_Api_key1?: string;
+  NabeelG_Api_key2?: string;
 }
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
@@ -3634,6 +3636,21 @@ async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";part
     return text?{ok:true,status:200,text,message:""}:{ok:false,status:502,text:"",message:"Gemini returned an empty response"};
   } catch { return {ok:false,status:503,text:"",message:"Gemini connection timed out or failed"}; }
 }
+
+async function importConfiguredGeminiEnvKeys(env:Env):Promise<void> {
+  if(!aiKeyEncryptionSecret(env))return;
+  const slots:[string,string|undefined][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1],["NabeelG_Api_key2",env.NabeelG_Api_key2]];
+  for(const [label,raw] of slots){
+    const apiKey=raw?.trim()||"";
+    if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey))continue;
+    const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+apiKey);
+    const duplicate=await env.DB.prepare("SELECT id FROM ai_provider_keys WHERE key_fingerprint=? LIMIT 1").bind(fingerprint).first<{id:string}>();
+    if(duplicate)continue;
+    const encrypted=await encryptGeminiKey(env,apiKey),id=crypto.randomUUID(),now=new Date().toISOString();
+    const next=await env.DB.prepare("SELECT COALESCE(MAX(priority),0)+10 AS priority FROM ai_provider_keys WHERE provider='gemini'").first<{priority:number}>();
+    await env.DB.prepare("INSERT INTO ai_provider_keys (id,provider,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled,created_at,updated_at) VALUES (?,'gemini',?,?,?,?,?,?,1,?,?)").bind(id,label,encrypted.ciphertext,encrypted.iv,fingerprint,encrypted.mode,next?.priority??10,now,now).run();
+  }
+}
 async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
   const path=url.pathname;
   if(!path.startsWith("/api/admin/ai/keys"))return null;
@@ -3643,6 +3660,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   if(admin.role!=="owner")return error("Only the owner can manage AI provider keys",403);
   if(path==="/api/admin/ai/keys"&&request.method==="GET"){
     try{
+      await importConfiguredGeminiEnvKeys(env);
       const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
       return json({keys:rows.results??[],encryption_ready:Boolean(aiKeyEncryptionSecret(env)),encryption_mode:env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":env.ADMIN_BOOTSTRAP_TOKEN?.trim()?"bootstrap-derived":"unavailable",model:"gemini-2.5-flash"});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
