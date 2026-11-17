@@ -1,6 +1,6 @@
 # Current source review — 18 November 2026
 
-**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: `359675baa3b4359288922e98073a652610f1bfc1` (current CI run #829 is still in progress). These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
+**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: `de877981554ad52ee8929330ff6b76828df1831b`. CI run #838 passed all workflow stages, including build, production dependency audit, Worker authentication tests, D1 schema checks and browser E2E. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
 
 ## Changes added after the previous verified CI run
 
@@ -16,7 +16,7 @@
 ## Verification boundary
 
 - The previously successful CI run #771 applies to commit `a9c8d2a770710eb516302de68695f2a63a6a19e4`, not the additional commits listed above.
-- CI runs #816, #817, #819, #820, #821, #822, #823, #824, #825, #826 and #827 have passed on successive source commits. Runs #828 and #829 are still in progress at this snapshot; the final current commit is not certified until its own CI run passes.
+- CI run #838 passed on the current source commit. The repeated failures in runs #801–#812 were traced to the enquiry email queue lease migration running before the table-creation migration; the migration sequence is corrected and the current D1 schema test passes.
 - No Cloudflare API or Wrangler deployment has been run for these changes. The live website remains on its previously deployed version until the owner explicitly authorizes deployment. The historical production snapshot below is not a live read-back for this source commit.
 
 ## Remaining release gates

@@ -40,7 +40,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 ### Admin and business operations
 - Owner bootstrap/login, hashed server-side sessions, login throttling, role-based staff invitations and full-history audit search with server-side filtering and pagination.
 - Owner-only staff creation and permission changes; managers cannot grant themselves owner privileges.
-- Product, variant, stock, inventory movement, media and vehicle management. Inventory, POS, expenses, customer order invoices, delivery slips and wholesale quotations support branded XLSX/DOCX, CSV, JPG and browser print-to-PDF exports where shown in the relevant workspace.
+- Product, variant, stock, inventory movement, media and vehicle management. Inventory, POS, expenses, customer order invoices, delivery slips, rental request summaries and wholesale quotations support branded XLSX/DOCX, CSV, JPG and browser print-to-PDF exports where shown in the relevant workspace.
 - Orders, delivery quotations, wholesale, rental requests, customer CRM, enquiries and follow-up inbox.
 - Block-based CMS workspace for pages, sections, navigation, draft/publish/archive, revision snapshots and audit events.
 - Product SEO title/description, canonical and Open Graph metadata, Product JSON-LD, dedicated product routes and dynamic sitemap.
@@ -100,7 +100,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 
 ## Historical production snapshot — 16 November 2026 (not a current live read-back)
 
-Latest source on `main` (current CI verification pending): `359675baa3b4359288922e98073a652610f1bfc1`. The current source changes are GitHub-only; no Cloudflare deployment or production D1 migration has been run. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
+Latest source on `main`: `de877981554ad52ee8929330ff6b76828df1831b`. GitHub Actions run #838 passed the full build, production audit, Worker tests, D1 schema checks and browser tests. The current source changes are GitHub-only; no Cloudflare deployment or production D1 migration has been run. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
 
 CI run #590 passed all 13 steps: type-check/build, security-header output, Worker authentication tests, D1 schema/constraint validation, and desktop/mobile Playwright browser tests. Production smoke run #302 passed all eight checks: production health/D1 connectivity, protected exchange/return routes, CMS/SEO/sitemap/notification routes, Turnstile verifier/Siteverify connectivity, scheduled CNIC-retention service bindings, rental settings/fleet pricing, and deployed security headers. Cloudflare Pages production deployment for this commit completed successfully.
 
