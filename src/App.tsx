@@ -446,14 +446,13 @@ function Storefront() {
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!enquiryTurnstileToken) { setSubmitMessage("Please complete the security check first."); return; }
     setSending(true);
     setSubmitMessage("");
     try {
       const response = await fetch("/api/enquiries", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...enquiry, turnstile_token: enquiryTurnstileToken }),
+        body: JSON.stringify({ ...enquiry, ...(enquiryTurnstileToken ? { turnstile_token: enquiryTurnstileToken } : {}) }),
       });
       const result = await response.json() as { accepted?: boolean; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");
@@ -688,7 +687,7 @@ function Storefront() {
               <label className="enquiry-message">How can we help?<textarea required minLength={5} maxLength={3000} rows={4} value={enquiry.message} onChange={(event) => updateEnquiry({ ...enquiry, message: event.target.value })} /></label>
               <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={enquiry.website} onChange={(event) => updateEnquiry({ ...enquiry, website: event.target.value })} /></label>
             </div>
-            <div className="enquiry-submit">{activeScreen === "contact" && <TurnstileWidget resetKey={enquiryTurnstileReset} onToken={setEnquiryTurnstileToken} />}<button className="button button-primary" type="submit" disabled={sending || !enquiryTurnstileToken}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
+            <div className="enquiry-submit"><button className="button button-primary" type="submit" disabled={sending}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
           </form>
           <small>Prices, product availability, delivery, payment and rental terms are confirmed directly by the De VERVE team.</small>
         </section>

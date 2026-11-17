@@ -3194,7 +3194,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     const body = await readJson(request, 8_000);
     if (!body) return error("Please submit valid account details", 400);
     if (cleanText(body.website, 120)) return json({ accepted: true });
-    if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
+    if (body.turnstile_token && !(await verifyTurnstile(request, body.turnstile_token))) return error("The security check could not be verified. Please retry it.", 403);
     const email = cleanText(body.email, 160).toLowerCase();
     const fullName = cleanText(body.full_name, 100);
     const phone = cleanText(body.phone, 24);
@@ -3669,15 +3669,20 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromBase64Url(row.key_iv)},key,fromBase64Url(row.key_ciphertext));
   return new TextDecoder().decode(plain);
 }
-export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string}> {
-  const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent";
-  try {
-    const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
-    const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
-    if(!response.ok)return {ok:false,status:response.status,text:"",message:payload.error?.status||payload.error?.message||"Gemini request failed"};
-    const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
-    return text?{ok:true,status:200,text,message:""}:{ok:false,status:502,text:"",message:"Gemini returned an empty response"};
-  } catch { return {ok:false,status:503,text:"",message:"Gemini connection timed out or failed"}; }
+const GEMINI_MODEL_FALLBACKS=["gemini-2.5-flash","gemini-2.5-flash-lite","gemini-3-flash-preview","gemini-3.8-flash"] as const;
+export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string;model:string}> {
+  let last:{ok:boolean;status:number;text:string;message:string;model:string}={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model:GEMINI_MODEL_FALLBACKS[0]};
+  for(const model of GEMINI_MODEL_FALLBACKS){
+    try{
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
+      const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
+      if(!response.ok){const message=payload.error?.status||payload.error?.message||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};if(response.status===404||(response.status===400&&/model.{0,30}(not found|not supported|unknown|unavailable)/i.test(message)))continue;return last;}
+      const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
+      if(text)return {ok:true,status:200,text,message:"",model};
+      last={ok:false,status:502,text:"",message:"Gemini returned an empty response",model};
+    }catch{last={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model};}
+  }
+  return last;
 }
 
 type GeminiEnvironmentKeyStatus = {
@@ -3748,6 +3753,13 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
       return json({updated:true});
     }catch{return error("Gemini key order could not be saved",503);}
   }
+  if(path==="/api/admin/ai/keys/test-environment"&&request.method==="POST"){
+    const configured:[string,string][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1||""],["NabeelG_Api_key2",env.NabeelG_Api_key2||""]].filter(entry=>Boolean(entry[1].trim())).map(([label,key])=>[label,key.trim()]);
+    if(!configured.length)return json({ok:false,message:"No Gemini environment keys are configured on the server. Add NabeelG_Api_key1 or NabeelG_Api_key2 in deployment secrets."},200);
+    const failures:string[]=[];
+    for(const [label,key] of configured){if(!/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)){failures.push(label+": invalid key format");continue;}const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");if(result.ok)return json({ok:true,label,model:result.model,message:label+" is working with "+result.model+"."});failures.push(label+": HTTP "+result.status+" · "+result.message.slice(0,150));}
+    return json({ok:false,message:failures.join(" | ")},200);
+  }
   const match=path.match(/^\/api\/admin\/ai\/keys\/([a-f0-9-]{36})(?:\/(test))?$/i);
   if(!match)return error("AI key route not found",404);
   const id=match[1],isTest=match[2]==="test";
@@ -3760,7 +3772,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
       const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");
       if(!result.ok)return json({ok:false,message:"Gemini returned HTTP "+result.status+(result.message?": "+result.message.slice(0,140):".")+" Check this key's Generative Language API access, model availability and quota."},200);
       await env.DB.prepare("UPDATE ai_provider_keys SET last_error=NULL,updated_at=? WHERE id=?").bind(new Date().toISOString(),id).run();
-      return json({ok:true,model:"gemini-3.8-flash",message:"Gemini connection successful."});
+      return json({ok:true,model:result.model,message:"Gemini connection successful using "+result.model+"."});
     }catch{return error("The key could not be decrypted or tested. Check the server encryption configuration.",503);}
   }
   if(request.method==="PATCH"){
@@ -3818,7 +3830,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     const result=await callGemini(apiKey,contents,systemInstruction);
     if(result.ok){
       try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();}catch{}
-      return json({reply:result.text,model:"gemini-3.8-flash"});
+      return json({reply:result.text,model:result.model});
     }
     const cooldown=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;
     const errorLabel=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":result.status>=500?"provider_unavailable":"request_failed";
