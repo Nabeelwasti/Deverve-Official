@@ -638,11 +638,11 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
     statements.push(env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?,?,'email','owner_order_created')").bind(crypto.randomUUID(),id));
-    if (requestedPaymentProvider === "safepay" && !signedInCustomer) return error("Please sign in to your De VERVE account before choosing online payment.", 401);
-    if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
+    if (!signedInCustomer) return error("Please sign in to your De VERVE account before placing an order.", 401);
+    statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || reservationLines.some((_, index) => (results[index + 1]?.meta?.changes ?? 0) !== 1)) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
-    if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
+    if ((results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
     return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
@@ -1149,6 +1149,7 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
 
   let signedInCustomer: CustomerSessionRow | null;
   try { signedInCustomer = await currentCustomer(request, env.DB); } catch { return error("Customer account service is temporarily unavailable. Please try again.", 503); }
+  if (!signedInCustomer) return error("Please sign in to your De VERVE account before submitting a rental request.", 401);
   const id = crypto.randomUUID();
   const reference = "DV-R-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(4))).toUpperCase().replace(/[-_]/g, "").slice(0, 6);
   const now = new Date().toISOString();
