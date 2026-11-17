@@ -443,6 +443,9 @@ test("product card opens from its content and product cart merges by size and co
   const product = {
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     slug: "trouser",
+    status: "published",
+    is_featured: true,
+    is_active: true,
     name: "Trouser",
     description: "Premium everyday trousers.",
     category: "Trousers",
@@ -462,18 +465,20 @@ test("product card opens from its content and product cart merges by size and co
   };
   await page.route("**/api/products**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.searchParams.get("slug") === "trouser" || url.searchParams.get("limit") === "60") {
-      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [product] }) });
-      return;
-    }
     if (url.pathname.includes("/reviews")) {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reviews: [], average_rating: null, rating_count: 0 }) });
+      return;
+    }
+    if (url.pathname === "/api/products") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [product] }) });
       return;
     }
     await route.continue();
   });
 
   await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Fashion", exact: true }).click();
   await page.locator(".product-card h3").getByText("Trouser").click();
   await expect(page).toHaveURL(/\/product\/trouser$/);
   await expect(page.locator(".product-page-media-column")).toBeVisible();
@@ -482,7 +487,7 @@ test("product card opens from its content and product cart merges by size and co
   const addButton = page.getByRole("button", { name: /Add to cart/ });
   await addButton.click();
   await addButton.click();
-  await page.getByRole("button", { name: "Select Navy colour" }).click();
+  await page.getByRole("button", { name: "Colour Navy" }).click();
   await addButton.click();
 
   const cart = await page.evaluate(() => JSON.parse(localStorage.getItem("deverve-cart") || "[]"));
