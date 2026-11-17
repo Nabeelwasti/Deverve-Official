@@ -1,6 +1,6 @@
 test("website enquiries can be submitted without a blocked Turnstile widget and are queued for owner email", async () => {
  const db=new FakeD1();
- const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:""})}),env(db));
+ const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json","cf-connecting-ip":"203.0.113.88"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:""})}),env(db));
  assert.equal(response.status,201);assert.equal((await response.json()).accepted,true);assert.equal(db.enquiries.size,1);assert.equal(db.enquiryEmailQueue.size,1);assert.equal([...db.enquiryEmailQueue.values()][0].status,"queued");
 });
 
@@ -1820,7 +1820,7 @@ test("Gemini key management is owner-authenticated and public AI chat fails clos
   assert.equal(vault.status, 401);
   const chat = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), env(db));
   assert.equal(chat.status, 503);
-  assert.match((await chat.json()).error, /being configured/i);
+  assert.match((await chat.json()).error, /No usable Gemini key is configured/i);
 });
 
 test("public AI chat still uses a configured server secret when the encrypted D1 vault is unavailable", async () => {
