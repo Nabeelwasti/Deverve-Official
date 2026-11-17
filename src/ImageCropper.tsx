@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 type Props={files:File[];aspectRatio:number;onCancel:()=>void;onComplete:(files:File[])=>void};
 type Offset={x:number;y:number};
-const W=360,H=450,OUT=1200,OUT_H=1500;
+const W=360,OUT=1200,OUT_H=1500;
 export default function ImageCropper({files,aspectRatio,onCancel,onComplete}:Props){
  const [index,setIndex]=useState(0),[image,setImage]=useState<HTMLImageElement|null>(null),[zoom,setZoom]=useState(1),[offset,setOffset]=useState<Offset>({x:0,y:0}),[results,setResults]=useState<File[]>([]),[error,setError]=useState("");
  const canvasRef=useRef<HTMLCanvasElement|null>(null),dragRef=useRef<{id:number;x:number;y:number;offset:Offset}|null>(null),height=Math.round(W/aspectRatio),current=files[index];
