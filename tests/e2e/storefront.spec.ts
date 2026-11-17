@@ -389,7 +389,9 @@ test("published product detail page supports gallery zoom, size and colour selec
   await page.getByRole("button", { name: "Colour Grey" }).click();
   await expect(page.locator(".product-specifications")).toContainText("M");
   await expect(page.locator(".product-specifications")).toContainText("Grey");
-  await expect(page.locator(".dv-gallery-empty")).toContainText("Photos for this option are not available yet.");
+  await expect(page.locator(".dv-gallery-empty")).toHaveCount(0);
+  await expect(page.locator(".product-page-gallery .dv-gallery-stage img")).toHaveAttribute("alt", /representative image; photos for the selected colour are not available yet/i);
+  await expect(page.locator(".product-page-gallery .dv-gallery-stage img")).toBeVisible();
   await page.getByRole("button", { name: /Add to cart/ }).click();
   await expect(page.locator(".product-added-message")).toContainText("Added to your cart");
   const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));

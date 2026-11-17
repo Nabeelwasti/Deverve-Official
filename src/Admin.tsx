@@ -5,6 +5,7 @@ import NotificationCenter from "./NotificationCenter";
 import VehicleGalleryManager from "./VehicleGalleryManager";
 import InventoryWorkspace from "./InventoryWorkspace";
 import POSWorkspace from "./POSWorkspace";
+import ImageCropper from "./ImageCropper";
 
 type AdminUser = { id: string; email: string; role: string };
 type AdminPaymentMethod = {id:string;label:string;kind:"cod"|"bank"|"wallet"|"link"|"qr";provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null};
@@ -123,6 +124,7 @@ export default function Admin() {
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
+  const [cropFiles, setCropFiles] = useState<File[] | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
   const [variantEditTarget, setVariantEditTarget] = useState<Variant | null>(null);
@@ -314,12 +316,19 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
-  const uploadMedia = async (event: FormEvent<HTMLFormElement>) => {
+  const uploadMedia = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!mediaFiles.length || !mediaProduct) return;
+    const invalid = mediaFiles.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
+    if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
+    setCropFiles([...mediaFiles]);
+  };
+
+  const uploadCroppedMedia = async (files: File[]) => {
+    setCropFiles(null);
+    if (!files.length || !mediaProduct) return;
     if (mediaFiles.length > 50) { setMessage("Choose no more than 50 images in one batch."); return; }
     if (productMedia.length + mediaFiles.length > 100) { setMessage("This gallery can contain up to 100 media items. Remove older images before adding more."); return; }
-    const files = [...mediaFiles];
     const invalid = files.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
     if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
     setBusy(true); setMessage("");
@@ -897,6 +906,7 @@ export default function Admin() {
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowQuoteEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save quotation"}</button></div>
           </form>
         </section></div>}
+        {cropFiles && <ImageCropper files={cropFiles} aspectRatio={4/5} onCancel={() => setCropFiles(null)} onComplete={(cropped) => void uploadCroppedMedia(cropped)} />}
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max. Add separate photos for each colour after creating exact size/colour stock variants.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
@@ -904,7 +914,7 @@ export default function Admin() {
             <label>Gallery colour<select value={mediaColor} onChange={(event) => setMediaColor(event.target.value)}><option value="">General photos · all colours</option>{[...new Set(mediaVariants.filter((variant) => variant.is_active === 1).flatMap((variant) => variant.color.split(/[,;|]+/).map((color) => color.trim()).filter(Boolean)))].sort().map((color) => <option key={color} value={color}>{color} only</option>)}</select><small>Choose a colour to show these photos only when customers select that colour. Keep “General photos” for images shared by every colour.</small></label>
             <label>Media description<input value={mediaAlt} maxLength={240} onChange={(event) => setMediaAlt(event.target.value)} placeholder="e.g. Navy blue stretch hoodie, front view" /></label>
             <button className="admin-primary" disabled={busy || !mediaFiles.length}>{busy ? "Please wait…" : "Upload & add " + mediaFiles.length + " images"}</button>
-            {mediaFiles.length > 0 && <p className="admin-muted admin-media-selected">{mediaFiles.length} images selected · JPG, PNG or WebP · maximum 5 MB each · 50 per batch</p>}
+            {mediaFiles.length > 0 && <p className="admin-muted admin-media-selected">{mediaFiles.length} images selected · crop each to the consistent 4:5 product frame before upload · JPG, PNG or WebP · maximum 5 MB each · 50 per batch</p>}
             {mediaUploadProgress && <p className="admin-message" role="status" aria-live="polite">{mediaUploadProgress}</p>}
           </form>
           <h3 className="admin-media-subheading">Attached to this product ({productMedia.length})</h3>
