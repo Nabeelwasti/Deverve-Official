@@ -3820,6 +3820,24 @@ async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> 
   return adminAIKeyRoutes(request,env,url);
 }
 
+
+async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
+ if(url.pathname!=="/api/pwa/manifest")return null;
+ if(request.method!=="GET")return error("Method not allowed",405);
+ let iconUrl="/icons/icon-192.svg",iconType="image/svg+xml";
+ try{
+  const setting=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
+  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {favicon_id?:string|null}:null;
+  const id=assets?.favicon_id;
+  if(id&&/^[a-f0-9-]{36}$/i.test(id)){
+   const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
+   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
+  }
+ }catch{/* Keep the built-in icon if public brand settings are temporarily unavailable. */}
+ const icons=iconUrl.startsWith("/media/")?[{src:iconUrl,sizes:"192x192",type:iconType,purpose:"any"},{src:iconUrl,sizes:"512x512",type:iconType,purpose:"any"},{src:"/icons/icon-maskable.svg",sizes:"any",type:"image/svg+xml",purpose:"maskable"}]:[{src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-maskable.svg",sizes:"any",type:"image/svg+xml",purpose:"maskable"}];
+ const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
+ return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
+}
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
@@ -3836,6 +3854,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const reviewResponse = await productReviewRoutes(request, env, url);
   if (reviewResponse) return reviewResponse;
+
+  const pwaManifestResponse = await pwaManifestRoute(request, env, url);
+  if (pwaManifestResponse) return pwaManifestResponse;
 
   const aiResponse = await aiRoutes(request, env, url);
   if (aiResponse) return aiResponse;

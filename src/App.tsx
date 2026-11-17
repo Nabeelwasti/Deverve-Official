@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
+import BrandHead from "./BrandHead";
 import Admin from "./Admin";
 import WholesaleQuote from "./WholesaleQuote";
 import DeliveryFeeApproval from "./DeliveryFeeApproval";
@@ -237,14 +238,6 @@ function Storefront() {
   useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("checkout") === "open") { setCheckoutOpen(true); url.searchParams.delete("checkout"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("rental") === "open") { const vehicle = url.searchParams.get("vehicle") || ""; url.searchParams.delete("rental"); url.searchParams.delete("vehicle"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); void openRentalRequest(vehicle); } }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
-  useEffect(() => {
-    if(!brandAssets.favicon_id)return;
-    const icon=document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if(icon){icon.href="/media/"+brandAssets.favicon_id;icon.type="";}
-    const touchIcon=document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
-    if(touchIcon)touchIcon.href="/media/"+brandAssets.favicon_id;
-  },[brandAssets.favicon_id]);
-
   useEffect(() => { void fetch("/api/storefront/payment-options", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) return; const payload = await response.json() as { online_payment_available?: boolean; environment?: "sandbox" | "production" | null; methods?: typeof paymentMethods }; setOnlinePaymentAvailable(payload.online_payment_available === true); setOnlinePaymentEnvironment(payload.online_payment_available === true ? payload.environment ?? null : null); if(Array.isArray(payload.methods)&&payload.methods.length){setPaymentMethods(payload.methods);setSelectedPaymentMethod(current=>payload.methods!.some(method=>method.id===current)?current:(payload.methods!.find(method=>method.kind==="cod")?.id??payload.methods![0].id));} }).catch(() => { setOnlinePaymentAvailable(false); setOnlinePaymentEnvironment(null); }); }, []);
 
   useEffect(() => {
@@ -690,6 +683,6 @@ function Storefront() {
 }
 
 export default function App() {
-  return window.location.pathname.startsWith("/product/") ? <ProductPage /> : window.location.pathname.startsWith("/pages/") ? <PublicPage /> : window.location.pathname.startsWith("/account") ? <CustomerAccount /> : window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />;
+  return <><BrandHead />{window.location.pathname.startsWith("/product/") ? <ProductPage /> : window.location.pathname.startsWith("/pages/") ? <PublicPage /> : window.location.pathname.startsWith("/account") ? <CustomerAccount /> : window.location.pathname.startsWith("/admin") ? <Admin /> : window.location.pathname.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : window.location.pathname === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />}</>;
 }
 
