@@ -121,14 +121,14 @@ export default function Admin() {
   const [paymentAccountDrafts, setPaymentAccountDrafts] = useState<Record<string,string>>({});
   const [returns, setReturns] = useState<AdminReturn[]>([]);
   const [exchanges, setExchanges] = useState<AdminExchange[]>([]);
-  const [exchangeNotes, setExchangeNotes] = useState<Record<string, string>>({});
+  const [exchangeNotes, setExchangeNotes] = useState<Record<string, string>>(() => readAdminDraft("exchange-notes", { values: {} as Record<string, string> }).values);
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [productReviews,setProductReviews]=useState<AdminProductReview[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [followUpFilter, setFollowUpFilter] = useState<"all" | FollowUpItem["kind"]>("all");
-  const [returnRefundDrafts, setReturnRefundDrafts] = useState<Record<string, { refund_method: string; refund_reference: string; admin_note: string }>>({});
-  const [deliveryFeeDrafts, setDeliveryFeeDrafts] = useState<Record<string, string>>({});
+  const [returnRefundDrafts, setReturnRefundDrafts] = useState<Record<string, { refund_method: string; refund_reference: string; admin_note: string }>>(() => readAdminDraft("return-refund-drafts", { values: {} as Record<string, { refund_method: string; refund_reference: string; admin_note: string }> }).values);
+  const [deliveryFeeDrafts, setDeliveryFeeDrafts] = useState<Record<string, string>>(() => readAdminDraft("delivery-fee-drafts", { values: {} as Record<string, string> }).values);
   const [deliveryFeeLinks, setDeliveryFeeLinks] = useState<Record<string, string>>({});
   const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -176,11 +176,18 @@ export default function Admin() {
   useEffect(() => { writeAdminDraft("vehicle-editor-id", { id: editingVehicleId }); }, [editingVehicleId]);
   useEffect(() => { writeAdminDraft("quote-form", quoteForm); }, [quoteForm]);
   useEffect(() => { writeAdminDraft("quote-lines", { lines: quoteLines }); }, [quoteLines]);
+  useEffect(() => { writeAdminDraft("exchange-notes", { values: exchangeNotes }); }, [exchangeNotes]);
+  useEffect(() => { writeAdminDraft("return-refund-drafts", { values: returnRefundDrafts }); }, [returnRefundDrafts]);
+  useEffect(() => { writeAdminDraft("delivery-fee-drafts", { values: deliveryFeeDrafts }); }, [deliveryFeeDrafts]);
   useEffect(() => { writeAdminDraft("quote-editor-open", { open: showQuoteEditor }); }, [showQuoteEditor]);
   const updateProductForm = (next: ProductForm) => { setForm(next); writeAdminDraft("product-form", next); };
   const updateVehicleForm = (next: typeof emptyVehicleForm) => { setVehicleForm(next); writeAdminDraft("vehicle-form", next); };
   const updateQuoteForm = (next: typeof emptyQuoteForm) => { setQuoteForm(next); writeAdminDraft("quote-form", next); };
   const updateQuoteLines = (updater: (current: QuoteLineDraft[]) => QuoteLineDraft[]) => { const next = updater(quoteLines); setQuoteLines(next); writeAdminDraft("quote-lines", { lines: next }); };
+  const updateExchangeNotes = (updater: (current: Record<string, string>) => Record<string, string>) => { const next = updater(exchangeNotes); setExchangeNotes(next); writeAdminDraft("exchange-notes", { values: next }); };
+  const updateReturnRefundDrafts = (updater: (current: typeof returnRefundDrafts) => typeof returnRefundDrafts) => { const next = updater(returnRefundDrafts); setReturnRefundDrafts(next); writeAdminDraft("return-refund-drafts", { values: next }); };
+  const updateDeliveryFeeDrafts = (updater: (current: Record<string, string>) => Record<string, string>) => { const next = updater(deliveryFeeDrafts); setDeliveryFeeDrafts(next); writeAdminDraft("delivery-fee-drafts", { values: next }); };
+
 
   const loadProducts = async () => {
     const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
@@ -802,7 +809,7 @@ export default function Admin() {
               <div className="admin-order-items">{order.items.map((item) => <div key={item.id}><span>{item.product_name_snapshot} · {[item.size_snapshot, item.color_snapshot].filter(Boolean).join(" / ") || item.sku_snapshot || "Standard"} × {item.quantity}</span><strong>Rs. {Math.round(item.line_total_paisa / 100).toLocaleString("en-PK")}</strong></div>)}</div>
               <div className="admin-delivery-quote">
                 <div><strong>Delivery fee approval</strong><span className={`admin-delivery-state state-${order.delivery_fee_status}`}>{order.delivery_fee_status === "pending_quote" ? "Needs a delivery quotation" : order.delivery_fee_status === "awaiting_customer" ? "Waiting for customer approval" : order.delivery_fee_status === "accepted" ? "Customer approved the final total" : "Customer declined the quotation"}</span></div>
-                <label>Delivery fee (PKR)<input type="number" min="0" max="1000000" step="1" value={deliveryFeeDrafts[order.id] ?? String(Math.round(order.delivery_fee_paisa / 100))} onChange={(event) => setDeliveryFeeDrafts((current) => ({ ...current, [order.id]: event.target.value }))} disabled={busy || !["pending", "confirmed"].includes(order.order_status)} /></label>
+                <label>Delivery fee (PKR)<input type="number" min="0" max="1000000" step="1" value={deliveryFeeDrafts[order.id] ?? String(Math.round(order.delivery_fee_paisa / 100))} onChange={(event) => updateDeliveryFeeDrafts((current) => ({ ...current, [order.id]: event.target.value }))} disabled={busy || !["pending", "confirmed"].includes(order.order_status)} /></label>
                 <button type="button" className="admin-secondary" disabled={busy || !["pending", "confirmed"].includes(order.order_status)} onClick={() => void prepareDeliveryFeeQuote(order)}>{order.delivery_fee_status === "awaiting_customer" ? "Regenerate approval link" : "Prepare customer approval"}</button>
                 {deliveryFeeLinks[order.id] && <div className="admin-delivery-share"><input readOnly value={deliveryFeeLinks[order.id]} aria-label="Customer delivery approval link" /><button type="button" className="admin-secondary" onClick={() => void navigator.clipboard.writeText(deliveryFeeLinks[order.id]).then(() => setMessage("Customer approval link copied."))}>Copy link</button><a href={`https://wa.me/${order.phone.replace(/\D/g, "").replace(/^0/, "92")}?text=${encodeURIComponent("Assalamu Alaikum " + order.customer_name + ", please review and confirm your De VERVE COD delivery total: " + deliveryFeeLinks[order.id])}`} target="_blank" rel="noreferrer">Send via WhatsApp ↗</a></div>}
                 <small>Subtotal Rs. {Math.round(order.subtotal_paisa / 100).toLocaleString("en-PK")}{order.discount_amount_paisa>0 ? " · "+order.discount_label+" −Rs. "+Math.round(order.discount_amount_paisa/100).toLocaleString("en-PK") : ""} · Delivery {order.free_delivery ? "FREE" : "Rs. "+Math.round(order.delivery_fee_paisa/100).toLocaleString("en-PK")} · Final total Rs. {Math.round(order.total_paisa / 100).toLocaleString("en-PK")}. Dispatch is blocked until the customer accepts the final total.</small>
@@ -818,7 +825,7 @@ export default function Admin() {
             <div className="admin-order-customer"><strong>{item.customer_name}</strong><a href={"tel:" + item.customer_phone}>{item.customer_phone}</a>{item.customer_email && <a href={"mailto:" + item.customer_email}>{item.customer_email}</a>}<a className="admin-secondary" href={whatsappHref(item.customer_phone, "Assalamu Alaikum " + item.customer_name + ", this is De VERVE regarding exchange request " + item.exchange_number + " for order " + item.order_number + ". Current status: " + item.status + ". Please reply here if you need assistance.")} target="_blank" rel="noreferrer">WhatsApp customer ↗</a></div>
             <p className="admin-return-reason"><strong>{item.reason.replaceAll("_", " ")}</strong> · {item.details}</p>
             <div className="admin-order-items">{item.items.map((line, index) => <div key={index}><span>{line.product_name_snapshot} · {[line.size_snapshot, line.color_snapshot].filter(Boolean).join(" / ") || line.sku_snapshot || "Standard"} × {line.quantity}</span><strong>Replacement: {line.requested_size || "same size"} / {line.requested_color || "same colour"}</strong></div>)}</div>
-            <label className="admin-return-note">Internal note<textarea rows={2} maxLength={500} value={exchangeNotes[item.id] ?? item.admin_note ?? ""} onChange={(event) => setExchangeNotes((current) => ({ ...current, [item.id]: event.target.value }))} /></label>
+            <label className="admin-return-note">Internal note<textarea rows={2} maxLength={500} value={exchangeNotes[item.id] ?? item.admin_note ?? ""} onChange={(event) => updateExchangeNotes((current) => ({ ...current, [item.id]: event.target.value }))} /></label>
             {item.status === "requested" && <div className="admin-return-actions"><button type="button" className="admin-secondary" disabled={busy} onClick={() => void updateExchangeStatus(item, "reviewing")}>Start review</button><button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "approved")}>Approve exchange</button><button type="button" className="admin-danger-button" disabled={busy} onClick={() => void updateExchangeStatus(item, "rejected")}>Reject request</button></div>}
             {item.status === "reviewing" && <div className="admin-return-actions"><button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "approved")}>Approve exchange</button><button type="button" className="admin-danger-button" disabled={busy} onClick={() => void updateExchangeStatus(item, "rejected")}>Reject request</button></div>}
             {item.status === "approved" && <button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "item_received")}>Confirm item received</button>}
@@ -831,7 +838,7 @@ export default function Admin() {
           <div className="admin-panel-heading"><div><h2>Historical return records (legacy)</h2><p className="admin-muted">Read-only legacy records created before the exchange-only policy. New customer requests are handled in Exchanges.</p></div><span className="admin-enquiry-count">{returns.length} requests</span></div>
           {returns.length === 0 ? <div className="admin-empty"><strong>No return requests yet</strong><p>Eligible customer return requests will appear here.</p></div> : <div className="admin-return-list">{returns.map((item) => {
             const draft = returnRefundDrafts[item.id] ?? { refund_method: "bank_transfer", refund_reference: "", admin_note: item.admin_note ?? "" };
-            const setDraft = (patch: Partial<typeof draft>) => setReturnRefundDrafts((current) => ({ ...current, [item.id]: { ...draft, ...patch } }));
+            const setDraft = (patch: Partial<typeof draft>) => updateReturnRefundDrafts((current) => ({ ...current, [item.id]: { ...draft, ...patch } }));
             return <article className="admin-return-card" key={item.id}>
               <div className="admin-order-heading"><div><strong>{item.return_number}</strong><span>Order {item.order_number} · {new Date(item.created_at).toLocaleString()}</span></div><span className={"admin-enquiry-status status-" + item.status}>{item.status}</span></div>
               <div className="admin-order-customer"><strong>{item.customer_name}</strong><a href={"tel:" + item.customer_phone}>{item.customer_phone}</a>{item.customer_email && <a href={"mailto:" + item.customer_email}>{item.customer_email}</a>}<a className="admin-secondary" href={whatsappHref(item.customer_phone, `Assalamu Alaikum ${item.customer_name}, this is De VERVE regarding return request ${item.return_number} for order ${item.order_number}. Current return status: ${item.status}. Please reply here if you need assistance.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a></div>
