@@ -30,17 +30,17 @@ function escapeHtml(value: string): string {
 }
 
 function upsertMeta(html: string, attribute: "name" | "property", key: string, content: string): string {
-  const escapedKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const expression = new RegExp(`<meta\\s+[^>]*${attribute}=["']${escapedKey}["'][^>]*>`, "i");
-  const tag = `<meta ${attribute}="${key}" content="${escapeHtml(content)}" />`;
+  // Keys are fixed application-owned metadata names, never user input.
+  const expression = new RegExp(\`<meta\\\\s+[^>]*\${attribute}=["']\${key}["'][^>]*>\`, "i");
+  const tag = \`<meta \${attribute}="\${key}" content="\${escapeHtml(content)}" />\`;
   if (expression.test(html)) return html.replace(expression, tag);
-  return html.replace(/<\\/head>/i, `${tag}\\n</head>`);
+  return html.replace(/<\/head>/i, \`\${tag}\\n</head>\`);
 }
 
 function upsertCanonical(html: string, href: string): string {
-  const expression = /<link\\s+[^>]*rel=["']canonical["'][^>]*>/i;
-  const tag = `<link rel="canonical" href="${escapeHtml(href)}" />`;
-  return expression.test(html) ? html.replace(expression, tag) : html.replace(/<\\/head>/i, `${tag}\\n</head>`);
+  const expression = /<link\s+[^>]*rel=["']canonical["'][^>]*>/i;
+  const tag = \`<link rel="canonical" href="\${escapeHtml(href)}" />\`;
+  return expression.test(html) ? html.replace(expression, tag) : html.replace(/<\/head>/i, \`\${tag}\\n</head>\`);
 }
 
 export async function onRequest(context: PagesContext): Promise<Response> {
@@ -54,7 +54,7 @@ export async function onRequest(context: PagesContext): Promise<Response> {
 
   let slug = "";
   try {
-    slug = decodeURIComponent(url.pathname.slice("/product/".length)).replace(/\\/+$/, "");
+    slug = decodeURIComponent(url.pathname.slice("/product/".length)).replace(/\/+$/, "");
   } catch {
     return response;
   }
@@ -75,10 +75,10 @@ export async function onRequest(context: PagesContext): Promise<Response> {
       ).bind(product.id).first<AvailabilityRow>(),
     ]);
 
-    const title = (product.seo_title.trim() || `${product.name} | De VERVE`).slice(0, 180);
-    const description = (product.seo_description.trim() || product.description.trim()).replace(/\\s+/g, " ").slice(0, 300);
-    const canonical = new URL(`/product/${encodeURIComponent(product.slug)}`, url.origin).toString();
-    const imageUrl = image ? new URL(`/media/${image.id}`, url.origin).toString() : "";
+    const title = (product.seo_title.trim() || \`\${product.name} | De VERVE\`).slice(0, 180);
+    const description = (product.seo_description.trim() || product.description.trim()).replace(/\s+/g, " ").slice(0, 300);
+    const canonical = new URL(\`/product/\${encodeURIComponent(product.slug)}\`, url.origin).toString();
+    const imageUrl = image ? new URL(\`/media/\${image.id}\`, url.origin).toString() : "";
     const hasPrice = Number.isSafeInteger(product.retail_price_paisa) && (product.retail_price_paisa ?? -1) >= 0;
     const inStock = (availability?.available ?? 0) > 0;
 
@@ -100,8 +100,8 @@ export async function onRequest(context: PagesContext): Promise<Response> {
       } : {}),
     };
 
-    let html = await response.text();
-    html = html.replace(/<title[^>]*>[\\s\\S]*?<\\/title>/i, `<title>${escapeHtml(title)}</title>`);
+    let html = await response.clone().text();
+    html = html.replace(/<title[^>]*>[\s\S]*?<\/title>/i, \`<title>\${escapeHtml(title)}</title>\`);
     html = upsertMeta(html, "name", "description", description);
     html = upsertMeta(html, "property", "og:type", "product");
     html = upsertMeta(html, "property", "og:title", title);
@@ -119,8 +119,8 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     html = upsertCanonical(html, canonical);
 
     const jsonLd = JSON.stringify(structuredData).replace(/</g, "\\u003c");
-    const jsonLdTag = `<script id="deverve-product-jsonld" type="application/ld+json">${jsonLd}</script>`;
-    html = html.replace(/<\\/head>/i, `${jsonLdTag}\\n</head>`);
+    const jsonLdTag = \`<script id="deverve-product-jsonld" type="application/ld+json">\${jsonLd}</script>\`;
+    html = html.replace(/<\/head>/i, \`\${jsonLdTag}\\n</head>\`);
 
     const headers = new Headers(response.headers);
     headers.delete("content-length");
