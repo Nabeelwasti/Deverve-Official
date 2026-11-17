@@ -4025,7 +4025,7 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
     // Honeypot field: bots that fill hidden fields receive a neutral success response.
     if (cleanText(body.website, 120)) return json({ accepted: true });
-    if (!(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
+    if (body.turnstile_token && !(await verifyTurnstile(request, body.turnstile_token))) return error("The security check could not be verified. Please retry it.", 403);
     const enquiryType = cleanText(body.enquiryType, 20);
     const customerName = cleanText(body.name, 100);
     const phone = cleanText(body.phone, 24);
