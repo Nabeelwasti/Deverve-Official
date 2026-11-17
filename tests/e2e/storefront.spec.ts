@@ -398,12 +398,14 @@ test("published product detail page supports gallery zoom, size and colour selec
 
 
 test("cart opens as a review step and merges repeated identical lines", async ({ page }) => {
-  await page.addInitScript(() => {
+  await page.goto("/");
+  await page.evaluate(() => {
     const line = { variant_id: "11111111-1111-4111-8111-111111111111", product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "De VERVE Hoodie", sku: "DV-HOOD-NAV-M", size: "M", color: "Navy", quantity: 1, unit_price_paisa: 350000, available_quantity: 5 };
     localStorage.setItem("deverve-cart", JSON.stringify([line, { ...line, quantity: 2 }]));
   });
-  await page.goto("/");
-  await page.getByRole("button", { name: /Cart/ }).click();
+  await page.reload();
+  await expect(page.locator(".header-cart")).toContainText("3");
+  await page.locator(".header-cart").click();
   await expect(page.getByRole("dialog", { name: /Your cart/ })).toBeVisible();
   await expect(page.getByText("Choose how to pay")).toHaveCount(0);
   await expect(page.locator(".cart-line-item")).toHaveCount(1);
