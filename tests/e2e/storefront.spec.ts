@@ -354,3 +354,34 @@ test("product page supports auto-advancing galleries, selectable variants and di
   await expect(checkout).toBeVisible();
   await expect(checkout).toContainText("De VERVE Hoodie");
 });
+
+
+test("published product detail page supports gallery zoom, size and colour selection, and cart addition", async ({ page }) => {
+  const imageA = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23141414'/%3E%3C/svg%3E";
+  const imageB = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23555555'/%3E%3C/svg%3E";
+  await page.route("**/api/products?slug=trouser", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{
+      id: "88888888-8888-4888-8888-888888888888", slug: "trouser", name: "Trouser", description: "Everyday comfort trousers",
+      category: "Trousers", audience: "unisex", retail_price_paisa: 200000, image_key: null, seo_title: "Trouser | De VERVE",
+      seo_description: "Everyday comfort trousers", variants: [{ id: "11111111-1111-4111-8111-111111111111", sku: null, size: "S, M, L, XL", color: "Red, Grey, Black, White, Yellow", available_quantity: 2000 }],
+      media: [
+        { id: "99999999-9999-4999-8999-999999999999", media_type: "image", alt_text: "Trouser rear view", caption: "", is_primary: 1, color: "", url: imageA },
+        { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", media_type: "image", alt_text: "Trouser worn fit", caption: "", is_primary: 0, color: "", url: imageB },
+      ],
+    }] }) });
+  });
+  await page.goto("/product/trouser");
+  await expect(page.getByRole("heading", { level: 1, name: "Trouser" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Size S" })).toBeVisible();
+  await page.getByRole("button", { name: "Size M" }).click();
+  await page.getByRole("button", { name: "Colour Grey" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Grey");
+  await page.getByRole("button", { name: "Open image zoom" }).click();
+  await expect(page.getByRole("dialog", { name: "Zoomed product image" })).toBeVisible();
+  await page.getByRole("button", { name: "Close image zoom" }).click();
+  await page.getByRole("button", { name: /Add to cart/ }).click();
+  await expect(page.getByRole("status")).toContainText("Added to your cart");
+  const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));
+  expect(cart[0]).toMatchObject({ variant_id: "11111111-1111-4111-8111-111111111111", size: "M", color: "Grey", quantity: 1 });
+});
