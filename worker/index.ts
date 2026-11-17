@@ -3508,6 +3508,92 @@ export async function sitemapResponse(env:Env):Promise<Response>{
   }catch{return new Response("Sitemap temporarily unavailable",{status:503,headers:{"content-type":"text/plain; charset=utf-8","cache-control":"no-store"}});}
 }
 
+async function productReviewRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const publicMatch = url.pathname.match(/^\\/api\\/products\\/([a-f0-9-]{36})\\/reviews$/i);
+  if (publicMatch) {
+    const productId = publicMatch[1];
+    if (request.method === "GET") {
+      try {
+        const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? AND status = 'published' LIMIT 1").bind(productId).first<{id:string}>();
+        if (!product) return error("Product not found",404);
+        const rows = await env.DB.prepare("SELECT r.id,r.rating,r.title,r.body,r.created_at,substr(c.full_name,1,instr(c.full_name || ' ',' ')-1) AS reviewer_name FROM product_reviews r JOIN customers c ON c.id=r.customer_id WHERE r.product_id=? AND r.status='approved' ORDER BY r.created_at DESC LIMIT 100").bind(productId).all<Record<string,unknown>>();
+        let customer: CustomerSessionRow | null = null;
+        try { customer = await currentCustomer(request,env.DB); } catch { return error("Customer account service is temporarily unavailable",503); }
+        let eligible: Array<Record<string,unknown>> = [];
+        if (customer) {
+          const result = await env.DB.prepare("SELECT oi.id AS order_item_id,o.order_number,oi.size_snapshot,oi.color_snapshot FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN product_variants v ON v.id=oi.variant_id WHERE o.customer_id=? AND o.order_status='delivered' AND v.product_id=? AND NOT EXISTS (SELECT 1 FROM product_reviews r WHERE r.order_item_id=oi.id) ORDER BY o.updated_at DESC LIMIT 20").bind(customer.customer_id,productId).all<Record<string,unknown>>();
+          eligible = result.results ?? [];
+        }
+        const reviews = rows.results ?? [];
+        const ratingCount = reviews.length;
+        const averageRating = ratingCount ? Math.round((reviews.reduce((sum,row)=>sum+Number(row.rating),0)/ratingCount)*10)/10 : null;
+        return json({reviews,rating_count:ratingCount,average_rating:averageRating,authenticated:Boolean(customer),eligible_order_items:eligible});
+      } catch { return error("Product reviews are temporarily unavailable",503); }
+    }
+    if (request.method === "POST") {
+      if (!requireSameOrigin(request,url)) return error("Request origin could not be verified",403);
+      const limited = await enforcePublicRateLimit(request,env,"product-review",5);
+      if (limited) return limited;
+      let customer: CustomerSessionRow | null;
+      try { customer = await currentCustomer(request,env.DB); } catch { return error("Customer account service is temporarily unavailable",503); }
+      if (!customer) return error("Sign in to your De VERVE account before writing a review.",401);
+      const body = await readJson(request,5_000);
+      if (!body) return error("Submit a valid review",400);
+      const orderItemId = cleanText(body.order_item_id,64);
+      const rating = body.rating;
+      const title = cleanText(body.title,100);
+      const reviewBody = cleanText(body.body,2_000);
+      if (!/^[a-f0-9-]{36}$/i.test(orderItemId) || !Number.isInteger(rating) || Number(rating)<1 || Number(rating)>5 || reviewBody.length<10 || reviewBody.length>2_000) return error("Choose a rating and write a review of at least 10 characters.",400);
+      try {
+        const eligible = await env.DB.prepare("SELECT oi.id,o.id AS order_id FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN product_variants v ON v.id=oi.variant_id JOIN products p ON p.id=v.product_id WHERE oi.id=? AND o.customer_id=? AND o.order_status='delivered' AND p.id=? AND p.status='published' LIMIT 1").bind(orderItemId,customer.customer_id,productId).first<{id:string;order_id:string}>();
+        if (!eligible) return error("Reviews are available only for products delivered to your signed-in account.",403);
+        const id = crypto.randomUUID();
+        await env.DB.batch([
+          env.DB.prepare("INSERT INTO product_reviews (id,product_id,customer_id,order_id,order_item_id,rating,title,body,status) VALUES (?,?,?,?,?,?,?,?,'pending')").bind(id,productId,customer.customer_id,eligible.order_id,orderItemId,Number(rating),title,reviewBody),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'product_review.submitted','product_review',?,?)").bind(crypto.randomUUID(),id,JSON.stringify({product_id:productId,customer_id:customer.customer_id,rating:Number(rating)})),
+        ]);
+        return json({submitted:true,status:"pending",message:"Thank you. Your review has been sent for moderation and will appear after approval."},201);
+      } catch (caught) {
+        const message = caught instanceof Error ? caught.message : "";
+        if (/unique|constraint/i.test(message)) return error("You have already reviewed this delivered item.",409);
+        return error("Your review could not be saved. Please try again.",503);
+      }
+    }
+    return error("Method not allowed",405);
+  }
+
+  if (url.pathname === "/api/admin/product-reviews") {
+    let admin: SessionRow | null;
+    try { admin = await currentAdmin(request,env.DB); } catch { return error("Review moderation is temporarily unavailable",503); }
+    if (!admin) return error("Authentication required",401);
+    if (!["owner","manager"].includes(admin.role)) return error("Only an owner or manager can moderate product reviews",403);
+    if (request.method === "GET") {
+      const status = cleanText(url.searchParams.get("status"),16) || "pending";
+      if (!["pending","approved","rejected","all"].includes(status)) return error("Choose a valid review status",400);
+      try {
+        const rows = await env.DB.prepare("SELECT r.id,r.product_id,r.order_id,r.order_item_id,r.rating,r.title,r.body,r.status,r.moderation_note,r.created_at,p.name AS product_name,p.slug AS product_slug,c.full_name AS customer_name,c.email AS customer_email,o.order_number FROM product_reviews r JOIN products p ON p.id=r.product_id JOIN customers c ON c.id=r.customer_id JOIN orders o ON o.id=r.order_id WHERE (?='all' OR r.status=?) ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,r.created_at ASC LIMIT 200").bind(status,status).all<Record<string,unknown>>();
+        return json({reviews:rows.results??[]});
+      } catch { return error("Product reviews could not be loaded",503); }
+    }
+    if (request.method === "PATCH") {
+      if (!requireSameOrigin(request,url)) return error("Request origin could not be verified",403);
+      const body = await readJson(request,3_000);
+      const reviewId = cleanText(body?.id,64);
+      const status = cleanText(body?.status,16);
+      const note = cleanText(body?.moderation_note,500);
+      if (!/^[a-f0-9-]{36}$/i.test(reviewId) || !["approved","rejected"].includes(status)) return error("Choose approve or reject for a valid review",400);
+      try {
+        const result = await env.DB.prepare("UPDATE product_reviews SET status=?,moderation_note=?,moderated_by_admin_id=?,moderated_at=?,updated_at=? WHERE id=? AND status='pending'").bind(status,note,admin.admin_user_id,new Date().toISOString(),new Date().toISOString(),reviewId).run();
+        if ((result.meta?.changes??0)!==1) return error("This review is no longer pending. Refresh the moderation queue.",409);
+        await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"product_review."+status,"product_review",reviewId,JSON.stringify({moderation_note:note})).run();
+        return json({updated:true,status});
+      } catch { return error("Review moderation could not be saved",503); }
+    }
+    return error("Method not allowed",405);
+  }
+  return null;
+}
+
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
@@ -3521,6 +3607,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const customerResponse = await customerAccountRoutes(request, env, url);
   if (customerResponse) return customerResponse;
+
+  const reviewResponse = await productReviewRoutes(request, env, url);
+  if (reviewResponse) return reviewResponse;
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
