@@ -16,8 +16,9 @@ function excluded(element: Element): boolean {
     || element.hasAttribute("data-no-draft");
 }
 
-function formKey(form: HTMLFormElement, index: number): string {
-  const identity = form.dataset.draftKey || [form.id, form.className, form.getAttribute("aria-label"), index].filter(Boolean).join("|");
+function formKey(form: HTMLFormElement): string {
+  const heading = form.querySelector("legend, h1, h2, h3")?.textContent?.trim() || "";
+  const identity = form.dataset.draftKey || [form.id, form.className, form.getAttribute("aria-label"), heading].filter(Boolean).join("|");
   return STORAGE_PREFIX + window.location.pathname + ":" + identity;
 }
 
@@ -40,7 +41,8 @@ function restore(form: HTMLFormElement, key: string): void {
       const field = fields[entry.index];
       if (!field || excluded(field)) continue;
       if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
-        field.checked = entry.value === true;
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
+        setter?.call(field, entry.value === true);
       } else if (field instanceof HTMLSelectElement && field.multiple && Array.isArray(entry.value)) {
         for (const option of Array.from(field.options)) option.selected = entry.value.includes(option.value);
       } else if (typeof entry.value === "string") {
@@ -86,7 +88,7 @@ export default function FormDraftPersistence() {
       const forms = Array.from(document.forms);
       forms.forEach((form, index) => {
         if (restored.has(form)) return;
-        const key = formKey(form, index);
+        const key = formKey(form);
         restore(form, key);
         restored.add(form);
       });
@@ -97,7 +99,7 @@ export default function FormDraftPersistence() {
       const form = target.closest("form");
       if (form instanceof HTMLFormElement) {
         const index = Array.from(document.forms).indexOf(form);
-        if (index >= 0) save(form, formKey(form, index));
+        if (index >= 0) save(form, formKey(form));
       }
     };
     const onReset = (event: Event) => {
@@ -105,7 +107,7 @@ export default function FormDraftPersistence() {
       if (!(form instanceof HTMLFormElement)) return;
       const index = Array.from(document.forms).indexOf(form);
       if (index >= 0) {
-        try { sessionStorage.removeItem(formKey(form, index)); } catch { /* ignore storage errors */ }
+        try { sessionStorage.removeItem(formKey(form)); } catch { /* ignore storage errors */ }
       }
     };
     scan();
