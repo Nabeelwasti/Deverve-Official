@@ -357,6 +357,7 @@ class FakeStatement {
       return customer?.status === "active" ? { id: session.id, customer_id: customer.id, email: customer.email, full_name: customer.full_name, phone: customer.phone, status: customer.status, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
     }
     if (q.startsWith("SELECT COUNT(*) AS document_count FROM rental_documents")) return { document_count: [...this.db.rentalDocuments.values()].filter((item) => item.rental_request_id === v[0] && ["cnic_front","cnic_back"].includes(item.document_side)).length };
+    if (q.startsWith("SELECT object_key, mime_type, document_side FROM rental_documents")) return [...this.db.rentalDocuments.values()].find(item => item.rental_request_id === v[0] && item.document_side === v[1]) ?? null;
     if (q.startsWith("SELECT id, daily_rate_paisa, with_driver_daily_rate_paisa FROM vehicles")) return this.db.vehicles.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, password_hash, full_name, phone, status FROM customers")) return [...this.db.customers.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
@@ -1650,4 +1651,48 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   assert.equal(verified.status,200);
   const processing=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(processing.status,200);
+});
+
+
+test("authorised rental staff can preview and download private CNIC images with audit records", async () => {
+  const db = new FakeD1();
+  const adminId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  const rentalId = crypto.randomUUID();
+  const token = "rental-document-access-session-token";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+  db.admins.set(adminId, { id: adminId, email: "rental@deverve.example", role: "rental", is_active: 1 });
+  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
+  db.rentalDocuments.set("doc-front", { id: "doc-front", rental_request_id: rentalId, document_side: "cnic_front", object_key: "rental-private/test/front.png", mime_type: "image/png" });
+  const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
+  const testEnv = { ...env(db), MEDIA: { get: async () => ({ body: new Response(bytes).body }) } };
+  const headers = { cookie: "__Host-deverve_admin="+token, "sec-fetch-site": "same-origin" };
+  const preview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
+  assert.equal(preview.status, 200);
+  assert.equal(preview.headers.get("content-disposition"), 'inline; filename="cnic_front.png"');
+  assert.match(preview.headers.get("cache-control") || "", /private, no-store/);
+  assert.deepEqual(new Uint8Array(await preview.arrayBuffer()), bytes);
+  assert.equal(db.audits.length, 1);
+  assert.ok(db.audits[0].includes("rental.document_viewed"));
+
+  const download = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front?download=1", "GET", undefined, headers), testEnv);
+  assert.equal(download.status, 200);
+  assert.equal(download.headers.get("content-disposition"), 'attachment; filename="cnic_front.png"');
+  assert.equal(db.audits.length, 2);
+  assert.ok(db.audits[1].includes("rental.document_downloaded"));
+});
+
+test("CNIC documents remain unavailable to unauthorised staff roles", async () => {
+  const db = new FakeD1();
+  const adminId = crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
+  const rentalId = crypto.randomUUID();
+  const token = "viewer-document-access-session-token";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+  db.admins.set(adminId, { id: adminId, email: "viewer@deverve.example", role: "viewer", is_active: 1 });
+  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
+  const denied = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, { cookie: "__Host-deverve_admin="+token }), env(db));
+  assert.equal(denied.status, 403);
 });
