@@ -339,3 +339,5 @@
 .pos-invoice-actions a{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border:1px solid #cbd8e6;border-radius:8px;color:#214a70;font-size:12px;font-weight:750}
 @media(max-width:600px){.pos-receipt{padding:16px}.pos-invoice-header{grid-template-columns:42px 1fr;gap:9px}.pos-invoice-header img{width:40px;height:40px}.pos-invoice-title{grid-column:1/-1;text-align:left}.pos-invoice-meta{grid-template-columns:1fr 1fr}.pos-invoice-actions{flex-wrap:wrap}.pos-invoice-actions>*{flex:1}}
 @media print{.pos-receipt{width:190mm!important;max-width:none!important;padding:8mm!important;border:0!important}.pos-invoice-actions{display:none!important}.pos-invoice-header,.pos-invoice-meta,.pos-invoice-table-wrap,.pos-invoice-summary,.pos-invoice-payments,.pos-invoice-footer{break-inside:avoid}}
+
+@media print{body.printing-pos-receipt .pos-receipt{position:absolute!important;inset:0 auto auto 0!important;margin:0!important;width:190mm!important;max-width:none!important;padding:8mm!important}}
