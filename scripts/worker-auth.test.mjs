@@ -715,7 +715,8 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_declined'")) {
       this.db.audits.push({ action: "order.delivery_fee_declined", values: v }); return { success: true, meta: { changes: 1 } };
     }
-    if (q.startsWith("INSERT INTO enquiry_email_queue")) { const [id,enquiry_id]=v; this.db.enquiryEmailQueue.set(id,{id,enquiry_id,status:"queued",attempts:0}); return {success:true,meta:{changes:1}}; }\n    if (q.startsWith("INSERT INTO enquiries")) {
+    if (q.startsWith("INSERT INTO enquiry_email_queue")) { const [id,enquiry_id]=v; this.db.enquiryEmailQueue.set(id,{id,enquiry_id,status:"queued",attempts:0}); return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("INSERT INTO enquiries")) {
       const [id, enquiry_type, contact_type, customer_name, phone, email, message] = v;
       this.db.enquiries.set(id, { id, enquiry_type, contact_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
@@ -1024,7 +1025,8 @@ class FakeD1 {
   rentalDocuments = new Map();
   audits = [];
   notifications = new Map();
-  notificationOutbox = new Map();\n  enquiryEmailQueue = new Map();
+  notificationOutbox = new Map();
+  enquiryEmailQueue = new Map();
   storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {

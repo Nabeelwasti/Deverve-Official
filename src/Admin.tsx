@@ -128,7 +128,8 @@ export default function Admin() {
   const [customers, setCustomers] = useState<CustomerRecord[]>([]);
   const [productReviews,setProductReviews]=useState<AdminProductReview[]>([]);
   const [customerSearch, setCustomerSearch] = useState("");
-  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);\n  const [auditSearch,setAuditSearch]=useState("");
+  const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
+  const [auditSearch,setAuditSearch]=useState("");
   const [followUpFilter, setFollowUpFilter] = useState<"all" | FollowUpItem["kind"]>("all");
   const [returnRefundDrafts, setReturnRefundDrafts] = useState<Record<string, { refund_method: string; refund_reference: string; admin_note: string }>>(() => readAdminDraft("return-refund-drafts", { values: {} as Record<string, { refund_method: string; refund_reference: string; admin_note: string }> }).values);
   const [deliveryFeeDrafts, setDeliveryFeeDrafts] = useState<Record<string, string>>(() => readAdminDraft("delivery-fee-drafts", { values: {} as Record<string, string> }).values);

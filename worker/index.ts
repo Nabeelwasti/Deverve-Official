@@ -15,7 +15,8 @@ interface D1Database {
   prepare(query: string): D1PreparedStatement;
   batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
-export interface WorkerExecutionContext { waitUntil(promise:Promise<unknown>):void; }\nexport interface Env {
+export interface WorkerExecutionContext { waitUntil(promise:Promise<unknown>):void; }
+export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
@@ -146,7 +147,8 @@ export async function processEnquiryEmailQueue(env:Env):Promise<void>{
  }catch(caught){const next=new Date(Date.now()+Math.min(60,2**Math.min(attempts+1,6))*60_000).toISOString(),failed=attempts+1>=5,code=caught instanceof Error&&/^resend_http_\\d+$/.test(caught.message)?caught.message:"provider_unavailable";try{await env.DB.prepare("UPDATE enquiry_email_queue SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}}
  }
 }
-\nconst json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response =>
+
+const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -3892,7 +3894,8 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
-export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecutionContext): Promise<Response> {\n  if(ctx)try{ctx.waitUntil(processEnquiryEmailQueue(env));}catch{}
+export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecutionContext): Promise<Response> {
+  if(ctx)try{ctx.waitUntil(processEnquiryEmailQueue(env));}catch{}
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
