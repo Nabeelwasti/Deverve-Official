@@ -1378,6 +1378,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   const db = new FakeD1();
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const buyerCookie = await customerSession(db, "wholesale-buyer@example.com");
   const headers = { cookie, "sec-fetch-site": "same-origin" };
   const productResponse = await handleRequest(request("/api/admin/products", "POST", {
     name: "Wholesale Hoodie", category: "hoodies", audience: "unisex", status: "published",
@@ -1409,7 +1410,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(view.status, 200);
   assert.equal((await view.json()).quote.items[0].quantity, 12);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
-  const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
+  const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(accepted.status, 201);
   const acceptedBody = await accepted.json();
   assert.match(acceptedBody.order.order_number, /^DV-W-/);
@@ -1420,7 +1421,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(order.phone, "+923001234567");
   assert.equal(order.delivery_address, "Shop 12, Main Market");
   assert.equal(order.total_paisa, 2220000);
-  const duplicate = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
+  const duplicate = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).accepted, true);
   assert.equal(db.orders.size, 1);
