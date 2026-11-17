@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -2094,3 +2094,9 @@ test("a successful environment Gemini key test clears the matching vault cooldow
   }
 });
 
+
+test("legacy hard-coded recipient is blocked until the owner sets a business inbox", () => {
+  assert.equal(isSafeNotificationRecipient("deverve61@gmail.com"), false);
+  assert.equal(isSafeNotificationRecipient("accounts@deverve.example"), true);
+  assert.equal(isSafeNotificationRecipient("not-an-email"), false);
+});

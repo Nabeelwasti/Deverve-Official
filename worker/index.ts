@@ -41,9 +41,9 @@ export interface Env {
 export async function processNotificationOutbox(env:Env):Promise<void>{
   const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();
   if(!apiKey||!from||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
-  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
+  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:false};
   try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
-  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)):[];
+  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&isSafeNotificationRecipient(value)):[];
   if(!to.length)return;
   const now=new Date().toISOString();
   let rows:Record<string,unknown>[]=[];
@@ -136,9 +136,9 @@ interface SessionRow {
 
 export async function processEnquiryEmailQueue(env:Env):Promise<void>{
  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();if(!apiKey||!from||!isValidEmailAddress(from))return;
- let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
+ let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:false};
  try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((x):x is string=>typeof x==="string"),enabled:parsed.enabled};}}catch{return;}
- const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((v,i,a)=>a.indexOf(v)===i&&isValidEmailAddress(v)):[];if(!to.length)return;
+ const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((v,i,a)=>a.indexOf(v)===i&&isSafeNotificationRecipient(v)):[];if(!to.length)return;
  const now=new Date().toISOString(),staleBefore=new Date(Date.now()-10*60_000).toISOString();let rows:Record<string,unknown>[]=[];
  try{const r=await env.DB.prepare("SELECT q.id,q.enquiry_id,q.attempts,e.contact_type,e.customer_name,e.phone,e.email,e.message FROM enquiry_email_queue q JOIN enquiries e ON e.id=q.enquiry_id WHERE (q.status='queued' AND q.next_attempt_at<=?) OR (q.status='processing' AND q.processing_started_at IS NOT NULL AND q.processing_started_at<=?) ORDER BY q.created_at LIMIT 10").bind(now,staleBefore).all<Record<string,unknown>>();rows=r.results??[];}catch{return;}
  const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
@@ -246,6 +246,11 @@ function generateInternalBarcode():string {
   const digits="20"+Array.from(crypto.getRandomValues(new Uint8Array(10)),value=>String(value%10)).join("");
   const sum=[...digits].reduce((total,char,index)=>total+Number(char)*(index%2===0?1:3),0);
   return digits+String((10-sum%10)%10);
+}
+
+export function isSafeNotificationRecipient(value:string):boolean {
+ const normalized=value.trim().toLowerCase();
+ return isValidEmailAddress(normalized)&&normalized!=="deverve61@gmail.com";
 }
 
 export function isValidEmailAddress(value: string): boolean { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim()); }
@@ -2711,7 +2716,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false,notification_emails:{primary:"deverve61@gmail.com",secondary:[],enabled:true}};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false,notification_emails:{primary:"",secondary:[],enabled:false}};for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -2818,7 +2823,7 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Notification inbox is temporarily unavailable",503);}
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can view business-wide notifications",403);
-  if(settings&&request.method==="GET"){try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();const recipients=saved?JSON.parse(saved.setting_value_json) as {enabled?:boolean;primary?:string}:null;const enabled=recipients?.enabled!==false;const primary=recipients?.primary??env.OWNER_NOTIFICATION_EMAIL??"deverve61@gmail.com";return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&enabled&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(primary)),provider:"Resend",primary_email:primary});}catch{return json({email_configured:false,provider:"Resend"});}}
+  if(settings&&request.method==="GET"){try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();const recipients=saved?JSON.parse(saved.setting_value_json) as {enabled?:boolean;primary?:string}:null;const enabled=recipients?.enabled!==false;const configuredPrimary=recipients?.primary??env.OWNER_NOTIFICATION_EMAIL??"";const primary=isSafeNotificationRecipient(configuredPrimary)?configuredPrimary:"";const recipientEnabled=enabled&&Boolean(primary);return json({email_configured:Boolean(env.RESEND_API_KEY&&env.RESEND_FROM_EMAIL&&recipientEnabled),provider:"Resend",primary_email:primary});}catch{return json({email_configured:false,provider:"Resend"});}}
   if(collection&&request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications ORDER BY created_at DESC LIMIT 100").all<Record<string,unknown>>();
