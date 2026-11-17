@@ -2507,11 +2507,18 @@ async function adminAuditLogRoutes(request: Request, env: Env, url: URL): Promis
   if (admin.role !== "owner") return error("Only the owner can view the audit history", 403);
   if (request.method !== "GET") return error("Method not allowed", 405);
   const limitValue = Number(url.searchParams.get("limit") ?? "100");
-  const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 200) : 100;
+  const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 100;
+  const offsetValue = Number(url.searchParams.get("offset") ?? "0");
+  const offset = Number.isInteger(offsetValue) ? Math.min(Math.max(offsetValue, 0), 10000000) : 0;
+  const search = cleanText(url.searchParams.get("search"), 120).toLowerCase();
+  const pattern = "%" + search + "%";
   try {
-    const rows = await env.DB.prepare("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs l LEFT JOIN admin_users u ON u.id = l.actor_admin_id ORDER BY l.created_at DESC, l.rowid DESC LIMIT ?")
-      .bind(limit).all<Record<string, unknown>>();
-    return json({ events: rows.results ?? [], total_returned: rows.results?.length ?? 0 });
+    const rows = await env.DB.prepare("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs l LEFT JOIN admin_users u ON u.id = l.actor_admin_id WHERE (? = '' OR lower(l.action || ' ' || l.entity_type || ' ' || COALESCE(l.entity_id,'') || ' ' || COALESCE(u.email,'') || ' ' || COALESCE(l.metadata_json,'')) LIKE ?) ORDER BY l.created_at DESC, l.rowid DESC LIMIT ? OFFSET ?")
+      .bind(search, pattern, limit + 1, offset).all<Record<string, unknown>>();
+    const events = rows.results ?? [];
+    const hasMore = events.length > limit;
+    if (hasMore) events.pop();
+    return json({ events, limit, offset, has_more: hasMore, total_returned: events.length });
   } catch { return error("Audit history could not be loaded", 503); }
 }
 
