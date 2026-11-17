@@ -424,10 +424,10 @@ test("cart opens as a review step and merges repeated identical lines", async ({
 
 test("install app control remains visible when the browser does not expose a native install prompt", async ({ page }) => {
   await page.goto("/");
-  const installButton = page.getByRole("button", { name: "Install or add De VERVE to your home screen" });
+  const installButton = page.getByRole("button", { name: "Install De VERVE app" });
   await expect(installButton).toBeVisible();
   await installButton.click();
-  await expect(page.getByRole("dialog", { name: "Add De VERVE to your device" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Install De VERVE" })).toBeVisible();
 });
 
 test("AI chat sends only real alternating conversation turns to Gemini", async ({ page }) => {
