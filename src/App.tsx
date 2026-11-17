@@ -40,9 +40,13 @@ function productGalleryImages(product: StoreProduct, selectedVariantId?: string,
     || product.variants.find((variant) => variant.available_quantity > 0)
     || product.variants.find((variant) => variant.id === selectedVariantId);
   const colour = (selectedColor || splitProductOptions(selected?.color || "")[0] || "").trim().toLowerCase();
-  const relevant = product.media.filter((item) => item.media_type === "image" && (!item.color || !item.color.trim() || !colour || item.color.trim().toLowerCase() === colour));
+  const imageMedia = product.media.filter((item) => item.media_type === "image");
+  const relevant = imageMedia.filter((item) => !item.color?.trim() || !colour || item.color.trim().toLowerCase() === colour);
   if (relevant.length) return relevant.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
-  if (product.media.some((item) => item.color?.trim())) return [];
+  const uncoloured = imageMedia.filter((item) => !item.color?.trim());
+  if (uncoloured.length) return uncoloured.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
+  const primary = imageMedia.filter((item) => item.is_primary === 1);
+  if (primary.length) return primary.map((item) => ({ id: item.id, url: item.url, alt_text: (item.alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }));
   return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
 }
 
