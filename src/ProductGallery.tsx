@@ -9,12 +9,18 @@ export default function ProductGallery({ images, className = "", autoPlay = true
   const [zoomOpen, setZoomOpen] = useState(false);
   const [zoom, setZoom] = useState(1);
   const pointerStart = useRef<number | null>(null);
+  const pointers = useRef<Map<number,{x:number;y:number}>>(new Map());
+  const pinchStart = useRef<{distance:number;zoom:number;midX:number;midY:number}|null>(null);
+  const panStart = useRef<{x:number;y:number;left:number;top:number}|null>(null);
+  const [pan,setPan] = useState({x:0,y:0});
   const rootRef = useRef<HTMLDivElement | null>(null);
   const signature = images.map(image => image.id).join("|");
   const move = (step: number) => setIndex(current => (current + step + images.length) % images.length);
+  const pointerDistance=(a:{x:number;y:number},b:{x:number;y:number})=>Math.hypot(a.x-b.x,a.y-b.y);
+  const resetZoom=()=>{setZoom(1);setPan({x:0,y:0});};
 
   useEffect(() => { setIndex(0); setZoomOpen(false); setZoom(1); }, [signature]);
-  useEffect(() => { setZoom(1); }, [index]);
+  useEffect(() => { setZoom(1); setPan({x:0,y:0}); }, [index]);
   useEffect(() => {
     if (!zoomOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -66,7 +72,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
     onPointerCancel={() => { pointerStart.current = null; setPaused(false); }}
     aria-label={"Product image gallery, " + images.length + " images"}>
     <div className="dv-gallery-stage">
-      <button type="button" className="dv-gallery-zoom-trigger" onClick={() => { setZoom(1); setZoomOpen(true); }} aria-label="Open image zoom">
+      <button type="button" className="dv-gallery-zoom-trigger" onClick={() => { if(detailsHref){window.location.assign(detailsHref);return;} resetZoom(); setZoomOpen(true); }} aria-label={detailsHref ? "View product details" : "Open image zoom"}>
         <img key={images[index].id} src={images[index].url} alt={images[index].alt_text || "Product image " + (index + 1)} draggable={false} loading={index === 0 ? "eager" : "lazy"}/>
         <span>⌕ View & zoom</span>
       </button>
@@ -76,15 +82,21 @@ export default function ProductGallery({ images, className = "", autoPlay = true
     {zoomOpen && <div className="dv-gallery-lightbox" role="dialog" aria-modal="true" aria-label="Zoomed product image" onMouseDown={event => { if (event.target === event.currentTarget) setZoomOpen(false); }}>
       <button type="button" className="dv-gallery-lightbox-close" onClick={() => setZoomOpen(false)} aria-label="Close image zoom">×</button>
       <div className="dv-gallery-lightbox-toolbar" aria-label="Image zoom controls">
-        <button type="button" onClick={() => setZoom(value => Math.max(1, value - .5))} disabled={zoom <= 1} aria-label="Zoom out">−</button>
+        <button type="button" onClick={() => {setZoom(value => Math.max(1, value - .5));setPan({x:0,y:0});}} disabled={zoom <= 1} aria-label="Zoom out">−</button>
         <span>{Math.round(zoom * 100)}%</span>
         <button type="button" onClick={() => setZoom(value => Math.min(4, value + .5))} disabled={zoom >= 4} aria-label="Zoom in">+</button>
-        <button type="button" onClick={() => setZoom(1)} disabled={zoom === 1}>Reset</button>
+        <button type="button" onClick={resetZoom} disabled={zoom === 1}>Reset</button>
       </div>
       {images.length > 1 && <button type="button" className="dv-gallery-lightbox-nav is-prev" onClick={() => move(-1)} aria-label="Previous image">‹</button>}
-      <div className="dv-gallery-lightbox-viewport"><img onClick={() => setZoom(value => value === 1 ? 2 : 1)} onDoubleClick={() => setZoom(value => value === 1 ? 2.5 : 1)} onWheel={event => { event.preventDefault(); setZoom(value => Math.max(1, Math.min(4, value + (event.deltaY < 0 ? .25 : -.25)))); }} style={{ transform: "scale(" + zoom + ")", cursor: zoom > 1 ? "zoom-out" : "zoom-in" }} src={images[index].url} alt={images[index].alt_text || "Product image " + (index + 1)}/></div>
+      <div className="dv-gallery-lightbox-viewport"
+        onPointerDown={event=>{if(event.pointerType==="mouse"&&event.button!==0)return;event.currentTarget.setPointerCapture(event.pointerId);const point={x:event.clientX,y:event.clientY};pointers.current.set(event.pointerId,point);if(pointers.current.size===2){const pair=[...pointers.current.values()];pinchStart.current={distance:pointerDistance(pair[0],pair[1]),zoom,midX:(pair[0].x+pair[1].x)/2,midY:(pair[0].y+pair[1].y)/2};panStart.current=null;}else if(zoom>1){panStart.current={x:event.clientX,y:event.clientY,left:pan.x,top:pan.y};}}}
+        onPointerMove={event=>{if(!pointers.current.has(event.pointerId))return;const point={x:event.clientX,y:event.clientY};pointers.current.set(event.pointerId,point);if(pointers.current.size>=2){const pair=[...pointers.current.values()];const distance=pointerDistance(pair[0],pair[1]);if(pinchStart.current){const next=Math.max(1,Math.min(4,pinchStart.current.zoom*distance/Math.max(1,pinchStart.current.distance)));setZoom(next);if(next===1)setPan({x:0,y:0});}event.preventDefault();}else if(panStart.current&&zoom>1){setPan({x:panStart.current.left+event.clientX-panStart.current.x,y:panStart.current.top+event.clientY-panStart.current.y});event.preventDefault();}}}
+        onPointerUp={event=>{pointers.current.delete(event.pointerId);if(pointers.current.size<2)pinchStart.current=null;if(pointers.current.size===0)panStart.current=null;}}
+        onPointerCancel={event=>{pointers.current.delete(event.pointerId);pinchStart.current=null;panStart.current=null;}}>
+        <img onDoubleClick={()=>{setZoom(value=>value===1?2.5:1);setPan({x:0,y:0});}} onWheel={event=>{event.preventDefault();setZoom(value=>Math.max(1,Math.min(4,value+(event.deltaY<0?.25:-.25))));}} style={{transform:"translate("+pan.x+"px,"+pan.y+"px) scale("+zoom+")",cursor:zoom>1?"grab":"zoom-in"}} src={images[index].url} alt={images[index].alt_text||"Product image "+(index+1)}/>
+      </div>
       {images.length > 1 && <button type="button" className="dv-gallery-lightbox-nav is-next" onClick={() => move(1)} aria-label="Next image">›</button>}
-      <span className="dv-gallery-lightbox-count">{index + 1} / {images.length} · Click image or use + / − to zoom</span>
+      <span className="dv-gallery-lightbox-count">{index + 1} / {images.length} · Pinch with two fingers · drag to inspect · use + / − to zoom</span>
     </div>}
     {images.length > 1 && <div className="dv-gallery-thumbs" aria-label="Choose product image">{visible.map(image => {
       const i = images.findIndex(item => item.id === image.id);
