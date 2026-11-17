@@ -11,6 +11,7 @@ import PublicPage from "./PublicPage";
 import ProductPage from "./ProductPage";
 import ProductGallery from "./ProductGallery";
 import ProductVariantPicker from "./ProductVariantPicker";
+import FormDraftPersistence from "./FormDraftPersistence";
 
 const categories = [
   { id: "men", name: "Men's fashion", detail: "Everyday essentials, layers and relaxed fits", tag: "01", tone: "men" },
@@ -180,7 +181,10 @@ function TurnstileWidget({ resetKey, onToken }: { resetKey: number; onToken: (to
 
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const [activeScreen, setActiveScreen] = useState<"home" | "fashion" | "wholesale" | "mobility" | "contact" | "favourites" | "policies">("home");
+  const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
+  type StoreScreen = typeof validScreens[number];
+  const readScreen = (): StoreScreen => { const value = new URLSearchParams(window.location.search).get("screen"); return validScreens.includes(value as StoreScreen) ? value as StoreScreen : "home"; };
+  const [activeScreen, setActiveScreen] = useState<StoreScreen>(readScreen);
   const [favourites, setFavourites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("deverve-favourites") || "[]") as string[]; } catch { return []; } });
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
@@ -238,7 +242,8 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("checkout") === "open") { setCheckoutOpen(true); url.searchParams.delete("checkout"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("rental") === "open") { const vehicle = url.searchParams.get("vehicle") || ""; url.searchParams.delete("rental"); url.searchParams.delete("vehicle"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); void openRentalRequest(vehicle); } }, []);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open") { const vehicle = url.searchParams.get("vehicle") || ""; void openRentalRequest(vehicle, true); } }, []);
+  useEffect(() => { const onPopState = () => setActiveScreen(readScreen()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => { void fetch("/api/storefront/payment-options", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) return; const payload = await response.json() as { online_payment_available?: boolean; environment?: "sandbox" | "production" | null; methods?: typeof paymentMethods }; setOnlinePaymentAvailable(payload.online_payment_available === true); setOnlinePaymentEnvironment(payload.online_payment_available === true ? payload.environment ?? null : null); if(Array.isArray(payload.methods)&&payload.methods.length){setPaymentMethods(payload.methods);setSelectedPaymentMethod(current=>payload.methods!.some(method=>method.id===current)?current:(payload.methods!.find(method=>method.kind==="cod")?.id??payload.methods![0].id));} }).catch(() => { setOnlinePaymentAvailable(false); setOnlinePaymentEnvironment(null); }); }, []);
@@ -344,9 +349,9 @@ function Storefront() {
       if (requestId === rentalSettingsRequest.current) setRentalSettingsLoading(false);
     }
   };
-  const openRentalRequest = async (vehicleId = "") => {
+  const openRentalRequest = async (vehicleId = "", preserveDraft = false) => {
     try { const account = await fetch("/api/customer/me", { credentials: "same-origin", headers: { accept: "application/json" } }); if (!account.ok) { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open" + (vehicleId ? "&vehicle=" + encodeURIComponent(vehicleId) : "")); return; } } catch { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open"); return; }
-    setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
+    if (!preserveDraft) setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
     setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsError(""); setRentalSettingsLoading(true); setRentalOpen(true);
     void loadRentalSettings();
   };
@@ -422,7 +427,7 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
-  const navigate = (screen: typeof activeScreen) => { setActiveScreen(screen); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); window.history.pushState({ screen }, "", url.pathname + url.search + url.hash); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => setFavourites((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
 
   return (
@@ -686,6 +691,6 @@ function Storefront() {
 export default function App() {
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead />{!isAdmin&&<><InstallPrompt /><AIChatWidget /></>}{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />}</>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<><InstallPrompt /><AIChatWidget /></>}{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />}</>;
 }
 
