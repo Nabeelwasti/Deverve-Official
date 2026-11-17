@@ -45,7 +45,8 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Owner-only in-app notification inbox and owner-managed primary/secondary email recipient settings.
 - Owner-managed customer payment methods: COD, bank transfers, mobile wallets (including SadaPay/JazzCash/Easypaisa account details), hosted HTTPS payment links and uploaded QR images. Each method can be added, edited, activated or disabled from Website Settings; checkout exposes enabled methods only.
 - Direct-transfer orders record the selected payment method and remain unpaid until the owner independently verifies receipt. Staff cannot mark payments paid; fulfilment is blocked until verification.
-- Resend notification outbox with retry/audit records; actual email delivery remains disabled until provider credentials and a verified sender are configured.
+- Resend notification outbox with retry/audit records. Contact-form enquiry emails and consent-based POS customer receipt emails are queued for delivery when a verified sender and Resend API key are configured.
+- POS customer receipts can also be queued to WhatsApp after explicit customer opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag.
 - Owner-managed brand assets and social profile URLs.
 
 ### Security and infrastructure
@@ -84,12 +85,12 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 - **Checkout:** COD and owner-configurable direct payment instructions are supported. The owner can publish bank/wallet details, IBANs, hosted HTTPS links and QR images from Website Settings. Direct transfers stay pending until the owner independently verifies receipt.
 - **Safepay:** The gateway adapter exists, but no merchant credentials or successful sandbox/webhook transaction have been verified. Keep dynamic Safepay checkout disabled until onboarding and reconciliation tests pass.
 - **PayFast:** Not integrated as a dynamic per-order gateway. Obtain the official merchant-specific hosted OneCheckout contract and credentials first. Never collect card numbers or CVV on De VERVE pages.
-- **Email:** In-app owner notifications work. Resend delivery is not active because a verified sender and API key are not configured.
-- **WhatsApp/SMS:** Customer contact links open WhatsApp; automated WhatsApp Business or SMS delivery is not connected.
+- **Email:** Owner alerts, contact-form enquiries and opt-in POS receipts have retryable queues. Actual delivery still requires a verified sender address/domain plus `RESEND_API_KEY` and `RESEND_FROM_EMAIL`.
+- **WhatsApp:** POS receipt delivery is implemented through the Meta Cloud API, but it remains inactive until the owner configures `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, an approved `WHATSAPP_RECEIPT_TEMPLATE`, and its language. The customer must explicitly opt in at the POS. Other customer contact links remain manual. SMS is not connected.
 - **Social accounts:** Public profile URLs can be stored. OAuth, publishing, inbox management, ad management and analytics imports are not part of this website.
 - **Domain:** The production site uses the Cloudflare Pages hostname. No custom domain is connected.
 - **Customer email lifecycle:** Email verification and email-based password recovery are not active.
-- **CNIC:** The production setting `cnic_uploads_enabled` is currently `true`. Both CNIC sides and consent are mandatory; documents are stored in private R2 and the scheduled retention Worker is healthy. Its policy is 30 days after completed/cancelled requests and 90 days for unresolved requests. The production smoke check verifies service bindings, not deletion of a real customer document. Confirm owner-approved wording/retention and verify deletion in a controlled test before treating this as fully closed.
+- **CNIC:** Both sides and customer consent are required when uploads are enabled. The current scheduled Worker only expires temporary upload tokens; it does **not** delete stored CNIC objects from private R2. Stored documents are therefore retained indefinitely by the current code. Older 30/90-day wording is not implemented and must not be relied upon. Owner-approved retention wording, a real deletion implementation and a controlled purge test remain mandatory before treating this as closed.
 - **Business data:** One product with one stock variant and one vehicle are currently present, alongside seven media assets and one rental request. Do not overwrite or delete these records. The catalogue and fleet still need the owner's complete, verified product, price, stock, vehicle, availability and photo information.
 
 ## Latest code and regression coverage
