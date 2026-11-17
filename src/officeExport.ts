@@ -2,7 +2,7 @@ type OfficeCell = string | number | boolean | null | undefined;
 type OfficeRow = OfficeCell[];
 
 const xmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
-const xmlEscape = (value: string): string => value.replace(/[&<>"']/g, character => xmlEntities[character] ?? character);
+const xmlEscape = (value: string): string => value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/[&<>"\']/g, character => xmlEntities[character] ?? character);
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
@@ -110,7 +110,7 @@ function columnName(index: number): string {
 }
 
 export function exportOfficeSpreadsheet(filename: string, sheetName: string, rows: OfficeRow[]): void {
-  const safeSheet = sheetName.replace(/[\[\]:*?\/\\]/g, " ").trim().slice(0, 31) || "Report";
+  const safeSheet = Array.from(sheetName, character => "[]:*?/\\\\".includes(character) ? " " : character).join("").trim().slice(0, 31) || "Report";
   const sheetRows = rows.map((row, rowIndex) => {
     const cells = row.map((value, columnIndex) => {
       const reference = columnName(columnIndex) + (rowIndex + 1);
