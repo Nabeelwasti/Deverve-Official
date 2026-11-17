@@ -49,6 +49,15 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - POS customer receipts can also be queued to WhatsApp after explicit customer opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag.
 - Owner-managed brand assets and social profile URLs.
 
+### POS receipt delivery setup
+
+- The cashier may enter a customer's email and/or WhatsApp number and must tick the matching consent checkbox before that channel is queued. Contact details are not stored for receipt delivery when consent is not given.
+- Email receipts use the existing Resend provider. Configure the Cloudflare Pages secrets RESEND_API_KEY and RESEND_FROM_EMAIL with a verified sender.
+- WhatsApp receipts use Meta's WhatsApp Cloud API. Configure WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_RECEIPT_TEMPLATE, and WHATSAPP_RECEIPT_LANGUAGE as Cloudflare Pages secrets. WHATSAPP_API_VERSION is optional and defaults to v27.0.
+- Create and get Meta approval for a Utility template named to match WHATSAPP_RECEIPT_TEMPLATE. Its body must contain three positional placeholders in this order: customer name, receipt number, and total. Suggested body: “Hello {{1}}, thank you for shopping with De VERVE. Your receipt {{2}} totals {{3}}. Please keep this message for your records.”
+- Receipt requests are written to a retryable D1 outbox in the same transaction as the sale. Provider credentials are never stored in D1. Queued receipts are retried with bounded backoff; delivery remains pending until provider setup, template approval and valid customer consent are all present.
+- Meta template messages are sent only to the phone number supplied for that sale and only when the cashier records the customer's explicit WhatsApp consent. A manual WhatsApp share link remains available as a fallback.
+
 ### Security and infrastructure
 - Cloudflare Pages Functions, D1 and private R2.
 - Server-side role checks, hashed random session tokens, HttpOnly/Secure/SameSite=Strict cookies and same-origin mutation checks.
