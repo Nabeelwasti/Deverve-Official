@@ -15,7 +15,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
   const panStart = useRef<{x:number;y:number;left:number;top:number}|null>(null);
   const [pan,setPan] = useState({x:0,y:0});
   const rootRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => { if (!zoomOpen) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setZoomOpen(false); }; window.addEventListener("keydown", closeOnEscape); return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", closeOnEscape); }; }, [zoomOpen]);
+  useEffect(() => { if (!zoomOpen) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; return () => { document.body.style.overflow = previous; }; }, [zoomOpen]);
   const zoomViewportRef = useRef<HTMLDivElement | null>(null);
   const zoomImageRef = useRef<HTMLImageElement | null>(null);
   const clampPan = (x:number,y:number,scale:number) => { const viewport=zoomViewportRef.current,image=zoomImageRef.current;if(!viewport||!image)return{x,y};const maxX=Math.max(0,(image.offsetWidth*scale-viewport.clientWidth)/2),maxY=Math.max(0,(image.offsetHeight*scale-viewport.clientHeight)/2);return{x:Math.max(-maxX,Math.min(maxX,x)),y:Math.max(-maxY,Math.min(maxY,y))};};
