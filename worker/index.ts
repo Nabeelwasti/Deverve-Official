@@ -3734,8 +3734,8 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   }
   const orderPath=path==="/api/admin/ai/keys/order";
   if(orderPath&&request.method==="POST"){
-    const body=await readJson(request,6000),ids=body?.ids;
-    if(!Array.isArray(ids)||ids.length>30||ids.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/i.test(id)))return error("Submit a valid ordered list of key IDs",400);
+    const body=await readJson(request,50_000),ids=body?.ids;
+    if(!Array.isArray(ids)||ids.some(id=>typeof id!=="string"||!/^[a-f0-9-]{36}$/i.test(id)))return error("Submit a valid ordered list of key IDs",400);
     try{
       const existing=await env.DB.prepare("SELECT id FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<{id:string}>();
       const current=(existing.results??[]).map(row=>row.id);
@@ -3790,7 +3790,10 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   }
   if(contents[contents.length-1].role!=="user")return error("Send a new message to continue",400);
   let keys:GeminiKeyRow[];
-  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{return error("The live assistant is temporarily unavailable",503);}
+  try{
+    let result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];
+    if(!keys.length){await importConfiguredGeminiEnvKeys(env);result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}
+  }catch{return error("The live assistant is temporarily unavailable",503);}
   if(!keys.length)return error("Our live assistant is being configured. Please contact De VERVE through the contact page.",503);
   const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
   if(!available.length)return json({error:"Our assistant is temporarily busy. Please try again in a few minutes."},503,{"retry-after":"60"});
