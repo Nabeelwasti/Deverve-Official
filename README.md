@@ -12,6 +12,8 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Hosting: Cloudflare Pages (`deverve-official`)
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
+- Main branch contains source changes that are not yet live. The production site remains on its previous deployment until the owner explicitly says “deploy now”.
+- Pending database changes: apply migrations 0023 and 0024 to production D1 before deploying the matching application code. They have not been applied to the live database.
 
 ## Implemented
 
