@@ -619,3 +619,31 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .product-title-link:hover{color:#2874c7;text-decoration:underline;text-underline-offset:3px}
 .product-visual.dv-gallery-card .dv-gallery-stage{width:100%;height:100%;min-height:0}
 .product-visual.dv-gallery-card .dv-gallery-zoom-trigger>img{object-fit:contain}
+
+
+/* Customer feedback and review moderation */
+.product-reviews{width:100%;margin:clamp(34px,6vw,72px) 0 20px;padding:clamp(20px,4vw,36px);border:1px solid #e1e8f0;border-radius:20px;background:#fff;min-width:0}
+.product-reviews-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.product-reviews-heading h2{margin:8px 0;color:#102d53;font:750 clamp(22px,3vw,32px) Manrope;letter-spacing:-.04em}
+.product-reviews-heading p{max-width:580px;color:#718198;font-size:12px;line-height:1.7}
+.product-review-summary{min-width:110px;padding:12px 16px;border-radius:12px;background:#f3f7fb;text-align:center}
+.product-review-summary strong{display:block;color:#102d53;font:800 25px Manrope}.product-review-summary strong span{color:#d79b24}
+.product-review-summary small{color:#708198;font-size:10px}
+.product-reviews-empty{padding:22px;border:1px dashed #d8e2ed;color:#718198;font-size:12px;text-align:center}
+.product-review-list{display:grid;gap:12px;margin:20px 0}
+.product-review-card{padding:18px;border:1px solid #e7edf4;border-radius:12px;min-width:0}
+.product-review-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.product-review-top strong{color:#183a60;font-size:12px}.product-review-top span{color:#d79b24;letter-spacing:.08em}.product-review-top small{padding:4px 7px;border-radius:999px;background:#eaf5ef;color:#28754b;font-size:9px;font-weight:750}
+.product-review-card h3{margin:12px 0 5px;color:#183a60;font-size:14px}.product-review-card p{margin:8px 0;color:#52677f;font-size:12px;line-height:1.75;overflow-wrap:anywhere}.product-review-card time{color:#8493a4;font-size:10px}
+.product-review-auth,.product-review-form{margin-top:24px;padding:20px;border-radius:14px;background:#f6f9fc}
+.product-review-auth p,.product-review-form>p{color:#718198;font-size:12px;line-height:1.7}
+.product-review-form{display:grid;gap:13px;max-width:720px}
+.product-review-form h3{margin:0;color:#102d53;font:750 19px Manrope}
+.product-review-form label{display:grid;gap:6px;color:#294763;font-size:11px;font-weight:750}
+.product-review-form input,.product-review-form select,.product-review-form textarea{width:100%;min-width:0;padding:11px 12px;border:1px solid #d4dfeb;border-radius:9px;background:#fff;color:#193c60;font:inherit;font-size:12px}
+.product-review-message{margin:0;padding:10px 12px;border-radius:8px;background:#eaf5ef;color:#236a43;font-size:11px}
+.admin-review-queue{display:grid;gap:14px}
+.admin-review-row{padding:18px;border:1px solid #e2e9f1;border-radius:12px;background:#fff}
+.admin-review-meta{display:grid;gap:5px;color:#708198;font-size:10px}
+.admin-review-meta strong{color:#173a61;font-size:13px}.admin-review-meta b{color:#d79b24;font-size:14px}
+.admin-review-row h3{margin:12px 0 6px;color:#173a61;font-size:14px}.admin-review-row p{color:#536a82;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
