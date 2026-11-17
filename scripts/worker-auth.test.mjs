@@ -553,7 +553,7 @@ class FakeStatement {
         .filter(item=>!q.includes("NOT IN ('complaint','dmca','legal','business','other')")||!["complaint","dmca","legal","business","other"].includes(item.enquiry_type));
       return { success: true, results: rows.slice(0, v[0]) };
     }
-    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) { if(this.db.failAiKeyRead) throw new Error("simulated D1 outage"); return { success: true, results: [] }; }
+    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) { if(this.db.failAiKeyRead) throw new Error("simulated D1 outage"); return { success: true, results: [...this.db.aiKeys.values()].filter(row=>row.enabled===1).sort((a,b)=>a.priority-b.priority) }; }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products")) {
       const category = q.includes("category = ?") ? v[0] : null;
       const limit = v[v.length - 1];
@@ -569,6 +569,13 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=")) {
+      const fingerprint=q.includes("WHERE key_fingerprint=?")?v[2]:null;
+      const id=q.includes("WHERE id=?")?v[2]:null;
+      const row=[...this.db.aiKeys.values()].find(item=>fingerprint?item.key_fingerprint===fingerprint:item.id===id);
+      if(row){row.failure_count=0;row.cooldown_until=null;row.last_error=null;row.last_used_at=v[0];row.updated_at=v[1];}
+      return {success:true,meta:{changes:row?1:0}};
+    }
     if (q.startsWith("INSERT INTO ai_provider_keys")) {
       const [id,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,created_at,updated_at]=v;
       this.db.aiKeys.set(id,{id,provider:"gemini",label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled:1,failure_count:0,cooldown_until:null,last_used_at:null,last_error:null,created_at,updated_at});
@@ -1882,7 +1889,8 @@ test("owner notification email validation accepts ordinary business addresses an
   assert.equal(isValidEmailAddress("bad address@example.com"), false);
 });
 
-test("public AI chat bypasses a stale vault cooldown using the configured environment secret", async () => {
+
+test("public AI chat respects a saved key cooldown instead of bypassing provider rate limits", async () => {
   const db = new FakeD1();
   const key = "AQ." + "E".repeat(48);
   const configured = { ...env(db), NabeelG_Api_key1: key };
@@ -1891,20 +1899,51 @@ test("public AI chat bypasses a stale vault cooldown using the configured enviro
   assert.ok(saved);
   saved.cooldown_until = new Date(Date.now() + 10 * 60_000).toISOString();
   const originalFetch = globalThis.fetch;
-  let receivedKey = "";
+  let providerCalls = 0;
   globalThis.fetch = async (input, init = {}) => {
     if (String(input).includes("generativelanguage.googleapis.com")) {
-      receivedKey = init.headers?.["x-goog-api-key"] || "";
-      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Chat recovered despite stale cooldown" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+      providerCalls++;
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Unexpected provider call" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     return originalFetch(input, init);
   };
   try {
     const response = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), configured);
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).reply, "Chat recovered despite stale cooldown");
-    assert.equal(receivedKey, key);
+    assert.equal(response.status, 503);
+    assert.equal(providerCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
+
+test("a successful environment Gemini key test clears the matching vault cooldown", async () => {
+  const db = new FakeD1();
+  const key = "AQ." + "F".repeat(48);
+  const configured = { ...env(db), NabeelG_Api_key1: key };
+  await importConfiguredGeminiEnvKeys(configured);
+  const saved = [...db.aiKeys.values()][0];
+  assert.ok(saved);
+  saved.cooldown_until = new Date(Date.now() + 10 * 60_000).toISOString();
+  saved.failure_count = 3;
+  saved.last_error = "quota_or_rate_limit";
+  const bootstrapped = await bootstrap(db);
+  const cookie = bootstrapped.headers.get("set-cookie").split(";")[0];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "OK" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input);
+  };
+  try {
+    const response = await handleRequest(request("/api/admin/ai/keys/test-environment", "POST", {}, { cookie, "sec-fetch-site": "same-origin" }), configured);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).ok, true);
+    assert.equal(saved.cooldown_until, null);
+    assert.equal(saved.failure_count, 0);
+    assert.equal(saved.last_error, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
