@@ -494,6 +494,11 @@ test("product card opens from its content and product cart merges by size and co
   expect(cart).toHaveLength(2);
   expect(cart.find((item: { color: string }) => item.color === "Black").quantity).toBe(2);
   expect(cart.find((item: { color: string }) => item.color === "Navy").quantity).toBe(1);
+
+  await page.reload();
+  await expect(page).toHaveURL(/\\/product\\/trouser$/);
+  await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
+  await expect(page.locator(".product-page-media-column")).toBeVisible();
 });
 
 
@@ -548,15 +553,4 @@ test("keeps the car-rental section selected after a full page reload", async ({ 
   await page.reload();
   await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "mobility");
   await expect(page.getByRole("heading", { name: /Make room for/ })).toBeVisible();
-});
-
-test("keeps the same product detail page after a direct reload", async ({ page }) => {
-  await page.goto("/product/trouser");
-  await expect(page).toHaveURL(/\/product\/trouser$/);
-  await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
-  await expect(page.locator(".product-page-media-column")).toBeVisible();
-  await page.reload();
-  await expect(page).toHaveURL(/\/product\/trouser$/);
-  await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
-  await expect(page.locator(".product-page-media-column")).toBeVisible();
 });
