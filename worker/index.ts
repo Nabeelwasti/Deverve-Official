@@ -3682,10 +3682,10 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromBase64Url(row.key_iv)},key,fromBase64Url(row.key_ciphertext));
   return new TextDecoder().decode(plain);
 }
-async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string}> {
+export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string}> {
   const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key="+encodeURIComponent(apiKey);
   try {
-    const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{temperature:.35,maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
+    const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
     const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
     if(!response.ok)return {ok:false,status:response.status,text:"",message:payload.error?.status||payload.error?.message||"Gemini request failed"};
     const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
@@ -3700,7 +3700,7 @@ type GeminiEnvironmentKeyStatus = {
   imported:boolean;
   status:"missing"|"invalid_format"|"encryption_unavailable"|"imported"|"already_imported";
 };
-async function importConfiguredGeminiEnvKeys(env:Env):Promise<GeminiEnvironmentKeyStatus[]> {
+export async function importConfiguredGeminiEnvKeys(env:Env):Promise<GeminiEnvironmentKeyStatus[]> {
   const mode=aiKeyEncryptionMode(env);
   const slots:[string,string|undefined][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1],["NabeelG_Api_key2",env.NabeelG_Api_key2]];
   const statuses:GeminiEnvironmentKeyStatus[]=[];

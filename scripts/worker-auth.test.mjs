@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, handleRequest, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -370,6 +370,7 @@ class FakeStatement {
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT id FROM ai_provider_keys WHERE key_fingerprint")) return [...this.db.aiKeys.values()].find((row) => row.key_fingerprint === v[0]) ?? null;
     if (q.startsWith("SELECT s.id, s.customer_id")) {
       const session = [...this.db.customerSessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const customer = session && this.db.customers.get(session.customer_id);
@@ -562,6 +563,11 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("INSERT INTO ai_provider_keys")) {
+      const [id,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,created_at,updated_at]=v;
+      this.db.aiKeys.set(id,{id,provider:"gemini",label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled:1,failure_count:0,cooldown_until:null,last_used_at:null,last_error:null,created_at,updated_at});
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("INSERT INTO notification_outbox")) {
       const [id, referenceId] = v;
       const rental = q.includes("rental_request_id");
@@ -984,6 +990,7 @@ class FakeD1 {
   orderStatusEvents = [];
   admins = new Map();
   sessions = new Map();
+  aiKeys = new Map();
   attempts = new Map();
   paymentAttempts = new Map();
   financialAccounts = new Map([
@@ -1758,6 +1765,43 @@ test("Gemini chat rejects a UI greeting as the first model turn and rejects non-
   }), env(db));
   assert.equal(repeatedUser.status, 400);
   assert.match((await repeatedUser.json()).error, /alternate/i);
+});
+
+test("Cloudflare Gemini environment keys import once and key1 receives primary priority", async () => {
+  const db = new FakeD1();
+  const configured = { ...env(db), NabeelG_Api_key1: "AIza" + "A".repeat(32) };
+  const first = await importConfiguredGeminiEnvKeys(configured);
+  assert.equal(first[0].status, "imported");
+  assert.equal(first[0].imported, true);
+  assert.equal(db.aiKeys.size, 1);
+  const saved = [...db.aiKeys.values()][0];
+  assert.equal(saved.label, "NabeelG_Api_key1");
+  assert.equal(saved.priority, 0);
+  assert.equal(saved.enabled, 1);
+  const second = await importConfiguredGeminiEnvKeys(configured);
+  assert.equal(second[0].status, "already_imported");
+  assert.equal(db.aiKeys.size, 1);
+});
+
+test("Gemini 3.8 generateContent omits unsupported temperature configuration", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestUrl = "";
+  let requestBody = null;
+  globalThis.fetch = async (input, init = {}) => {
+    requestUrl = String(input);
+    requestBody = JSON.parse(String(init.body || "{}"));
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Hello from Gemini" }] } }] }), {
+      status: 200, headers: { "content-type": "application/json" },
+    });
+  };
+  try {
+    const result = await callGemini("AIza" + "A".repeat(32), [{ role: "user", parts: [{ text: "Hello" }] }], "Test system");
+    assert.equal(result.ok, true);
+    assert.match(requestUrl, /models\/gemini-3\.8-flash:generateContent/);
+    assert.deepEqual(requestBody?.generationConfig, { maxOutputTokens: 650 });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
