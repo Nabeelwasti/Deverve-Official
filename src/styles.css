@@ -647,3 +647,7 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .admin-review-meta{display:grid;gap:5px;color:#708198;font-size:10px}
 .admin-review-meta strong{color:#173a61;font-size:13px}.admin-review-meta b{color:#d79b24;font-size:14px}
 .admin-review-row h3{margin:12px 0 6px;color:#173a61;font-size:14px}.admin-review-row p{color:#536a82;font-size:12px;line-height:1.7;overflow-wrap:anywhere}
+
+.dv-gallery-stage{position:relative}
+.dv-gallery-product-link{position:absolute;left:12px;bottom:12px;z-index:3;display:inline-flex;align-items:center;gap:6px;padding:8px 11px;border:1px solid #ffffff90;border-radius:999px;background:#102d53;color:#fff;text-decoration:none;font-size:10px;font-weight:800;box-shadow:0 4px 16px #102d5330}
+.dv-gallery-product-link:hover{background:#1d5b98;color:#fff}
