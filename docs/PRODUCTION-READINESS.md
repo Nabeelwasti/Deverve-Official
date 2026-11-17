@@ -6,7 +6,7 @@
 
 - The Pages API wrapper now passes its execution context to mutating Worker requests, allowing queued contact-form email delivery to run in the background. A Resend delivery test covers owner notification dispatch.
 - Owner audit history now searches the full D1 audit log with server-side filtering and paginated results instead of filtering only the latest 100 records in the browser.
-- POS sales now support explicit email and WhatsApp receipt consent. The sale and receipt outbox records are committed together in D1. Email delivery uses Resend; WhatsApp delivery uses the Meta Cloud API and an approved Utility template. The outbox has bounded retries and stale-claim recovery.
+- POS email invoice copies are queued transactionally when a customer email address is entered. WhatsApp receipts use a Meta Utility template and are queued only after the cashier records the customer's opt-in. The outbox has bounded retries and stale-claim recovery.
 - POS invoices, sales history, expense registers and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
 - POS sales history now displays per-channel receipt delivery state. Authorised staff can retry a failed email or WhatsApp receipt; the retry is consent-checked and audit-logged.
 - New D1 migrations 0030_pos_receipt_delivery.sql, 0031_enquiry_email_queue_lease_index.sql and 0032_permanent_cnic_evidence.sql add receipt delivery, queue indexing and permanent CNIC evidence guards. These migrations are committed but have not been applied to production D1.

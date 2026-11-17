@@ -68,6 +68,36 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are permanent evidence. Application code and the scheduled Worker never delete them; D1 triggers prevent deletion or mutation of document rows and block cascade deletion of linked rental records. The owner must also enable an indefinite R2 Bucket Lock rule for the rental-private/ prefix; this dashboard setting is still unverified.
 - GitHub Actions build, type-check, Worker tests, schema checks and desktop/mobile browser tests.
 
+## Owner setup checklist — email, WhatsApp and permanent CNIC evidence
+
+### Resend email delivery
+
+1. Create the business sending address on a domain De VERVE owns (for example, receipts@your-owned-domain). A free Gmail address is not a substitute for domain verification.
+2. Create a Resend account and add the owned domain under Domains.
+3. Copy the exact DNS records Resend provides (SPF and DKIM; add the recommended DMARC record) into the domain's DNS provider. Do not invent or reuse sample DNS values. Wait until Resend shows the domain as Verified.
+4. In Resend → API Keys, create a production key restricted to sending from the verified domain if the account offers that restriction. Copy it once; do not place it in GitHub or send it in chat.
+5. In Cloudflare → Workers & Pages → deverve-official → Settings → Variables and Secrets → Production, add RESEND_API_KEY as an encrypted Secret and RESEND_FROM_EMAIL as the verified sender address (plain address only, e.g. receipts@your-owned-domain).
+6. In Admin → Website & brand settings, set the primary owner notification email to the business inbox. A customer email entered as the invoice-copy address queues a transactional receipt; it is not a marketing subscription.
+7. After the owner authorises deployment, send a controlled test invoice to an address the owner controls and verify delivery, retry handling and sender authentication.
+
+### Meta WhatsApp Business delivery
+
+1. Use a Meta Business Portfolio owned by De VERVE. Add or select its WhatsApp Business Account.
+2. Register a dedicated business phone number in WhatsApp Manager. It must be verified by SMS or voice and must be eligible for the Cloud API. A number currently used in the regular WhatsApp app may need migration.
+3. In Meta for Developers, create a Business app, add the WhatsApp product, and complete the Cloud API setup. Record the **Phone Number ID** (not the visible phone number).
+4. Create a System User in Business Settings, assign the WhatsApp account/phone asset, and generate a production token with the WhatsApp messaging permissions required by Meta. Keep the token private.
+5. In WhatsApp Manager → Message templates, create a Utility template named deverve_pos_receipt in English (US), with this body and three placeholders in exactly this order: “Hello {{1}}, thank you for shopping with De VERVE. Your receipt {{2}} totals {{3}}. Please keep this message for your records.” Submit it and wait for Meta approval.
+6. In the same Cloudflare Production Variables and Secrets screen, add WHATSAPP_ACCESS_TOKEN as an encrypted Secret; WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_RECEIPT_TEMPLATE=deverve_pos_receipt and WHATSAPP_RECEIPT_LANGUAGE=en_US as variables. WHATSAPP_API_VERSION is optional; the code has a default.
+7. At checkout, staff may tick the WhatsApp receipt option only after the customer has actually agreed to receive the transactional receipt on WhatsApp. A supplied phone number alone is not opt-in. Do not use this channel for promotions unless the separate marketing permission is obtained.
+8. After deployment is authorised, test only with a business-controlled, opted-in number first. Confirm the provider message ID and delivery status before enabling normal use.
+
+### Lifetime CNIC evidence protection
+
+1. The application now avoids deleting CNIC R2 objects even when an upload transaction fails; D1 triggers reject document deletion, metadata alteration and deletion of a rental record that would cascade into stored evidence.
+2. In Cloudflare Dashboard → R2 → deverve-media-private → Settings → Bucket lock rules, add a rule named cnic-lifetime-evidence, prefix rental-private/, and retention Indefinite. Save it. R2 Bucket Lock protects existing and future objects under that prefix from deletion and overwrite while the rule remains active.
+3. Restrict Cloudflare account access with strong MFA and least-privilege roles. An account owner who removes the lock or deletes the bucket can still defeat storage protections, so maintain a second encrypted backup in a separately controlled account/location and test restoration.
+4. The bucket-lock rule has not been enabled or verified by this code change. Do not treat permanent storage immutability as complete until the owner confirms it in the dashboard.
+
 ## Production snapshot — 16 November 2026
 
 Latest verified source on `main`: `925d729be765af907a150290a2b739520e364bf9`. The current application remains React 19 + TypeScript + Vite on Cloudflare Pages/Pages Functions, Cloudflare D1 and private R2. No replacement project, database, or branch was created.
