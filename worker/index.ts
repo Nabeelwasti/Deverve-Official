@@ -1638,8 +1638,9 @@ async function adminProductMediaRoutes(request: Request, env: Env, url: URL): Pr
       const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? LIMIT 1").bind(collection[1]).first<{ id: string }>();
       if (!product) return error("Product not found", 404);
       if (color) {
-        const colourExists = await env.DB.prepare("SELECT id FROM product_variants WHERE product_id = ? AND lower(color) = lower(?) AND is_active = 1 LIMIT 1").bind(collection[1], color).first<{id:string}>();
-        if (!colourExists) return error("Choose a colour that exists in this product's active variants", 400);
+        const colourRows = await env.DB.prepare("SELECT color FROM product_variants WHERE product_id = ? AND is_active = 1").bind(collection[1]).all<{color:string}>();
+        const colourExists = (colourRows.results ?? []).some((variant) => variant.color.split(/[,;|]+/).some((value) => value.trim().toLocaleLowerCase() === color.toLocaleLowerCase()));
+        if (!colourExists) return error("Choose one colour that exists in this product's active variants", 400);
       }
       if (isPrimary && color) return error("A colour-specific photo cannot be the shared product cover", 400);
       const statements = [];
