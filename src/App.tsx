@@ -50,6 +50,9 @@ function writeAppDraft(key: string, data: object): void {
 function clearAppDraft(key: string): void {
   try { sessionStorage.removeItem("deverve:app-draft:v1:" + key); } catch { /* Storage may be unavailable. */ }
 }
+function clearFormDraft(key: string): void {
+  try { sessionStorage.removeItem("deverve:form-draft:v1:" + window.location.pathname + ":" + key); } catch { /* Storage may be unavailable. */ }
+}
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
 type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; color?: string; url: string };
@@ -228,15 +231,16 @@ function Storefront() {
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
   const [rentalOpen, setRentalOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:rental-open") === "1"; } catch { return false; } });
   const [rentalBusy, setRentalBusy] = useState(false);
-  const [rentalMessage, setRentalMessage] = useState("");
+  const initialRentalResult = readAppDraft("rental-result", { reference: "", message: "", estimate: null as number | null });
+  const [rentalMessage, setRentalMessage] = useState(initialRentalResult.message);
   const [rentalNotice, setRentalNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
   useEffect(() => {
     if (!rentalNotice) return;
     const timeout = window.setTimeout(() => setRentalNotice(null), rentalNotice.kind === "success" ? 5500 : 8000);
     return () => window.clearTimeout(timeout);
   }, [rentalNotice]);
-  const [rentalReference, setRentalReference] = useState("");
-  const [rentalSubmittedEstimatePaisa, setRentalSubmittedEstimatePaisa] = useState<number | null>(null);
+  const [rentalReference, setRentalReference] = useState(initialRentalResult.reference);
+  const [rentalSubmittedEstimatePaisa, setRentalSubmittedEstimatePaisa] = useState<number | null>(initialRentalResult.estimate);
   const [rentalFrontFile, setRentalFrontFile] = useState<File | null>(null);
   const [rentalBackFile, setRentalBackFile] = useState<File | null>(null);
   const [rentalDocsConsent, setRentalDocsConsent] = useState(false);
@@ -253,9 +257,10 @@ function Storefront() {
   const [cartOpen, setCartOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:cart-open") === "1"; } catch { return false; } });
   const [checkoutOpen, setCheckoutOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:checkout-open") === "1"; } catch { return false; } });
   const [checkoutBusy, setCheckoutBusy] = useState(false);
-  const [checkoutMessage, setCheckoutMessage] = useState("");
-  const [checkoutResult, setCheckoutResult] = useState("");
-  const [checkoutToken, setCheckoutToken] = useState(() => crypto.randomUUID());
+  const initialCheckoutResult = readAppDraft("checkout-result", { result: "", message: "" });
+  const [checkoutMessage, setCheckoutMessage] = useState(initialCheckoutResult.message);
+  const [checkoutResult, setCheckoutResult] = useState(initialCheckoutResult.result);
+  const [checkoutToken, setCheckoutToken] = useState(() => { try { return sessionStorage.getItem("deverve:checkout-token") || crypto.randomUUID(); } catch { return crypto.randomUUID(); } });
   const [onlinePaymentAvailable, setOnlinePaymentAvailable] = useState(false);
   const [onlinePaymentEnvironment, setOnlinePaymentEnvironment] = useState<"sandbox" | "production" | null>(null);
   const [paymentProvider, setPaymentProvider] = useState<"manual" | "safepay">("manual");
@@ -271,6 +276,9 @@ function Storefront() {
   useEffect(() => { writeAppDraft("enquiry", enquiry); }, [enquiry]);
   useEffect(() => { writeAppDraft("rental", rentalForm); }, [rentalForm]);
   useEffect(() => { writeAppDraft("checkout", checkoutForm); }, [checkoutForm]);
+  useEffect(() => { writeAppDraft("rental-result", { reference: rentalReference, message: rentalMessage, estimate: rentalSubmittedEstimatePaisa }); }, [rentalReference, rentalMessage, rentalSubmittedEstimatePaisa]);
+  useEffect(() => { writeAppDraft("checkout-result", { result: checkoutResult, message: checkoutMessage }); }, [checkoutResult, checkoutMessage]);
+  useEffect(() => { try { sessionStorage.setItem("deverve:checkout-token", checkoutToken); } catch { /* Storage may be unavailable. */ } }, [checkoutToken]);
   const updateEnquiry = (next: typeof emptyEnquiry) => { setEnquiry(next); writeAppDraft("enquiry", next); };
   const updateRentalForm = (next: typeof emptyRentalForm) => { setRentalForm(next); writeAppDraft("rental", next); };
   const updateCheckoutForm = (next: typeof emptyCheckoutForm) => { setCheckoutForm(next); writeAppDraft("checkout", next); };
@@ -355,6 +363,9 @@ function Storefront() {
       const result = await response.json() as { accepted?: boolean; error?: string; order_number?: string };
       if (!response.ok || !result.accepted || !result.order_number) throw new Error(result.error || "Your order could not be placed.");
       setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID()); setPaymentProvider("manual");
+      clearAppDraft("checkout");
+      clearFormDraft("storefront-checkout");
+      setCheckoutForm({ ...emptyCheckoutForm });
       setCheckoutMessage(paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "Your order request has been received. Our team will confirm the delivery fee. Once you approve the final total, sign in to your account to complete secure online payment." : "Your order request has been received. Our team will confirm the delivery fee. Once you approve the final total, you can complete the sandbox payment in your account.") : selectedPaymentMethod==="cod" ? "Your cash-on-delivery order request has been received. Our team will confirm the delivery fee and final payable total before processing." : "Your order request has been received with your selected direct payment method. Please follow the payment instructions shown at checkout and include your order number in the transfer reference. Your payment remains pending until the De VERVE owner verifies it.");
     } catch (error) { setCheckoutMessage(error instanceof Error ? error.message : "Checkout is unavailable. Please try again."); }
     finally { setCheckoutBusy(false); setCheckoutTurnstileToken(""); setCheckoutTurnstileReset((value) => value + 1); }
@@ -382,8 +393,12 @@ function Storefront() {
   };
   const openRentalRequest = async (vehicleId = "", preserveDraft = false) => {
     try { const account = await fetch("/api/customer/me", { credentials: "same-origin", headers: { accept: "application/json" } }); if (!account.ok) { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open" + (vehicleId ? "&vehicle=" + encodeURIComponent(vehicleId) : "")); return; } } catch { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open"); return; }
-    if (!preserveDraft) setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
-    setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsError(""); setRentalSettingsLoading(true); setRentalOpen(true);
+    if (!preserveDraft) {
+      setRentalForm({ ...emptyRentalForm, vehicle_id: vehicleId });
+      setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); clearAppDraft("rental-result");
+      setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage("");
+    }
+    setRentalCnicUploadsEnabled(false); setRentalSettingsError(""); setRentalSettingsLoading(true); setRentalOpen(true);
     void loadRentalSettings();
   };
   const rentalSelectedVehicle = vehicles.find((vehicle) => vehicle.id === rentalForm.vehicle_id) ?? null;
@@ -417,6 +432,7 @@ function Storefront() {
       setRentalSubmittedEstimatePaisa(result.estimated_total_paisa ?? null);
       const successMessage = result.message || "Your rental request and both CNIC images have been received securely.";
       clearAppDraft("rental");
+      clearFormDraft("storefront-rental-request");
       setRentalMessage(successMessage); setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
       setRentalNotice({ kind: "success", message: result.reference_code ? "Rental request received. Reference: " + result.reference_code : "Rental request received successfully." });
     } catch (error) {
@@ -442,6 +458,7 @@ function Storefront() {
       setSubmitMessage("Thank you. Your enquiry has been received.");
       setEnquiry({ ...emptyEnquiry });
       clearAppDraft("enquiry");
+      clearFormDraft("storefront-enquiry");
     } catch (error) {
       setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
     } finally {
@@ -595,7 +612,7 @@ function Storefront() {
         </section></div>}
         {checkoutOpen && <div className="checkout-backdrop"><section className="checkout-panel" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Choose how to pay</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
-          {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p>{selectedPaymentMethod!=="cod"&&paymentProvider!=="safepay"&&paymentMethods.find(method=>method.id===selectedPaymentMethod)&&<div className="checkout-payment-instructions"><strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label}</strong><p><b>Important:</b> Wait until De VERVE confirms the final payable amount, including delivery, before transferring money. Use the order number above as your payment reference.</p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title&&<p>Account title: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name&&<p>Bank: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number&&<p>Account / wallet: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban&&<p>IBAN: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions&&<p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url&&<a href={paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url} target="_blank" rel="noreferrer">Open payment link ↗</a>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id&&<img src={"/media/"+paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id} alt="Payment QR code" loading="lazy"/>}<small>Your order remains unpaid until the owner verifies the transfer. Keep your transaction receipt.</small></div>}<button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" onSubmit={submitCheckout}>
+          {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p>{selectedPaymentMethod!=="cod"&&paymentProvider!=="safepay"&&paymentMethods.find(method=>method.id===selectedPaymentMethod)&&<div className="checkout-payment-instructions"><strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label}</strong><p><b>Important:</b> Wait until De VERVE confirms the final payable amount, including delivery, before transferring money. Use the order number above as your payment reference.</p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title&&<p>Account title: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name&&<p>Bank: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number&&<p>Account / wallet: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban&&<p>IBAN: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions&&<p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url&&<a href={paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url} target="_blank" rel="noreferrer">Open payment link ↗</a>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id&&<img src={"/media/"+paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id} alt="Payment QR code" loading="lazy"/>}<small>Your order remains unpaid until the owner verifies the transfer. Keep your transaction receipt.</small></div>}<button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" data-draft-key="storefront-checkout" onSubmit={submitCheckout}>
             <div className="checkout-items">{cart.map((item) => <div className="checkout-item" key={cartLineKey(item)}><div><strong>{item.name}</strong><span>{[item.size, item.color].filter(Boolean).join(" / ") || item.sku || "Standard"}</span><small>{formatPrice(item.unit_price_paisa)} each</small></div><div className="checkout-quantity"><button type="button" aria-label="Decrease quantity" onClick={() => item.quantity === 1 ? removeCartItem(item) : changeCartQuantity(item, item.quantity - 1)}>−</button><span>{item.quantity}</span><button type="button" aria-label="Increase quantity" disabled={item.quantity >= item.available_quantity} onClick={() => changeCartQuantity(item, item.quantity + 1)}>+</button></div><strong>{formatPrice(item.unit_price_paisa * item.quantity)}</strong></div>)}</div>
             <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong>{promotionPreview && <><span>{promotionPreview.label}</span><strong>{promotionPreview.freeDelivery ? "FREE" : "−"+formatPrice(promotionPreview.amount)}</strong></>}<span>Estimated total before delivery</span><strong>{formatPrice(cartSubtotal-(promotionPreview?.amount??0))}</strong><span>Delivery</span><strong>{promotionPreview?.freeDelivery ? "FREE" : "Confirmed before dispatch"}</strong><span>Payment</span><strong>{paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "Card / online payment" : "Card / online payment (sandbox)") : (paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label??"Cash on delivery")}</strong></div>
             <fieldset className="checkout-payment-options"><legend>Payment method</legend>{paymentMethods.map(method=><label key={method.id}><input type="radio" name="payment_method" checked={paymentProvider==="manual"&&selectedPaymentMethod===method.id} onChange={()=>{setPaymentProvider("manual");setSelectedPaymentMethod(method.id);}}/> {method.label}{method.provider&&<small> · {method.provider}</small>}</label>)}{onlinePaymentAvailable&&<label><input type="radio" name="payment_method" checked={paymentProvider==="safepay"} onChange={()=>{setPaymentProvider("safepay");setSelectedPaymentMethod(paymentMethods.find(method=>method.kind==="cod")?.id??"cod");}}/> Safepay secure checkout <small>{onlinePaymentEnvironment==="production"?"Live gateway":"Sandbox"}</small></label>}{paymentProvider==="safepay"&&<p className="checkout-policy-note">Safepay checkout requires a De VERVE customer account. <a href="/account">Sign in or create an account</a>.</p>}{paymentProvider==="manual"&&paymentMethods.find(method=>method.id===selectedPaymentMethod&&method.kind!=="cod")&&<div className="checkout-payment-instructions"><strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label}</strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title&&<p>Account title: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name&&<p>Bank: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number&&<p>Account / wallet: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban&&<p>IBAN: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions&&<p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url&&<a href={paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url} target="_blank" rel="noreferrer">Open payment link ↗</a>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id&&<img src={"/media/"+paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id} alt="Payment QR code" loading="lazy"/>}<small>Orders paid by direct transfer remain pending until De VERVE verifies the payment. Include your order number in the transfer reference.</small></div>}</fieldset><div className="checkout-fields">
