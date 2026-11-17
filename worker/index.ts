@@ -4043,7 +4043,8 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
         "INSERT INTO enquiries (id, enquiry_type, contact_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?, ?)",
       ).bind(id, storedEnquiryType, enquiryType, customerName, phone, email || null, message).run();
       const enquiryLabels:Record<string,string>={general:"general",retail:"retail fashion",wholesale:"wholesale",rental:"car rental",complaint:"complaint",dmca:"DMCA / copyright",legal:"legal / compliance",business:"business / partnership",other:"other important matter"};
-      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+(enquiryLabels[enquiryType]||"general")+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}\n      try{await env.DB.prepare("INSERT INTO enquiry_email_queue (id,enquiry_id) VALUES (?,?)").bind(crypto.randomUUID(),id).run();}catch{}
+      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+(enquiryLabels[enquiryType]||"general")+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}
+      try{await env.DB.prepare("INSERT INTO enquiry_email_queue (id,enquiry_id) VALUES (?,?)").bind(crypto.randomUUID(),id).run();}catch{}
       return json({ accepted: true, reference: id }, 201);
     } catch {
       return error("We could not save your enquiry. Please try again later.", 503);
