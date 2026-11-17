@@ -1661,7 +1661,7 @@ test("authorised rental staff can preview and download private CNIC images with 
   const rentalId = crypto.randomUUID();
   const token = "rental-document-access-session-token";
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+  const tokenHash = Buffer.from(digest).toString("base64url");
   db.admins.set(adminId, { id: adminId, email: "rental@deverve.example", role: "rental", is_active: 1 });
   db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   db.rentalDocuments.set("doc-front", { id: "doc-front", rental_request_id: rentalId, document_side: "cnic_front", object_key: "rental-private/test/front.png", mime_type: "image/png" });
@@ -1690,7 +1690,7 @@ test("CNIC documents remain unavailable to unauthorised staff roles", async () =
   const rentalId = crypto.randomUUID();
   const token = "viewer-document-access-session-token";
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
-  const tokenHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2,"0")).join("");
+  const tokenHash = Buffer.from(digest).toString("base64url");
   db.admins.set(adminId, { id: adminId, email: "viewer@deverve.example", role: "viewer", is_active: 1 });
   db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   const denied = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, { cookie: "__Host-deverve_admin="+token }), env(db));
