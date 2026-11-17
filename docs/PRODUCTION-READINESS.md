@@ -1,29 +1,29 @@
 # Current source review — 18 November 2026
 
-**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: 2448ac79d7b2003e37d03865ddb7d5a58e073f17. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
+**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: `359675baa3b4359288922e98073a652610f1bfc1` (current CI run #829 is still in progress). These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
 
 ## Changes added after the previous verified CI run
 
 - The Pages API wrapper now passes its execution context to mutating Worker requests, allowing queued contact-form email delivery to run in the background. A Resend delivery test covers owner notification dispatch.
 - Owner audit history now searches the full D1 audit log with server-side filtering and paginated results instead of filtering only the latest 100 records in the browser.
 - POS email invoice copies are queued transactionally when a customer email address is entered. WhatsApp receipts use a Meta Utility template and are queued only after the cashier records the customer's opt-in. The outbox has bounded retries and stale-claim recovery.
-- POS invoices, sales history, expense registers and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
+- POS invoices, sales history, expense registers, customer order invoices, delivery slips, wholesale quotations and POS/inventory reports now expose branded XLSX/DOCX, CSV, JPG and print-to-PDF exports where supported. Office files are generated locally in the browser without sending business data to a third-party conversion service.
 - POS sales history now displays per-channel receipt delivery state. Authorised staff can retry a failed email or WhatsApp receipt; the retry is consent-checked and audit-logged.
 - New D1 migrations 0030_pos_receipt_delivery.sql, 0031_enquiry_email_queue_lease_index.sql and 0032_permanent_cnic_evidence.sql add receipt delivery, queue indexing and permanent CNIC evidence guards. These migrations are committed but have not been applied to production D1.
-- POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. The customer must opt in for each channel.
+- POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. A customer-provided email address queues a transactional invoice copy; only WhatsApp delivery requires recorded opt-in.
 - The previous README statement describing 30/90-day CNIC deletion was incorrect. The current scheduled retention Worker expires temporary upload tokens but does not delete stored CNIC objects. Stored documents are retained indefinitely by the current code. Do not rely on the old 30/90-day wording.
 
 ## Verification boundary
 
 - The previously successful CI run #771 applies to commit `a9c8d2a770710eb516302de68695f2a63a6a19e4`, not the additional commits listed above.
-- The receipt, audit-search, contact-email, Office-export and schema changes require a fresh successful CI run before they can be treated as verified. The last confirmed passing CI run remains #771 on the earlier commit.
-- No Cloudflare API or Wrangler deployment has been run for these changes. The live website remains on its previously deployed version until the owner explicitly authorizes deployment.
+- CI runs #816, #817, #819, #820, #821, #822, #823, #824, #825, #826 and #827 have passed on successive source commits. Runs #828 and #829 are still in progress at this snapshot; the final current commit is not certified until its own CI run passes.
+- No Cloudflare API or Wrangler deployment has been run for these changes. The live website remains on its previously deployed version until the owner explicitly authorizes deployment. The historical production snapshot below is not a live read-back for this source commit.
 
 ## Remaining release gates
 
 1. Configure a verified Resend sender, API key and sender address, then verify contact-form owner alerts and POS customer receipt delivery with controlled test addresses.
 2. Configure Meta WhatsApp Cloud API credentials and phone-number ID, create/approve the exact Utility template, and test delivery to an opted-in test number.
-3. Apply D1 migration 0030 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
+3. Apply D1 migrations 0030, 0031 and 0032 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
 4. Enable and verify indefinite R2 Bucket Lock for the rental-private/ prefix, add an independent encrypted offsite backup, and verify restore. CNIC evidence is permanent and must never be deleted.
 5. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
 6. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.
