@@ -553,7 +553,7 @@ class FakeStatement {
         .filter(item=>!q.includes("NOT IN ('complaint','dmca','legal','business','other')")||!["complaint","dmca","legal","business","other"].includes(item.enquiry_type));
       return { success: true, results: rows.slice(0, v[0]) };
     }
-    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) return { success: true, results: [] };
+    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) { if(this.db.failAiKeyRead) throw new Error("simulated D1 outage"); return { success: true, results: [] }; }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products")) {
       const category = q.includes("category = ?") ? v[0] : null;
       const limit = v[v.length - 1];
@@ -997,7 +997,7 @@ class FakeD1 {
   orderStatusEvents = [];
   admins = new Map();
   sessions = new Map();
-  aiKeys = new Map();
+  aiKeys = new Map();\n  failAiKeyRead = false;
   attempts = new Map();
   paymentAttempts = new Map();
   financialAccounts = new Map([
@@ -1820,6 +1820,14 @@ test("Gemini key management is owner-authenticated and public AI chat fails clos
   const chat = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), env(db));
   assert.equal(chat.status, 503);
   assert.match((await chat.json()).error, /being configured/i);
+});
+
+test("public AI chat still uses a configured server secret when the encrypted D1 vault is unavailable", async () => {
+  const db=new FakeD1();db.failAiKeyRead=true;
+  const key="AQ."+"D".repeat(48),originalFetch=globalThis.fetch;
+  let received="";
+  globalThis.fetch=async(input,init={})=>{if(String(input).includes("generativelanguage.googleapis.com")){received=init.headers?.["x-goog-api-key"]||"";return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"D1 fallback works"}]}}]}),{status:200,headers:{"content-type":"application/json"}});}return originalFetch(input,init);};
+  try{const response=await handleRequest(request("/api/ai/chat","POST",{messages:[{role:"user",text:"Hello"}]}),{...env(db),NabeelG_Api_key1:key});assert.equal(response.status,200);assert.equal((await response.json()).reply,"D1 fallback works");assert.equal(received,key);}finally{globalThis.fetch=originalFetch;}
 });
 
 test("public AI chat uses a configured AQ secret directly when the encrypted key vault is unavailable", async () => {

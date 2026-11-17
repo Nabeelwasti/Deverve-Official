@@ -3749,7 +3749,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       const environment_keys=await importConfiguredGeminiEnvKeys(env);
       const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
-      return json({keys:rows.results??[],environment_keys,encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"gemini-3.8-flash"});
+      return json({keys:rows.results??[],environment_keys,encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"automatic Gemini model fallback"});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -3835,13 +3835,12 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   }
   if(contents[contents.length-1].role!=="user")return error("Send a new message to continue",400);
   const configuredEnvKeys=[env.NabeelG_Api_key1?.trim(),env.NabeelG_Api_key2?.trim()].filter((key):key is string=>Boolean(key&&/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)));
-  let keys:GeminiKeyRow[];
-  try{
-    await importConfiguredGeminiEnvKeys(env);
-    const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();
-    keys=result.results??[];
-  }catch{return error("The live assistant is temporarily unavailable",503);}
-  if(!keys.length&&!configuredEnvKeys.length)return error("Our live assistant is being configured. Please contact De VERVE through the contact page.",503);
+  let keys:GeminiKeyRow[]=[];
+  // The encrypted D1 vault is an optional key source. A valid platform secret
+  // must still be usable if the vault migration or D1 query is temporarily unavailable.
+  try{await importConfiguredGeminiEnvKeys(env);}catch{}
+  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
+  if(!keys.length&&!configuredEnvKeys.length)return error("No usable Gemini key is configured. Check the server secrets or add a key in Admin → AI & live chat.",503);
   const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
   let productContext="No published product details are currently available.";
   let vehicleContext="No available vehicle details are currently available.";
