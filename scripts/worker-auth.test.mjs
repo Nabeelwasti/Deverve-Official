@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -72,6 +72,57 @@ test("owner audit history searches beyond the first page and returns a stable pa
   assert.equal(payload.events[0].id,"audit-1");
   assert.equal(payload.has_more,false);
   assert.equal(payload.offset,0);
+});
+
+test("POS receipt outbox sends only consented receipts through Resend and WhatsApp Cloud API", async () => {
+  const queueRows=[
+    {id:"email-queue",sale_id:"sale-1",channel:"email",attempts:0},
+    {id:"wa-queue",sale_id:"sale-1",channel:"whatsapp",attempts:0}
+  ];
+  const updates=[],calls=[];
+  const sale={id:"sale-1",receipt_number:"DV-20261118-ABC123",customer_name:"Receipt Customer",customer_phone:"+923001234567",customer_email:"buyer@example.com",email_receipt_consent:1,whatsapp_receipt_consent:1,total_paisa:199900};
+  const items=[{product_name_snapshot:"Premium Hoodie",sku_snapshot:"DV-HOOD-M",size_snapshot:"M",color_snapshot:"Black",quantity:1,unit_price_paisa:199900,line_total_paisa:199900}];
+  const db={
+    prepare(sql){
+      let values=[];
+      return {
+        bind(...next){values=next;return this;},
+        async first(){if(sql.includes("FROM pos_sales WHERE id=?"))return sale;return null;},
+        async all(){if(sql.includes("FROM pos_receipt_outbox"))return {results:queueRows};if(sql.includes("FROM pos_sale_items"))return {results:items};throw new Error("Unexpected receipt queue query: "+sql);},
+        async run(){updates.push({sql,values});return {success:true,meta:{changes:1}};}
+      };
+    }
+  };
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(input,init={})=>{
+    const url=String(input),body=JSON.parse(String(init.body||"{}"));
+    calls.push({url,body,headers:init.headers});
+    if(url==="https://api.resend.com/emails")return new Response(JSON.stringify({id:"resend-receipt-1"}),{status:200,headers:{"content-type":"application/json"}});
+    if(url==="https://graph.facebook.com/v27.0/123456789/messages")return new Response(JSON.stringify({messages:[{id:"wamid.receipt-1"}]}),{status:200,headers:{"content-type":"application/json"}});
+    throw new Error("Unexpected provider URL: "+url);
+  };
+  try {
+    await processPosReceiptOutbox({
+      DB:db,
+      RESEND_API_KEY:"test-resend-key",
+      RESEND_FROM_EMAIL:"receipts@deverve.example",
+      WHATSAPP_ACCESS_TOKEN:"test-whatsapp-token",
+      WHATSAPP_PHONE_NUMBER_ID:"123456789",
+      WHATSAPP_RECEIPT_TEMPLATE:"deverve_pos_receipt",
+      WHATSAPP_RECEIPT_LANGUAGE:"en"
+    });
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
+  assert.equal(calls.length,2);
+  const emailCall=calls.find(call=>call.url==="https://api.resend.com/emails");
+  assert.deepEqual(emailCall.body.to,["buyer@example.com"]);
+  assert.match(emailCall.body.text,/DV-20261118-ABC123/);
+  const whatsappCall=calls.find(call=>call.url.includes("graph.facebook.com"));
+  assert.equal(whatsappCall.body.to,"923001234567");
+  assert.equal(whatsappCall.body.template.name,"deverve_pos_receipt");
+  assert.deepEqual(whatsappCall.body.template.components[0].parameters.map(parameter=>parameter.text),["Receipt Customer","DV-20261118-ABC123","PKR 1999.00"]);
+  assert.equal(updates.filter(update=>update.sql.includes("SET status='sent'")).length,2);
 });
 
 test("POS endpoints require an authenticated staff session", async () => {
