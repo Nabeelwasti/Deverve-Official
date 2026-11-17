@@ -348,7 +348,7 @@ test("product page supports auto-advancing galleries, selectable variants and di
   await expect(page.locator(".dv-gallery-meta")).toHaveText("2 / 2");
   await page.getByRole("button", { name: "Colour Black" }).click();
   await page.getByRole("button", { name: "Size L" }).click();
-  await expect(page.getByText("5 in stock for selected option")).toBeVisible();
+  await expect(page.getByText("5 in stock for the selected option")).toBeVisible();
   await page.getByRole("button", { name: /Add to cart/ }).click();
   const checkout = page.getByRole("dialog", { name: "Choose how to pay" });
   await expect(checkout).toBeVisible();
@@ -382,7 +382,7 @@ test("published product detail page supports gallery zoom, size and colour selec
   await expect(page.locator(".product-specifications")).toContainText("Grey");
   await expect(page.locator(".dv-gallery-empty")).toContainText("Photos for this option are not available yet.");
   await page.getByRole("button", { name: /Add to cart/ }).click();
-  await expect(page.getByRole("status")).toContainText("Added to your cart");
+  await expect(page.locator(".product-added-message")).toContainText("Added to your cart");
   const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));
   expect(cart[0]).toMatchObject({ variant_id: "11111111-1111-4111-8111-111111111111", size: "M", color: "Grey", quantity: 1 });
 });
