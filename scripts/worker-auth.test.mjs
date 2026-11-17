@@ -525,6 +525,7 @@ class FakeStatement {
       const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
       return { success: true, results: rows.slice(0, v[0]) };
     }
+    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) return { success: true, results: [] };
     if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products")) {
       const category = q.includes("category = ?") ? v[0] : null;
       const limit = v[v.length - 1];
@@ -1722,4 +1723,13 @@ test("CNIC documents remain unavailable to unauthorised staff roles", async () =
   db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   const denied = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, { cookie: "__Host-deverve_admin="+token }), env(db));
   assert.equal(denied.status, 403);
+});
+
+test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
+  const db = new FakeD1();
+  const vault = await handleRequest(request("/api/admin/ai/keys", "GET"), env(db));
+  assert.equal(vault.status, 401);
+  const chat = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), env(db));
+  assert.equal(chat.status, 503);
+  assert.match((await chat.json()).error, /being configured/i);
 });
