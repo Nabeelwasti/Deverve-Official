@@ -507,6 +507,8 @@ test("restores the active storefront section and unfinished enquiry after a relo
   await page.getByLabel("Your name").fill("Progress Recovery Customer");
   await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
   await page.getByLabel("How can we help?").fill("I am completing an enquiry and must not lose this message.");
+  const appDraft = await page.evaluate(() => sessionStorage.getItem("deverve:app-draft:v1:enquiry"));
+  expect(appDraft).toContain("Progress Recovery Customer");
 
   await page.reload();
   await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "contact");
@@ -535,4 +537,27 @@ test("restores an open rental form and its text fields after reload while requir
   await expect(restored.getByLabel(/Destination complete address/)).toHaveValue("20 Test Road, Lahore");
   await expect(restored.getByLabel(/CNIC front image/)).toHaveValue("");
   await expect(restored.getByLabel(/CNIC back image/)).toHaveValue("");
+});
+
+
+test("keeps the car-rental section selected after a full page reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "mobility");
+  await expect(page).toHaveURL(/screen=mobility/);
+  await page.reload();
+  await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "mobility");
+  await expect(page.getByRole("heading", { name: /Make room for/ })).toBeVisible();
+});
+
+test("keeps the same product detail page after a direct reload", async ({ page }) => {
+  await page.goto("/product/trouser");
+  await expect(page).toHaveURL(/\/product\/trouser$/);
+  await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
+  await expect(page.locator(".product-page-media-column")).toBeVisible();
+  await page.reload();
+  await expect(page).toHaveURL(/\/product\/trouser$/);
+  await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
+  await expect(page.locator(".product-page-media-column")).toBeVisible();
 });
