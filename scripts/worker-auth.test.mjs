@@ -1018,6 +1018,14 @@ const bootstrap = (db, overrides = {}) => handleRequest(request("/api/admin/boot
   password: "A-strong-password-2026",
   ...overrides,
 }), env(db));
+const customerSession = async (db, email = "buyer@example.com") => {
+  const response = await handleRequest(request("/api/customer/register", "POST", {
+    full_name: "Browser Buyer", phone: "+923001234567", email,
+    password: "A-strong-customer-password-2026", turnstile_token: "test-valid-token",
+  }, { "cf-connecting-ip": "203.0.113.199", "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(response.status, 201);
+  return response.headers.get("set-cookie").split(";")[0];
+};
 const login = (db, password) => handleRequest(request("/api/admin/login", "POST", {
   email: "owner@deverve.example", password,
 }, { "cf-connecting-ip": "203.0.113.10", "sec-fetch-site": "same-origin" }), env(db));
@@ -1242,6 +1250,8 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const customerCookie = await customerSession(db, "checkout-buyer@example.com");
+  const customerHeaders = { cookie: customerCookie, "sec-fetch-site": "same-origin" };
   const productResponse = await handleRequest(request("/api/admin/products", "POST", {
     name: "Checkout Hoodie", category: "hoodies", audience: "unisex", retail_price_paisa: 250000,
   }, headers), env(db));
@@ -1267,7 +1277,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     delivery_address: "House 10, Street 2, Model Town", city: "Jhelum", customer_note: "",
     items: [{ variant_id: variantId, quantity: 2 }],
   };
-  const placed = await handleRequest(request("/api/orders", "POST", payload), env(db));
+  const placed = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(placed.status, 201);
   const placedBody = await placed.json();
   assert.match(placedBody.order_number, /^DV-/);
@@ -1284,7 +1294,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
 
   const unavailable = await handleRequest(request("/api/orders", "POST", {
     ...payload, checkout_token: "123e4567-e89b-42d3-a456-426614174001", items: [{ variant_id: variantId, quantity: 10 }],
-  }), env(db));
+  }, customerHeaders), env(db));
   assert.equal(unavailable.status, 409);
   assert.equal(db.orders.size, 1);
 
@@ -1316,6 +1326,8 @@ test("cancelling a COD order releases its reservation without changing physical 
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const customerCookie = await customerSession(db, "cancel-buyer@example.com");
+  const customerHeaders = { cookie: customerCookie, "sec-fetch-site": "same-origin" };
   const product = await handleRequest(request("/api/admin/products", "POST", {
     name: "Cancel Test Tee", category: "t-shirts", audience: "unisex", retail_price_paisa: 120000,
   }, headers), env(db));
@@ -1329,7 +1341,7 @@ test("cancelling a COD order releases its reservation without changing physical 
     checkout_token: "123e4567-e89b-42d3-a456-426614174002",
     customer_name: "Cancel Buyer", phone: "+923001234567", delivery_address: "House 10, Street 2", city: "Jhelum",
     items: [{ variant_id: variantId, quantity: 3 }],
-  }), env(db));
+  }, customerHeaders), env(db));
   assert.equal(placed.status, 201);
   const orderId = [...db.orders.keys()][0];
   const cancelled = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
@@ -1421,6 +1433,7 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const customerCookie = await customerSession(db, "rental-buyer@example.com");
   const createVehicle = async (name, selfRate, driverRate) => {
     const response = await handleRequest(request("/api/admin/vehicles", "POST", {
       name, vehicle_type: "Sedan", transmission: "Automatic", seats: 5, fuel_type: "Petrol",
@@ -1457,7 +1470,7 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
     return form;
   };
   const sendForm = (form) => handleRequest(new Request(origin + "/api/rentals", {
-    method: "POST", headers: { origin, "cf-connecting-ip": "203.0.113.122", "sec-fetch-site": "same-origin" }, body: form,
+    method: "POST", headers: { origin, cookie: customerCookie, "cf-connecting-ip": "203.0.113.122", "sec-fetch-site": "same-origin" }, body: form,
   }), env(db));
 
   const missingDocuments = await sendForm(makeForm(vehicleOne, "Missing CNIC", "with_driver", false));
@@ -1628,6 +1641,7 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   const db=new FakeD1();
   const setup=await bootstrap(db);
   const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const customerCookie=await customerSession(db,"direct-pay-buyer@example.com");
   db.storeSettings.set("payment_methods",{setting_value_json:JSON.stringify({methods:[
     {id:"cod",kind:"cod",label:"Cash on delivery",enabled:true},
     {id:"bank-transfer",kind:"bank",label:"Bank transfer",enabled:true}
@@ -1637,7 +1651,7 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   await handleRequest(request("/api/admin/products/"+productId,"PATCH",{status:"published"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   const variantResponse=await handleRequest(request("/api/admin/products/"+productId+"/variants","POST",{sku:"DV-PAY-M",size:"M",color:"Navy",initial_stock:3},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   const variantId=(await variantResponse.json()).variant.id;
-  const placed=await handleRequest(request("/api/orders","POST",{checkout_token:"123e4567-e89b-42d3-a456-426614174099",customer_name:"Direct Pay Buyer",phone:"+923001234567",delivery_address:"House 10, Street 2, Model Town",city:"Jhelum",payment_method:"bank-transfer",items:[{variant_id:variantId,quantity:1}]}),env(db));
+  const placed=await handleRequest(request("/api/orders","POST",{checkout_token:"123e4567-e89b-42d3-a456-426614174099",customer_name:"Direct Pay Buyer",phone:"+923001234567",delivery_address:"House 10, Street 2, Model Town",city:"Jhelum",payment_method:"bank-transfer",items:[{variant_id:variantId,quantity:1}]},{cookie:customerCookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(placed.status,201);
   const order=[...db.orders.values()][0];
   assert.equal(order.payment_method,"bank-transfer");
