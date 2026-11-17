@@ -2038,9 +2038,28 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (request.method === "GET" && path === "/api/admin/pos/sales") {
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 50) || 50));
     try {
-      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.name AS cashier_name FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
+      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.name AS cashier_name, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='email' LIMIT 1),'not_requested') AS email_receipt_status, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='whatsapp' LIMIT 1),'not_requested') AS whatsapp_receipt_status FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
       return json({ sales: rows.results ?? [] });
     } catch { return error("POS sales history could not be loaded", 503); }
+  }
+  if (request.method === "POST" && path === "/api/admin/pos/receipts/retry") {
+    if (!requireSameOrigin(request,url)) return error("Request origin could not be verified",403);
+    const body=await readJson(request);
+    const saleId=typeof body?.sale_id==="string"?body.sale_id:"";
+    const channel=body?.channel;
+    if(!/^[a-f0-9-]{36}$/i.test(saleId)||!(channel==="email"||channel==="whatsapp"))return error("Choose a valid sale and receipt channel",400);
+    try{
+      const sale=await env.DB.prepare("SELECT customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+      if(!sale)return error("POS sale not found",404);
+      if(channel==="email"&&(Number(sale.email_receipt_consent)!==1||!isValidEmailAddress(String(sale.customer_email??""))))return error("This sale has no valid customer email consent",409);
+      if(channel==="whatsapp"&&(Number(sale.whatsapp_receipt_consent)!==1||!validPhone(String(sale.customer_phone??""))))return error("This sale has no valid WhatsApp consent",409);
+      const queue=await env.DB.prepare("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed' LIMIT 1").bind(saleId,channel).first<{id:string}>();
+      if(!queue)return error("There is no failed receipt to retry",409);
+      const updated=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='queued',attempts=0,next_attempt_at=?,processing_started_at=NULL,last_error_code=NULL WHERE id=? AND status='failed'").bind(new Date().toISOString(),queue.id).run();
+      if((updated.meta?.changes??0)!==1)return error("Receipt status changed; refresh and try again",409);
+      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.receipt_retry_requested','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({channel})).run();
+      return json({queued:true,channel});
+    }catch{return error("Receipt delivery could not be requeued",503);}
   }
   if (request.method === "GET" && path === "/api/admin/pos/summary") {
     if (!canManageMoney) return error("Only an owner or manager can view financial reports",403);
