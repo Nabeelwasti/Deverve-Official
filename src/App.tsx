@@ -34,7 +34,7 @@ type StoreProduct = { id: string; slug: string; name: string; description: strin
 type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa?: number | null; image_key: string | null; image_url: string | null; description: string; media?: Array<{id:string;url:string;alt_text:string;position:number;is_primary:number}> };
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
 
-function splitProductOptions(value: string) { return [...new Set(value.split(/[,;|\\n]+/).map(item => item.trim()).filter(Boolean))]; }
+function splitProductOptions(value: string) { return [...new Set(value.split(/[,;|\n]+/).map(item => item.trim()).filter(Boolean))]; }
 function productGalleryImages(product: StoreProduct, selectedVariantId?: string, selectedColor?: string) {
   const selected = product.variants.find((variant) => variant.id === selectedVariantId && variant.available_quantity > 0)
     || product.variants.find((variant) => variant.available_quantity > 0)
