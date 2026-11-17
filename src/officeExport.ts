@@ -111,7 +111,7 @@ function columnName(index: number): string {
 }
 
 export function exportOfficeSpreadsheet(filename: string, sheetName: string, rows: OfficeRow[]): void {
-  const safeSheet = sheetName.replace(/[\[\]:*?/\\]/g, " ").trim().slice(0, 31) || "Report";
+  const safeSheet = sheetName.replace(/[\[\]:*?\/\\]/g, " ").trim().slice(0, 31) || "Report";
   const sheetRows = rows.map((row, rowIndex) => {
     const cells = row.map((value, columnIndex) => {
       const reference = columnName(columnIndex) + (rowIndex + 1);
