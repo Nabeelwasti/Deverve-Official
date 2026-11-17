@@ -3696,7 +3696,7 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromBase64Url(row.key_iv)},key,fromBase64Url(row.key_ciphertext));
   return new TextDecoder().decode(plain);
 }
-const GEMINI_MODEL_FALLBACKS=["gemini-2.5-flash","gemini-2.5-flash-lite","gemini-3-flash-preview","gemini-3.8-flash"] as const;
+const GEMINI_MODEL_FALLBACKS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-2.5-flash-lite"] as const;
 export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string;model:string}> {
   let last:{ok:boolean;status:number;text:string;message:string;model:string}={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model:GEMINI_MODEL_FALLBACKS[0]};
   for(const model of GEMINI_MODEL_FALLBACKS){
@@ -3871,7 +3871,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     if(saved&&!undecryptableFingerprints.has(fingerprint))continue;
     attempted++;
     const result=await callGemini(apiKey,contents,systemInstruction);
-    if(result.ok)return json({reply:result.text,model:"gemini-3.8-flash"});
+    if(result.ok)return json({reply:result.text,model:result.model});
     if(result.status>=400&&result.status<500&&result.status!==401&&result.status!==403&&result.status!==429)return error("Please rephrase your message and try again",400);
   }
   return json({error:attempted?"Our assistant is temporarily busy. Please try again shortly or contact De VERVE.":"Our live assistant is not available"},503,{"retry-after":"60"});

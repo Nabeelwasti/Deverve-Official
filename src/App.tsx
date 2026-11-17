@@ -9,6 +9,7 @@ const DeliveryFeeApproval = lazy(() => import("./DeliveryFeeApproval"));
 const CustomerAccount = lazy(() => import("./CustomerAccount"));
 const PublicPage = lazy(() => import("./PublicPage"));
 const ProductPage = lazy(() => import("./ProductPage"));
+const NotFound = lazy(() => import("./NotFound"));
 import ProductGallery from "./ProductGallery";
 import ProductVariantPicker from "./ProductVariantPicker";
 import FormDraftPersistence from "./FormDraftPersistence";
@@ -738,6 +739,6 @@ function Storefront() {
 export default function App() {
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<><InstallPrompt /><AIChatWidget /></>}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : <Storefront />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<><InstallPrompt /><AIChatWidget /></>}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <Storefront /> : <NotFound />}</Suspense></>;
 }
 

@@ -43,6 +43,15 @@ function upsertCanonical(html: string, href: string): string {
   return expression.test(html) ? html.replace(expression, tag) : html.replace(/<\/head>/i, tag + "\n</head>");
 }
 
+async function notFoundResponse(response: Response): Promise<Response> {
+  const headers = new Headers(response.headers);
+  for (const header of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(header);
+  headers.set("cache-control", "no-store");
+  headers.set("x-robots-tag", "noindex, nofollow");
+  const body = await response.clone().text();
+  return new Response(body, { status: 404, statusText: "Not Found", headers });
+}
+
 export async function onRequest(context: PagesContext): Promise<Response> {
   const request = context.request;
   const env = context.env;
@@ -59,13 +68,13 @@ export async function onRequest(context: PagesContext): Promise<Response> {
   } catch {
     return response;
   }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return response;
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return notFoundResponse(response);
 
   try {
     const product = await env.DB.prepare(
       "SELECT id, slug, name, description, retail_price_paisa, seo_title, seo_description FROM products WHERE slug = ? AND status = 'published' LIMIT 1"
     ).bind(slug).first<ProductSeoRow>();
-    if (!product) return response;
+    if (!product) return notFoundResponse(response);
 
     const [image, availability] = await Promise.all([
       env.DB.prepare(
@@ -124,7 +133,7 @@ export async function onRequest(context: PagesContext): Promise<Response> {
     html = html.replace(/<\/head>/i, jsonLdTag + "\n</head>");
 
     const headers = new Headers(response.headers);
-    headers.delete("content-length");
+    for (const header of ["content-length", "content-encoding", "etag", "last-modified", "content-md5"]) headers.delete(header);
     headers.set("content-type", "text/html; charset=utf-8");
     headers.set("cache-control", "public, max-age=0, s-maxage=60, stale-while-revalidate=300");
     return new Response(html, { status: response.status, statusText: response.statusText, headers });

@@ -1807,10 +1807,27 @@ test("Gemini 3.8 generateContent uses the API-key header and omits unsupported t
     const key="AQ."+"A".repeat(48);
     const result=await callGemini(key,[{role:"user",parts:[{text:"Hello"}]}],"Test system");
     assert.equal(result.ok,true);
-    assert.match(requestUrl,/models\/gemini-2\.5-flash:generateContent$/);
+    assert.match(requestUrl,/models\/gemini-3\.8-flash:generateContent$/);
     assert.equal(new URL(requestUrl).search,"");
     assert.equal(requestHeaders["x-goog-api-key"],key);
     assert.deepEqual(requestBody?.generationConfig,{maxOutputTokens:650});
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test("Gemini skips an unavailable stable model and reports the model that actually answered", async () => {
+  const originalFetch=globalThis.fetch;
+  const attempted=[];
+  globalThis.fetch=async(input)=>{
+    const model=new URL(String(input)).pathname.match(/models\/([^:]+):generateContent$/)?.[1]||"";
+    attempted.push(model);
+    if(model==="gemini-3.8-flash")return new Response(JSON.stringify({error:{status:"NOT_FOUND",message:"Model not found"}}),{status:404,headers:{"content-type":"application/json"}});
+    return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"Fallback model answered"}]}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const result=await callGemini("AQ."+"A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
+    assert.equal(result.ok,true);
+    assert.equal(result.model,"gemini-3.6-flash");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.6-flash"]);
   }finally{globalThis.fetch=originalFetch;}
 });
 
@@ -1846,7 +1863,9 @@ test("public AI chat uses a configured AQ secret directly when the encrypted key
   try {
     const chat = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), { ...env(db, ""), NabeelG_Api_key1: key });
     assert.equal(chat.status, 200);
-    assert.equal((await chat.json()).reply, "Hello from the live assistant");
+    const payload = await chat.json();
+    assert.equal(payload.reply, "Hello from the live assistant");
+    assert.equal(payload.model, "gemini-3.8-flash");
     assert.equal(receivedKey, key);
     assert.equal(db.aiKeys.size, 0);
   } finally {
