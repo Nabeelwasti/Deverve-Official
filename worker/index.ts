@@ -3509,7 +3509,7 @@ export async function sitemapResponse(env:Env):Promise<Response>{
 }
 
 async function productReviewRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
-  const publicMatch = url.pathname.match(/^\\/api\\/products\\/([a-f0-9-]{36})\\/reviews$/i);
+  const publicMatch = url.pathname.match(/^\/api\/products\/([a-f0-9-]{36})\/reviews$/i);
   if (publicMatch) {
     const productId = publicMatch[1];
     if (request.method === "GET") {
