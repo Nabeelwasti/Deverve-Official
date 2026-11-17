@@ -42,7 +42,7 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
   if(!to.length)return;
   const now=new Date().toISOString();
   let rows:Record<string,unknown>[]=[];
-  try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
+  try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now,new Date(Date.now()-10*60_000).toISOString()).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
   for(const row of rows){
     const id=String(row.id),template=String(row.template_key);
     if(!["owner_order_created","owner_rental_created","owner_payment_succeeded","owner_exchange_created"].includes(template))continue;
@@ -69,14 +69,14 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
       const payload=await response.json().catch(()=>({})) as {id?:string};
       if(!response.ok)throw new Error("resend_http_"+response.status);
       await env.DB.batch([
-        env.DB.prepare("UPDATE notification_outbox SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id),
+        env.DB.prepare("UPDATE notification_outbox SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL,processing_started_at=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id),
         env.DB.prepare("INSERT INTO notification_attempts (id,outbox_id,provider,outcome,provider_message_id) VALUES (?,?, 'resend','accepted',?)").bind(crypto.randomUUID(),id,payload.id??null)
       ]);
     }catch(caught){
       const attempts=Number(row.attempts??0)+1,failed=attempts>=5,next=new Date(Date.now()+Math.min(60,2**attempts)*60_000).toISOString();
       const code=caught instanceof Error&&/^resend_http_\d+$/.test(caught.message)?caught.message:"provider_unavailable";
       try{await env.DB.batch([
-        env.DB.prepare("UPDATE notification_outbox SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id),
+        env.DB.prepare("UPDATE notification_outbox SET status=?,next_attempt_at=?,last_error_code=?,processing_started_at=NULL WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id),
         env.DB.prepare("INSERT INTO notification_attempts (id,outbox_id,provider,outcome,error_code) VALUES (?,?, 'resend','error',?)").bind(crypto.randomUUID(),id,code)
       ]);}catch{}
     }
@@ -130,7 +130,7 @@ interface SessionRow {
 
 
 export async function processEnquiryEmailQueue(env:Env):Promise<void>{
- const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();if(!apiKey||!from||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))return;
+ const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();if(!apiKey||!from||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
  try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((x):x is string=>typeof x==="string"),enabled:parsed.enabled};}}catch{return;}
  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((v,i,a)=>a.indexOf(v)===i&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(v)):[];if(!to.length)return;
@@ -140,11 +140,11 @@ export async function processEnquiryEmailQueue(env:Env):Promise<void>{
  for(const row of rows){const id=String(row.id),attempts=Number(row.attempts??0);try{
   const claim=await env.DB.prepare("UPDATE enquiry_email_queue SET status='processing',attempts=attempts+1 WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(id,now).run();if((claim.meta?.changes??0)!==1)continue;
   const name=String(row.customer_name||"Website visitor"),type=String(row.contact_type||"general"),phone=String(row.phone||""),email=String(row.email||""),message=String(row.message||"");
-  const subject="New De VERVE website enquiry · "+type.slice(0,50),textBody="A new website enquiry was submitted.\\n\\nName: "+name+"\\nType: "+type+"\\nPhone: "+phone+"\\nEmail: "+(email||"Not provided")+"\\n\\nMessage:\\n"+message;
+  const subject="New De VERVE website enquiry · "+type.slice(0,50),textBody="A new website enquiry was submitted.\n\nName: "+name+"\nType: "+type+"\nPhone: "+phone+"\nEmail: "+(email||"Not provided")+"\n\nMessage:\n"+message;
   const html="<div style='font-family:Arial,sans-serif;color:#173b63;max-width:680px;margin:auto'><h2>De VERVE · New website enquiry</h2><p>A customer has sent a message through the website.</p><p><b>Name:</b> "+esc(name)+"<br><b>Type:</b> "+esc(type)+"<br><b>Phone:</b> "+esc(phone)+"<br><b>Email:</b> "+esc(email||"Not provided")+"</p><h3>Message</h3><p style='white-space:pre-wrap'>"+esc(message)+"</p><p><a href='https://deverve-official.pages.dev/admin?section=enquiries'>Open Enquiries in Admin</a></p></div>";
   const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody,html}),signal:AbortSignal.timeout(8000)});const payload=await response.json().catch(()=>({})) as {id?:string};if(!response.ok)throw new Error("resend_http_"+response.status);
   await env.DB.prepare("UPDATE enquiry_email_queue SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id).run();
- }catch(caught){const next=new Date(Date.now()+Math.min(60,2**Math.min(attempts+1,6))*60_000).toISOString(),failed=attempts+1>=5,code=caught instanceof Error&&/^resend_http_\\d+$/.test(caught.message)?caught.message:"provider_unavailable";try{await env.DB.prepare("UPDATE enquiry_email_queue SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}}
+ }catch(caught){const next=new Date(Date.now()+Math.min(60,2**Math.min(attempts+1,6))*60_000).toISOString(),failed=attempts+1>=5,code=caught instanceof Error&&/^resend_http_\d+$/.test(caught.message)?caught.message:"provider_unavailable";try{await env.DB.prepare("UPDATE enquiry_email_queue SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}}
  }
 }
 

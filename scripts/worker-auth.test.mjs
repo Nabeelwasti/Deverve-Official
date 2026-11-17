@@ -1806,7 +1806,7 @@ test("Gemini 3.8 generateContent uses the API-key header and omits unsupported t
     const key="AQ."+"A".repeat(48);
     const result=await callGemini(key,[{role:"user",parts:[{text:"Hello"}]}],"Test system");
     assert.equal(result.ok,true);
-    assert.match(requestUrl,/models\/gemini-3\.8-flash:generateContent$/);
+    assert.match(requestUrl,/models\/gemini-2\.5-flash:generateContent$/);
     assert.equal(new URL(requestUrl).search,"");
     assert.equal(requestHeaders["x-goog-api-key"],key);
     assert.deepEqual(requestBody?.generationConfig,{maxOutputTokens:650});

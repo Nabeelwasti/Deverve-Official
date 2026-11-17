@@ -462,8 +462,6 @@ function Storefront() {
       setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
     } finally {
       setSending(false);
-      setEnquiryTurnstileToken("");
-      setEnquiryTurnstileReset((value) => value + 1);
     }
   };
 
