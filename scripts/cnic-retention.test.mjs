@@ -24,6 +24,6 @@ test("retention health reports indefinite private document retention", async () 
 
 test("rental upload and scheduled maintenance code never delete CNIC evidence objects", () => {
   const workerSource = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(workerSource, /env\\.MEDIA\\.delete\\(object\\.key\\)/);
-  assert.match(workerSource, /rental-private\\//);
+  assert.doesNotMatch(workerSource, /env\.MEDIA\.delete\(object\.key\)/);
+  assert.match(workerSource, /rental-private\//);
 });
