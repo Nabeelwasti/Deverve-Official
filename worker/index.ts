@@ -164,7 +164,8 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const now=new Date().toISOString();
  let rows:Record<string,unknown>[]=[];
  try{
-  const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 20").bind(now).all<Record<string,unknown>>();
+  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
+  const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE (status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?) ORDER BY created_at LIMIT 20").bind(now,staleBefore).all<Record<string,unknown>>();
   rows=result.results??[];
  }catch{return;}
  const esc=(value:string)=>value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
@@ -175,7 +176,7 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
   if(channel!=="email"&&channel!=="whatsapp")continue;
   const claimedAt=new Date().toISOString();
   try{
-   const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(claimedAt,id,now).run();
+   const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?))").bind(claimedAt,id,now,staleBefore).run();
    if((claim.meta?.changes??0)!==1)continue;
    const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
    if(!sale)throw new Error("receipt_sale_missing");
