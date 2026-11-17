@@ -86,7 +86,7 @@ export default function FormDraftPersistence() {
     const restored = new WeakSet<HTMLFormElement>();
     const scan = () => {
       const forms = Array.from(document.forms);
-      forms.forEach((form, index) => {
+      forms.forEach((form) => {
         if (restored.has(form)) return;
         const key = formKey(form);
         restore(form, key);
@@ -98,17 +98,13 @@ export default function FormDraftPersistence() {
       if (!(target instanceof Element)) return;
       const form = target.closest("form");
       if (form instanceof HTMLFormElement) {
-        const index = Array.from(document.forms).indexOf(form);
-        if (index >= 0) save(form, formKey(form));
+        save(form, formKey(form));
       }
     };
     const onReset = (event: Event) => {
       const form = event.target;
       if (!(form instanceof HTMLFormElement)) return;
-      const index = Array.from(document.forms).indexOf(form);
-      if (index >= 0) {
-        try { sessionStorage.removeItem(formKey(form)); } catch { /* ignore storage errors */ }
-      }
+      try { sessionStorage.removeItem(formKey(form)); } catch { /* ignore storage errors */ }
     };
     scan();
     const observer = new MutationObserver(scan);
