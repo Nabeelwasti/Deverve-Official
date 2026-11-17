@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type GalleryImage = { id: string; url: string; alt_text: string };
 
-export default function ProductGallery({ images, className = "", autoPlay = true }: { images: GalleryImage[]; className?: string; autoPlay?: boolean }) {
+export default function ProductGallery({ images, className = "", autoPlay = true, detailsHref }: { images: GalleryImage[]; className?: string; autoPlay?: boolean; detailsHref?: string }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [inView, setInView] = useState(false);
@@ -71,6 +71,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
         <span>⌕ View & zoom</span>
       </button>
       {images.length > 1 && <><div className="dv-gallery-controls"><button type="button" onClick={() => move(-1)} aria-label="Previous product image">‹</button><button type="button" onClick={() => move(1)} aria-label="Next product image">›</button></div><span className="dv-gallery-meta" aria-live="polite">{index + 1} / {images.length}</span></>}
+      {detailsHref && <a className="dv-gallery-product-link" href={detailsHref}>View product details ↗</a>}
     </div>
     {zoomOpen && <div className="dv-gallery-lightbox" role="dialog" aria-modal="true" aria-label="Zoomed product image" onMouseDown={event => { if (event.target === event.currentTarget) setZoomOpen(false); }}>
       <button type="button" className="dv-gallery-lightbox-close" onClick={() => setZoomOpen(false)} aria-label="Close image zoom">×</button>
