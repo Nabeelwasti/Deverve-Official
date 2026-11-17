@@ -228,8 +228,8 @@ function Storefront() {
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [selectedVariantOptions, setSelectedVariantOptions] = useState<Record<string, {size:string;color:string}>>({});
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
-  const [cartOpen, setCartOpen] = useState(false);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [cartOpen, setCartOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:cart-open") === "1"; } catch { return false; } });
+  const [checkoutOpen, setCheckoutOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:checkout-open") === "1"; } catch { return false; } });
   const [checkoutBusy, setCheckoutBusy] = useState(false);
   const [checkoutMessage, setCheckoutMessage] = useState("");
   const [checkoutResult, setCheckoutResult] = useState("");
@@ -242,8 +242,9 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open") { const vehicle = url.searchParams.get("vehicle") || ""; void openRentalRequest(vehicle, true); } }, []);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || sessionStorage.getItem("deverve:ui:rental-open") === "1") { const vehicle = url.searchParams.get("vehicle") || ""; void openRentalRequest(vehicle, true); } }, []);
   useEffect(() => { const onPopState = () => setActiveScreen(readScreen()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
+  useEffect(() => { try { sessionStorage.setItem("deverve:ui:cart-open", cartOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:checkout-open", checkoutOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:rental-open", rentalOpen ? "1" : "0"); } catch { /* Storage restrictions must not interrupt the storefront. */ } }, [cartOpen, checkoutOpen, rentalOpen]);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => { void fetch("/api/storefront/payment-options", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) return; const payload = await response.json() as { online_payment_available?: boolean; environment?: "sandbox" | "production" | null; methods?: typeof paymentMethods }; setOnlinePaymentAvailable(payload.online_payment_available === true); setOnlinePaymentEnvironment(payload.online_payment_available === true ? payload.environment ?? null : null); if(Array.isArray(payload.methods)&&payload.methods.length){setPaymentMethods(payload.methods);setSelectedPaymentMethod(current=>payload.methods!.some(method=>method.id===current)?current:(payload.methods!.find(method=>method.kind==="cod")?.id??payload.methods![0].id));} }).catch(() => { setOnlinePaymentAvailable(false); setOnlinePaymentEnvironment(null); }); }, []);
