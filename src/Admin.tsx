@@ -141,7 +141,7 @@ export default function Admin() {
   const [vehicleGalleryTarget,setVehicleGalleryTarget]=useState<Vehicle|null>(null);
   const [showQuoteEditor, setShowQuoteEditor] = useState(() => readAdminDraft("quote-editor-open", { open: false }).open);
   const emptyQuoteLines: QuoteLineDraft[] = [{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }];
-  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>(() => readAdminDraft("quote-lines", emptyQuoteLines));
+  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>(() => readAdminDraft("quote-lines", { lines: emptyQuoteLines }).lines);
   const emptyQuoteForm = { business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" };
   const [quoteForm, setQuoteForm] = useState(() => readAdminDraft("quote-form", emptyQuoteForm));
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
@@ -175,12 +175,12 @@ export default function Admin() {
   useEffect(() => { writeAdminDraft("vehicle-editor-open", { open: showVehicleEditor }); }, [showVehicleEditor]);
   useEffect(() => { writeAdminDraft("vehicle-editor-id", { id: editingVehicleId }); }, [editingVehicleId]);
   useEffect(() => { writeAdminDraft("quote-form", quoteForm); }, [quoteForm]);
-  useEffect(() => { writeAdminDraft("quote-lines", quoteLines); }, [quoteLines]);
+  useEffect(() => { writeAdminDraft("quote-lines", { lines: quoteLines }); }, [quoteLines]);
   useEffect(() => { writeAdminDraft("quote-editor-open", { open: showQuoteEditor }); }, [showQuoteEditor]);
   const updateProductForm = (next: ProductForm) => { setForm(next); writeAdminDraft("product-form", next); };
   const updateVehicleForm = (next: typeof emptyVehicleForm) => { setVehicleForm(next); writeAdminDraft("vehicle-form", next); };
   const updateQuoteForm = (next: typeof emptyQuoteForm) => { setQuoteForm(next); writeAdminDraft("quote-form", next); };
-  const updateQuoteLines = (updater: (current: QuoteLineDraft[]) => QuoteLineDraft[]) => { const next = updater(quoteLines); setQuoteLines(next); writeAdminDraft("quote-lines", next); };
+  const updateQuoteLines = (updater: (current: QuoteLineDraft[]) => QuoteLineDraft[]) => { const next = updater(quoteLines); setQuoteLines(next); writeAdminDraft("quote-lines", { lines: next }); };
 
   const loadProducts = async () => {
     const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
