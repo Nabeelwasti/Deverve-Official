@@ -3543,14 +3543,20 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
       const rating = body.rating;
       const title = cleanText(body.title,100);
       const reviewBody = cleanText(body.body,2_000);
-      if (!/^[a-f0-9-]{36}$/i.test(orderItemId) || !Number.isInteger(rating) || Number(rating)<1 || Number(rating)>5 || reviewBody.length<10 || reviewBody.length>2_000) return error("Choose a rating and write a review of at least 10 characters.",400);
+      if ((orderItemId && !/^[a-f0-9-]{36}$/i.test(orderItemId)) || !Number.isInteger(rating) || Number(rating)<1 || Number(rating)>5 || reviewBody.length<10 || reviewBody.length>2_000) return error("Choose a rating and write a review of at least 10 characters.",400);
       try {
-        const eligible = await env.DB.prepare("SELECT oi.id,o.id AS order_id FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN product_variants v ON v.id=oi.variant_id JOIN products p ON p.id=v.product_id WHERE oi.id=? AND o.customer_id=? AND o.order_status='delivered' AND p.id=? AND p.status='published' LIMIT 1").bind(orderItemId,customer.customer_id,productId).first<{id:string;order_id:string}>();
-        if (!eligible) return error("Reviews are available only for products delivered to your signed-in account.",403);
+        let orderId: string | null = null;
+        let verifiedPurchase = 0;
+        if (orderItemId) {
+          const eligible = await env.DB.prepare("SELECT oi.id,o.id AS order_id FROM order_items oi JOIN orders o ON o.id=oi.order_id JOIN product_variants v ON v.id=oi.variant_id JOIN products p ON p.id=v.product_id WHERE oi.id=? AND o.customer_id=? AND o.order_status='delivered' AND p.id=? AND p.status='published' LIMIT 1").bind(orderItemId,customer.customer_id,productId).first<{id:string;order_id:string}>();
+          if (!eligible) return error("That delivered purchase is not linked to your account or this product.",403);
+          orderId = eligible.order_id;
+          verifiedPurchase = 1;
+        }
         const id = crypto.randomUUID();
         await env.DB.batch([
-          env.DB.prepare("INSERT INTO product_reviews (id,product_id,customer_id,order_id,order_item_id,rating,title,body,status) VALUES (?,?,?,?,?,?,?,?,'pending')").bind(id,productId,customer.customer_id,eligible.order_id,orderItemId,Number(rating),title,reviewBody),
-          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'product_review.submitted','product_review',?,?)").bind(crypto.randomUUID(),id,JSON.stringify({product_id:productId,customer_id:customer.customer_id,rating:Number(rating)})),
+          env.DB.prepare("INSERT INTO product_reviews (id,product_id,customer_id,order_id,order_item_id,verified_purchase,rating,title,body,status) VALUES (?,?,?,?,?,?,?,?,?,'pending')").bind(id,productId,customer.customer_id,orderId,orderItemId || null,verifiedPurchase,Number(rating),title,reviewBody),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'product_review.submitted','product_review',?,?)").bind(crypto.randomUUID(),id,JSON.stringify({product_id:productId,customer_id:customer.customer_id,rating:Number(rating),verified_purchase:Boolean(verifiedPurchase)})),
         ]);
         return json({submitted:true,status:"pending",message:"Thank you. Your review has been sent for moderation and will appear after approval."},201);
       } catch (caught) {
