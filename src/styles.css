@@ -555,3 +555,34 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .product-feedback textarea:focus{outline:2px solid #9fc8ef;outline-offset:1px;border-color:var(--blue)}
 
 .dv-gallery-empty{display:grid;place-items:center;min-height:220px;padding:28px;background:#f4f6f8;color:#68788a;text-align:center;font-size:12px;line-height:1.6}
+
+
+/* De VERVE product media: consistent cards and a real zoom viewport. */
+.product-visual.dv-gallery-card{height:auto;min-height:0;aspect-ratio:4/5;display:block;overflow:hidden}
+.dv-gallery-card{height:100%;min-height:0;aspect-ratio:auto;overflow:hidden}
+.dv-gallery-card .dv-gallery-stage{height:100%;min-height:0;overflow:hidden}
+.dv-gallery-card .dv-gallery-zoom-trigger{height:100%;min-height:0;overflow:hidden}
+.dv-gallery-card .dv-gallery-zoom-trigger>img{width:100%;height:100%;min-height:0;object-fit:contain;padding:10px;background:#f5f7fa}
+.dv-gallery-card .dv-gallery-thumbs{display:none}
+.product-card{min-width:0;overflow:hidden}
+.product-info{min-width:0;overflow-wrap:anywhere}
+.product-info h4,.product-info>p{overflow-wrap:anywhere}
+.product-buy-row{min-width:0;flex-wrap:wrap}
+.product-buy-row>*{min-width:0}
+.product-buy-row .product-details-button{flex:0 0 auto;max-width:100%;white-space:nowrap}
+.product-page{max-width:100%;overflow-x:clip}
+.product-page article{width:min(1180px,92%);margin-inline:auto}
+.product-page-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);align-items:start;gap:clamp(22px,4vw,56px);min-width:0}
+.product-page-grid>*{min-width:0;max-width:100%}
+.product-page-gallery.dv-gallery{width:100%;height:clamp(320px,55vw,650px);min-height:0;overflow:hidden}
+.product-page-gallery .dv-gallery-stage{min-height:0}
+.product-page-details{min-width:0;overflow-wrap:anywhere}
+.product-page-details>*{max-width:100%}
+.dv-gallery-lightbox{z-index:3000;overflow:hidden}
+.dv-gallery-lightbox-viewport{width:min(92vw,1200px);height:min(78vh,900px);display:grid;place-items:center;overflow:auto;overscroll-behavior:contain}
+.dv-gallery-lightbox-viewport img{display:block;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;transition:transform .18s ease;transform-origin:center center;user-select:none;-webkit-user-drag:none}
+.dv-gallery-lightbox-toolbar{position:absolute;top:18px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #ffffff40;border-radius:999px;background:#102d53;color:#fff;z-index:2}
+.dv-gallery-lightbox-toolbar button{min-width:34px;height:32px;border:1px solid #ffffff45;border-radius:999px;background:#ffffff18;color:#fff;font-weight:800;cursor:pointer}
+.dv-gallery-lightbox-toolbar button:disabled{opacity:.4;cursor:not-allowed}
+.dv-gallery-lightbox-toolbar span{min-width:48px;text-align:center;font-size:11px;font-weight:700}
+@media(max-width:760px){.product-page-grid{grid-template-columns:minmax(0,1fr)}.product-page-gallery.dv-gallery{height:clamp(300px,100vw,520px);min-height:0}.product-page article{width:min(calc(100% - 28px),620px)}.dv-gallery-lightbox-viewport{width:100vw;height:76vh}.dv-gallery-lightbox-toolbar{top:10px}}
