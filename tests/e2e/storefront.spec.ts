@@ -119,6 +119,11 @@ test("rental request requires both CNIC images and sends them with the request",
   expect(submitted).toContain("cnic_back");
   expect(submitted).toContain("cnic_consent");
   expect(submitted).toContain("e2e-turnstile-token");
+
+  await page.reload();
+  const restoredSuccess = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(restoredSuccess.getByText("DV-R-TEST-123456789012")).toBeVisible();
+  await expect(restoredSuccess.getByText("Rental request submitted successfully")).toBeVisible();
 });
 
 test("rental settings failures explain the cause and can be retried", async ({ page }) => {
