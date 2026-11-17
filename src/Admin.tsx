@@ -47,6 +47,24 @@ const emptyProduct: ProductForm = {
   status: "draft" as const, retail_price_paisa: "", wholesale_price_paisa: "", seo_title: "", seo_description: "",
 };
 
+const ADMIN_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+function readAdminDraft<T extends object>(key: string, fallback: T): T {
+  try {
+    const storageKey = "deverve:admin-draft:v1:" + key;
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as { savedAt?: number; data?: Partial<T> };
+    if (!saved || typeof saved.savedAt !== "number" || Date.now() - saved.savedAt > ADMIN_DRAFT_TTL_MS || !saved.data || typeof saved.data !== "object") {
+      sessionStorage.removeItem(storageKey);
+      return fallback;
+    }
+    return { ...fallback, ...saved.data };
+  } catch { return fallback; }
+}
+function writeAdminDraft(key: string, data: object): void {
+  try { sessionStorage.setItem("deverve:admin-draft:v1:" + key, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* Admin work must continue if storage is unavailable. */ }
+}
+
 function whatsappHref(phone: string, message: string): string {
   const digits = phone.replace(/\D/g, "");
   const international = digits.startsWith("0") ? "92" + digits.slice(1) : digits;
@@ -115,14 +133,16 @@ export default function Admin() {
   const [wholesaleQuotes, setWholesaleQuotes] = useState<WholesaleQuote[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [rentals, setRentals] = useState<RentalRequest[]>([]);
-  const [showVehicleEditor, setShowVehicleEditor] = useState(false);
-  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
-  const [vehicleForm, setVehicleForm] = useState({ name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", with_driver_daily_rate: "", status: "draft" as Vehicle["status"], description: "", image_key: "" });
+  const emptyVehicleForm = { name: "", vehicle_type: "Sedan", transmission: "Automatic", seats: "5", fuel_type: "Petrol", daily_rate: "", with_driver_daily_rate: "", status: "draft" as Vehicle["status"], description: "", image_key: "" };
+  const [showVehicleEditor, setShowVehicleEditor] = useState(() => readAdminDraft("vehicle-editor-open", { open: false }).open);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(() => readAdminDraft("vehicle-editor-id", { id: null as string | null }).id);
+  const [vehicleForm, setVehicleForm] = useState(() => readAdminDraft("vehicle-form", emptyVehicleForm));
   const [vehicleMediaAssets,setVehicleMediaAssets]=useState<MediaAsset[]>([]);
   const [vehicleGalleryTarget,setVehicleGalleryTarget]=useState<Vehicle|null>(null);
-  const [showQuoteEditor, setShowQuoteEditor] = useState(false);
+  const [showQuoteEditor, setShowQuoteEditor] = useState(() => readAdminDraft("quote-editor-open", { open: false }).open);
   const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
-  const [quoteForm, setQuoteForm] = useState({ business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" });
+  const emptyQuoteForm = { business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" };
+  const [quoteForm, setQuoteForm] = useState(() => readAdminDraft("quote-form", emptyQuoteForm));
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [movementTarget, setMovementTarget] = useState<Variant | null>(null);
@@ -142,10 +162,22 @@ export default function Admin() {
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
   const [stockForm, setStockForm] = useState({ movement_type: "received", quantity_delta: "", note: "" });
   const [overview, setOverview] = useState<Overview>({ published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 });
-  const [form, setForm] = useState({ ...emptyProduct });
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [showEditor, setShowEditor] = useState(false);
+  const [form, setForm] = useState(() => readAdminDraft("product-form", emptyProduct));
+  const [editingId, setEditingId] = useState<string | null>(() => readAdminDraft("product-editing-id", { id: null as string | null }).id);
+  const [showEditor, setShowEditor] = useState(() => readAdminDraft("product-editor-open", { open: false }).open);
   const [filter, setFilter] = useState("all");
+
+  useEffect(() => { writeAdminDraft("product-form", form); }, [form]);
+  useEffect(() => { writeAdminDraft("product-editor-open", { open: showEditor }); }, [showEditor]);
+  useEffect(() => { writeAdminDraft("product-editing-id", { id: editingId }); }, [editingId]);
+  useEffect(() => { writeAdminDraft("vehicle-form", vehicleForm); }, [vehicleForm]);
+  useEffect(() => { writeAdminDraft("vehicle-editor-open", { open: showVehicleEditor }); }, [showVehicleEditor]);
+  useEffect(() => { writeAdminDraft("vehicle-editor-id", { id: editingVehicleId }); }, [editingVehicleId]);
+  useEffect(() => { writeAdminDraft("quote-form", quoteForm); }, [quoteForm]);
+  useEffect(() => { writeAdminDraft("quote-editor-open", { open: showQuoteEditor }); }, [showQuoteEditor]);
+  const updateProductForm = (next: ProductForm) => { setForm(next); writeAdminDraft("product-form", next); };
+  const updateVehicleForm = (next: typeof emptyVehicleForm) => { setVehicleForm(next); writeAdminDraft("vehicle-form", next); };
+  const updateQuoteForm = (next: typeof emptyQuoteForm) => { setQuoteForm(next); writeAdminDraft("quote-form", next); };
 
   const loadProducts = async () => {
     const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
@@ -883,7 +915,7 @@ export default function Admin() {
         {showVehicleEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="vehicle-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">DE VERVE MOBILITY</p><h2 id="vehicle-editor-title">{editingVehicleId ? "Edit vehicle" : "Add vehicle"}</h2></div><button type="button" className="admin-close" onClick={() => setShowVehicleEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={saveVehicle}>
-            <label>Vehicle name<input required minLength={2} maxLength={100} value={vehicleForm.name} onChange={(e) => setVehicleForm({ ...vehicleForm, name: e.target.value })} placeholder="e.g. Toyota Corolla 2022" /></label>
+            <label>Vehicle name<input required minLength={2} maxLength={100} value={vehicleForm.name} onChange={(e) => updateVehicleForm({ ...vehicleForm, name: e.target.value })} placeholder="e.g. Toyota Corolla 2022" /></label>
             <label>Vehicle type<input required maxLength={60} value={vehicleForm.vehicle_type} onChange={(e) => setVehicleForm({ ...vehicleForm, vehicle_type: e.target.value })} placeholder="Sedan, SUV, Van" /></label>
             <label>Transmission<select value={vehicleForm.transmission} onChange={(e) => setVehicleForm({ ...vehicleForm, transmission: e.target.value })}><option>Automatic</option><option>Manual</option><option>Unspecified</option></select></label>
             <label>Fuel type<select value={vehicleForm.fuel_type} onChange={(e) => setVehicleForm({ ...vehicleForm, fuel_type: e.target.value })}><option>Petrol</option><option>Diesel</option><option>Hybrid</option><option>Electric</option><option>Unspecified</option></select></label>
@@ -901,7 +933,7 @@ export default function Admin() {
         {showQuoteEditor && <div className="admin-modal-backdrop"><section className="admin-editor admin-quote-editor" role="dialog" aria-modal="true" aria-labelledby="quote-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">WHOLESALE SALES</p><h2 id="quote-editor-title">Prepare a quotation</h2><p className="admin-muted">Set the buyer details and agreed per-piece prices. Customer approval will reserve stock.</p></div><button type="button" className="admin-close" onClick={() => setShowQuoteEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={submitWholesaleQuote}>
-            <label>Business / shop name<input required minLength={2} maxLength={120} value={quoteForm.business_name} onChange={(e) => setQuoteForm({ ...quoteForm, business_name: e.target.value })} /></label>
+            <label>Business / shop name<input required minLength={2} maxLength={120} value={quoteForm.business_name} onChange={(e) => updateQuoteForm({ ...quoteForm, business_name: e.target.value })} /></label>
             <label>Contact person<input required minLength={2} maxLength={100} value={quoteForm.contact_name} onChange={(e) => setQuoteForm({ ...quoteForm, contact_name: e.target.value })} /></label>
             <label>Phone / WhatsApp<input required maxLength={24} value={quoteForm.phone} onChange={(e) => setQuoteForm({ ...quoteForm, phone: e.target.value })} /></label>
             <label>Email (optional)<input type="email" maxLength={160} value={quoteForm.email} onChange={(e) => setQuoteForm({ ...quoteForm, email: e.target.value })} /></label>
@@ -995,7 +1027,7 @@ export default function Admin() {
         </section></div>}
         {showEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="product-editor-title"><div className="admin-panel-heading"><div><p className="admin-eyebrow">CATALOGUE MANAGEMENT</p><h2 id="product-editor-title">{editingId ? "Edit product" : "Add a product"}</h2></div><button type="button" className="admin-close" onClick={() => setShowEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" onSubmit={saveProduct}>
-            <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
+            <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => updateProductForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
             <label>URL slug<input required value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} /></label>
             <label>Category<input required minLength={2} maxLength={60} placeholder="e.g. Hoodies" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} /></label>
             <label>For<select value={form.audience} onChange={(e) => setForm({ ...form, audience: e.target.value as typeof form.audience })}><option value="men">Men</option><option value="women">Women</option><option value="kids">Kids</option><option value="unisex">Unisex</option></select></label>
