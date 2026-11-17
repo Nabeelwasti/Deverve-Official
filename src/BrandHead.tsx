@@ -9,7 +9,7 @@ export default function BrandHead(){
     const data=await response.json() as {brand_assets?:{logo_id?:string|null;favicon_id?:string|null}};
     if(!active)return;
     const faviconId=data.brand_assets?.favicon_id??null;
-    const appIconId=data.brand_assets?.logo_id??faviconId;
+    const appIconId=faviconId??data.brand_assets?.logo_id??null;
     const iconUrl=faviconId?"/media/"+faviconId+"?v="+encodeURIComponent(faviconId):"/icons/icon-192.svg";
     let icon=document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if(!icon){icon=document.createElement("link");icon.rel="icon";document.head.appendChild(icon);}

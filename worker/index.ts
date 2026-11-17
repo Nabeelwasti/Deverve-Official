@@ -2109,7 +2109,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       }
       statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length})));
       await env.DB.batch(statements);
-      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
+      return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
     } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
   }
   const voidMatch = path.match(/^\/api\/admin\/pos\/sales\/([a-f0-9-]{36})\/void$/i);
