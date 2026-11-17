@@ -21,6 +21,19 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Capture dependency lockfile and full audit report
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e 'const report = JSON.parse(require("node:fs").readFileSync("npm-audit.json", "utf8")); const counts = report.metadata?.vulnerabilities || {}; console.log("Full dependency audit:", JSON.stringify(counts)); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(name + ": " + item.severity + ", direct=" + item.isDirect + ", fixAvailable=" + JSON.stringify(item.fixAvailable));'
+      - name: Upload resolved dependency audit artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-audit-${{ github.run_number }}
+          path: |
+            package-lock.json
+            npm-audit.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Type-check and build
         run: npm run check
       - name: Audit production dependencies
