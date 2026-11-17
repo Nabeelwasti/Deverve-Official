@@ -1,19 +1,20 @@
 # Current source review — 18 November 2026
 
-**Source state:** GitHub main contains additional receipt, audit-search and contact-email queue fixes. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
+**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: d78eda3c6e11c5e54dcc20d334636d70c495e2b4. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
 
 ## Changes added after the previous verified CI run
 
 - The Pages API wrapper now passes its execution context to mutating Worker requests, allowing queued contact-form email delivery to run in the background. A Resend delivery test covers owner notification dispatch.
 - Owner audit history now searches the full D1 audit log with server-side filtering and paginated results instead of filtering only the latest 100 records in the browser.
 - POS sales now support explicit email and WhatsApp receipt consent. The sale and receipt outbox records are committed together in D1. Email delivery uses Resend; WhatsApp delivery uses the Meta Cloud API and an approved Utility template. The outbox has bounded retries and stale-claim recovery.
+- POS invoices and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
 - POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. The customer must opt in for each channel.
 - The previous README statement describing 30/90-day CNIC deletion was incorrect. The current scheduled retention Worker expires temporary upload tokens but does not delete stored CNIC objects. Stored documents are retained indefinitely by the current code. Do not rely on the old 30/90-day wording.
 
 ## Verification boundary
 
 - The previously successful CI run #771 applies to commit `a9c8d2a770710eb516302de68695f2a63a6a19e4`, not the additional commits listed above.
-- The receipt, audit-search, contact-email and schema changes require a fresh successful CI run before they can be treated as verified.
+- The receipt, audit-search, contact-email, Office-export and schema changes require a fresh successful CI run before they can be treated as verified. The last confirmed passing CI run remains #771 on the earlier commit.
 - No Cloudflare API or Wrangler deployment has been run for these changes. The live website remains on its previously deployed version until the owner explicitly authorizes deployment.
 
 ## Remaining release gates
