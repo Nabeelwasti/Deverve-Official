@@ -252,11 +252,12 @@ function Storefront() {
         if (!active) return;
         setProducts(payload.products);
         setSelectedVariants(Object.fromEntries(payload.products.map((product) => [product.id, product.variants[0]?.id ?? ""])));
-        setCart((current) => current.flatMap((line) => {
+        setCart((current) => current.map((line) => {
           const product = payload.products!.find((item) => item.id === line.product_id);
-          const variant = product?.variants.find((item) => item.id === line.variant_id);
-          if (!product || !variant || product.retail_price_paisa === null || variant.available_quantity < 1) return [];
-          return [{ ...line, name: product.name, sku: variant.sku, size: variant.size, color: variant.color, unit_price_paisa: product.retail_price_paisa, available_quantity: variant.available_quantity, quantity: Math.min(line.quantity, variant.available_quantity) }];
+          if (!product) return line;
+          const variant = product.variants.find((item) => item.id === line.variant_id);
+          if (!variant || product.retail_price_paisa === null || variant.available_quantity < 1) return line;
+          return { ...line, name: product.name, sku: variant.sku, size: line.size || variant.size, color: line.color || variant.color, unit_price_paisa: product.retail_price_paisa, available_quantity: variant.available_quantity, quantity: Math.min(line.quantity, variant.available_quantity) };
         }));
         setCatalogueState(payload.products.length ? "ready" : "empty");
       } catch {
