@@ -1,5 +1,5 @@
-const CACHE_NAME = "de-verve-shell-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.svg", "/icons/icon-512.svg", "/icons/icon-maskable.svg"];
+const CACHE_NAME = "de-verve-shell-v2";
+const SHELL = ["/", "/icons/icon-192.svg", "/icons/icon-512.svg", "/icons/icon-maskable.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -15,7 +15,7 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
-  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/")) return;
+  if (request.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/manifest.webmanifest") return;
 
   if (request.mode === "navigate") {
     event.respondWith(fetch(request).then((response) => {
