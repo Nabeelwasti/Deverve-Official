@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS ai_provider_keys (
   key_ciphertext TEXT NOT NULL,
   key_iv TEXT NOT NULL,
   key_fingerprint TEXT NOT NULL UNIQUE,
+  encryption_mode TEXT NOT NULL DEFAULT 'bootstrap-derived' CHECK (encryption_mode IN ('dedicated','bootstrap-derived')),
   priority INTEGER NOT NULL DEFAULT 100,
   enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
   failure_count INTEGER NOT NULL DEFAULT 0,

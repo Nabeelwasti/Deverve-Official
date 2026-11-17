@@ -3605,21 +3605,22 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
 }
 
 
-type GeminiKeyRow = { id:string; label:string; key_ciphertext:string; key_iv:string; key_fingerprint:string; priority:number; enabled:number; failure_count:number; cooldown_until:string|null; last_used_at:string|null; last_error:string|null; created_at:string; updated_at:string };
+type GeminiKeyRow = { id:string; label:string; key_ciphertext:string; key_iv:string; key_fingerprint:string; encryption_mode:"dedicated"|"bootstrap-derived"; priority:number; enabled:number; failure_count:number; cooldown_until:string|null; last_used_at:string|null; last_error:string|null; created_at:string; updated_at:string };
 function aiKeyEncryptionSecret(env:Env):string { return env.AI_KEYS_ENCRYPTION_KEY?.trim() || env.ADMIN_BOOTSTRAP_TOKEN?.trim() || ""; }
-async function aiCryptoKey(env:Env):Promise<CryptoKey|null> {
-  const secret=aiKeyEncryptionSecret(env); if(secret.length<24)return null;
-  const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-gemini-key-vault:v1:"+secret));
+async function aiCryptoKey(env:Env,mode:"dedicated"|"bootstrap-derived"):Promise<CryptoKey|null> {
+  const secret=(mode==="dedicated"?env.AI_KEYS_ENCRYPTION_KEY:env.ADMIN_BOOTSTRAP_TOKEN)?.trim()||""; if(secret.length<24)return null;
+  const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-gemini-key-vault:v1:"+mode+":"+secret));
   return crypto.subtle.importKey("raw",material,{name:"AES-GCM"},false,["encrypt","decrypt"]);
 }
-async function encryptGeminiKey(env:Env,apiKey:string):Promise<{ciphertext:string;iv:string}> {
-  const key=await aiCryptoKey(env);if(!key)throw new Error("AI key encryption is not configured");
+async function encryptGeminiKey(env:Env,apiKey:string):Promise<{ciphertext:string;iv:string;mode:"dedicated"|"bootstrap-derived"}> {
+  const mode=env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":"bootstrap-derived";
+  const key=await aiCryptoKey(env,mode);if(!key)throw new Error("AI key encryption is not configured");
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const encrypted=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(apiKey));
-  return {ciphertext:base64Url(new Uint8Array(encrypted)),iv:base64Url(iv)};
+  return {ciphertext:base64Url(new Uint8Array(encrypted)),iv:base64Url(iv),mode};
 }
 async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
-  const key=await aiCryptoKey(env);if(!key)throw new Error("AI key encryption is not configured");
+  const key=await aiCryptoKey(env,row.encryption_mode);if(!key)throw new Error("AI key encryption is not configured");
   const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromBase64Url(row.key_iv)},key,fromBase64Url(row.key_ciphertext));
   return new TextDecoder().decode(plain);
 }
@@ -3657,7 +3658,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
       if(duplicate)return error("This Gemini API key is already saved in the vault",409);
       const encrypted=await encryptGeminiKey(env,apiKey),id=crypto.randomUUID(),now=new Date().toISOString();
       const next=await env.DB.prepare("SELECT COALESCE(MAX(priority),0)+10 AS priority FROM ai_provider_keys WHERE provider='gemini'").first<{priority:number}>();
-      await env.DB.prepare("INSERT INTO ai_provider_keys (id,provider,label,key_ciphertext,key_iv,key_fingerprint,priority,enabled,created_at,updated_at) VALUES (?,'gemini',?,?,?,?,?,1,?,?)").bind(id,label,encrypted.ciphertext,encrypted.iv,fingerprint,next?.priority??10,now,now).run();
+      await env.DB.prepare("INSERT INTO ai_provider_keys (id,provider,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled,created_at,updated_at) VALUES (?,'gemini',?,?,?,?,?,?,1,?,?)").bind(id,label,encrypted.ciphertext,encrypted.iv,fingerprint,encrypted.mode,next?.priority??10,now,now).run();
       return json({saved:true,id,message:"Gemini key encrypted and saved. It is never returned to the browser."},201);
     }catch{return error("The Gemini key could not be saved securely",503);}
   }
