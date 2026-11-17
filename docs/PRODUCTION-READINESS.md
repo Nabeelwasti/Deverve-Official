@@ -1,13 +1,15 @@
 # Current source review — 18 November 2026
 
-**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: d78eda3c6e11c5e54dcc20d334636d70c495e2b4. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
+**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: 2448ac79d7b2003e37d03865ddb7d5a58e073f17. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
 
 ## Changes added after the previous verified CI run
 
 - The Pages API wrapper now passes its execution context to mutating Worker requests, allowing queued contact-form email delivery to run in the background. A Resend delivery test covers owner notification dispatch.
 - Owner audit history now searches the full D1 audit log with server-side filtering and paginated results instead of filtering only the latest 100 records in the browser.
 - POS sales now support explicit email and WhatsApp receipt consent. The sale and receipt outbox records are committed together in D1. Email delivery uses Resend; WhatsApp delivery uses the Meta Cloud API and an approved Utility template. The outbox has bounded retries and stale-claim recovery.
-- POS invoices and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
+- POS invoices, sales history, expense registers and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
+- POS sales history now displays per-channel receipt delivery state. Authorised staff can retry a failed email or WhatsApp receipt; the retry is consent-checked and audit-logged.
+- New D1 migrations 0023_pos_receipt_delivery.sql and 0024_enquiry_email_queue_leases.sql add receipt delivery/consent storage and recoverable contact-email queue leases. These migrations are committed but have not been applied to production D1.
 - POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. The customer must opt in for each channel.
 - The previous README statement describing 30/90-day CNIC deletion was incorrect. The current scheduled retention Worker expires temporary upload tokens but does not delete stored CNIC objects. Stored documents are retained indefinitely by the current code. Do not rely on the old 30/90-day wording.
 
@@ -21,10 +23,11 @@
 
 1. Configure a verified Resend sender, API key and sender address, then verify contact-form owner alerts and POS customer receipt delivery with controlled test addresses.
 2. Configure Meta WhatsApp Cloud API credentials and phone-number ID, create/approve the exact Utility template, and test delivery to an opted-in test number.
-3. Implement and verify the owner-approved CNIC retention/deletion policy before enabling public CNIC uploads. Do not infer a deletion schedule from the old documentation.
-4. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
-5. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.
-6. Complete real-device acceptance and post-deployment smoke tests only after an explicitly authorized deployment.
+3. Apply D1 migrations 0023 and 0024 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
+4. Implement and verify the owner-approved CNIC retention/deletion policy before enabling public CNIC uploads. Do not infer a deletion schedule from the old documentation.
+5. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
+6. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.
+7. Complete real-device acceptance and post-deployment smoke tests only after an explicitly authorized deployment.
 
 **Release verdict:** not yet certified as production-ready. Source improvements are in progress; provider credentials, owner decisions, fresh CI and live acceptance remain required. Do not claim live delivery or production behavior for code that has not been deployed.
 
