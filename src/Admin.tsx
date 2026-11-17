@@ -97,6 +97,31 @@ function orderDocumentRows(order: AdminOrder, kind: "invoice" | "delivery"): Arr
   return [...meta,[],...details];
 }
 
+
+function rentalDocumentRows(rental:RentalRequest):Array<Array<string|number>>{
+ const amount=(paisa:number)=>Number((paisa/100).toFixed(2));
+ return [
+  ["Document","Vehicle rental request summary"],["Reference",rental.reference_code],["Created",new Date(rental.created_at).toLocaleString("en-PK")],
+  ["Customer",rental.customer_name],["Phone",rental.phone],["Email",rental.email||"Not provided"],
+  ["Vehicle",rental.vehicle_name||"To be assigned"],["Vehicle type",rental.vehicle_type||"Not specified"],
+  ["Pickup",new Date(rental.pickup_at).toLocaleString("en-PK")],["Pickup location",rental.pickup_address?rental.pickup_address+", "+rental.pickup_city:rental.pickup_location],
+  ["Return",new Date(rental.return_at).toLocaleString("en-PK")],["Destination",rental.destination_address?rental.destination_address+", "+rental.destination_city:rental.destination||"Not specified"],
+  ["Driver option",rental.driver_option.replaceAll("_"," ")],["Duration (days)",rental.rental_days??"To confirm"],
+  ["Estimated daily rate (PKR)",rental.estimated_daily_rate_paisa!==null&&rental.estimated_daily_rate_paisa!==undefined?amount(rental.estimated_daily_rate_paisa):"To confirm"],
+  ["Estimated total (PKR)",rental.estimated_total_paisa!==null&&rental.estimated_total_paisa!==undefined?amount(rental.estimated_total_paisa):"To confirm"],
+  ["CNIC front uploaded",rental.cnic_front_uploaded?"Yes":"No"],["CNIC back uploaded",rental.cnic_back_uploaded?"Yes":"No"],
+  ["Request status",rental.status],["Customer note",rental.customer_note||"None"],
+  [],["Important","This is a request summary, not a rental contract. Vehicle handover is subject to identity verification, vehicle availability and a separately signed rental agreement."]
+ ];
+}
+function printRentalSummary(rental:RentalRequest):void{
+ const popup=window.open("","_blank");if(!popup)throw new Error("Allow pop-ups for this site to print the rental slip.");popup.opener=null;
+ const esc=(value:unknown)=>String(value??"").replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
+ const fields=[["Customer",rental.customer_name],["Contact",rental.phone+" · "+(rental.email||"")],["Vehicle",rental.vehicle_name||"To be assigned"],["Driver option",rental.driver_option.replaceAll("_"," ")],["Pickup",new Date(rental.pickup_at).toLocaleString("en-PK")],["Pickup location",rental.pickup_address?rental.pickup_address+", "+rental.pickup_city:rental.pickup_location],["Return",new Date(rental.return_at).toLocaleString("en-PK")],["Destination",rental.destination_address?rental.destination_address+", "+rental.destination_city:rental.destination||"Not specified"],["Duration",String(rental.rental_days??"To confirm")+" day(s)"],["Estimated total",rental.estimated_total_paisa!==null&&rental.estimated_total_paisa!==undefined?"PKR "+(rental.estimated_total_paisa/100).toFixed(2):"To confirm"],["CNIC front / back uploaded",(rental.cnic_front_uploaded?"Yes":"No")+" / "+(rental.cnic_back_uploaded?"Yes":"No")],["Request status",rental.status]];
+ const html="<!doctype html><html><head><meta charset='utf-8'><title>De VERVE rental "+esc(rental.reference_code)+"</title><style>@page{size:A4;margin:18mm}body{font:12px Arial;color:#263b50}.bar{height:8px;background:#163a5f;margin-bottom:24px}.brand{font-size:25px;font-weight:800;color:#102a43;letter-spacing:2px}.muted{color:#60758a}.title{display:flex;justify-content:space-between;margin:26px 0}.title h1{margin:0;font-size:22px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;background:#f1f5f9;padding:18px}.grid small{display:block;color:#60758a;text-transform:uppercase;font-size:9px;margin-bottom:4px}.grid strong{font-size:12px}p{line-height:1.6;color:#60758a}.sign{display:flex;justify-content:space-between;margin-top:55px}.sign span{width:42%;border-top:1px solid #60758a;padding-top:8px}.footer{border-top:1px solid #d7e0e8;margin-top:30px;padding-top:12px;color:#60758a;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class='bar'></div><div class='brand'>DE VERVE</div><div class='muted'>JHELUM · PAKISTAN · +92 319 7553705</div><div class='title'><h1>RENTAL REQUEST SUMMARY</h1><strong>"+esc(rental.reference_code)+"</strong></div><div class='grid'>"+fields.map(([label,value])=>"<div><small>"+esc(label)+"</small><strong>"+esc(value)+"</strong></div>").join("")+"</div><p>This is a booking request summary, not a rental contract or vehicle handover authorisation. Final rate, deposit, mileage, fuel, insurance, driver arrangement, permitted use, damage responsibility, late-return charges and all other terms must be recorded in the separately signed De VERVE rental agreement before handover. This slip does not contain or reproduce any CNIC image or CNIC number.</p><div class='sign'><span>Prepared by De VERVE</span><span>Customer acknowledgement</span></div><div class='footer'>De VERVE · Private rental record · Access to identity evidence is separately controlled and audited.</div></body></html>";
+ popup.addEventListener("load",()=>{popup.focus();popup.print();},{once:true});popup.document.open();popup.document.write(html);popup.document.close();
+}
+
 function printOrderDocument(order: AdminOrder, kind: "invoice" | "delivery"): void {
   const popup=window.open("","_blank");
   if(!popup)throw new Error("Your browser blocked the print window. Allow pop-ups for this site and try again.");
@@ -936,6 +961,12 @@ export default function Admin() {
               <p className="admin-muted">{rental.driver_option.replace("_", " ")} · {rental.rental_days ?? "—"} day(s) · {rental.estimated_daily_rate_paisa !== null && rental.estimated_daily_rate_paisa !== undefined ? `Rs. ${Math.round(rental.estimated_daily_rate_paisa / 100).toLocaleString("en-PK")} / day` : "Rate to confirm"} · {rental.estimated_total_paisa !== null && rental.estimated_total_paisa !== undefined ? `Estimated total Rs. ${Math.round(rental.estimated_total_paisa / 100).toLocaleString("en-PK")}` : "Total to confirm"}{rental.customer_note ? ` · ${rental.customer_note}` : ""}</p>
               {["owner", "manager"].includes(admin.role) && <label className="admin-rental-note">Internal note<input value={rental.admin_note} maxLength={500} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, admin_note: e.target.value } : item))} /></label>}
               <label className="admin-enquiry-action">Update status<select value={rental.status} disabled={busy || !next.length} onChange={(e) => void updateRentalStatus(rental, e.target.value as RentalRequest["status"])}><option value={rental.status}>{rental.status}</option>{next.map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
+              <div className="admin-order-document-actions">
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeDocument("de-verve-rental-"+rental.reference_code+".docx","De VERVE · Rental request summary",rental.reference_code+" · "+new Date(rental.created_at).toLocaleString("en-PK"),rentalDocumentRows(rental))}>Word</button>
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeSpreadsheet("de-verve-rental-"+rental.reference_code+".xlsx","Rental summary",rentalDocumentRows(rental))}>Excel</button>
+                <button type="button" className="admin-secondary" onClick={()=>exportOfficeImage("de-verve-rental-"+rental.reference_code+".jpg","Rental request · "+rental.reference_code,new Date(rental.created_at).toLocaleString("en-PK"),rentalDocumentRows(rental))}>JPG</button>
+                <button type="button" className="admin-secondary" onClick={()=>{try{printRentalSummary(rental);}catch(error){setMessage(error instanceof Error?error.message:"Rental slip could not be printed.");}}}>PDF / Print</button>
+              </div>
             </article>;
           })}</div>}
         </section>}
