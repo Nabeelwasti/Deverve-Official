@@ -553,3 +553,5 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .product-feedback{display:grid;gap:8px;margin:18px 0 8px;font-size:12px;font-weight:700;color:var(--deep-blue)}
 .product-feedback textarea{width:100%;min-height:92px;resize:vertical;padding:12px 14px;border:1px solid var(--line);background:#fff;color:var(--ink);font:inherit;font-weight:400;line-height:1.5}
 .product-feedback textarea:focus{outline:2px solid #9fc8ef;outline-offset:1px;border-color:var(--blue)}
+
+.dv-gallery-empty{display:grid;place-items:center;min-height:220px;padding:28px;background:#f4f6f8;color:#68788a;text-align:center;font-size:12px;line-height:1.6}
