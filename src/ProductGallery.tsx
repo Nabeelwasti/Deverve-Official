@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 export type GalleryImage = { id: string; url: string; alt_text: string };
 
@@ -14,6 +15,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
   const panStart = useRef<{x:number;y:number;left:number;top:number}|null>(null);
   const [pan,setPan] = useState({x:0,y:0});
   const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (!zoomOpen) return; const previous = document.body.style.overflow; document.body.style.overflow = "hidden"; const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setZoomOpen(false); }; window.addEventListener("keydown", closeOnEscape); return () => { document.body.style.overflow = previous; window.removeEventListener("keydown", closeOnEscape); }; }, [zoomOpen]);
   const zoomViewportRef = useRef<HTMLDivElement | null>(null);
   const zoomImageRef = useRef<HTMLImageElement | null>(null);
   const clampPan = (x:number,y:number,scale:number) => { const viewport=zoomViewportRef.current,image=zoomImageRef.current;if(!viewport||!image)return{x,y};const maxX=Math.max(0,(image.offsetWidth*scale-viewport.clientWidth)/2),maxY=Math.max(0,(image.offsetHeight*scale-viewport.clientHeight)/2);return{x:Math.max(-maxX,Math.min(maxX,x)),y:Math.max(-maxY,Math.min(maxY,y))};};
@@ -82,7 +84,13 @@ export default function ProductGallery({ images, className = "", autoPlay = true
       {images.length > 1 && <><div className="dv-gallery-controls"><button type="button" onClick={() => move(-1)} aria-label="Previous product image">‹</button><button type="button" onClick={() => move(1)} aria-label="Next product image">›</button></div><span className="dv-gallery-meta" aria-live="polite">{index + 1} / {images.length}</span></>}
       {detailsHref && <a className="dv-gallery-product-link" href={detailsHref}>View product details ↗</a>}
     </div>
-    {zoomOpen && <div className="dv-gallery-lightbox" role="dialog" aria-modal="true" aria-label="Zoomed product image" onMouseDown={event => { if (event.target === event.currentTarget) setZoomOpen(false); }}>
+
+    {images.length > 1 && <div className="dv-gallery-thumbs" aria-label="Choose product image">{visible.map(image => {
+      const i = images.findIndex(item => item.id === image.id);
+      return <button type="button" key={image.id} className="dv-gallery-thumb" aria-label={"Show image " + (i + 1)} aria-current={i === index} onClick={() => setIndex(i)}><img src={image.url} alt="" loading="lazy"/></button>;
+    })}</div>}
+  </div>
+  {zoomOpen && createPortal(<div className="dv-gallery-lightbox" role="dialog" aria-modal="true" aria-label="Zoomed product image" onMouseDown={event => { if (event.target === event.currentTarget) setZoomOpen(false); }}>
       <button type="button" className="dv-gallery-lightbox-close" onClick={() => setZoomOpen(false)} aria-label="Close image zoom">×</button>
       <div className="dv-gallery-lightbox-toolbar" aria-label="Image zoom controls">
         <button type="button" onClick={() => {setZoom(value => Math.max(1, value - .5));setPan({x:0,y:0});}} disabled={zoom <= 1} aria-label="Zoom out">−</button>
@@ -100,10 +108,6 @@ export default function ProductGallery({ images, className = "", autoPlay = true
       </div>
       {images.length > 1 && <button type="button" className="dv-gallery-lightbox-nav is-next" onClick={() => move(1)} aria-label="Next image">›</button>}
       <span className="dv-gallery-lightbox-count">{index + 1} / {images.length} · Pinch with two fingers · drag to inspect · use + / − to zoom</span>
-    </div>}
-    {images.length > 1 && <div className="dv-gallery-thumbs" aria-label="Choose product image">{visible.map(image => {
-      const i = images.findIndex(item => item.id === image.id);
-      return <button type="button" key={image.id} className="dv-gallery-thumb" aria-label={"Show image " + (i + 1)} aria-current={i === index} onClick={() => setIndex(i)}><img src={image.url} alt="" loading="lazy"/></button>;
-    })}</div>}
-  </div>;
+    </div>, document.body)}
+  </>;
 }
