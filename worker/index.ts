@@ -1331,13 +1331,64 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
   } catch { return error("Vehicle could not be updated", 503); }
 }
 
+
+async function rentalPreviewHmacKey(env:Env):Promise<CryptoKey|null>{
+ const secret=env.ADMIN_BOOTSTRAP_TOKEN?.trim()||"";if(secret.length<24)return null;
+ const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-rental-preview-token:v1:"+secret));
+ return crypto.subtle.importKey("raw",material,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"]);
+}
+async function createRentalPreviewToken(env:Env,payload:{rental_id:string;side:"cnic_front"|"cnic_back";admin_id:string;expires_at:number;nonce:string}):Promise<string|null>{
+ const key=await rentalPreviewHmacKey(env);if(!key)return null;
+ const encoded=base64Url(new TextEncoder().encode(JSON.stringify(payload)));
+ const signature=await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(encoded));
+ return encoded+"."+base64Url(new Uint8Array(signature));
+}
+async function publicRentalDocumentPreviewRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
+ if(url.pathname!=="/api/rental-document-preview")return null;
+ if(request.method!=="GET")return error("Method not allowed",405);
+ const token=url.searchParams.get("token")||"";if(token.length>1600)return error("This secure preview link is invalid or expired",403);
+ const parts=token.split(".");if(parts.length!==2)return error("This secure preview link is invalid or expired",403);
+ const key=await rentalPreviewHmacKey(env);if(!key)return error("Secure document preview is temporarily unavailable",503);
+ let payload:{rental_id?:string;side?:string;admin_id?:string;expires_at?:number;nonce?:string};
+ try{
+  const valid=await crypto.subtle.verify("HMAC",key,fromBase64Url(parts[1]),new TextEncoder().encode(parts[0]));
+  if(!valid)return error("This secure preview link is invalid or expired",403);
+  payload=JSON.parse(new TextDecoder().decode(fromBase64Url(parts[0]))) as typeof payload;
+ }catch{return error("This secure preview link is invalid or expired",403);}
+ if(!payload.rental_id||!/^[a-f0-9-]{36}$/i.test(payload.rental_id)||!["cnic_front","cnic_back"].includes(payload.side||"")||!payload.admin_id||!/^[a-f0-9-]{36}$/i.test(payload.admin_id)||!Number.isFinite(payload.expires_at)||Number(payload.expires_at)<=Date.now()||!payload.nonce)return error("This secure preview link is invalid or expired",403);
+ try{
+  const tokenHash=await sha256("deverve-rental-document-preview:v1:"+token),now=new Date().toISOString();
+  const consumed=await env.DB.prepare("DELETE FROM rental_document_preview_tokens WHERE token_hash=? AND expires_at>? RETURNING rental_request_id,document_side,admin_user_id").bind(tokenHash,now).first<{rental_request_id:string;document_side:string;admin_user_id:string}>();
+  if(!consumed||consumed.rental_request_id!==payload.rental_id||consumed.document_side!==payload.side||consumed.admin_user_id!==payload.admin_id)return error("This secure preview link has already been used or expired",403);
+  const doc=await env.DB.prepare("SELECT object_key,mime_type,document_side FROM rental_documents WHERE rental_request_id=? AND document_side=? LIMIT 1").bind(consumed.rental_request_id,consumed.document_side).first<{object_key:string;mime_type:string;document_side:string}>();
+  if(!doc||!["image/jpeg","image/png","image/webp"].includes(doc.mime_type))return error("Rental document not found",404);
+  const object=await env.MEDIA.get(doc.object_key);if(!object)return error("Rental document not found",404);
+  const audit=await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'rental.document_viewed','rental_request',?,?)").bind(crypto.randomUUID(),consumed.admin_user_id,consumed.rental_request_id,JSON.stringify({side:doc.document_side,access:"short_lived_preview_link"})).run();
+  if((audit.meta?.changes??0)!==1)return error("Secure document access could not be recorded. Please retry.",503);
+  const extension=doc.mime_type==="image/png"?".png":doc.mime_type==="image/webp"?".webp":".jpg";
+  return new Response(object.body,{headers:{"content-type":doc.mime_type,"cache-control":"private, no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff","referrer-policy":"no-referrer","content-security-policy":"default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'","content-disposition":"inline; filename=\""+doc.document_side+extension+"\""}});
+ }catch{return error("Secure document preview is temporarily unavailable",503);}
+}
 async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
-  const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})\/documents\/(cnic_front|cnic_back)$/i);
+  const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})\/documents\/(cnic_front|cnic_back)(\/preview-token)?$/i);
   if (!match) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); } catch { return error("Rental document service is temporarily unavailable", 503); }
   if (!admin) return error("Authentication required", 401);
   if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to view rental documents", 403);
+  if(match[3]==="/preview-token"&&request.method==="POST"){
+    if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+    const expiresAt=Date.now()+120_000,side=match[2] as "cnic_front"|"cnic_back";
+    const token=await createRentalPreviewToken(env,{rental_id:match[1],side,admin_id:admin.admin_user_id,expires_at:expiresAt,nonce:crypto.randomUUID()});
+    if(!token)return error("Secure document preview is not configured",503);
+    try{
+      const now=new Date().toISOString();
+      await env.DB.prepare("DELETE FROM rental_document_preview_tokens WHERE expires_at<=?").bind(now).run();
+      await env.DB.prepare("INSERT INTO rental_document_preview_tokens (token_hash,rental_request_id,document_side,admin_user_id,expires_at,created_at) VALUES (?,?,?,?,?,?)").bind(await sha256("deverve-rental-document-preview:v1:"+token),match[1],side,admin.admin_user_id,new Date(expiresAt).toISOString(),now).run();
+      return json({url:"/api/rental-document-preview?token="+encodeURIComponent(token),expires_in_seconds:120});
+    }catch{return error("Secure preview link could not be created",503);}
+  }
+  if(match[3])return error("Method not allowed",405);
   if (request.method === "GET") {
     try {
       const doc = await env.DB.prepare("SELECT object_key, mime_type, document_side FROM rental_documents WHERE rental_request_id = ? AND document_side = ? LIMIT 1")
@@ -3864,6 +3915,9 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
 
   const publicRentalSettings = await publicRentalSettingsRoute(request, env, url);
   if (publicRentalSettings) return publicRentalSettings;
+
+  const publicRentalPreview = await publicRentalDocumentPreviewRoute(request, env, url);
+  if (publicRentalPreview) return publicRentalPreview;
 
   const publicRentalDocuments = await publicRentalDocumentRoutes(request, env, url);
   if (publicRentalDocuments) return publicRentalDocuments;
