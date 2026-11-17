@@ -3722,7 +3722,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{return error("The live assistant is temporarily unavailable",503);}
   if(!keys.length)return error("Our live assistant is being configured. Please contact De VERVE through the contact page.",503);
   const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
-  if(!available.length)return error("Our assistant is temporarily busy. Please try again in a few minutes.",503,{"retry-after":"60"});
+  if(!available.length)return json({error:"Our assistant is temporarily busy. Please try again in a few minutes."},503,{"retry-after":"60"});
   let productContext="No published product details are currently available.";
   let vehicleContext="No available vehicle details are currently available.";
   try{const result=await env.DB.prepare("SELECT name,category,retail_price_paisa FROM products WHERE status='published' ORDER BY updated_at DESC LIMIT 24").all<{name:string;category:string;retail_price_paisa:number|null}>();if(result.results?.length)productContext=result.results.map(p=>p.name+" ("+p.category+")"+(p.retail_price_paisa===null?"":" — Rs. "+Math.round(p.retail_price_paisa/100).toLocaleString("en-PK"))).join("\n");}catch{}
@@ -3743,7 +3743,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+cooldown).toISOString(),errorLabel,new Date().toISOString(),row.id).run();}catch{}
     if(result.status>=400&&result.status<500&&result.status!==401&&result.status!==403&&result.status!==429)return error("Please rephrase your message and try again",400);
   }
-  return error(attempted?"Our assistant is temporarily busy. Please try again shortly or contact De VERVE.":"Our live assistant is not available",503,{"retry-after":"60"});
+  return json({error:attempted?"Our assistant is temporarily busy. Please try again shortly or contact De VERVE.":"Our live assistant is not available"},503,{"retry-after":"60"});
 }
 async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
   const publicResponse=await publicAIChatRoute(request,env);if(publicResponse)return publicResponse;
