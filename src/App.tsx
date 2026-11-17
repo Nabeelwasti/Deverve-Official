@@ -50,14 +50,21 @@ function readStoredCart(): CartLine[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem("deverve-cart") || "[]");
     if (!Array.isArray(value)) return [];
-    return value.filter((item): item is CartLine => Boolean(item && typeof item === "object"
+    const valid = value.filter((item): item is CartLine => Boolean(item && typeof item === "object"
       && typeof item.variant_id === "string" && /^[a-f0-9-]{36}$/i.test(item.variant_id)
       && typeof item.product_id === "string" && typeof item.name === "string"
       && (item.sku === null || typeof item.sku === "string")
       && typeof item.size === "string" && typeof item.color === "string"
       && Number.isInteger(item.quantity) && item.quantity > 0 && item.quantity <= 10
       && Number.isSafeInteger(item.unit_price_paisa) && item.unit_price_paisa >= 0
-      && Number.isInteger(item.available_quantity) && item.available_quantity > 0)).slice(0, 20);
+      && Number.isInteger(item.available_quantity) && item.available_quantity > 0));
+    const merged = new Map<string, CartLine>();
+    for (const item of valid) {
+      const key = item.variant_id + "|" + item.size.toLowerCase() + "|" + item.color.toLowerCase();
+      const previous = merged.get(key);
+      merged.set(key, previous ? { ...previous, quantity: Math.min(10, item.available_quantity, previous.quantity + item.quantity) } : item);
+    }
+    return [...merged.values()].slice(0, 20);
   } catch { return []; }
 }
 
@@ -221,7 +228,7 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("checkout") === "open") { setCheckoutOpen(true); url.searchParams.delete("checkout"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } }, []);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("checkout") === "open") { setCheckoutOpen(true); url.searchParams.delete("checkout"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("rental") === "open") { const vehicle = url.searchParams.get("vehicle") || ""; url.searchParams.delete("rental"); url.searchParams.delete("vehicle"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); void openRentalRequest(vehicle); } }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => {
@@ -505,7 +512,7 @@ function Storefront() {
                   <div className="product-info">
                     <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
                     <span className="product-audience">{product.audience} · {product.category}</span>
-                    <h4>{product.name}</h4>
+                    <h4><a className="product-title-link" href={"/product/" + encodeURIComponent(product.slug)}>{product.name}</a></h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
                     {product.variants.length ? <ProductVariantPicker variants={product.variants} selectedVariantId={selectedVariants[product.id] || product.variants[0].id} selectedSize={selectedVariantOptions[product.id]?.size} selectedColor={selectedVariantOptions[product.id]?.color} onChange={(variantId,size,color) => {setSelectedVariants((current) => ({ ...current, [product.id]: variantId }));setSelectedVariantOptions((current)=>({...current,[product.id]:{size:size||"",color:color||""}}));}} compact /> : <span className="product-stock-note">Contact us for current availability</span>}
                     <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><button type="button" className="product-details-button" onClick={() => { window.location.href = "/product/" + encodeURIComponent(product.slug); }}>View details</button>{product.variants.length > 0 && product.retail_price_paisa !== null && <button type="button" disabled={!product.variants.some((variant) => variant.available_quantity > 0)} onClick={() => addToCart(product)}>{product.variants.some((variant) => variant.available_quantity > 0) ? "Add to cart +" : "Sold out"}</button>}</div>
