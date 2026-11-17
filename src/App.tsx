@@ -53,6 +53,8 @@ function productGalleryImages(product: StoreProduct, selectedVariantId?: string,
   return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
 }
 
+const cartIdentity = (item: Pick<CartLine,"product_id"|"size"|"color">) => [item.product_id,item.size.trim().toLowerCase(),item.color.trim().toLowerCase()].join("::");
+
 function readStoredCart(): CartLine[] {
   try {
     const value: unknown = JSON.parse(localStorage.getItem("deverve-cart") || "[]");
@@ -67,7 +69,7 @@ function readStoredCart(): CartLine[] {
       && Number.isInteger(item.available_quantity) && item.available_quantity > 0));
     const merged = new Map<string, CartLine>();
     for (const item of valid) {
-      const key = item.variant_id;
+      const key = cartIdentity(item);
       const previous = merged.get(key);
       merged.set(key, previous ? { ...previous, quantity: Math.min(10, item.available_quantity, previous.quantity + item.quantity) } : item);
     }
@@ -292,7 +294,7 @@ function Storefront() {
         : cartSubtotal > 500_000
           ? { label: "Free delivery", amount: 0, freeDelivery: true }
           : null;
-  const cartLineKey = (item: Pick<CartLine,"variant_id">) => item.variant_id;
+  const cartLineKey = cartIdentity;
   const addToCart = (product: StoreProduct) => {
     const selectedId = selectedVariants[product.id];
     const variant = product.variants.find((item) => item.id === selectedId && item.available_quantity > 0)
@@ -302,7 +304,7 @@ function Storefront() {
     const line:CartLine={variant_id:variant.id,product_id:product.id,name:product.name,sku:variant.sku,size:option?.size||splitProductOptions(variant.size)[0]||variant.size,color:option?.color||splitProductOptions(variant.color)[0]||variant.color,quantity:1,unit_price_paisa:product.retail_price_paisa,available_quantity:variant.available_quantity};
     setCart((current) => {
       const key=cartLineKey(line),existing=current.find((item) => cartLineKey(item)===key);
-      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, variant_id:line.variant_id, sku:line.sku, quantity: Math.min(item.quantity + 1, variant.available_quantity,10) } : item);
+      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, variant_id:line.variant_id, sku:line.sku, name:line.name, size:line.size, color:line.color, unit_price_paisa:line.unit_price_paisa, available_quantity:line.available_quantity, quantity: Math.min(item.quantity + 1, line.available_quantity,10) } : item);
       return [...current, line].slice(0,20);
     });
   };

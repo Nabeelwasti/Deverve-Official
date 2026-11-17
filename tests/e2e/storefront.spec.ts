@@ -437,3 +437,56 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   await expect(page.getByText("Test assistant reply")).toBeVisible();
   expect(submitted.payload?.messages).toEqual([{ role: "user", text: "Hello De VERVE" }]);
 });
+
+
+test("product card opens from its content and product cart merges by size and colour", async ({ page }) => {
+  const product = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    slug: "trouser",
+    name: "Trouser",
+    description: "Premium everyday trousers.",
+    category: "Trousers",
+    audience: "Adults",
+    retail_price_paisa: 1200000,
+    image_key: "11111111-1111-4111-8111-111111111111",
+    seo_title: "Trouser | De VERVE",
+    seo_description: "Premium trousers",
+    variants: [
+      { id: "11111111-1111-4111-8111-111111111111", sku: "TR-M-BLK", size: "M", color: "Black", available_quantity: 5 },
+      { id: "22222222-2222-4222-8222-222222222222", sku: "TR-M-NVY", size: "M", color: "Navy", available_quantity: 3 },
+    ],
+    media: [
+      { id: "black-1", media_type: "image", mime_type: "image/jpeg", alt_text: "Black rear view", caption: "", is_primary: 1, color: "Black", url: "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" },
+      { id: "navy-1", media_type: "image", mime_type: "image/jpeg", alt_text: "Navy front view", caption: "", is_primary: 0, color: "Navy", url: "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" },
+    ],
+  };
+  await page.route("**/api/products**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.searchParams.get("slug") === "trouser" || url.searchParams.get("limit") === "60") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [product] }) });
+      return;
+    }
+    if (url.pathname.includes("/reviews")) {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reviews: [], average_rating: null, rating_count: 0 }) });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto("/");
+  await page.locator(".product-card h3").getByText("Trouser").click();
+  await expect(page).toHaveURL(/\/product\/trouser$/);
+  await expect(page.locator(".product-page-media-column")).toBeVisible();
+  await expect(page.locator(".product-color-thumb")).toHaveCount(2);
+
+  const addButton = page.getByRole("button", { name: /Add to cart/ });
+  await addButton.click();
+  await addButton.click();
+  await page.getByRole("button", { name: "Select Navy colour" }).click();
+  await addButton.click();
+
+  const cart = await page.evaluate(() => JSON.parse(localStorage.getItem("deverve-cart") || "[]"));
+  expect(cart).toHaveLength(2);
+  expect(cart.find((item: { color: string }) => item.color === "Black").quantity).toBe(2);
+  expect(cart.find((item: { color: string }) => item.color === "Navy").quantity).toBe(1);
+});
