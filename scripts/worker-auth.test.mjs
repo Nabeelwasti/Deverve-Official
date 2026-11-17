@@ -1286,7 +1286,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(db.variants.get(variantId).reserved_quantity, 2);
   assert.equal(db.orders.size, 1);
 
-  const duplicate = await handleRequest(request("/api/orders", "POST", payload), env(db));
+  const duplicate = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
   assert.equal(db.orders.size, 1);
