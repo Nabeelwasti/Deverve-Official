@@ -206,3 +206,22 @@ assert any(row[1] == "idx_pos_receipt_outbox_due" for row in db.execute("PRAGMA 
 email_queue_columns = {row[1] for row in db.execute("PRAGMA table_info(enquiry_email_queue)")}
 assert {"status", "attempts", "next_attempt_at", "processing_started_at"} <= email_queue_columns, "Enquiry email queue lease fields are missing"
 assert any(row[1] == "idx_enquiry_email_queue_lease" for row in db.execute("PRAGMA index_list(enquiry_email_queue)")), "Enquiry email queue lease index is missing"
+
+# Permanent CNIC evidence guards: no document row deletion, metadata mutation,
+# or cascade deletion of the linked rental request may succeed.
+cnic_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='rental_documents'")}
+assert {"trg_rental_documents_no_delete", "trg_rental_documents_no_update"} <= cnic_triggers, "Permanent CNIC evidence protection triggers are missing"
+db.execute("INSERT INTO rental_requests (id,customer_name,phone,pickup_location,pickup_at,return_at,driver_option) VALUES (?,?,?,?,?,?,?)", ("cnic-retention-test", "Evidence Test", "+923000000000", "Jhelum", "2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", "self_drive"))
+db.execute("INSERT INTO rental_documents (id,rental_request_id,document_side,object_key,mime_type,byte_size) VALUES (?,?,?,?,?,?)", ("cnic-retention-doc", "cnic-retention-test", "cnic_front", "rental-private/cnic-retention-test/front.jpg", "image/jpeg", 1024))
+for statement, values in [
+    ("DELETE FROM rental_documents WHERE id=?", ("cnic-retention-doc",)),
+    ("DELETE FROM rental_requests WHERE id=?", ("cnic-retention-test",)),
+    ("UPDATE rental_documents SET object_key=? WHERE id=?", ("rental-private/changed.jpg", "cnic-retention-doc")),
+]:
+    try:
+        db.execute(statement, values)
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        raise AssertionError(f"Permanent CNIC evidence protection failed to reject: {statement}")
+assert db.execute("SELECT object_key FROM rental_documents WHERE id='cnic-retention-doc'").fetchone()[0] == "rental-private/cnic-retention-test/front.jpg"

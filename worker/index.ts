@@ -1169,12 +1169,12 @@ async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL):
         .bind(crypto.randomUUID(), rental.id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"] })),
     ]);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) {
-      for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+      console.error(JSON.stringify({event:"cnic_evidence_preserved_after_upload_error",object_count:objects.length}));
       return error("This upload link was already used or has expired. Contact De VERVE for a new secure link.", 410);
     }
     return json({ uploaded: true, message: "Both CNIC images were uploaded securely. Only authorized rental staff can view them." }, 201);
   } catch {
-    for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+    console.error(JSON.stringify({event:"cnic_evidence_preserved_after_upload_error",object_count:objects.length}));
     return error("CNIC images could not be stored securely. Please try again.", 503);
   }
 }
@@ -1277,11 +1277,11 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
         .bind(crypto.randomUUID(), id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"], rental_days: rentalDays, estimated_daily_rate_paisa: estimatedDailyRatePaisa, estimated_total_paisa: estimatedTotalPaisa, driver_option: driver })),
     ]);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) {
-      for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+      console.error(JSON.stringify({event:"cnic_evidence_preserved_after_upload_error",object_count:objects.length}));
       return error("That vehicle is not available for the selected dates. Please refresh and submit again.", 409);
     }
   } catch {
-    for (const object of objects) { try { await env.MEDIA.delete(object.key); } catch {} }
+    console.error(JSON.stringify({event:"cnic_evidence_preserved_after_upload_error",object_count:objects.length}));
     return error("Your rental request and CNIC images could not be stored securely. Please try again.", 503);
   }
   try { await recordOwnerNotification(env.DB,{event_type:"rental.created",title:"New rental request "+reference,body:"A customer submitted a rental request with both CNIC images. Review the request and verify the documents.",entity_type:"rental_request",entity_id:id}); } catch {}

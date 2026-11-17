@@ -1,4 +1,5 @@
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import retentionWorker from "../workers/deverve-cnic-retention.js";
 
@@ -19,4 +20,10 @@ test("retention health reports indefinite private document retention", async () 
   const response=await retentionWorker.fetch(new Request("https://retention.example/health"),env);
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{status:"ok",database_connected:true,private_storage_binding:true,document_retention:"indefinite",automatic_document_deletion:false,legacy_preview_token_expiry_seconds:120});
+});
+
+test("rental upload and scheduled maintenance code never delete CNIC evidence objects", () => {
+  const workerSource = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(workerSource, /env\\.MEDIA\\.delete\\(object\\.key\\)/);
+  assert.match(workerSource, /rental-private\\//);
 });
