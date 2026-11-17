@@ -30,6 +30,26 @@ const localDateTime = (date: Date) => {
   return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}`;
 };
 const pakistanDateTimeMs = (value: string) => Date.parse(value + "+05:00");
+const APP_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+function readAppDraft<T extends object>(key: string, fallback: T): T {
+  try {
+    const storageKey = "deverve:app-draft:v1:" + key;
+    const raw = sessionStorage.getItem(storageKey);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as { savedAt?: number; data?: Partial<T> };
+    if (!saved || typeof saved.savedAt !== "number" || Date.now() - saved.savedAt > APP_DRAFT_TTL_MS || !saved.data || typeof saved.data !== "object") {
+      sessionStorage.removeItem(storageKey);
+      return fallback;
+    }
+    return { ...fallback, ...saved.data };
+  } catch { return fallback; }
+}
+function writeAppDraft(key: string, data: object): void {
+  try { sessionStorage.setItem("deverve:app-draft:v1:" + key, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* Storage must never interrupt customer workflows. */ }
+}
+function clearAppDraft(key: string): void {
+  try { sessionStorage.removeItem("deverve:app-draft:v1:" + key); } catch { /* Storage may be unavailable. */ }
+}
 
 type StoreVariant = { id: string; sku: string | null; size: string; color: string; available_quantity: number };
 type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; color?: string; url: string };
@@ -183,14 +203,15 @@ function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
-  const readScreen = (): StoreScreen => { const value = new URLSearchParams(window.location.search).get("screen"); return validScreens.includes(value as StoreScreen) ? value as StoreScreen : "home"; };
+  const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
   const [activeScreen, setActiveScreen] = useState<StoreScreen>(readScreen);
   const [favourites, setFavourites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("deverve-favourites") || "[]") as string[]; } catch { return []; } });
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [visibleProductCount,setVisibleProductCount]=useState(8);
-  const [enquiry, setEnquiry] = useState({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
+  const emptyEnquiry = { name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" };
+  const [enquiry, setEnquiry] = useState(() => readAppDraft("enquiry", emptyEnquiry));
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
   const [enquiryTurnstileToken, setEnquiryTurnstileToken] = useState("");
@@ -205,7 +226,7 @@ function Storefront() {
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
-  const [rentalOpen, setRentalOpen] = useState(false);
+  const [rentalOpen, setRentalOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:rental-open") === "1"; } catch { return false; } });
   const [rentalBusy, setRentalBusy] = useState(false);
   const [rentalMessage, setRentalMessage] = useState("");
   const [rentalNotice, setRentalNotice] = useState<{ kind: "success" | "error"; message: string } | null>(null);
@@ -224,7 +245,8 @@ function Storefront() {
   const [rentalSettingsLoading, setRentalSettingsLoading] = useState(true);
   const [rentalSettingsError, setRentalSettingsError] = useState("");
   const rentalSettingsRequest = useRef(0);
-  const [rentalForm, setRentalForm] = useState({ vehicle_id: "", customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" });
+  const emptyRentalForm = { vehicle_id: "", customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), driver_option: "with_driver", customer_note: "", website: "" };
+  const [rentalForm, setRentalForm] = useState(() => readAppDraft("rental", emptyRentalForm));
   const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
   const [selectedVariantOptions, setSelectedVariantOptions] = useState<Record<string, {size:string;color:string}>>({});
   const [cart, setCart] = useState<CartLine[]>(readStoredCart);
@@ -239,12 +261,16 @@ function Storefront() {
   const [paymentProvider, setPaymentProvider] = useState<"manual" | "safepay">("manual");
   const [paymentMethods,setPaymentMethods]=useState<Array<{id:string;label:string;kind:string;provider:string;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>>([{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}]);
   const [selectedPaymentMethod,setSelectedPaymentMethod]=useState("cod");
-  const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
+  const emptyCheckoutForm = { customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" };
+  const [checkoutForm, setCheckoutForm] = useState(() => readAppDraft("checkout", emptyCheckoutForm));
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || sessionStorage.getItem("deverve:ui:rental-open") === "1") { const vehicle = url.searchParams.get("vehicle") || ""; void openRentalRequest(vehicle, true); } }, []);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || rentalOpen) { const vehicle = url.searchParams.get("vehicle") || rentalForm.vehicle_id || ""; void openRentalRequest(vehicle, true); } }, []);
   useEffect(() => { const onPopState = () => setActiveScreen(readScreen()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
   useEffect(() => { try { sessionStorage.setItem("deverve:ui:cart-open", cartOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:checkout-open", checkoutOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:rental-open", rentalOpen ? "1" : "0"); } catch { /* Storage restrictions must not interrupt the storefront. */ } }, [cartOpen, checkoutOpen, rentalOpen]);
+  useEffect(() => { writeAppDraft("enquiry", enquiry); }, [enquiry]);
+  useEffect(() => { writeAppDraft("rental", rentalForm); }, [rentalForm]);
+  useEffect(() => { writeAppDraft("checkout", checkoutForm); }, [checkoutForm]);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => { void fetch("/api/storefront/payment-options", { headers: { accept: "application/json" } }).then(async (response) => { if (!response.ok) return; const payload = await response.json() as { online_payment_available?: boolean; environment?: "sandbox" | "production" | null; methods?: typeof paymentMethods }; setOnlinePaymentAvailable(payload.online_payment_available === true); setOnlinePaymentEnvironment(payload.online_payment_available === true ? payload.environment ?? null : null); if(Array.isArray(payload.methods)&&payload.methods.length){setPaymentMethods(payload.methods);setSelectedPaymentMethod(current=>payload.methods!.some(method=>method.id===current)?current:(payload.methods!.find(method=>method.kind==="cod")?.id??payload.methods![0].id));} }).catch(() => { setOnlinePaymentAvailable(false); setOnlinePaymentEnvironment(null); }); }, []);
@@ -386,6 +412,7 @@ function Storefront() {
       setRentalReference(result.reference_code ?? "");
       setRentalSubmittedEstimatePaisa(result.estimated_total_paisa ?? null);
       const successMessage = result.message || "Your rental request and both CNIC images have been received securely.";
+      clearAppDraft("rental");
       setRentalMessage(successMessage); setRentalDocsMessage("Both CNIC images were uploaded securely with your rental request.");
       setRentalNotice({ kind: "success", message: result.reference_code ? "Rental request received. Reference: " + result.reference_code : "Rental request received successfully." });
     } catch (error) {
@@ -409,7 +436,8 @@ function Storefront() {
       const result = await response.json() as { accepted?: boolean; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");
       setSubmitMessage("Thank you. Your enquiry has been received.");
-      setEnquiry({ name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" });
+      setEnquiry({ ...emptyEnquiry });
+      clearAppDraft("enquiry");
     } catch (error) {
       setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
     } finally {
@@ -428,7 +456,7 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
-  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); window.history.pushState({ screen }, "", url.pathname + url.search + url.hash); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); url.hash = ""; window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => setFavourites((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
 
   return (
@@ -627,7 +655,7 @@ function Storefront() {
             <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
             <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span>↗</span></a>
           </div>
-          <form className="enquiry-form" onSubmit={submitEnquiry}>
+          <form className="enquiry-form" data-draft-key="storefront-enquiry" onSubmit={submitEnquiry}>
             <h3>Send us an enquiry</h3>
             <div className="enquiry-fields">
               <label>Your name<input required minLength={2} maxLength={100} autoComplete="name" value={enquiry.name} onChange={(event) => setEnquiry({ ...enquiry, name: event.target.value })} /></label>
@@ -646,7 +674,7 @@ function Storefront() {
 
       {rentalOpen && <div className="checkout-backdrop rental-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !rentalBusy) setRentalOpen(false); }}><section className="checkout-modal rental-modal" role="dialog" aria-modal="true" aria-labelledby="rental-modal-title" aria-describedby="rental-modal-description">
         <div className="checkout-modal-heading"><div><p className="eyebrow">DE VERVE MOBILITY</p><h2 id="rental-modal-title">Request a rental.</h2><p id="rental-modal-description">Complete the details and identity verification. Your booking is not confirmed until De VERVE approves it.</p></div><button type="button" className="checkout-close" onClick={() => setRentalOpen(false)} aria-label="Close rental request">×</button></div>
-        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" onSubmit={submitRentalRequest} onInvalidCapture={(event) => { const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; const label = field.labels?.[0]?.textContent?.replace(/\*/g, "").trim(); const message = (label ? label + ": " : "") + (field.validationMessage || "Please complete all required fields before submitting."); setRentalNotice({ kind: "error", message }); field.scrollIntoView({ behavior: "smooth", block: "center" }); }}>
+        {rentalReference ? <div className="rental-success"><strong>Rental request submitted successfully</strong><span>Reference: {rentalReference}</span><p>{rentalMessage}</p><p>{rentalDocsMessage}</p><p>{rentalSubmittedEstimatePaisa !== null ? "Your confirmed estimate: " + formatPrice(rentalSubmittedEstimatePaisa) : "Our team will confirm the final rental price."}</p><button type="button" className="button button-primary" onClick={() => setRentalOpen(false)}>Close</button></div> : <form className="checkout-form" data-draft-key="storefront-rental-request" onSubmit={submitRentalRequest} onInvalidCapture={(event) => { const field = event.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement; const label = field.labels?.[0]?.textContent?.replace(/\*/g, "").trim(); const message = (label ? label + ": " : "") + (field.validationMessage || "Please complete all required fields before submitting."); setRentalNotice({ kind: "error", message }); field.scrollIntoView({ behavior: "smooth", block: "center" }); }}>
           <p className="required-fields-note"><span className="required-star">*</span> Required fields. Email and additional details are optional.</p>
           <section className="rental-security-block" aria-label="Required security verification"><p className="required-fields-note">Complete this security check to protect your rental request. You can finish the form first and return here before submitting.</p><TurnstileWidget resetKey={rentalTurnstileReset} onToken={setRentalTurnstileToken} /></section>
           <div className="checkout-fields">
