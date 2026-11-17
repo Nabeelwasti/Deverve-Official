@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 export type GalleryImage = { id: string; url: string; alt_text: string };
 
-export default function ProductGallery({ images, className = "", autoPlay = true, detailsHref }: { images: GalleryImage[]; className?: string; autoPlay?: boolean; detailsHref?: string }) {
+export default function ProductGallery({ images, className = "", autoPlay = true, detailsHref, onActivate }: { images: GalleryImage[]; className?: string; autoPlay?: boolean; detailsHref?: string; onActivate?: () => void }) {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const [inView, setInView] = useState(false);
@@ -72,7 +72,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
     onPointerCancel={() => { pointerStart.current = null; setPaused(false); }}
     aria-label={"Product image gallery, " + images.length + " images"}>
     <div className="dv-gallery-stage">
-      <button type="button" className="dv-gallery-zoom-trigger" onClick={() => { if(detailsHref){window.location.assign(detailsHref);return;} resetZoom(); setZoomOpen(true); }} aria-label={detailsHref ? "View product details" : "Open image zoom"}>
+      <button type="button" className="dv-gallery-zoom-trigger" onClick={() => { if(onActivate){onActivate();return;} if(detailsHref){window.location.assign(detailsHref);return;} resetZoom(); setZoomOpen(true); }} aria-label={onActivate ? "View vehicle details" : detailsHref ? "View product details" : "Open image zoom"}>
         <img key={images[index].id} src={images[index].url} alt={images[index].alt_text || "Product image " + (index + 1)} draggable={false} loading={index === 0 ? "eager" : "lazy"}/>
         <span>⌕ View & zoom</span>
       </button>
@@ -91,7 +91,7 @@ export default function ProductGallery({ images, className = "", autoPlay = true
       <div className="dv-gallery-lightbox-viewport"
         onPointerDown={event=>{if(event.pointerType==="mouse"&&event.button!==0)return;event.currentTarget.setPointerCapture(event.pointerId);const point={x:event.clientX,y:event.clientY};pointers.current.set(event.pointerId,point);if(pointers.current.size===2){const pair=[...pointers.current.values()];pinchStart.current={distance:pointerDistance(pair[0],pair[1]),zoom,midX:(pair[0].x+pair[1].x)/2,midY:(pair[0].y+pair[1].y)/2};panStart.current=null;}else if(zoom>1){panStart.current={x:event.clientX,y:event.clientY,left:pan.x,top:pan.y};}}}
         onPointerMove={event=>{if(!pointers.current.has(event.pointerId))return;const point={x:event.clientX,y:event.clientY};pointers.current.set(event.pointerId,point);if(pointers.current.size>=2){const pair=[...pointers.current.values()];const distance=pointerDistance(pair[0],pair[1]);if(pinchStart.current){const next=Math.max(1,Math.min(4,pinchStart.current.zoom*distance/Math.max(1,pinchStart.current.distance)));setZoom(next);if(next===1)setPan({x:0,y:0});}event.preventDefault();}else if(panStart.current&&zoom>1){setPan({x:panStart.current.left+event.clientX-panStart.current.x,y:panStart.current.top+event.clientY-panStart.current.y});event.preventDefault();}}}
-        onPointerUp={event=>{pointers.current.delete(event.pointerId);if(pointers.current.size<2)pinchStart.current=null;if(pointers.current.size===0)panStart.current=null;}}
+        onPointerUp={event=>{const remaining=[...pointers.current.entries()].filter(([id])=>id!==event.pointerId);pointers.current.delete(event.pointerId);if(remaining.length===1&&zoom>1){const [,point]=remaining[0];panStart.current={x:point.x,y:point.y,left:pan.x,top:pan.y};}else if(remaining.length===0){panStart.current=null;pinchStart.current=null;}else if(remaining.length<2)pinchStart.current=null;}}
         onPointerCancel={event=>{pointers.current.delete(event.pointerId);pinchStart.current=null;panStart.current=null;}}>
         <img onDoubleClick={()=>{setZoom(value=>value===1?2.5:1);setPan({x:0,y:0});}} onWheel={event=>{event.preventDefault();setZoom(value=>Math.max(1,Math.min(4,value+(event.deltaY<0?.25:-.25))));}} style={{transform:"translate("+pan.x+"px,"+pan.y+"px) scale("+zoom+")",cursor:zoom>1?"grab":"zoom-in"}} src={images[index].url} alt={images[index].alt_text||"Product image "+(index+1)}/>
       </div>
