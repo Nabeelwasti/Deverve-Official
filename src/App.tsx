@@ -60,7 +60,7 @@ function readStoredCart(): CartLine[] {
       && Number.isInteger(item.available_quantity) && item.available_quantity > 0));
     const merged = new Map<string, CartLine>();
     for (const item of valid) {
-      const key = item.variant_id + "|" + item.size.toLowerCase() + "|" + item.color.toLowerCase();
+      const key = item.product_id + "|" + item.size.trim().toLowerCase() + "|" + item.color.trim().toLowerCase();
       const previous = merged.get(key);
       merged.set(key, previous ? { ...previous, quantity: Math.min(10, item.available_quantity, previous.quantity + item.quantity) } : item);
     }
