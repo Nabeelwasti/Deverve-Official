@@ -3580,7 +3580,7 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
       const status = cleanText(url.searchParams.get("status"),16) || "pending";
       if (!["pending","approved","rejected","all"].includes(status)) return error("Choose a valid review status",400);
       try {
-        const rows = await env.DB.prepare("SELECT r.id,r.product_id,r.order_id,r.order_item_id,r.rating,r.title,r.body,r.status,r.moderation_note,r.created_at,p.name AS product_name,p.slug AS product_slug,c.full_name AS customer_name,c.email AS customer_email,o.order_number FROM product_reviews r JOIN products p ON p.id=r.product_id JOIN customers c ON c.id=r.customer_id JOIN orders o ON o.id=r.order_id WHERE (?='all' OR r.status=?) ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,r.created_at ASC LIMIT 200").bind(status,status).all<Record<string,unknown>>();
+        const rows = await env.DB.prepare("SELECT r.id,r.product_id,r.order_id,r.order_item_id,r.rating,r.title,r.body,r.status,r.moderation_note,r.created_at,p.name AS product_name,p.slug AS product_slug,c.full_name AS customer_name,c.email AS customer_email,o.order_number FROM product_reviews r JOIN products p ON p.id=r.product_id JOIN customers c ON c.id=r.customer_id LEFT JOIN orders o ON o.id=r.order_id WHERE (?='all' OR r.status=?) ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END,r.created_at ASC LIMIT 200").bind(status,status).all<Record<string,unknown>>();
         return json({reviews:rows.results??[]});
       } catch { return error("Product reviews could not be loaded",503); }
     }
