@@ -394,6 +394,8 @@ function Storefront() {
   const openRentalRequest = async (vehicleId = "", preserveDraft = false) => {
     try { const account = await fetch("/api/customer/me", { credentials: "same-origin", headers: { accept: "application/json" } }); if (!account.ok) { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open" + (vehicleId ? "&vehicle=" + encodeURIComponent(vehicleId) : "")); return; } } catch { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open"); return; }
     if (!preserveDraft) {
+      clearFormDraft("storefront-rental-request");
+      clearAppDraft("rental");
       setRentalForm({ ...emptyRentalForm, vehicle_id: vehicleId });
       setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); clearAppDraft("rental-result");
       setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage("");
