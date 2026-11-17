@@ -3678,7 +3678,7 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   return new TextDecoder().decode(plain);
 }
 async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string}> {
-  const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key="+encodeURIComponent(apiKey);
+  const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key="+encodeURIComponent(apiKey);
   try {
     const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{temperature:.35,maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
     const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
@@ -3713,7 +3713,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       await importConfiguredGeminiEnvKeys(env);
       const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
-      return json({keys:rows.results??[],encryption_ready:Boolean(aiKeyEncryptionSecret(env)),encryption_mode:env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":env.ADMIN_BOOTSTRAP_TOKEN?.trim()?"bootstrap-derived":"unavailable",model:"gemini-2.5-flash"});
+      return json({keys:rows.results??[],encryption_ready:Boolean(aiKeyEncryptionSecret(env)),encryption_mode:env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":env.ADMIN_BOOTSTRAP_TOKEN?.trim()?"bootstrap-derived":"unavailable",model:"gemini-3.8-flash"});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -3756,7 +3756,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
       const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");
       if(!result.ok)return json({ok:false,message:"Connection failed. Check this key's access, model quota and Google AI Studio project."},200);
       await env.DB.prepare("UPDATE ai_provider_keys SET last_error=NULL,updated_at=? WHERE id=?").bind(new Date().toISOString(),id).run();
-      return json({ok:true,model:"gemini-2.5-flash",message:"Gemini connection successful."});
+      return json({ok:true,model:"gemini-3.8-flash",message:"Gemini connection successful."});
     }catch{return error("The key could not be decrypted or tested. Check the server encryption configuration.",503);}
   }
   if(request.method==="PATCH"){
@@ -3806,7 +3806,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     const result=await callGemini(apiKey,contents,systemInstruction);
     if(result.ok){
       try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();}catch{}
-      return json({reply:result.text,model:"gemini-2.5-flash"});
+      return json({reply:result.text,model:"gemini-3.8-flash"});
     }
     const cooldown=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;
     const errorLabel=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":result.status>=500?"provider_unavailable":"request_failed";
