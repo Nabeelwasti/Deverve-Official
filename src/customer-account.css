@@ -13,3 +13,8 @@
 .customer-return-estimate strong{color:#123f7a}
 .customer-return-actions{display:flex;flex-wrap:wrap;gap:8px}
 .customer-return-actions button{min-height:38px}
+
+.customer-order-doc-actions{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
+.customer-order-doc-actions button{border:1px solid #cbd7e2;border-radius:7px;background:#fff;color:#163a5f;padding:8px 11px;font:600 11px Arial,sans-serif;cursor:pointer}
+.customer-order-doc-actions button:hover{background:#f1f5f9;border-color:#163a5f}
+@media(max-width:560px){.customer-order-doc-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.customer-order-doc-actions button{width:100%}}
