@@ -64,7 +64,7 @@ function readStoredCart(): CartLine[] {
       && Number.isInteger(item.available_quantity) && item.available_quantity > 0));
     const merged = new Map<string, CartLine>();
     for (const item of valid) {
-      const key = item.product_id + "|" + item.size.trim().toLowerCase() + "|" + item.color.trim().toLowerCase();
+      const key = item.variant_id;
       const previous = merged.get(key);
       merged.set(key, previous ? { ...previous, quantity: Math.min(10, item.available_quantity, previous.quantity + item.quantity) } : item);
     }
@@ -297,7 +297,7 @@ function Storefront() {
         : cartSubtotal > 500_000
           ? { label: "Free delivery", amount: 0, freeDelivery: true }
           : null;
-  const cartLineKey = (item: Pick<CartLine,"product_id"|"size"|"color">) => item.product_id+"|"+item.size.trim().toLowerCase()+"|"+item.color.trim().toLowerCase();
+  const cartLineKey = (item: Pick<CartLine,"variant_id">) => item.variant_id;
   const addToCart = (product: StoreProduct) => {
     const selectedId = selectedVariants[product.id];
     const variant = product.variants.find((item) => item.id === selectedId && item.available_quantity > 0)
