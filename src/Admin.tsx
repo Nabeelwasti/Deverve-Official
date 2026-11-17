@@ -130,6 +130,8 @@ export default function Admin() {
   const [customerSearch, setCustomerSearch] = useState("");
   const [auditEvents, setAuditEvents] = useState<AuditEvent[]>([]);
   const [auditSearch,setAuditSearch]=useState("");
+  const [auditOffset,setAuditOffset]=useState(0);
+  const [auditHasMore,setAuditHasMore]=useState(false);
   const [followUpFilter, setFollowUpFilter] = useState<"all" | FollowUpItem["kind"]>("all");
   const [returnRefundDrafts, setReturnRefundDrafts] = useState<Record<string, { refund_method: string; refund_reference: string; admin_note: string }>>(() => readAdminDraft("return-refund-drafts", { values: {} as Record<string, { refund_method: string; refund_reference: string; admin_note: string }> }).values);
   const [deliveryFeeDrafts, setDeliveryFeeDrafts] = useState<Record<string, string>>(() => readAdminDraft("delivery-fee-drafts", { values: {} as Record<string, string> }).values);
@@ -205,9 +207,12 @@ export default function Admin() {
     const result = await api<{ orders: AdminOrder[] }>("/api/admin/orders?limit=50");
     setOrders(result.orders);
   };
-  const loadAuditEvents = async () => {
-    const result = await api<{ events: AuditEvent[] }>('/api/admin/audit-logs?limit=100');
+  const loadAuditEvents = async (search = "", offset = 0) => {
+    const query = new URLSearchParams({ limit: "100", offset: String(offset), ...(search.trim() ? { search: search.trim() } : {}) });
+    const result = await api<{ events: AuditEvent[]; has_more: boolean }>("/api/admin/audit-logs?" + query.toString());
     setAuditEvents(result.events);
+    setAuditOffset(offset);
+    setAuditHasMore(result.has_more);
   };
   const loadProductReviews = async () => { const result = await api<{reviews:AdminProductReview[]}>("/api/admin/product-reviews?status=pending"); setProductReviews(result.reviews); };
   const moderateProductReview = async (review:AdminProductReview,status:"approved"|"rejected") => { await api("/api/admin/product-reviews",{method:"PATCH",body:JSON.stringify({id:review.id,status})}); await loadProductReviews(); setMessage(status==="approved"?"Review approved and published.":"Review rejected and kept private."); };
@@ -797,8 +802,8 @@ export default function Admin() {
         </section>}
 
         {admin.role === "owner" && <section id="audit" className="admin-panel admin-audit-panel">
-          <div className="admin-panel-heading"><div><h2>Business activity history</h2><p className="admin-muted">A read-only record of important changes performed by staff and system workflows. Entries are shown newest first.</p></div><div className="admin-audit-toolbar"><input className="admin-audit-search" type="search" value={auditSearch} onChange={event=>setAuditSearch(event.target.value)} placeholder="Search action, staff, reference or details…" aria-label="Search activity history"/><span className="admin-enquiry-count">{auditEvents.filter(event=>(event.action+" "+event.entity_type+" "+(event.entity_id||"")+" "+(event.actor_email||"")+" "+event.metadata_json).toLowerCase().includes(auditSearch.trim().toLowerCase())).length} matches</span><button type="button" className="admin-secondary" onClick={() => void loadAuditEvents().catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Audit history could not be refreshed."))}>Refresh</button></div></div>
-          {auditEvents.length === 0 ? <div className="admin-empty"><strong>No recorded activity yet</strong><p>Important staff, order, rental, wholesale, media and website-setting changes will appear here when recorded by the system.</p></div> : <div className="admin-audit-list">{auditEvents.filter((event)=>(event.action+" "+event.entity_type+" "+(event.entity_id||"")+" "+(event.actor_email||"")+" "+event.metadata_json).toLowerCase().includes(auditSearch.trim().toLowerCase())).map((event) => {
+          <div className="admin-panel-heading"><div><h2>Business activity history</h2><p className="admin-muted">A read-only record of important changes performed by staff and system workflows. Entries are shown newest first.</p></div><div className="admin-audit-toolbar"><input className="admin-audit-search" type="search" maxLength={120} value={auditSearch} onChange={event=>setAuditSearch(event.target.value)} onKeyDown={event=>{if(event.key==="Enter")void loadAuditEvents(auditSearch,0).catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Audit search failed."));}} placeholder="Search all activity: action, staff, reference or details…" aria-label="Search all activity history"/><button type="button" className="admin-primary" onClick={()=>void loadAuditEvents(auditSearch,0).catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Audit search failed."))}>Search</button><span className="admin-enquiry-count">Showing {auditEvents.length}{auditHasMore?"+":""}</span><button type="button" className="admin-secondary" disabled={auditOffset===0} onClick={()=>void loadAuditEvents(auditSearch,Math.max(0,auditOffset-100)).catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Audit history could not be loaded."))}>Previous</button><button type="button" className="admin-secondary" disabled={!auditHasMore} onClick={()=>void loadAuditEvents(auditSearch,auditOffset+100).catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Audit history could not be loaded."))}>Next</button><button type="button" className="admin-secondary" onClick={()=>void loadAuditEvents(auditSearch,auditOffset).catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Audit history could not be refreshed."))}>Refresh</button></div></div>
+          {auditEvents.length === 0 ? <div className="admin-empty"><strong>No recorded activity yet</strong><p>Important staff, order, rental, wholesale, media and website-setting changes will appear here when recorded by the system.</p></div> : <div className="admin-audit-list">{auditEvents.map((event) => {
             let details = "";
             try { const parsed = JSON.parse(event.metadata_json) as unknown; details = typeof parsed === "object" && parsed !== null ? Object.entries(parsed as Record<string, unknown>).filter(([key,value]) => !/token|secret|password|cnic|document|authorization/i.test(key) && (typeof value === "string" || typeof value === "number" || typeof value === "boolean")).map(([key,value]) => key.replace(/_/g," ") + ": " + String(value)).join(" · ") : ""; } catch { details = "Details unavailable"; }
             return <article className="admin-audit-row" key={event.id}><div className="admin-audit-main"><strong>{event.action.replace(/[._]/g," ")}</strong><span>{event.entity_type.replace(/_/g," ")}{event.entity_id ? " · " + event.entity_id.slice(0,12) : ""}</span>{details && <small>{details}</small>}</div><div className="admin-audit-meta"><span>{event.actor_email || "System"}</span><time dateTime={event.created_at}>{new Date(event.created_at).toLocaleString()}</time></div></article>;
