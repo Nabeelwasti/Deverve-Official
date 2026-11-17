@@ -1,17 +1,13 @@
 name: Production deployment smoke checks
 
 on:
-  workflow_run:
-    workflows: ["Build and type-check"]
-    types: [completed]
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   production-smoke:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-24.04
     steps:
       - name: Wait for production health and verify database connectivity

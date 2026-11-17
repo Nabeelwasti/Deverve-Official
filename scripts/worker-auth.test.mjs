@@ -144,6 +144,25 @@ test("public enquiry submissions reject missing or invalid Turnstile tokens", as
   assert.equal(db.enquiries.size, 0);
 });
 
+test("public enquiry submissions accept complaint, DMCA and other important contact types", async () => {
+  const db = new FakeD1();
+  for (const contactType of ["complaint","dmca","legal","business","other"]) {
+    const response = await handleRequest(request("/api/enquiries", "POST", {
+      enquiryType: contactType, name: "Test Customer", phone: "+923001234567",
+      email: "customer@example.com", message: "Please review this important enquiry.",
+    }), env(db));
+    assert.equal(response.status, 201);
+    const saved = [...db.enquiries.values()].at(-1);
+    assert.equal(saved.contact_type, contactType);
+    assert.equal(saved.enquiry_type, "general");
+  }
+  const invalid = await handleRequest(request("/api/enquiries", "POST", {
+    enquiryType: "unknown", name: "Test Customer", phone: "+923001234567",
+    message: "This type should be rejected.",
+  }), env(db));
+  assert.equal(invalid.status, 400);
+});
+
 test("public enquiry submissions are rate-limited per client IP with retry guidance", async () => {
   const db = new FakeD1();
   const submit = (ip) => handleRequest(request("/api/enquiries", "POST", {
@@ -422,7 +441,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id FROM products WHERE slug = ?")) {
       return [...this.db.products.values()].find((item) => item.slug === v[0] && (!v[1] || item.id !== v[1])) ?? null;
     }
-    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) return this.db.enquiries.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, COALESCE(contact_type, enquiry_type) AS enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) { const row=this.db.enquiries.get(v[0]); return row?{...row,enquiry_type:row.contact_type||row.enquiry_type}:null; }
     if (q.startsWith("SELECT id, status FROM products WHERE id = ?")) { const row = this.db.products.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
@@ -521,8 +540,10 @@ class FakeStatement {
     if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
       return { success: true, results: this.db.movements.filter((row) => row.variant_id === v[0]).slice(0, 100) };
     }
-    if (q.startsWith("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries")) {
-      const rows = [...this.db.enquiries.values()].filter((item) => !q.includes("WHERE enquiry_type = 'rental'") || item.enquiry_type === "rental");
+    if (q.startsWith("SELECT id, COALESCE(contact_type, enquiry_type) AS enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries")) {
+      const rows = [...this.db.enquiries.values()].map(item=>({...item,enquiry_type:item.contact_type||item.enquiry_type}))
+        .filter(item=>!q.includes("COALESCE(contact_type, enquiry_type) = 'rental'")||item.enquiry_type==="rental")
+        .filter(item=>!q.includes("NOT IN ('complaint','dmca','legal','business','other')")||!["complaint","dmca","legal","business","other"].includes(item.enquiry_type));
       return { success: true, results: rows.slice(0, v[0]) };
     }
     if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) return { success: true, results: [] };
@@ -683,8 +704,8 @@ class FakeStatement {
       this.db.audits.push({ action: "order.delivery_fee_declined", values: v }); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO enquiries")) {
-      const [id, enquiry_type, customer_name, phone, email, message] = v;
-      this.db.enquiries.set(id, { id, enquiry_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
+      const [id, enquiry_type, contact_type, customer_name, phone, email, message] = v;
+      this.db.enquiries.set(id, { id, enquiry_type, contact_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO vehicles")) {
@@ -1723,6 +1744,20 @@ test("CNIC documents remain unavailable to unauthorised staff roles", async () =
   db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   const denied = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, { cookie: "__Host-deverve_admin="+token }), env(db));
   assert.equal(denied.status, 403);
+});
+
+test("Gemini chat rejects a UI greeting as the first model turn and rejects non-alternating history", async () => {
+  const db = new FakeD1();
+  const firstModel = await handleRequest(request("/api/ai/chat", "POST", {
+    messages: [{ role: "model", text: "Welcome" }, { role: "user", text: "Hello" }],
+  }), env(db));
+  assert.equal(firstModel.status, 400);
+  assert.match((await firstModel.json()).error, /start with a customer message/i);
+  const repeatedUser = await handleRequest(request("/api/ai/chat", "POST", {
+    messages: [{ role: "user", text: "Hello" }, { role: "user", text: "Again" }],
+  }), env(db));
+  assert.equal(repeatedUser.status, 400);
+  assert.match((await repeatedUser.json()).error, /alternate/i);
 });
 
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {

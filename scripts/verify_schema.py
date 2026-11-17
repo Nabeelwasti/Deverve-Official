@@ -31,6 +31,9 @@ assert not missing, f"Missing tables: {sorted(missing)}"
 product_columns = {row[1] for row in db.execute("PRAGMA table_info(products)")}
 assert {"seo_title", "seo_description"} <= product_columns, "Product SEO metadata columns are missing"
 
+enquiry_columns = {row[1] for row in db.execute("PRAGMA table_info(enquiries)")}
+assert "contact_type" in enquiry_columns, "Extended customer contact categories are missing"
+
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
@@ -120,6 +123,8 @@ db.execute(
 assert db.execute("SELECT COUNT(*) FROM products").fetchone()[0] == 1
 assert db.execute("SELECT stock_on_hand FROM product_variants WHERE id = 'v1'").fetchone()[0] == 5
 assert db.execute("SELECT status FROM enquiries WHERE id = 'e1'").fetchone()[0] == "new"
+db.execute("INSERT INTO enquiries (id, enquiry_type, contact_type, customer_name, phone, message) VALUES (?, ?, ?, ?, ?, ?)", ("e2", "general", "dmca", "Rights Holder", "+923000000001", "Copyright notice"))
+assert db.execute("SELECT contact_type FROM enquiries WHERE id = 'e2'").fetchone()[0] == "dmca"
 assert db.execute("SELECT section_type FROM site_page_sections WHERE id = 'section1'").fetchone()[0] == "hero"
 assert db.execute("SELECT SUM(quantity_delta) FROM inventory_movements WHERE variant_id = 'v1'").fetchone()[0] == 5
 

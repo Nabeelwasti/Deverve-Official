@@ -2442,9 +2442,12 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
       const limitValue = Number(url.searchParams.get("limit") ?? "50");
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
       if (admin.role === "catalogue") return error("You do not have permission to view customer enquiries", 403);
+      const columns="SELECT id, COALESCE(contact_type, enquiry_type) AS enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries";
       const rows = admin.role === "rental"
-        ? await env.DB.prepare("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE enquiry_type = 'rental' ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>()
-        : await env.DB.prepare("SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>();
+        ? await env.DB.prepare(columns+" WHERE COALESCE(contact_type, enquiry_type) = 'rental' ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>()
+        : admin.role === "orders"
+          ? await env.DB.prepare(columns+" WHERE COALESCE(contact_type, enquiry_type) NOT IN ('complaint','dmca','legal','business','other') ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>()
+          : await env.DB.prepare(columns+" ORDER BY created_at DESC LIMIT ?").bind(limit).all<AdminEnquiryRow>();
       return json({ enquiries: rows.results ?? [] });
     } catch {
       return error("Enquiries could not be loaded", 503);
@@ -2460,11 +2463,12 @@ async function adminEnquiryRoutes(request: Request, env: Env, url: URL): Promise
   if (!["new", "contacted", "qualified", "closed", "spam"].includes(status)) return error("Choose a valid enquiry status", 400);
   try {
     const current = await env.DB.prepare(
-      "SELECT id, enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ? LIMIT 1",
+      "SELECT id, COALESCE(contact_type, enquiry_type) AS enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ? LIMIT 1",
     ).bind(enquiryId).first<AdminEnquiryRow>();
     if (!current) return error("Enquiry not found", 404);
     if (admin.role === "rental" && current.enquiry_type !== "rental") return error("Rental staff can only update rental enquiries", 403);
     if (admin.role === "orders" && current.enquiry_type === "rental") return error("Orders staff cannot update rental enquiries", 403);
+    if (admin.role === "orders" && ["complaint","dmca","legal","business","other"].includes(current.enquiry_type)) return error("Only the owner or manager can update this enquiry", 403);
     await env.DB.batch([
       env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ?").bind(status, enquiryId),
       env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, ?, ?, ?)")
@@ -3689,19 +3693,31 @@ async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";part
   } catch { return {ok:false,status:503,text:"",message:"Gemini connection timed out or failed"}; }
 }
 
-async function importConfiguredGeminiEnvKeys(env:Env):Promise<void> {
-  if(aiKeyEncryptionMode(env)==="unavailable")return;
+type GeminiEnvironmentKeyStatus = {
+  label:string;
+  configured:boolean;
+  valid_format:boolean;
+  imported:boolean;
+  status:"missing"|"invalid_format"|"encryption_unavailable"|"imported"|"already_imported";
+};
+async function importConfiguredGeminiEnvKeys(env:Env):Promise<GeminiEnvironmentKeyStatus[]> {
+  const mode=aiKeyEncryptionMode(env);
   const slots:[string,string|undefined][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1],["NabeelG_Api_key2",env.NabeelG_Api_key2]];
+  const statuses:GeminiEnvironmentKeyStatus[]=[];
   for(const [label,raw] of slots){
     const apiKey=raw?.trim()||"";
-    if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey))continue;
+    if(!apiKey){statuses.push({label,configured:false,valid_format:false,imported:false,status:"missing"});continue;}
+    if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey)){statuses.push({label,configured:true,valid_format:false,imported:false,status:"invalid_format"});continue;}
+    if(mode==="unavailable"){statuses.push({label,configured:true,valid_format:true,imported:false,status:"encryption_unavailable"});continue;}
     const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+apiKey);
     const duplicate=await env.DB.prepare("SELECT id FROM ai_provider_keys WHERE key_fingerprint=? LIMIT 1").bind(fingerprint).first<{id:string}>();
-    if(duplicate)continue;
+    if(duplicate){statuses.push({label,configured:true,valid_format:true,imported:true,status:"already_imported"});continue;}
     const encrypted=await encryptGeminiKey(env,apiKey),id=crypto.randomUUID(),now=new Date().toISOString();
-    const next=await env.DB.prepare("SELECT COALESCE(MAX(priority),0)+10 AS priority FROM ai_provider_keys WHERE provider='gemini'").first<{priority:number}>();
-    await env.DB.prepare("INSERT INTO ai_provider_keys (id,provider,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled,created_at,updated_at) VALUES (?,'gemini',?,?,?,?,?,?,1,?,?)").bind(id,label,encrypted.ciphertext,encrypted.iv,fingerprint,encrypted.mode,next?.priority??10,now,now).run();
+    const priority=label==="NabeelG_Api_key1"?0:1;
+    await env.DB.prepare("INSERT INTO ai_provider_keys (id,provider,label,key_ciphertext,key_iv,key_fingerprint,encryption_mode,priority,enabled,created_at,updated_at) VALUES (?,'gemini',?,?,?,?,?,?,1,?,?)").bind(id,label,encrypted.ciphertext,encrypted.iv,fingerprint,encrypted.mode,priority,now,now).run();
+    statuses.push({label,configured:true,valid_format:true,imported:true,status:"imported"});
   }
+  return statuses;
 }
 async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
   const path=url.pathname;
@@ -3712,9 +3728,9 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   if(admin.role!=="owner")return error("Only the owner can manage AI provider keys",403);
   if(path==="/api/admin/ai/keys"&&request.method==="GET"){
     try{
-      await importConfiguredGeminiEnvKeys(env);
+      const environment_keys=await importConfiguredGeminiEnvKeys(env);
       const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
-      return json({keys:rows.results??[],encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"gemini-3.8-flash"});
+      return json({keys:rows.results??[],environment_keys,encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"gemini-3.8-flash"});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -3779,20 +3795,24 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   const body=await readJson(request,14_000),raw=body?.messages;
   if(!Array.isArray(raw)||raw.length<1||raw.length>12)return error("Send a message to start the conversation",400);
   const contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>=[];
-  let total=0;
+  let total=0,previousRole:"user"|"model"|null=null;
   for(const item of raw){
     if(!item||typeof item!=="object")return error("The conversation format is invalid",400);
     const role=(item as {role?:unknown}).role,textValue=(item as {text?:unknown}).text;
     if((role!=="user"&&role!=="model")||typeof textValue!=="string")return error("The conversation format is invalid",400);
+    if(contents.length===0&&role!=="user")return error("The conversation must start with a customer message",400);
+    if(previousRole===role)return error("Conversation messages must alternate between customer and assistant",400);
     const textValueClean=textValue.trim();if(!textValueClean||textValueClean.length>1800)return error("Each message must contain 1–1800 characters",400);
     total+=textValueClean.length;if(total>9000)return error("Please shorten this conversation and try again",413);
     contents.push({role,parts:[{text:textValueClean}]});
+    previousRole=role;
   }
   if(contents[contents.length-1].role!=="user")return error("Send a new message to continue",400);
   let keys:GeminiKeyRow[];
   try{
-    let result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];
-    if(!keys.length){await importConfiguredGeminiEnvKeys(env);result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}
+    await importConfiguredGeminiEnvKeys(env);
+    const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();
+    keys=result.results??[];
   }catch{return error("The live assistant is temporarily unavailable",503);}
   if(!keys.length)return error("Our live assistant is being configured. Please contact De VERVE through the contact page.",503);
   const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
@@ -3973,16 +3993,19 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     const phone = cleanText(body.phone, 24);
     const email = cleanText(body.email, 160).toLowerCase();
     const message = cleanText(body.message, 3000);
-    if (!["retail", "wholesale", "rental", "general"].includes(enquiryType)) return error("Choose a valid enquiry type", 400);
+    const validEnquiryTypes=["retail","wholesale","rental","general","complaint","dmca","legal","business","other"];
+    if (!validEnquiryTypes.includes(enquiryType)) return error("Choose a valid enquiry type", 400);
     if (customerName.length < 2 || !validPhone(phone) || message.length < 5) return error("Please check your name, phone number and message", 400);
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
 
     const id = crypto.randomUUID();
+    const storedEnquiryType=["retail","wholesale","rental"].includes(enquiryType)?enquiryType:"general";
     try {
       await env.DB.prepare(
-        "INSERT INTO enquiries (id, enquiry_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?)",
-      ).bind(id, enquiryType, customerName, phone, email || null, message).run();
-      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+enquiryType+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}
+        "INSERT INTO enquiries (id, enquiry_type, contact_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      ).bind(id, storedEnquiryType, enquiryType, customerName, phone, email || null, message).run();
+      const enquiryLabels:Record<string,string>={general:"general",retail:"retail fashion",wholesale:"wholesale",rental:"car rental",complaint:"complaint",dmca:"DMCA / copyright",legal:"legal / compliance",business:"business / partnership",other:"other important matter"};
+      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+(enquiryLabels[enquiryType]||"general")+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}
       return json({ accepted: true, reference: id }, 201);
     } catch {
       return error("We could not save your enquiry. Please try again later.", 503);

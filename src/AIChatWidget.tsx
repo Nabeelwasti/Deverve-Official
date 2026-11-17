@@ -2,10 +2,27 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 type Message={role:"user"|"model";text:string};
 const greeting:Message={role:"model",text:"Assalamu Alaikum! Welcome to De VERVE. I can help with fashion, wholesale garments and car rental enquiries. How can I help you today?"};
 export default function AIChatWidget(){
- const [open,setOpen]=useState(false),[messages,setMessages]=useState<Message[]>([greeting]),[draft,setDraft]=useState(""),[sending,setSending]=useState(false);
+ const [open,setOpen]=useState(false),[messages,setMessages]=useState<Message[]>([greeting]),[history,setHistory]=useState<Message[]>([]),[draft,setDraft]=useState(""),[sending,setSending]=useState(false);
  const listRef=useRef<HTMLDivElement|null>(null);
  useEffect(()=>{if(open&&listRef.current)listRef.current.scrollTop=listRef.current.scrollHeight;},[open,messages,sending]);
- const send=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();const text=draft.trim();if(!text||sending)return;const next=[...messages,{role:"user" as const,text}];setMessages(next);setDraft("");setSending(true);try{const response=await fetch("/api/ai/chat",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({messages:next.slice(-12)})});const result=await response.json() as {reply?:string;error?:string};if(!response.ok)throw new Error(result.error||"The assistant is temporarily unavailable.");if(!result.reply)throw new Error("The assistant did not return a response.");setMessages(current=>[...current,{role:"model",text:result.reply!}]);}catch(error){setMessages(current=>[...current,{role:"model",text:error instanceof Error?error.message:"Please try again shortly."}]);}finally{setSending(false);}};
+ const send=async(event:FormEvent<HTMLFormElement>)=>{
+  event.preventDefault();const text=draft.trim();if(!text||sending)return;
+  const next=[...messages,{role:"user" as const,text}];
+  const nextHistory=[...history,{role:"user" as const,text}];
+  while(nextHistory.length>12)nextHistory.splice(0,2);
+  setMessages(next);setDraft("");setSending(true);
+  try{
+   const response=await fetch("/api/ai/chat",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({messages:nextHistory})});
+   const result=await response.json() as {reply?:string;error?:string};
+   if(!response.ok)throw new Error(result.error||"The assistant is temporarily unavailable.");
+   if(!result.reply)throw new Error("The assistant did not return a response.");
+   const reply:Message={role:"model",text:result.reply};
+   setHistory([...nextHistory,reply]);
+   setMessages(current=>[...current,reply]);
+  }catch(error){
+   setMessages(current=>[...current,{role:"model",text:error instanceof Error?error.message:"Please try again shortly."}]);
+  }finally{setSending(false);}
+ };
  return <><button type="button" className="ai-chat-launcher" aria-label={open?"Close De VERVE AI chat":"Open De VERVE AI chat"} onClick={()=>setOpen(v=>!v)}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5a7.5 7.5 0 0 1-7.5 7.5H6l-3 2v-9.5A7.5 7.5 0 0 1 10.5 4h2A7.5 7.5 0 0 1 20 11.5Z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="M8 11h8M8 14.5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg></button>
  {open&&<section className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support"><header className="ai-chat-head"><div><strong>De VERVE assistant</strong><small>Fashion · Wholesale · Car rentals</small></div><button type="button" aria-label="Close chat" onClick={()=>setOpen(false)}>×</button></header><div className="ai-chat-messages" ref={listRef} aria-live="polite">{messages.map((message,index)=><div key={index} className={"ai-chat-message "+message.role}>{message.text}</div>)}{sending&&<span className="ai-chat-typing">Thinking…</span>}</div><form className="ai-chat-form" onSubmit={send}><textarea rows={1} maxLength={1800} value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={event=>{if(event.key==="Enter"&&!event.shiftKey){event.preventDefault();event.currentTarget.form?.requestSubmit();}}} placeholder="Write your message… (Enter to send)" aria-label="Your message" disabled={sending}/><button type="submit" disabled={sending||!draft.trim()} aria-label="Send message">➤</button></form><div className="ai-chat-note">AI assistant · Please confirm availability and final prices with our team</div></section>}
  </>;

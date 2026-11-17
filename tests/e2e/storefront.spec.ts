@@ -414,3 +414,26 @@ test("cart opens as a review step and merges repeated identical lines", async ({
   await page.getByRole("button", { name: /Proceed to checkout/ }).click();
   await expect(page.getByRole("dialog", { name: /Choose how to pay/ })).toBeVisible();
 });
+
+
+test("install app control remains visible when the browser does not expose a native install prompt", async ({ page }) => {
+  await page.goto("/");
+  const installButton = page.getByRole("button", { name: "Install or add De VERVE to your home screen" });
+  await expect(installButton).toBeVisible();
+  await installButton.click();
+  await expect(page.getByRole("dialog", { name: "Add De VERVE to your device" })).toBeVisible();
+});
+
+test("AI chat sends only real alternating conversation turns to Gemini", async ({ page }) => {
+  const submitted: { payload: { messages: Array<{ role: string; text: string }> } | null } = { payload: null };
+  await page.route("**/api/ai/chat", async (route) => {
+    submitted.payload = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "Test assistant reply" }) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  await page.getByRole("textbox", { name: "Your message" }).fill("Hello De VERVE");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("Test assistant reply")).toBeVisible();
+  expect(submitted.payload?.messages).toEqual([{ role: "user", text: "Hello De VERVE" }]);
+});
