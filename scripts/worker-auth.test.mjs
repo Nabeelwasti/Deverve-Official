@@ -17,6 +17,14 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
+test("Pages execution context schedules the contact enquiry queue without delaying the response", async () => {
+  const scheduled=[];
+  const response=await handleRequest(new Request(origin+"/api/health"),env(new FakeD1()),{waitUntil(promise){scheduled.push(promise);}});
+  assert.equal(response.status,200);
+  assert.equal(scheduled.length,1);
+  await Promise.all(scheduled);
+});
+
 test("queued contact enquiries are delivered to the configured owner email through Resend", async () => {
   const updates=[];
   const db={
