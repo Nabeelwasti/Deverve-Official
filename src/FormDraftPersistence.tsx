@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-type DraftEntry = { index: number; kind: string; value: string | boolean | string[] };
+type DraftEntry = { field: string; kind: string; value: string | boolean | string[] };
 type DraftPayload = { savedAt: number; entries: DraftEntry[] };
 
 const STORAGE_PREFIX = "deverve:form-draft:v1:";
@@ -27,6 +27,10 @@ function controls(form: HTMLFormElement): Array<HTMLInputElement | HTMLSelectEle
     element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement);
 }
 
+function fieldKey(field: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement, index: number): string {
+  return field.name || field.id || field.getAttribute("aria-label") || `field:${index}:${field.type || field.tagName.toLowerCase()}`;
+}
+
 function restore(form: HTMLFormElement, key: string): void {
   try {
     const raw = sessionStorage.getItem(key);
@@ -38,7 +42,7 @@ function restore(form: HTMLFormElement, key: string): void {
     }
     const fields = controls(form);
     for (const entry of draft.entries) {
-      const field = fields[entry.index];
+      const field = fields.find((candidate, index) => fieldKey(candidate, index) === entry.field);
       if (!field || excluded(field)) continue;
       if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
         const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")?.set;
@@ -66,11 +70,11 @@ function save(form: HTMLFormElement, key: string): void {
     controls(form).forEach((field, index) => {
       if (excluded(field)) return;
       if (field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio")) {
-        entries.push({ index, kind: field.type, value: field.checked });
+        entries.push({ field: fieldKey(field, index), kind: field.type, value: field.checked });
       } else if (field instanceof HTMLSelectElement && field.multiple) {
-        entries.push({ index, kind: "select-multiple", value: Array.from(field.selectedOptions, option => option.value) });
+        entries.push({ field: fieldKey(field, index), kind: "select-multiple", value: Array.from(field.selectedOptions, option => option.value) });
       } else {
-        entries.push({ index, kind: field.tagName.toLowerCase(), value: field.value });
+        entries.push({ field: fieldKey(field, index), kind: field.tagName.toLowerCase(), value: field.value });
       }
     });
     const payload: DraftPayload = { savedAt: Date.now(), entries };
