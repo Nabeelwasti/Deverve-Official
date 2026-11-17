@@ -140,7 +140,8 @@ export default function Admin() {
   const [vehicleMediaAssets,setVehicleMediaAssets]=useState<MediaAsset[]>([]);
   const [vehicleGalleryTarget,setVehicleGalleryTarget]=useState<Vehicle|null>(null);
   const [showQuoteEditor, setShowQuoteEditor] = useState(() => readAdminDraft("quote-editor-open", { open: false }).open);
-  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>([{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }]);
+  const emptyQuoteLines: QuoteLineDraft[] = [{ product_id: "", variant_id: "", quantity: "10", unit_price: "", variants: [] }];
+  const [quoteLines, setQuoteLines] = useState<QuoteLineDraft[]>(() => readAdminDraft("quote-lines", emptyQuoteLines));
   const emptyQuoteForm = { business_name: "", contact_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", valid_until: new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10), enquiry_id: "" };
   const [quoteForm, setQuoteForm] = useState(() => readAdminDraft("quote-form", emptyQuoteForm));
   const [variantProduct, setVariantProduct] = useState<Product | null>(null);
@@ -174,10 +175,12 @@ export default function Admin() {
   useEffect(() => { writeAdminDraft("vehicle-editor-open", { open: showVehicleEditor }); }, [showVehicleEditor]);
   useEffect(() => { writeAdminDraft("vehicle-editor-id", { id: editingVehicleId }); }, [editingVehicleId]);
   useEffect(() => { writeAdminDraft("quote-form", quoteForm); }, [quoteForm]);
+  useEffect(() => { writeAdminDraft("quote-lines", quoteLines); }, [quoteLines]);
   useEffect(() => { writeAdminDraft("quote-editor-open", { open: showQuoteEditor }); }, [showQuoteEditor]);
   const updateProductForm = (next: ProductForm) => { setForm(next); writeAdminDraft("product-form", next); };
   const updateVehicleForm = (next: typeof emptyVehicleForm) => { setVehicleForm(next); writeAdminDraft("vehicle-form", next); };
   const updateQuoteForm = (next: typeof emptyQuoteForm) => { setQuoteForm(next); writeAdminDraft("quote-form", next); };
+  const updateQuoteLines = (updater: (current: QuoteLineDraft[]) => QuoteLineDraft[]) => { const next = updater(quoteLines); setQuoteLines(next); writeAdminDraft("quote-lines", next); };
 
   const loadProducts = async () => {
     const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
@@ -573,7 +576,7 @@ export default function Admin() {
       const selected = products.find((product) => product.id === productId);
       const result = productId ? await api<{ variants: Variant[] }>(`/api/admin/products/${productId}/variants`) : { variants: [] };
       const available = result.variants.filter((variant) => variant.is_active);
-      setQuoteLines((current) => current.map((line, i) => i === index ? { ...line, product_id: productId, variant_id: available[0]?.id ?? "", variants: available, unit_price: selected?.wholesale_price_paisa !== null && selected?.wholesale_price_paisa !== undefined ? String(selected.wholesale_price_paisa / 100) : "" } : line));
+      updateQuoteLines((current) => current.map((line, i) => i === index ? { ...line, product_id: productId, variant_id: available[0]?.id ?? "", variants: available, unit_price: selected?.wholesale_price_paisa !== null && selected?.wholesale_price_paisa !== undefined ? String(selected.wholesale_price_paisa / 100) : "" } : line));
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product options could not be loaded."); }
     finally { setBusy(false); }
   };
