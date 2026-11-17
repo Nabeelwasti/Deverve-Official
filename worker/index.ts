@@ -15,7 +15,7 @@ interface D1Database {
   prepare(query: string): D1PreparedStatement;
   batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
-export interface Env {
+export interface WorkerExecutionContext { waitUntil(promise:Promise<unknown>):void; }\nexport interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
@@ -127,7 +127,26 @@ interface SessionRow {
   revoked_at: string | null;
 }
 
-const json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response =>
+
+export async function processEnquiryEmailQueue(env:Env):Promise<void>{
+ const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();if(!apiKey||!from||!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(from))return;
+ let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"deverve61@gmail.com",secondary:[],enabled:true};
+ try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((x):x is string=>typeof x==="string"),enabled:parsed.enabled};}}catch{return;}
+ const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((v,i,a)=>a.indexOf(v)===i&&/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(v)):[];if(!to.length)return;
+ const now=new Date().toISOString();let rows:Record<string,unknown>[]=[];
+ try{const r=await env.DB.prepare("SELECT q.id,q.enquiry_id,q.attempts,e.contact_type,e.customer_name,e.phone,e.email,e.message FROM enquiry_email_queue q JOIN enquiries e ON e.id=q.enquiry_id WHERE q.status='queued' AND q.next_attempt_at<=? ORDER BY q.created_at LIMIT 10").bind(now).all<Record<string,unknown>>();rows=r.results??[];}catch{return;}
+ const esc=(v:string)=>v.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]||c));
+ for(const row of rows){const id=String(row.id),attempts=Number(row.attempts??0);try{
+  const claim=await env.DB.prepare("UPDATE enquiry_email_queue SET status='processing',attempts=attempts+1 WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(id,now).run();if((claim.meta?.changes??0)!==1)continue;
+  const name=String(row.customer_name||"Website visitor"),type=String(row.contact_type||"general"),phone=String(row.phone||""),email=String(row.email||""),message=String(row.message||"");
+  const subject="New De VERVE website enquiry · "+type.slice(0,50),textBody="A new website enquiry was submitted.\\n\\nName: "+name+"\\nType: "+type+"\\nPhone: "+phone+"\\nEmail: "+(email||"Not provided")+"\\n\\nMessage:\\n"+message;
+  const html="<div style='font-family:Arial,sans-serif;color:#173b63;max-width:680px;margin:auto'><h2>De VERVE · New website enquiry</h2><p>A customer has sent a message through the website.</p><p><b>Name:</b> "+esc(name)+"<br><b>Type:</b> "+esc(type)+"<br><b>Phone:</b> "+esc(phone)+"<br><b>Email:</b> "+esc(email||"Not provided")+"</p><h3>Message</h3><p style='white-space:pre-wrap'>"+esc(message)+"</p><p><a href='https://deverve-official.pages.dev/admin?section=enquiries'>Open Enquiries in Admin</a></p></div>";
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+apiKey,"content-type":"application/json"},body:JSON.stringify({from,to,subject,text:textBody,html}),signal:AbortSignal.timeout(8000)});const payload=await response.json().catch(()=>({})) as {id?:string};if(!response.ok)throw new Error("resend_http_"+response.status);
+  await env.DB.prepare("UPDATE enquiry_email_queue SET status='sent',provider_message_id=?,sent_at=?,last_error_code=NULL WHERE id=? AND status='processing'").bind(payload.id??null,new Date().toISOString(),id).run();
+ }catch(caught){const next=new Date(Date.now()+Math.min(60,2**Math.min(attempts+1,6))*60_000).toISOString(),failed=attempts+1>=5,code=caught instanceof Error&&/^resend_http_\\d+$/.test(caught.message)?caught.message:"provider_unavailable";try{await env.DB.prepare("UPDATE enquiry_email_queue SET status=?,next_attempt_at=?,last_error_code=? WHERE id=? AND status='processing'").bind(failed?"failed":"queued",next,code,id).run();}catch{}}
+ }
+}
+\nconst json = (data: unknown, status = 200, extraHeaders: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(data), {
     status,
     headers: {
@@ -3869,11 +3888,11 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
    if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
   }
  }catch{/* Keep the built-in icon if public brand settings are temporarily unavailable. */}
- const icons=iconUrl.startsWith("/media/")?[{src:iconUrl,sizes:"192x192",type:iconType,purpose:"any"},{src:iconUrl,sizes:"512x512",type:iconType,purpose:"any"},{src:"/icons/icon-maskable.svg",sizes:"any",type:"image/svg+xml",purpose:"maskable"}]:[{src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-maskable.svg",sizes:"any",type:"image/svg+xml",purpose:"maskable"}];
+ const icons=iconUrl.startsWith("/media/")?[{src:iconUrl,sizes:"192x192",type:iconType,purpose:"any"},{src:iconUrl,sizes:"512x512",type:iconType,purpose:"any maskable"}]:[{src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}];
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
-export async function handleRequest(request: Request, env: Env): Promise<Response> {
+export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecutionContext): Promise<Response> {\n  if(ctx)try{ctx.waitUntil(processEnquiryEmailQueue(env));}catch{}
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
@@ -4016,7 +4035,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
         "INSERT INTO enquiries (id, enquiry_type, contact_type, customer_name, phone, email, message) VALUES (?, ?, ?, ?, ?, ?, ?)",
       ).bind(id, storedEnquiryType, enquiryType, customerName, phone, email || null, message).run();
       const enquiryLabels:Record<string,string>={general:"general",retail:"retail fashion",wholesale:"wholesale",rental:"car rental",complaint:"complaint",dmca:"DMCA / copyright",legal:"legal / compliance",business:"business / partnership",other:"other important matter"};
-      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+(enquiryLabels[enquiryType]||"general")+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}
+      try{await recordOwnerNotification(env.DB,{event_type:"enquiry.created",title:"New "+(enquiryLabels[enquiryType]||"general")+" enquiry",body:"A new website enquiry has been received. Open the enquiries workspace to review it.",entity_type:"enquiry",entity_id:id});}catch{}\n      try{await env.DB.prepare("INSERT INTO enquiry_email_queue (id,enquiry_id) VALUES (?,?)").bind(crypto.randomUUID(),id).run();}catch{}
       return json({ accepted: true, reference: id }, 201);
     } catch {
       return error("We could not save your enquiry. Please try again later.", 503);

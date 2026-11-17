@@ -1,3 +1,9 @@
+test("website enquiries can be submitted without a blocked Turnstile widget and are queued for owner email", async () => {
+ const db=new FakeD1();
+ const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:""})}),env(db));
+ assert.equal(response.status,201);assert.equal((await response.json()).accepted,true);assert.equal(db.enquiries.size,1);assert.equal(db.enquiryEmailQueue.size,1);assert.equal([...db.enquiryEmailQueue.values()][0].status,"queued");
+});
+
 import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
@@ -709,7 +715,7 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'order.delivery_fee_declined'")) {
       this.db.audits.push({ action: "order.delivery_fee_declined", values: v }); return { success: true, meta: { changes: 1 } };
     }
-    if (q.startsWith("INSERT INTO enquiries")) {
+    if (q.startsWith("INSERT INTO enquiry_email_queue")) { const [id,enquiry_id]=v; this.db.enquiryEmailQueue.set(id,{id,enquiry_id,status:"queued",attempts:0}); return {success:true,meta:{changes:1}}; }\n    if (q.startsWith("INSERT INTO enquiries")) {
       const [id, enquiry_type, contact_type, customer_name, phone, email, message] = v;
       this.db.enquiries.set(id, { id, enquiry_type, contact_type, customer_name, phone, email, message, status: "new", source: "website", created_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
@@ -1018,7 +1024,7 @@ class FakeD1 {
   rentalDocuments = new Map();
   audits = [];
   notifications = new Map();
-  notificationOutbox = new Map();
+  notificationOutbox = new Map();\n  enquiryEmailQueue = new Map();
   storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
