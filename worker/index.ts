@@ -3659,14 +3659,15 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
 
 
 type GeminiKeyRow = { id:string; label:string; key_ciphertext:string; key_iv:string; key_fingerprint:string; encryption_mode:"dedicated"|"bootstrap-derived"; priority:number; enabled:number; failure_count:number; cooldown_until:string|null; last_used_at:string|null; last_error:string|null; created_at:string; updated_at:string };
-function aiKeyEncryptionSecret(env:Env):string { return env.AI_KEYS_ENCRYPTION_KEY?.trim() || env.ADMIN_BOOTSTRAP_TOKEN?.trim() || ""; }
+function aiKeyEncryptionMode(env:Env):"dedicated"|"bootstrap-derived"|"unavailable" { if((env.AI_KEYS_ENCRYPTION_KEY?.trim()||"").length>=24)return "dedicated";if((env.ADMIN_BOOTSTRAP_TOKEN?.trim()||"").length>=24)return "bootstrap-derived";return "unavailable"; }
+function aiKeyEncryptionSecret(env:Env):string { const mode=aiKeyEncryptionMode(env);return mode==="dedicated"?env.AI_KEYS_ENCRYPTION_KEY!.trim():mode==="bootstrap-derived"?env.ADMIN_BOOTSTRAP_TOKEN!.trim():""; }
 async function aiCryptoKey(env:Env,mode:"dedicated"|"bootstrap-derived"):Promise<CryptoKey|null> {
   const secret=(mode==="dedicated"?env.AI_KEYS_ENCRYPTION_KEY:env.ADMIN_BOOTSTRAP_TOKEN)?.trim()||""; if(secret.length<24)return null;
   const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-gemini-key-vault:v1:"+mode+":"+secret));
   return crypto.subtle.importKey("raw",material,{name:"AES-GCM"},false,["encrypt","decrypt"]);
 }
 async function encryptGeminiKey(env:Env,apiKey:string):Promise<{ciphertext:string;iv:string;mode:"dedicated"|"bootstrap-derived"}> {
-  const mode=env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":"bootstrap-derived";
+  const mode=aiKeyEncryptionMode(env);if(mode==="unavailable")throw new Error("AI key encryption is not configured");
   const key=await aiCryptoKey(env,mode);if(!key)throw new Error("AI key encryption is not configured");
   const iv=crypto.getRandomValues(new Uint8Array(12));
   const encrypted=await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(apiKey));
@@ -3689,7 +3690,7 @@ async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";part
 }
 
 async function importConfiguredGeminiEnvKeys(env:Env):Promise<void> {
-  if(!aiKeyEncryptionSecret(env))return;
+  if(aiKeyEncryptionMode(env)==="unavailable")return;
   const slots:[string,string|undefined][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1],["NabeelG_Api_key2",env.NabeelG_Api_key2]];
   for(const [label,raw] of slots){
     const apiKey=raw?.trim()||"";
@@ -3713,7 +3714,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       await importConfiguredGeminiEnvKeys(env);
       const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
-      return json({keys:rows.results??[],encryption_ready:Boolean(aiKeyEncryptionSecret(env)),encryption_mode:env.AI_KEYS_ENCRYPTION_KEY?.trim()?"dedicated":env.ADMIN_BOOTSTRAP_TOKEN?.trim()?"bootstrap-derived":"unavailable",model:"gemini-3.8-flash"});
+      return json({keys:rows.results??[],encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"gemini-3.8-flash"});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
