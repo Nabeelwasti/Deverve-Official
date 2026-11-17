@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 export type SelectableVariant={id:string;sku?:string|null;size:string;color:string;available_quantity:number};
 const swatches:Record<string,string>={black:"#171717",white:"#ffffff",navy:"#142b4d",blue:"#2868b2",red:"#c83d43",maroon:"#70263d",green:"#28734f",olive:"#747b39",grey:"#8a929b",gray:"#8a929b",beige:"#d8c4a3",brown:"#79533b",pink:"#e9a9bc",purple:"#7652a2",yellow:"#e4c34d",orange:"#df873b"};
-const split=(value:string)=>[...new Set(value.split(/[,;|\\n]+/).map(item=>item.trim()).filter(Boolean))];
+const split=(value:string)=>[...new Set(value.split(/[,;|\n]+/).map(item=>item.trim()).filter(Boolean))];
 export default function ProductVariantPicker({variants,selectedVariantId,onChange,selectedSize,selectedColor,compact=false}:{variants:SelectableVariant[];selectedVariantId:string;onChange:(id:string,size?:string,color?:string)=>void;selectedSize?:string;selectedColor?:string;compact?:boolean}){
  const selected=variants.find(v=>v.id===selectedVariantId)??variants.find(v=>v.available_quantity>0)??variants[0];
  const sizes=useMemo(()=>[...new Set(variants.flatMap(v=>split(v.size)))],[variants]);
