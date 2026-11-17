@@ -292,7 +292,7 @@ function Storefront() {
         : cartSubtotal > 500_000
           ? { label: "Free delivery", amount: 0, freeDelivery: true }
           : null;
-  const cartLineKey = (item: Pick<CartLine,"variant_id"|"size"|"color">) => item.variant_id+"|"+item.size.toLowerCase()+"|"+item.color.toLowerCase();
+  const cartLineKey = (item: Pick<CartLine,"product_id"|"size"|"color">) => item.product_id+"|"+item.size.trim().toLowerCase()+"|"+item.color.trim().toLowerCase();
   const addToCart = (product: StoreProduct) => {
     const selectedId = selectedVariants[product.id];
     const variant = product.variants.find((item) => item.id === selectedId && item.available_quantity > 0)
@@ -302,7 +302,7 @@ function Storefront() {
     const line:CartLine={variant_id:variant.id,product_id:product.id,name:product.name,sku:variant.sku,size:option?.size||splitProductOptions(variant.size)[0]||variant.size,color:option?.color||splitProductOptions(variant.color)[0]||variant.color,quantity:1,unit_price_paisa:product.retail_price_paisa,available_quantity:variant.available_quantity};
     setCart((current) => {
       const key=cartLineKey(line),existing=current.find((item) => cartLineKey(item)===key);
-      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, quantity: Math.min(item.quantity + 1, variant.available_quantity,10) } : item);
+      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, variant_id:line.variant_id, sku:line.sku, quantity: Math.min(item.quantity + 1, variant.available_quantity,10) } : item);
       return [...current, line].slice(0,20);
     });
   };
@@ -508,7 +508,7 @@ function Storefront() {
             {catalogueState === "empty" && <p className="catalogue-feedback">New pieces are being added. Contact us to ask about current arrivals and availability.</p>}
             {catalogueState === "ready" && <div className="product-grid">
               {products.slice(0,visibleProductCount).map((product) => (
-                <article className="product-card" key={product.id}>
+                <article className="product-card" key={product.id} role="link" tabIndex={0} aria-label={"View "+product.name} onClick={(event)=>{if((event.target as HTMLElement).closest("a,button,input,select,textarea,label"))return;window.location.href="/product/"+encodeURIComponent(product.slug);}} onKeyDown={(event)=>{if(event.key==="Enter"||event.key===" "){event.preventDefault();window.location.href="/product/"+encodeURIComponent(product.slug);}}}>
                   {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" detailsHref={"/product/" + encodeURIComponent(product.slug)} images={productGalleryImages(product, selectedVariants[product.id], selectedVariantOptions[product.id]?.color)} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
                     <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
