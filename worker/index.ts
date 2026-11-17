@@ -566,33 +566,49 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
   if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return error("Please enter a valid email address", 400);
   if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) return error("Your cart must contain between 1 and 20 items", 400);
 
-  const quantities = new Map<string, number>();
+  const requestedLines = new Map<string, { variantId: string; size: string; color: string; quantity: number }>();
   for (const item of body.items) {
     if (!item || typeof item !== "object") return error("Your cart contains an invalid item", 400);
-    const variantId = cleanText((item as Record<string, unknown>).variant_id, 64);
-    const quantity = (item as Record<string, unknown>).quantity;
-    if (!/^[a-f0-9-]{36}$/i.test(variantId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 10) {
+    const raw = item as Record<string, unknown>;
+    const variantId = cleanText(raw.variant_id, 64);
+    const size = cleanText(raw.size, 32);
+    const color = cleanText(raw.color, 32);
+    const quantity = raw.quantity;
+    if (!/^[a-f0-9-]{36}$/i.test(variantId) || !Number.isInteger(quantity) || Number(quantity) < 1 || Number(quantity) > 10 || raw.size !== undefined && typeof raw.size !== "string" || raw.color !== undefined && typeof raw.color !== "string") {
       return error("Check the selected product options and quantities", 400);
     }
-    quantities.set(variantId, (quantities.get(variantId) ?? 0) + Number(quantity));
+    const key = variantId + "|" + size.toLowerCase() + "|" + color.toLowerCase();
+    const prior = requestedLines.get(key);
+    requestedLines.set(key, { variantId, size: prior?.size || size, color: prior?.color || color, quantity: (prior?.quantity ?? 0) + Number(quantity) });
   }
-  if (quantities.size > 20 || [...quantities.values()].some((quantity) => quantity > 10)) return error("Each product option is limited to 10 pieces per order", 400);
+  if (requestedLines.size > 20 || [...requestedLines.values()].some((line) => line.quantity > 10)) return error("Each selected size and colour is limited to 10 pieces per order", 400);
 
-  const lines: Array<{ variant: CheckoutVariantRow; quantity: number; lineTotal: number }> = [];
+  const lines: Array<{ variant: CheckoutVariantRow; quantity: number; lineTotal: number; size: string; color: string }> = [];
+  const reservations = new Map<string, { variant: CheckoutVariantRow; quantity: number }>();
   let subtotal = 0;
   try {
-    for (const [variantId, quantity] of quantities) {
+    for (const requested of requestedLines.values()) {
       const variant = await env.DB.prepare(
         "SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' LIMIT 1",
-      ).bind(variantId).first<CheckoutVariantRow>();
+      ).bind(requested.variantId).first<CheckoutVariantRow>();
       if (!variant || variant.retail_price_paisa === null || !Number.isSafeInteger(variant.retail_price_paisa) || variant.retail_price_paisa < 0) {
         return error("A product in your cart is no longer available for online checkout", 409);
       }
-      if (variant.stock_on_hand - variant.reserved_quantity < quantity) return error("A selected size or colour no longer has enough stock. Please update your cart.", 409);
-      const lineTotal = variant.retail_price_paisa * quantity;
+      const sizes = splitOptionValues(variant.size);
+      const colors = splitOptionValues(variant.color);
+      const selectedSize = requested.size || (sizes.length === 1 ? sizes[0] : "");
+      const selectedColor = requested.color || (colors.length === 1 ? colors[0] : "");
+      if (sizes.length > 1 && (!selectedSize || !sizes.some(value => value.toLowerCase() === selectedSize.toLowerCase())) || sizes.length === 1 && selectedSize && selectedSize.toLowerCase() !== sizes[0].toLowerCase()) return error("Choose a valid size for " + variant.name + ".", 400);
+      if (colors.length > 1 && (!selectedColor || !colors.some(value => value.toLowerCase() === selectedColor.toLowerCase())) || colors.length === 1 && selectedColor && selectedColor.toLowerCase() !== colors[0].toLowerCase()) return error("Choose a valid colour for " + variant.name + ".", 400);
+      const lineTotal = variant.retail_price_paisa * requested.quantity;
       if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) return error("Order total is outside the supported range", 400);
       subtotal += lineTotal;
-      lines.push({ variant, quantity, lineTotal });
+      lines.push({ variant, quantity: requested.quantity, lineTotal, size: selectedSize || variant.size, color: selectedColor || variant.color });
+      const reservation = reservations.get(variant.id);
+      reservations.set(variant.id, { variant, quantity: (reservation?.quantity ?? 0) + requested.quantity });
+    }
+    for (const reservation of reservations.values()) {
+      if (reservation.variant.stock_on_hand - reservation.variant.reserved_quantity < reservation.quantity) return error("There is not enough combined stock for the selected sizes and colours. Please update your cart.", 409);
     }
     const advancePayment = requestedPaymentProvider !== "manual" && env.SAFEPAY_ENV === "production";
     const promotion = selectOrderPromotion(subtotal, advancePayment);
@@ -602,17 +618,20 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
     const now = new Date().toISOString();
-    const conditions = lines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
+    const reservationLines = [...reservations.values()];
+    const conditions = reservationLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
     const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, promotion.code, promotion.label, promotion.discountAmountPaisa, promotion.freeDelivery ? 1 : 0, note, token, promotion.freeDelivery ? "accepted" : "pending_quote"];
-    for (const line of lines) orderValues.push(line.variant.id, line.quantity);
+    for (const reservation of reservationLines) orderValues.push(reservation.variant.id, reservation.quantity);
     const statements = [
       env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
     ];
-    for (const line of lines) {
+    for (const reservation of reservationLines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
-        .bind(line.quantity, now, line.variant.id, line.quantity, id));
+        .bind(reservation.quantity, now, reservation.variant.id, reservation.quantity, id));
+    }
+    for (const line of lines) {
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)")
-        .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.variant.size, line.variant.color, line.quantity, line.variant.retail_price_paisa, line.variant.cost_price_paisa ?? 0, line.lineTotal, id));
+        .bind(crypto.randomUUID(), id, line.variant.id, line.variant.name, line.variant.sku, line.size, line.color, line.quantity, line.variant.retail_price_paisa, line.variant.cost_price_paisa ?? 0, line.lineTotal, id));
     }
     statements.push(env.DB.prepare("UPDATE orders SET payment_method = ?, payment_provider = 'manual', payment_status = 'pending' WHERE id = ? AND payment_provider = 'manual'").bind(selectedPaymentMethod.id,id));
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
@@ -622,7 +641,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     if (requestedPaymentProvider === "safepay" && !signedInCustomer) return error("Please sign in to your De VERVE account before choosing online payment.", 401);
     if (signedInCustomer) statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
-    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
+    if ((results[0]?.meta?.changes ?? 0) !== 1 || reservationLines.some((_, index) => (results[index + 1]?.meta?.changes ?? 0) !== 1)) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     if (signedInCustomer && (results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
     return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
