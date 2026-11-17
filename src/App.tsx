@@ -217,8 +217,6 @@ function Storefront() {
   const [enquiry, setEnquiry] = useState(() => readAppDraft("enquiry", emptyEnquiry));
   const [sending, setSending] = useState(false);
   const [submitMessage, setSubmitMessage] = useState("");
-  const [enquiryTurnstileToken, setEnquiryTurnstileToken] = useState("");
-  const [enquiryTurnstileReset, setEnquiryTurnstileReset] = useState(0);
   const [checkoutTurnstileToken, setCheckoutTurnstileToken] = useState("");
   const [checkoutTurnstileReset, setCheckoutTurnstileReset] = useState(0);
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
@@ -452,7 +450,7 @@ function Storefront() {
       const response = await fetch("/api/enquiries", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...enquiry, ...(enquiryTurnstileToken ? { turnstile_token: enquiryTurnstileToken } : {}) }),
+        body: JSON.stringify(enquiry),
       });
       const result = await response.json() as { accepted?: boolean; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");

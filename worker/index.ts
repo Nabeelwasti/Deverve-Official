@@ -3889,8 +3889,8 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  let iconUrl="/icons/icon-192.svg",iconType="image/svg+xml";
  try{
   const setting=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
-  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {favicon_id?:string|null}:null;
-  const id=assets?.favicon_id;
+  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null;favicon_id?:string|null}:null;
+  const id=assets?.logo_id??assets?.favicon_id;
   if(id&&/^[a-f0-9-]{36}$/i.test(id)){
    const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
    if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
