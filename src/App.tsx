@@ -221,7 +221,7 @@ function Storefront() {
   const [checkoutForm, setCheckoutForm] = useState({ customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" });
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
-  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } }, []);
+  useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") { setCartOpen(true); url.searchParams.delete("cart"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } if (url.searchParams.get("checkout") === "open") { setCheckoutOpen(true); url.searchParams.delete("checkout"); window.history.replaceState({}, "", url.pathname + url.search + url.hash); } }, []);
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
   useEffect(() => {
@@ -334,7 +334,8 @@ function Storefront() {
       if (requestId === rentalSettingsRequest.current) setRentalSettingsLoading(false);
     }
   };
-  const openRentalRequest = (vehicleId = "") => {
+  const openRentalRequest = async (vehicleId = "") => {
+    try { const account = await fetch("/api/customer/me", { credentials: "same-origin", headers: { accept: "application/json" } }); if (!account.ok) { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open" + (vehicleId ? "&vehicle=" + encodeURIComponent(vehicleId) : "")); return; } } catch { window.location.href = "/account?next=" + encodeURIComponent("/?rental=open"); return; }
     setRentalForm((current) => ({ ...current, vehicle_id: vehicleId, customer_name: "", phone: "", email: "", pickup_city: "Jhelum", pickup_address: "", destination_city: "Jhelum", destination_address: "", pickup_at: localDateTime(new Date(Date.now() + 86400000)), return_at: localDateTime(new Date(Date.now() + 2 * 86400000)), customer_note: "", website: "" }));
     setRentalMessage(""); setRentalReference(""); setRentalSubmittedEstimatePaisa(null); setRentalFrontFile(null); setRentalBackFile(null); setRentalDocsConsent(false); setRentalDocsMessage(""); setRentalCnicUploadsEnabled(false); setRentalSettingsError(""); setRentalSettingsLoading(true); setRentalOpen(true);
     void loadRentalSettings();
@@ -540,7 +541,7 @@ function Storefront() {
               </div><strong className="cart-line-total">{formatPrice(item.unit_price_paisa*item.quantity)}</strong>
             </article>)}</div>
             <div className="cart-summary"><div><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong></div>{promotionPreview&&<div><span>{promotionPreview.label}</span><strong>{promotionPreview.freeDelivery?"FREE":"−"+formatPrice(promotionPreview.amount)}</strong></div>}<div className="cart-summary-total"><span>Estimated total</span><strong>{formatPrice(cartSubtotal-(promotionPreview?.amount??0))}</strong></div><small>Delivery charges are confirmed before dispatch. Any eligible promotion is applied once; offers cannot be combined.</small></div>
-            <div className="cart-actions"><button type="button" className="button button-outline" onClick={()=>setCartOpen(false)}>Continue shopping</button><button type="button" className="button button-primary" onClick={()=>{setCartOpen(false);setCheckoutMessage("");setCheckoutResult("");setCheckoutOpen(true);}}>Proceed to checkout <span>↗</span></button></div>
+            <div className="cart-actions"><button type="button" className="button button-outline" onClick={()=>setCartOpen(false)}>Continue shopping</button><button type="button" className="button button-primary" onClick={async()=>{try{const account=await fetch("/api/customer/me",{credentials:"same-origin",headers:{accept:"application/json"}});if(!account.ok){window.location.href="/account?next="+encodeURIComponent("/?checkout=open");return;}setCartOpen(false);setCheckoutMessage("");setCheckoutResult("");setCheckoutOpen(true);}catch{window.location.href="/account?next="+encodeURIComponent("/?checkout=open");}}}>Proceed to checkout <span>↗</span></button></div>
           </>}
         </section></div>}
         {checkoutOpen && <div className="checkout-backdrop"><section className="checkout-panel" role="dialog" aria-modal="true" aria-labelledby="checkout-title">
