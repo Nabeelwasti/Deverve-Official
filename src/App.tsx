@@ -668,7 +668,7 @@ function Storefront() {
       </section></div>}
       {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
       <footer className="site-footer">
-        <a className="footer-wordmark" href="#home">De VERVE<span>.</span></a>
+        <a className="footer-wordmark" href="#home">{brandAssets.logo_id?<img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE"/>:"De VERVE."}</a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
         {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
