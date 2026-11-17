@@ -24,7 +24,8 @@ export default function WholesaleQuote() {
   const respond = async (action: "accept" | "decline") => {
     setBusy(true); setMessage("");
     try {
-      const response = await fetch("/api/wholesale-quotes/" + encodeURIComponent(token) + "/" + action, { method: "POST", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}" });
+      const response = await fetch("/api/wholesale-quotes/" + encodeURIComponent(token) + "/" + action, { method: "POST", credentials: "same-origin", headers: { accept: "application/json", "content-type": "application/json" }, body: "{}" });
+      if (response.status === 401 && action === "accept") { window.location.href = "/account?next=" + encodeURIComponent(window.location.pathname); return; }
       const result = await response.json() as { accepted?: boolean; declined?: boolean; order?: { order_number: string }; error?: string };
       if (!response.ok) throw new Error(result.error || "Your response could not be saved.");
       if (action === "accept") {
