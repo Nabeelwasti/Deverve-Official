@@ -49,6 +49,7 @@ function productGalleryImages(product: StoreProduct, selectedVariantId?: string,
   if (uncoloured.length) return uncoloured.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
   const primary = imageMedia.filter((item) => item.is_primary === 1);
   if (primary.length) return primary.map((item) => ({ id: item.id, url: item.url, alt_text: (item.alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }));
+  if (imageMedia.length) return [{ id: imageMedia[0].id, url: imageMedia[0].url, alt_text: (imageMedia[0].alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }];
   return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
 }
 
