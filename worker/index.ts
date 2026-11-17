@@ -159,12 +159,12 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const waLanguage=env.WHATSAPP_RECEIPT_LANGUAGE?.trim()||"en";
  const waVersion=env.WHATSAPP_API_VERSION?.trim()||"v27.0";
  const emailReady=Boolean(emailApiKey&&emailFrom&&isValidEmailAddress(emailFrom));
- const whatsappReady=Boolean(waToken&&waPhoneId&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
+ const whatsappReady=Boolean(waToken&&waPhoneId&&/^\d+$/.test(waPhoneId)&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
  if(!emailReady&&!whatsappReady)return;
  const now=new Date().toISOString();
+ const staleBefore=new Date(Date.now()-10*60_000).toISOString();
  let rows:Record<string,unknown>[]=[];
  try{
-  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
   const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE (status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?) ORDER BY created_at LIMIT 20").bind(now,staleBefore).all<Record<string,unknown>>();
   rows=result.results??[];
  }catch{return;}
@@ -202,7 +202,7 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
    }else{
     if(Number(sale.whatsapp_receipt_consent)!==1)throw new Error("whatsapp_consent_missing");
     const rawPhone=String(sale.customer_phone||"").replace(/\D/g,"");
-    const recipient=rawPhone.startsWith("0")?"92"+rawPhone.slice(1):rawPhone;
+    const recipient=rawPhone.startsWith("00")?rawPhone.slice(2):rawPhone.startsWith("0")?"92"+rawPhone.slice(1):rawPhone;
     if(recipient.length<8||recipient.length>15)throw new Error("whatsapp_phone_invalid");
     const endpoint="https://graph.facebook.com/"+waVersion+"/"+waPhoneId+"/messages";
     const response=await fetch(endpoint,{method:"POST",headers:{"authorization":"Bearer "+waToken,"content-type":"application/json"},body:JSON.stringify({messaging_product:"whatsapp",recipient_type:"individual",to:recipient,type:"template",template:{name:waTemplate,language:{code:waLanguage},components:[{type:"body",parameters:[{type:"text",text:name},{type:"text",text:receipt},{type:"text",text:"PKR "+(total/100).toFixed(2)}]}]}}),signal:AbortSignal.timeout(8000)});
