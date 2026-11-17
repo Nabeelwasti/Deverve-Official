@@ -507,8 +507,7 @@ test("restores the active storefront section and unfinished enquiry after a relo
   await page.getByLabel("Your name").fill("Progress Recovery Customer");
   await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
   await page.getByLabel("How can we help?").fill("I am completing an enquiry and must not lose this message.");
-  const appDraft = await page.evaluate(() => sessionStorage.getItem("deverve:app-draft:v1:enquiry"));
-  expect(appDraft).toContain("Progress Recovery Customer");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("deverve:app-draft:v1:enquiry"))).toContain("Progress Recovery Customer");
 
   await page.reload();
   await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "contact");
