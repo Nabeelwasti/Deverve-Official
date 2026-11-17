@@ -1379,6 +1379,8 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const buyerCookie = await customerSession(db, "wholesale-buyer@example.com");
+  const buyerMe = await handleRequest(request("/api/customer/me", "GET", undefined, { cookie: buyerCookie }), env(db));
+  assert.equal(buyerMe.status, 200);
   const headers = { cookie, "sec-fetch-site": "same-origin" };
   const productResponse = await handleRequest(request("/api/admin/products", "POST", {
     name: "Wholesale Hoodie", category: "hoodies", audience: "unisex", status: "published",
