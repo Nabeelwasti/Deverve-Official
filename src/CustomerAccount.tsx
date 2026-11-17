@@ -38,17 +38,41 @@ function SecurityCheck({ onToken, reset }: { onToken: (token: string) => void; r
 
 const money = (paisa: number) => "Rs. " + Math.round(paisa / 100).toLocaleString("en-PK");
 const pretty = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const CUSTOMER_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
+function readCustomerDraft<T extends object>(key: string, fallback: T): T {
+  try {
+    const raw = sessionStorage.getItem("deverve:customer-draft:v1:" + key);
+    if (!raw) return fallback;
+    const saved = JSON.parse(raw) as { savedAt?: number; data?: Partial<T> };
+    if (!saved || typeof saved.savedAt !== "number" || Date.now() - saved.savedAt > CUSTOMER_DRAFT_TTL_MS || !saved.data || typeof saved.data !== "object") {
+      sessionStorage.removeItem("deverve:customer-draft:v1:" + key);
+      return fallback;
+    }
+    return { ...fallback, ...saved.data };
+  } catch { return fallback; }
+}
+function hasCustomerDraft(key: string): boolean {
+  try { return sessionStorage.getItem("deverve:customer-draft:v1:" + key) !== null; } catch { return false; }
+}
+function writeCustomerDraft(key: string, data: object): void {
+  try { sessionStorage.setItem("deverve:customer-draft:v1:" + key, JSON.stringify({ savedAt: Date.now(), data })); } catch { /* Never interrupt customer forms. */ }
+}
+function clearCustomerDraft(key: string): void {
+  try { sessionStorage.removeItem("deverve:customer-draft:v1:" + key); } catch { /* Storage may be unavailable. */ }
+}
 
 export default function CustomerAccount() {
   const [customer, setCustomer] = useState<Customer | null>(null);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register">(() => new URLSearchParams(window.location.search).get("mode") === "register" ? "register" : "login");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [securityToken, setSecurityToken] = useState("");
   const [securityReset, setSecurityReset] = useState(0);
-  const [credentials, setCredentials] = useState({ full_name: "", phone: "", email: "", password: "" });
-  const [profile, setProfile] = useState({ full_name: "", phone: "" });
+  const emptyCredentials = { full_name: "", phone: "", email: "", password: "" };
+  const [credentials, setCredentials] = useState(() => ({ ...readCustomerDraft("credentials", { full_name: "", phone: "", email: "" }), password: "" }));
+  const emptyProfile = { full_name: "", phone: "" };
+  const [profile, setProfile] = useState(() => readCustomerDraft("profile", emptyProfile));
   const [passwords, setPasswords] = useState({ current_password: "", new_password: "" });
   const [orders, setOrders] = useState<Order[]>([]);
   const [rentals, setRentals] = useState<Rental[]>([]);
@@ -61,12 +85,17 @@ export default function CustomerAccount() {
   const readSection = (): "orders" | "rentals" | "exchanges" | "profile" => { const value = new URLSearchParams(window.location.search).get("section"); return value === "rentals" || value === "exchanges" || value === "profile" ? value : "orders"; };
   const [section, setSection] = useState<"orders" | "rentals" | "exchanges" | "profile">(readSection);
   const navigateSection = (next: "orders" | "rentals" | "exchanges" | "profile") => { setSection(next); const url = new URL(window.location.href); url.searchParams.set("section", next); window.history.pushState({ section: next }, "", url.pathname + url.search + url.hash); };
-  useEffect(() => { const onPopState = () => setSection(readSection()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
+  useEffect(() => { const onPopState = () => { setSection(readSection()); setMode(new URLSearchParams(window.location.search).get("mode") === "register" ? "register" : "login"); }; window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
+  useEffect(() => { const { full_name, phone, email } = credentials; writeCustomerDraft("credentials", { full_name, phone, email }); }, [credentials.full_name, credentials.phone, credentials.email]);
+  useEffect(() => { writeCustomerDraft("profile", profile); }, [profile]);
+  const updateCredentials = (next: typeof emptyCredentials) => { setCredentials(next); writeCustomerDraft("credentials", { full_name: next.full_name, phone: next.phone, email: next.email }); };
+  const updateProfile = (next: typeof emptyProfile) => { setProfile(next); writeCustomerDraft("profile", next); };
+  const changeMode = (next: "login" | "register") => { setMode(next); const url = new URL(window.location.href); if (next === "register") url.searchParams.set("mode", "register"); else url.searchParams.delete("mode"); window.history.pushState({ mode: next }, "", url.pathname + url.search + url.hash); };
 
   const loadAccount = async () => {
     const result = await api<{ customer: Customer }>("/api/customer/me");
     setCustomer(result.customer);
-    setProfile({ full_name: result.customer.full_name, phone: result.customer.phone });
+    if (!hasCustomerDraft("profile")) setProfile({ full_name: result.customer.full_name, phone: result.customer.phone });
     const [orderResult, rentalResult, exchangeResult] = await Promise.all([
       api<{ orders: Order[] }>("/api/customer/orders"),
       api<{ rentals: Rental[] }>("/api/customer/rentals"),
@@ -89,7 +118,9 @@ export default function CustomerAccount() {
       const result = await api<{ customer: Customer }>(path, { method: "POST", body: JSON.stringify(payload) });
       setCustomer(result.customer);
       setProfile({ full_name: result.customer.full_name, phone: result.customer.phone });
-      setCredentials({ full_name: "", phone: "", email: "", password: "" });
+      clearCustomerDraft("credentials");
+      clearCustomerDraft("profile");
+      setCredentials({ ...emptyCredentials });
       setMessage(mode === "register" ? "Your De VERVE account is ready." : "Welcome back.");
       await loadAccount();
       const nextPath = new URLSearchParams(window.location.search).get("next");
@@ -100,7 +131,7 @@ export default function CustomerAccount() {
 
   const submitProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault(); setBusy(true); setMessage("");
-    try { await api("/api/customer/profile", { method: "PATCH", body: JSON.stringify(profile) }); setCustomer((current) => current ? { ...current, ...profile } : current); setMessage("Your profile has been updated."); }
+    try { await api("/api/customer/profile", { method: "PATCH", body: JSON.stringify(profile) }); setCustomer((current) => current ? { ...current, ...profile } : current); clearCustomerDraft("profile"); setMessage("Your profile has been updated."); }
     catch (error) { setMessage(error instanceof Error ? error.message : "Profile update failed."); }
     finally { setBusy(false); }
   };
@@ -151,10 +182,10 @@ export default function CustomerAccount() {
     <section className="customer-account-wrap">
       <div className="customer-account-intro"><p className="customer-eyebrow">YOUR DE VERVE ACCOUNT</p><h1>Good to have<br/><em>you here.</em></h1><p>Manage your details and keep track of your orders and rental requests in one place.</p></div>
       {loading ? <div className="customer-panel">Loading your account…</div> : !customer ? <section className="customer-panel customer-auth-panel">
-        <div className="customer-tabs"><button className={mode === "login" ? "active" : ""} onClick={() => { setMode("login"); setMessage(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} onClick={() => { setMode("register"); setMessage(""); }}>Create account</button></div>
+        <div className="customer-tabs"><button className={mode === "login" ? "active" : ""} onClick={() => { changeMode("login"); setMessage(""); }}>Sign in</button><button className={mode === "register" ? "active" : ""} onClick={() => { changeMode("register"); setMessage(""); }}>Create account</button></div>
         <form onSubmit={submitAuth} className="customer-form">
-          {mode === "register" && <><label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={credentials.full_name} onChange={(event) => setCredentials({ ...credentials, full_name: event.target.value })}/></label><label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={credentials.phone} onChange={(event) => setCredentials({ ...credentials, phone: event.target.value })}/></label></>}
-          <label>Email address<input required type="email" maxLength={160} autoComplete="email" value={credentials.email} onChange={(event) => setCredentials({ ...credentials, email: event.target.value })}/></label>
+          {mode === "register" && <><label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={credentials.full_name} onChange={(event) => updateCredentials({ ...credentials, full_name: event.target.value })}/></label><label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} autoComplete="tel" value={credentials.phone} onChange={(event) => updateCredentials({ ...credentials, phone: event.target.value })}/></label></>}
+          <label>Email address<input required type="email" maxLength={160} autoComplete="email" value={credentials.email} onChange={(event) => updateCredentials({ ...credentials, email: event.target.value })}/></label>
           <label>Password<input required type="password" minLength={mode === "register" ? 12 : 1} maxLength={128} autoComplete={mode === "register" ? "new-password" : "current-password"} value={credentials.password} onChange={(event) => setCredentials({ ...credentials, password: event.target.value })}/></label>
           {mode === "register" && <><p className="customer-help">Use at least 12 characters. Email verification and password-reset emails will be enabled when the store's secure email service is connected.</p><SecurityCheck onToken={setSecurityToken} reset={securityReset}/></>}
           {message && <p className="customer-message" role="status">{message}</p>}
@@ -166,7 +197,7 @@ export default function CustomerAccount() {
         {section === "orders" && <div className="customer-list">{orders.length === 0 ? <p className="customer-empty">No orders are linked to this account yet. Sign in before your next checkout to keep new orders here.</p> : orders.map((order) => <article className="customer-record" key={order.id}><div className="customer-record-top"><div><small>ORDER REFERENCE</small><strong>{order.order_number}</strong></div><span className={"customer-status status-" + order.order_status}>{pretty(order.order_status)}</span></div><p>{new Date(order.created_at).toLocaleString("en-PK")} · {order.city}</p><ul>{order.items.map((item, index) => <li key={index}>{item.product_name_snapshot} · {item.quantity} × {money(item.unit_price_paisa)}</li>)}</ul><div className="customer-record-total"><span>Final total</span><strong>{money(order.total_paisa)}</strong></div><p className="customer-help">Delivery fee: {order.delivery_fee_status === "accepted" ? money(order.delivery_fee_paisa) : "Awaiting confirmation"} · Payment: {pretty(order.payment_status)}</p>{order.payment_provider === "safepay" && order.payment_status !== "paid" && order.delivery_fee_status === "accepted" && ["pending", "confirmed"].includes(order.order_status) && <button className="customer-primary customer-pay-button" type="button" disabled={Boolean(paymentBusyOrder)} onClick={() => void startPayment(order)}>{paymentBusyOrder === order.id ? "Preparing secure checkout…" : "Pay securely (sandbox)"} <span>↗</span></button>}{order.events?.length > 0 && <div className="customer-order-timeline"><strong>Order progress</strong>{order.events.map((event) => <div className="customer-order-event" key={event.id}><span>{pretty(event.to_status)}</span><time>{new Date(event.created_at).toLocaleString("en-PK")}</time><small>{event.note}</small></div>)}</div>}{order.order_status === "delivered" && Date.now() - Date.parse(order.updated_at) <= 7 * 24 * 60 * 60 * 1000 && Date.now() >= Date.parse(order.updated_at) && !exchanges.some((item) => item.order_id === order.id) && <button type="button" className="customer-secondary customer-return-open" onClick={() => { setExchangeTarget(order); setExchangeReason("size_issue"); setExchangeDetails(""); setExchangeLines(Object.fromEntries(order.items.map((item) => [item.id, { quantity: "0", requested_size: item.size_snapshot || "", requested_color: item.color_snapshot || "" }]))); }}>Request exchange</button>}{exchangeTarget?.id === order.id && <form className="customer-return-form" onSubmit={submitExchange}><h3>Request an exchange</h3><p>Submit within 7 calendar days of delivery. Items must be unused, unworn, unwashed and unaltered, with original tags and packaging. Wrong, damaged or defective items should be reported as soon as possible, preferably within 48 hours. Hygiene-sensitive items such as opened or used socks and boxers are not exchangeable except where the law requires.</p><label>Reason<select value={exchangeReason} onChange={(event) => setExchangeReason(event.target.value)}><option value="size_issue">Size or fit issue</option><option value="wrong_item">Wrong item received</option><option value="damaged">Damaged or defective</option><option value="other">Other</option></select></label><div className="customer-return-items">{order.items.map((item) => { const line = exchangeLines[item.id] ?? { quantity: "0", requested_size: item.size_snapshot || "", requested_color: item.color_snapshot || "" }; return <div key={item.id}><span>{item.product_name_snapshot} · {item.size_snapshot} / {item.color_snapshot} (bought {item.quantity})</span><label>Quantity<input type="number" min="0" max={item.quantity} step="1" value={line.quantity} onChange={(event) => setExchangeLines((current) => ({ ...current, [item.id]: { ...line, quantity: event.target.value } }))}/></label><label>Requested size<input maxLength={32} value={line.requested_size} onChange={(event) => setExchangeLines((current) => ({ ...current, [item.id]: { ...line, requested_size: event.target.value } }))}/></label><label>Requested colour<input maxLength={32} value={line.requested_color} onChange={(event) => setExchangeLines((current) => ({ ...current, [item.id]: { ...line, requested_color: event.target.value } }))}/></label></div>; })}</div><label>Tell us what happened<textarea required minLength={10} maxLength={1000} rows={3} value={exchangeDetails} onChange={(event) => setExchangeDetails(event.target.value)}/></label><div className="customer-return-actions"><button className="customer-primary" disabled={busy}>{busy ? "Submitting…" : "Submit exchange request"}</button><button type="button" className="customer-secondary" onClick={() => setExchangeTarget(null)}>Cancel</button></div></form>}</article>)}</div>}
         {section === "exchanges" && <div className="customer-list">{exchanges.length === 0 ? <p className="customer-empty">No exchange requests yet. Eligible delivered orders can be submitted from My orders.</p> : exchanges.map((item) => <article className="customer-record" key={item.id}><div className="customer-record-top"><div><small>EXCHANGE REFERENCE</small><strong>{item.exchange_number}</strong></div><span className="customer-status">{pretty(item.status)}</span></div><p>Order {item.order_number} · {new Date(item.created_at).toLocaleString("en-PK")}</p><p>{pretty(item.reason)} · {item.details}</p><ul>{item.items.map((line) => <li key={line.id}>{line.product_name_snapshot} · {line.quantity} × requested {line.requested_size || "same size"} / {line.requested_color || "same colour"}</li>)}</ul>{item.admin_note && <p className="customer-help">De VERVE update: {item.admin_note}</p>}{item.events?.length > 0 && <div className="customer-order-timeline"><strong>Exchange progress</strong>{item.events.map((event) => <div className="customer-order-event" key={event.id}><span>{pretty(event.to_status)}</span><time>{new Date(event.created_at).toLocaleString("en-PK")}</time><small>{event.note}</small></div>)}</div>}</article>)}</div>}
         {section === "rentals" && <div className="customer-list">{rentals.length === 0 ? <p className="customer-empty">No rental requests are linked to this account yet.</p> : rentals.map((rental) => <article className="customer-record" key={rental.id}><div className="customer-record-top"><div><small>RENTAL REFERENCE</small><strong>{rental.reference_code}</strong></div><span className="customer-status">{pretty(rental.status)}</span></div><p>{rental.pickup_city} → {rental.destination_city}</p><p>{new Date(rental.pickup_at).toLocaleString("en-PK")} – {new Date(rental.return_at).toLocaleString("en-PK")}</p></article>)}</div>}
-        {section === "profile" && <div className="customer-profile-grid"><form className="customer-form customer-panel" onSubmit={submitProfile}><h3>Personal details</h3><label>Full name<input required minLength={2} maxLength={100} value={profile.full_name} onChange={(event) => setProfile({ ...profile, full_name: event.target.value })}/></label><label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} value={profile.phone} onChange={(event) => setProfile({ ...profile, phone: event.target.value })}/></label><label>Email address<input disabled value={customer.email}/></label><button className="customer-primary" disabled={busy}>Save profile</button></form><form className="customer-form customer-panel" onSubmit={submitPassword}><h3>Change password</h3><label>Current password<input required type="password" autoComplete="current-password" value={passwords.current_password} onChange={(event) => setPasswords({ ...passwords, current_password: event.target.value })}/></label><label>New password<input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={passwords.new_password} onChange={(event) => setPasswords({ ...passwords, new_password: event.target.value })}/></label><p className="customer-help">Changing your password signs out other active sessions.</p><button className="customer-primary" disabled={busy}>Update password</button></form></div>}
+        {section === "profile" && <div className="customer-profile-grid"><form className="customer-form customer-panel" onSubmit={submitProfile}><h3>Personal details</h3><label>Full name<input required minLength={2} maxLength={100} value={profile.full_name} onChange={(event) => updateProfile({ ...profile, full_name: event.target.value })}/></label><label>Phone / WhatsApp<input required type="tel" minLength={8} maxLength={24} value={profile.phone} onChange={(event) => updateProfile({ ...profile, phone: event.target.value })}/></label><label>Email address<input disabled value={customer.email}/></label><button className="customer-primary" disabled={busy}>Save profile</button></form><form className="customer-form customer-panel" onSubmit={submitPassword}><h3>Change password</h3><label>Current password<input required type="password" autoComplete="current-password" value={passwords.current_password} onChange={(event) => setPasswords({ ...passwords, current_password: event.target.value })}/></label><label>New password<input required type="password" minLength={12} maxLength={128} autoComplete="new-password" value={passwords.new_password} onChange={(event) => setPasswords({ ...passwords, new_password: event.target.value })}/></label><p className="customer-help">Changing your password signs out other active sessions.</p><button className="customer-primary" disabled={busy}>Update password</button></form></div>}
         {message && <p className="customer-message" role="status">{message}</p>}
       </section>}
       <p className="customer-footnote">Your account uses a secure, server-managed sign-in session. Email verification and password recovery are not active yet; do not reuse a password from another service.</p>
