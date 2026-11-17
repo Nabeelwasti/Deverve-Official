@@ -133,6 +133,21 @@ test("POS receipt outbox sends only consented receipts through Resend and WhatsA
   assert.equal(updates.filter(update=>update.sql.includes("SET status='sent'")).length,2);
 });
 
+test("authorized POS staff can retry only failed receipts with recorded customer consent", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const saleId=crypto.randomUUID();
+  db.posSales.set(saleId,{customer_email:"buyer@example.com",customer_phone:"+923001234567",email_receipt_consent:1,whatsapp_receipt_consent:1});
+  db.posReceiptOutbox.set("failed-email",{id:"failed-email",sale_id:saleId,channel:"email",status:"failed",attempts:5,last_error_code:"resend_http_503"});
+  const response=await handleRequest(request("/api/admin/pos/receipts/retry","POST",{sale_id:saleId,channel:"email"},{cookie}),env(db));
+  assert.equal(response.status,200);
+  assert.deepEqual(await response.json(),{queued:true,channel:"email"});
+  assert.equal(db.posReceiptOutbox.get("failed-email").status,"queued");
+  assert.equal(db.posReceiptOutbox.get("failed-email").attempts,0);
+  assert.equal(db.audits.some(row=>row.action==="pos.receipt_retry_requested"),true);
+});
+
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);
@@ -492,6 +507,8 @@ class FakeStatement {
   async first() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent FROM pos_sales WHERE id=?")) return this.db.posSales.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed'")) return [...this.db.posReceiptOutbox.values()].find(row=>row.sale_id===v[0]&&row.channel===v[1]&&row.status==="failed")??null;
     if (q.startsWith("SELECT id FROM ai_provider_keys WHERE key_fingerprint")) return [...this.db.aiKeys.values()].find((row) => row.key_fingerprint === v[0]) ?? null;
     if (q.startsWith("SELECT s.id, s.customer_id")) {
       const session = [...this.db.customerSessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
@@ -690,6 +707,12 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE pos_receipt_outbox SET status='queued'")) {
+      const [nextAttempt,id]=v;const row=[...this.db.posReceiptOutbox.values()].find(item=>item.id===id);
+      if(!row||row.status!=="failed")return {success:true,meta:{changes:0}};
+      Object.assign(row,{status:"queued",attempts:0,next_attempt_at:nextAttempt,processing_started_at:null,last_error_code:null});
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=")) {
       const fingerprint=q.includes("WHERE key_fingerprint=?")?v[2]:null;
       const id=q.includes("WHERE id=?")?v[2]:null;
@@ -812,6 +835,7 @@ class FakeStatement {
     if (q.startsWith("UPDATE orders SET customer_id")) { const row = this.db.orders.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
     if (q.startsWith("UPDATE rental_requests SET customer_id")) { const row = this.db.rentalRequests.get(v[1]); if (row && !row.customer_id) { row.customer_id = v[0]; return { success: true, meta: { changes: 1 } }; } return { success: true, meta: { changes: 0 } }; }
     if (q.startsWith("INSERT INTO store_settings")) { const key=q.match(/VALUES\s*\('([^']+)'/i)?.[1]; if(!key)return {success:true,meta:{changes:0}}; this.db.storeSettings.set(key,{setting_value_json:v[0],is_public:q.includes("?,1,")?1:0}); return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'pos.receipt_retry_requested'")) { this.db.audits.push({action:"pos.receipt_retry_requested",values:v}); return {success:true,meta:{changes:1}}; }
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'owner.payment_methods_updated'")) { this.db.audits.push(v); return {success:true,meta:{changes:1}}; }
     if (q.startsWith("UPDATE orders SET delivery_fee_paisa = ?")) {
       const [fee, total, tokenHash, expiresAt, quotedAt, updatedAt, id] = v;
@@ -1156,6 +1180,8 @@ class FakeD1 {
   notifications = new Map();
   notificationOutbox = new Map();
   enquiryEmailQueue = new Map();
+  posSales = new Map();
+  posReceiptOutbox = new Map();
   storeSettings = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
