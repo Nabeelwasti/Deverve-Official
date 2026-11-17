@@ -46,7 +46,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Owner-managed customer payment methods: COD, bank transfers, mobile wallets (including SadaPay/JazzCash/Easypaisa account details), hosted HTTPS payment links and uploaded QR images. Each method can be added, edited, activated or disabled from Website Settings; checkout exposes enabled methods only.
 - Direct-transfer orders record the selected payment method and remain unpaid until the owner independently verifies receipt. Staff cannot mark payments paid; fulfilment is blocked until verification.
 - Resend notification outbox with retry/audit records. Contact-form enquiry emails and consent-based POS customer receipt emails are queued for delivery when a verified sender and Resend API key are configured.
-- POS customer receipts can also be queued to WhatsApp after explicit customer opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag.
+- POS customer receipts can also be queued to WhatsApp after explicit customer opt-in. Delivery uses the Meta WhatsApp Cloud API and an owner-approved utility message template; no messages are sent without the matching consent flag. POS history shows per-channel delivery status and authorised staff can retry failed receipts.
 - Owner-managed brand assets and social profile URLs.
 
 ### POS receipt delivery setup
