@@ -1410,6 +1410,8 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(view.status, 200);
   assert.equal((await view.json()).quote.items[0].quantity, 12);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  const guestAccept = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(guestAccept.status, 401);
   const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(accepted.status, 201);
   const acceptedBody = await accepted.json();
