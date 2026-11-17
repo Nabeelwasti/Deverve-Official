@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -16,6 +16,45 @@ globalThis.fetch = async (input, init = {}) => {
   }
   return nativeFetch(input, init);
 };
+
+test("queued contact enquiries are delivered to the configured owner email through Resend", async () => {
+  const updates=[];
+  const db={
+    prepare(sql){
+      let values=[];
+      return {
+        bind(...next){values=next;return this;},
+        async first(){return null;},
+        async all(){
+          assert.match(sql,/FROM enquiry_email_queue q JOIN enquiries e/);
+          return {results:[{id:"queue-1",enquiry_id:"enquiry-1",attempts:0,contact_type:"complaint",customer_name:"Test Customer",phone:"+923001234567",email:"customer@example.com",message:"Please call me."}]};
+        },
+        async run(){updates.push({sql,values});return {success:true,meta:{changes:1}};}
+      };
+    },
+    async batch(){return [];}
+  };
+  const originalFetch=globalThis.fetch;
+  let sentRequest;
+  globalThis.fetch=async(input,init={})=>{
+    if(String(input)==="https://api.resend.com/emails"){
+      sentRequest={url:String(input),body:JSON.parse(String(init.body||"{}"))};
+      return new Response(JSON.stringify({id:"resend-message-1"}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    return originalFetch(input,init);
+  };
+  try {
+    await processEnquiryEmailQueue({DB:db,RESEND_API_KEY:"test-resend-key",RESEND_FROM_EMAIL:"receipts@deverve.example",OWNER_NOTIFICATION_EMAIL:"owner@deverve.example"});
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
+  assert.equal(sentRequest?.url,"https://api.resend.com/emails");
+  assert.deepEqual(sentRequest?.body.to,["owner@deverve.example"]);
+  assert.match(sentRequest?.body.text,/Please call me/);
+  assert.equal(updates.length,2);
+  assert.match(updates[0].sql,/SET status='processing'/);
+  assert.match(updates[1].sql,/SET status='sent'/);
+});
 
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
