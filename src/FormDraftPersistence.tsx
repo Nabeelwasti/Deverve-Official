@@ -5,7 +5,7 @@ type DraftPayload = { savedAt: number; entries: DraftEntry[] };
 
 const STORAGE_PREFIX = "deverve:form-draft:v1:";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const SENSITIVE = /password|token|secret|cnic|identity|authorization|otp|verification/i;
+const SENSITIVE = /password|passcode|token|secret|api[_-]?key|access[_-]?key|private[_-]?key|credential|cnic|identity|authorization|otp|verification|cvv|card[_-]?number/i;
 
 function excluded(element: Element): boolean {
   if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) return true;
