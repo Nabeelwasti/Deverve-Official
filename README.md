@@ -77,7 +77,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 3. Copy the exact DNS records Resend provides (SPF and DKIM; add the recommended DMARC record) into the domain's DNS provider. Do not invent or reuse sample DNS values. Wait until Resend shows the domain as Verified.
 4. In Resend → API Keys, create a production key restricted to sending from the verified domain if the account offers that restriction. Copy it once; do not place it in GitHub or send it in chat.
 5. In Cloudflare → Workers & Pages → deverve-official → Settings → Variables and Secrets → Production, add RESEND_API_KEY as an encrypted Secret and RESEND_FROM_EMAIL as the verified sender address (plain address only, e.g. receipts@your-owned-domain).
-6. In Admin → Website & brand settings, set the primary owner notification email to the business inbox. A customer email entered as the invoice-copy address queues a transactional receipt; it is not a marketing subscription.
+6. In Admin → Website & brand settings, set the primary owner notification email to a business-owned inbox. No recipient is configured by default; owner alerts and enquiry emails remain queued until a valid business address is saved. A customer email entered as the invoice-copy address queues a transactional receipt; it is not a marketing subscription.
 7. After the owner authorises deployment, send a controlled test invoice to an address the owner controls and verify delivery, retry handling and sender authentication.
 
 ### Meta WhatsApp Business delivery

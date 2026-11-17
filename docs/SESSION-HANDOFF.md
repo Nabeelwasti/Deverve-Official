@@ -81,7 +81,7 @@ Never claim 100% production readiness while the owner/provider/live-device gates
 - Turnstile verifier Worker has its `TURNSTILE_SECRET` binding. CNIC-retention Worker has D1/R2 bindings and a daily schedule. CNIC uploads remain disabled pending owner-approved retention policy.
 - Pages production environment currently exposes only `ADMIN_BOOTSTRAP_TOKEN`; Safepay and Resend credentials are not configured. COD remains the only active payment method.
 - Safepay sandbox/live code exists but no merchant credentials or successful end-to-end transaction are present. PayFast is not integrated; obtain merchant-specific hosted OneCheckout documentation before implementation. Never collect PAN/CVV on De VERVE pages.
-- Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery needs a verified sender domain/address and API key. The app can manage notification recipients but the provider sender is not yet active.
+- No owner notification recipient is configured by default. The owner must set a business-owned primary inbox in Admin before alerts/enquiry emails can be sent; Resend delivery also needs a verified sender domain/address and API key.
 - External HTTP requests from this verification environment to the Pages hostname return a tool-side 403, so rely on the GitHub-hosted production smoke workflow for real-origin checks; do not interpret that tool-side 403 as the site's response.
 - The old `feat/commerce-os-foundation` branch is stale/diverged (4 commits ahead, 388 behind) and duplicates files already on main. Do not merge it. The payments branch is merged; do all future work on `main`.
 

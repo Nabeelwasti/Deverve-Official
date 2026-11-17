@@ -52,7 +52,7 @@
 - Direct-transfer orders store the selected method and stay pending. Only the absolute owner can manually verify receipt; fulfilment is blocked until the payment is verified. This is manual reconciliation, not an automatic bank or wallet API connection.
 - Safepay adapter code supports sandbox and separately gated production, but no merchant credentials or successful sandbox transaction are present. Safepay API secrets are not yet editable in the owner dashboard. A provider-supplied hosted HTTPS link can be published as a manual method while dynamic per-order checkout remains pending integration and onboarding.
 - PayFast is not integrated as a dynamic per-order gateway. Obtain the merchant-specific hosted OneCheckout contract and credentials before implementation. Never collect PAN/CVV on De VERVE pages.
-- Owner notification recipient defaults to `deverve61@gmail.com`; Resend delivery needs a verified sender domain/address and API key.
+- No owner notification recipient is configured by default. The owner must set a business-owned primary inbox in Admin before alerts/enquiry emails can be sent; Resend also needs a verified sender domain/address and API key.
 - The in-site exchange workflow is implemented, but no production exchange cases exist. Real order/item/stock acceptance tests still require actual business data.
 - Direct HTTP checks from this assistant's verification environment are blocked with a tool-side 403. GitHub-hosted production smoke workflows can reach the real origin; rely on their results for public endpoint and response-header verification.
 
