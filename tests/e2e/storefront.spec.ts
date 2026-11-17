@@ -496,7 +496,7 @@ test("product card opens from its content and product cart merges by size and co
   expect(cart.find((item: { color: string }) => item.color === "Navy").quantity).toBe(1);
 
   await page.reload();
-  await expect(page).toHaveURL(/\\/product\\/trouser$/);
+  await expect(page).toHaveURL(/\/product\/trouser$/);
   await expect(page.getByRole("heading", { name: "Trouser", exact: true })).toBeVisible();
   await expect(page.locator(".product-page-media-column")).toBeVisible();
 });
