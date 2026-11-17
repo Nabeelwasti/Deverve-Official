@@ -1813,3 +1813,26 @@ test("Gemini key management is owner-authenticated and public AI chat fails clos
   assert.equal(chat.status, 503);
   assert.match((await chat.json()).error, /being configured/i);
 });
+
+test("public AI chat uses a configured AQ secret directly when the encrypted key vault is unavailable", async () => {
+  const db = new FakeD1();
+  const key = "AQ." + "C".repeat(48);
+  const originalFetch = globalThis.fetch;
+  let receivedKey = "";
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      receivedKey = init.headers?.["x-goog-api-key"] || "";
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Hello from the live assistant" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const chat = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), { ...env(db, ""), NabeelG_Api_key1: key });
+    assert.equal(chat.status, 200);
+    assert.equal((await chat.json()).reply, "Hello from the live assistant");
+    assert.equal(receivedKey, key);
+    assert.equal(db.aiKeys.size, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
