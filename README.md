@@ -36,9 +36,9 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - New customer return submissions are rejected. Historic return/refund records remain for legacy administration only.
 
 ### Admin and business operations
-- Owner bootstrap/login, hashed server-side sessions, login throttling, audit history and role-based staff invitations.
+- Owner bootstrap/login, hashed server-side sessions, login throttling, role-based staff invitations and full-history audit search with server-side filtering and pagination.
 - Owner-only staff creation and permission changes; managers cannot grant themselves owner privileges.
-- Product, variant, stock, inventory movement, media and vehicle management.
+- Product, variant, stock, inventory movement, media and vehicle management. Inventory and POS reports export native XLSX/DOCX, CSV and print-to-PDF formats; POS invoices support the same Office/PDF exports.
 - Orders, delivery quotations, wholesale, rental requests, customer CRM, enquiries and follow-up inbox.
 - Block-based CMS workspace for pages, sections, navigation, draft/publish/archive, revision snapshots and audit events.
 - Product SEO title/description, canonical and Open Graph metadata, Product JSON-LD, dedicated product routes and dynamic sitemap.
@@ -63,7 +63,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Server-side role checks, hashed random session tokens, HttpOnly/Secure/SameSite=Strict cookies and same-origin mutation checks.
 - Cloudflare Turnstile verification through a separate Worker and D1-backed public rate limits.
 - Security response headers and Content Security Policy.
-- Separate scheduled CNIC-retention Worker with D1/R2 bindings. Production CNIC uploads are currently enabled, require both CNIC sides and consent, and use the scheduled 30-day closed-request / 90-day unresolved-request retention policy. Owner policy sign-off and a verified live deletion cycle remain launch checks.
+- Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are retained indefinitely until an owner-approved retention/deletion policy is implemented and verified. Do not rely on the older 30/90-day wording.
 - GitHub Actions build, type-check, Worker tests, schema checks and desktop/mobile browser tests.
 
 ## Production snapshot — 16 November 2026
@@ -123,7 +123,7 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 8. Configure a verified sender domain, Resend API key and sender address; test delivery, failure handling and retries.
 9. Verify the scheduled CNIC deletion process in a controlled environment and confirm the owner-approved retention policy. Do not use real customer documents as test fixtures.
 10. Complete real-device acceptance on Android/iOS and desktop, including a real visible Turnstile challenge. Playwright mocks the challenge/API and does not replace a real human challenge or real transaction.
-11. Decide whether customer email verification/password recovery and automated WhatsApp/SMS messaging are required; those provider-backed workflows are not active.
+11. Decide whether customer email verification/password recovery and SMS are required. POS WhatsApp receipts are implemented but require Meta credentials, an approved Utility template and explicit customer opt-in; SMS is not implemented.
 12. Connect a custom domain only when the owner supplies a domain they control and DNS access.
 
 Do not call the site unrestricted-commerce-ready until the relevant owner/provider/data gates above are closed. Never fabricate credentials, payment confirmations, customer records, catalogue data or vehicle availability.
