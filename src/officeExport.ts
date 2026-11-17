@@ -98,6 +98,12 @@ function downloadOfficeFile(filename: string, mime: string, bytes: Uint8Array): 
   window.setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
+function officeHeaderIndex(rows: OfficeRow[]): number {
+  const labels = new Set(["description","product","item","date","receipt","order","sku","category","expense","reference","vehicle","service","name"]);
+  const index = rows.findIndex(row => labels.has(String(row[0] ?? "").trim().toLowerCase()));
+  return index >= 0 ? index : 0;
+}
+
 function columnName(index: number): string {
   let number = index + 1;
   let result = "";
@@ -113,18 +119,19 @@ export function exportOfficeSpreadsheet(filename: string, sheetName: string, row
   if (!rows.length) return;
   const safeSheet = Array.from(sheetName, character => "[]:*?/\\\\".includes(character) ? " " : character).join("").trim().slice(0, 31) || "Report";
   const columnCount = Math.max(1, ...rows.map(row => row.length));
+  const headerIndex = officeHeaderIndex(rows);
   const lastColumn = columnName(columnCount - 1);
   const lastRow = rows.length;
   const sheetRows = rows.map((row, rowIndex) => {
     const cells = Array.from({ length: columnCount }, (_, columnIndex) => {
       const value = row[columnIndex];
       const reference = columnName(columnIndex) + (rowIndex + 1);
-      const style = rowIndex === 0 ? ' s="1"' : "";
+      const style = rowIndex === headerIndex ? ' s="1"' : "";
       if (typeof value === "number" && Number.isFinite(value)) return "<c r=\"" + reference + "\"" + style + "><v>" + value + "</v></c>";
       if (typeof value === "boolean") return "<c r=\"" + reference + "\" t=\"b\"" + style + "><v>" + (value ? 1 : 0) + "</v></c>";
       return "<c r=\"" + reference + "\" t=\"inlineStr\"" + style + "><is><t xml:space=\"preserve\">" + xmlEscape(String(value ?? "")) + "</t></is></c>";
     }).join("");
-    const height = rowIndex === 0 ? ' ht="30" customHeight="1"' : "";
+    const height = rowIndex === headerIndex ? ' ht="30" customHeight="1"' : "";
     return "<row r=\"" + (rowIndex + 1) + "\"" + height + ">" + cells + "</row>";
   }).join("");
   const widths = Array.from({ length: columnCount }, (_, column) => {
@@ -147,12 +154,13 @@ export function exportOfficeSpreadsheet(filename: string, sheetName: string, row
 
 export function exportOfficeDocument(filename: string, title: string, subtitle: string, rows: OfficeRow[]): void {
   const columnCount = Math.max(1, ...rows.map(row => row.length));
+  const headerIndex = officeHeaderIndex(rows);
   const cellWidth = Math.floor(9360 / columnCount);
   const grid = Array.from({ length: columnCount }, () => '<w:gridCol w:w="' + cellWidth + '"/>').join("");
   const tableRows = rows.map((row, rowIndex) => {
     const cells = Array.from({ length: columnCount }, (_, columnIndex) => {
       const text = xmlEscape(String(row[columnIndex] ?? ""));
-      const header = rowIndex === 0;
+      const header = rowIndex === headerIndex;
       const fill = header ? "163A5F" : rowIndex % 2 === 0 ? "F1F5F9" : "FFFFFF";
       const runStyle = header ? '<w:rPr><w:b/><w:color w:val="FFFFFF"/></w:rPr>' : '<w:rPr><w:color w:val="263B50"/></w:rPr>';
       return '<w:tc><w:tcPr><w:tcW w:w="' + cellWidth + '" w:type="dxa"/><w:shd w:val="clear" w:color="auto" w:fill="' + fill + '"/><w:tcMar><w:top w:w="90" w:type="dxa"/><w:start w:w="110" w:type="dxa"/><w:bottom w:w="90" w:type="dxa"/><w:end w:w="110" w:type="dxa"/></w:tcMar></w:tcPr><w:p><w:pPr><w:spacing w:after="40"/></w:pPr><w:r>' + runStyle + '<w:t xml:space="preserve">' + text + '</w:t></w:r></w:p></w:tc>';
@@ -181,6 +189,7 @@ export function exportOfficeImage(filename: string, title: string, subtitle: str
   const padding = 88;
   const tableWidth = width - padding * 2;
   const columnCount = Math.max(1, ...rows.map(row => row.length));
+  const headerIndex = officeHeaderIndex(rows);
   const rowHeight = 58;
   const headerHeight = 68;
   const headerBand = 250;
@@ -219,8 +228,8 @@ export function exportOfficeImage(filename: string, title: string, subtitle: str
   };
   let y = headerBand;
   rows.forEach((row, rowIndex) => {
-    const rowH = rowIndex === 0 ? headerHeight : rowHeight;
-    context.fillStyle = rowIndex === 0 ? "#163a5f" : rowIndex % 2 === 0 ? "#f1f5f9" : "#ffffff";
+    const rowH = rowIndex === headerIndex ? headerHeight : rowHeight;
+    context.fillStyle = rowIndex === headerIndex ? "#163a5f" : rowIndex % 2 === 0 ? "#f1f5f9" : "#ffffff";
     context.fillRect(padding, y, tableWidth, rowH);
     context.strokeStyle = "#d7e0e8";
     context.lineWidth = 1;
@@ -228,8 +237,8 @@ export function exportOfficeImage(filename: string, title: string, subtitle: str
     let x = padding;
     for (let column = 0; column < columnCount; column++) {
       const cellWidth = normalized[column];
-      context.fillStyle = rowIndex === 0 ? "#ffffff" : "#263b50";
-      context.font = rowIndex === 0 ? "700 18px Arial, sans-serif" : "16px Arial, sans-serif";
+      context.fillStyle = rowIndex === headerIndex ? "#ffffff" : "#263b50";
+      context.font = rowIndex === headerIndex ? "700 18px Arial, sans-serif" : "16px Arial, sans-serif";
       const value = String(row[column] ?? "");
       context.save();
       context.beginPath();
