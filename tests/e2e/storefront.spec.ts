@@ -495,3 +495,44 @@ test("product card opens from its content and product cart merges by size and co
   expect(cart.find((item: { color: string }) => item.color === "Black").quantity).toBe(2);
   expect(cart.find((item: { color: string }) => item.color === "Navy").quantity).toBe(1);
 });
+
+
+test("restores the active storefront section and unfinished enquiry after a reload", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Contact", exact: true }).click();
+  await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "contact");
+  await expect(page).toHaveURL(/screen=contact/);
+
+  await page.getByLabel("Your name").fill("Progress Recovery Customer");
+  await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
+  await page.getByLabel("How can we help?").fill("I am completing an enquiry and must not lose this message.");
+
+  await page.reload();
+  await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "contact");
+  await expect(page.getByLabel("Your name")).toHaveValue("Progress Recovery Customer");
+  await expect(page.getByLabel("Phone / WhatsApp")).toHaveValue("+923001234567");
+  await expect(page.getByLabel("How can we help?")).toHaveValue("I am completing an enquiry and must not lose this message.");
+});
+
+test("restores an open rental form and its text fields after reload while requiring file re-selection", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Car rental", exact: true }).click();
+  await page.getByRole("button", { name: "Request a rental" }).click();
+  const dialog = page.getByRole("dialog", { name: "Request a rental." });
+  await dialog.getByLabel(/Your name/).fill("Rental Progress Customer");
+  await dialog.getByLabel(/Phone \/ WhatsApp/).fill("+923001234567");
+  await dialog.getByLabel(/Pickup complete address/).fill("10 Test Street, Jhelum");
+  await dialog.getByLabel(/Destination complete address/).fill("20 Test Road, Lahore");
+
+  await page.reload();
+  const restored = page.getByRole("dialog", { name: "Request a rental." });
+  await expect(restored).toBeVisible();
+  await expect(restored.getByLabel(/Your name/)).toHaveValue("Rental Progress Customer");
+  await expect(restored.getByLabel(/Phone \/ WhatsApp/)).toHaveValue("+923001234567");
+  await expect(restored.getByLabel(/Pickup complete address/)).toHaveValue("10 Test Street, Jhelum");
+  await expect(restored.getByLabel(/Destination complete address/)).toHaveValue("20 Test Road, Lahore");
+  await expect(restored.getByLabel(/CNIC front image/)).toHaveValue("");
+  await expect(restored.getByLabel(/CNIC back image/)).toHaveValue("");
+});
