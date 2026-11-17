@@ -170,6 +170,12 @@ function splitOptionValues(value: string): string[] {
   return [...new Set(value.split(/[,;|\\n]+/).map(item => item.trim()).filter(Boolean))];
 }
 
+function generateInternalBarcode():string {
+  const digits="20"+Array.from(crypto.getRandomValues(new Uint8Array(10)),value=>String(value%10)).join("");
+  const sum=[...digits].reduce((total,char,index)=>total+Number(char)*(index%2===0?1:3),0);
+  return digits+String((10-sum%10)%10);
+}
+
 function validPhone(value: string): boolean {
   return /^\+?[0-9 ()-]{8,20}$/.test(value);
 }
@@ -2265,15 +2271,15 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     const body = await readJson(request);
     if (!body) return error("Please submit valid variant details", 400);
     const skuText = cleanText(body.sku, 64).toUpperCase();
-    const sku = skuText || null;
     const size = cleanText(body.size, 32);
     const color = cleanText(body.color, 32);
     const initialStock = body.initial_stock === undefined ? 0 : body.initial_stock;
     const barcodeText = cleanText(body.barcode, 64).toUpperCase();
-    const barcode = barcodeText || null;
+    const sku = skuText || "DV-" + crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase();
+    const barcode = barcodeText || generateInternalBarcode();
     const costPrice = body.cost_price_paisa === undefined ? 0 : body.cost_price_paisa;
     const reorderLevel = body.reorder_level === undefined ? 5 : body.reorder_level;
-    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || size.length > 32 || color.length > 32 || size.includes(",") || color.includes(",") || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || !Number.isSafeInteger(costPrice) || Number(costPrice) < 0 || Number(costPrice) > 1_000_000_000_000 || !Number.isSafeInteger(reorderLevel) || Number(reorderLevel) < 0 || Number(reorderLevel) > 1_000_000 || (!size && !color && !sku && !barcode)) {
+    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || size.length > 32 || color.length > 32 || size.includes(",") || color.includes(",") || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || !Number.isSafeInteger(costPrice) || Number(costPrice) < 0 || Number(costPrice) > 1_000_000_000_000 || !Number.isSafeInteger(reorderLevel) || Number(reorderLevel) < 0 || Number(reorderLevel) > 1_000_000 || (!size && !color && !skuText && !barcodeText)) {
       return error("Enter one size and one colour per variant (no comma-separated lists), plus valid barcode, cost and reorder level", 400);
     }
     if (body.cost_price_paisa !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can set purchase cost",403);
