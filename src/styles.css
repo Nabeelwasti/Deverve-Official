@@ -726,3 +726,9 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
  .ai-chat-launcher{right:14px;bottom:calc(108px + env(safe-area-inset-bottom));width:54px;height:54px}
  .ai-chat-panel{right:10px;bottom:calc(174px + env(safe-area-inset-bottom));width:calc(100vw - 20px);height:min(560px,calc(100dvh - 200px))}
 }
+
+.public-quote-downloads{display:flex;flex-wrap:wrap;gap:9px;margin:18px 0 22px}
+.public-quote-downloads button{border:1px solid #cbd7e2;border-radius:7px;background:#fff;color:#163a5f;padding:10px 13px;font:600 12px Arial,sans-serif;cursor:pointer}
+.public-quote-downloads button:hover{background:#f1f5f9;border-color:#163a5f}
+@media(max-width:600px){.public-quote-downloads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.public-quote-downloads button{width:100%}}
+@media print{.public-quote-header,.public-quote-actions,.public-quote-downloads,.public-quote-contact,.public-quote-footer{display:none!important}.public-quote-screen{background:#fff!important;padding:0!important}.public-quote-card{max-width:100%!important;margin:0!important;box-shadow:none!important;border:0!important}.public-quote-items,.public-quote-meta,.public-quote-total{break-inside:avoid;page-break-inside:avoid}}
