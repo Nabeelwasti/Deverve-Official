@@ -19,4 +19,4 @@ CREATE TABLE IF NOT EXISTS pos_receipt_outbox (
   UNIQUE(sale_id, channel)
 );
 CREATE INDEX IF NOT EXISTS idx_pos_receipt_outbox_due
-  ON pos_receipt_outbox(channel,status,next_attempt_at,created_at);
+  ON pos_receipt_outbox(status,next_attempt_at,processing_started_at,created_at);
