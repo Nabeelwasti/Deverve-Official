@@ -2132,8 +2132,28 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const payments = Array.isArray(body?.payments) ? body.payments : [];
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
     try {
-      const duplicate = await env.DB.prepare("SELECT id,receipt_number,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
-      if (duplicate) return json({ sale:duplicate,duplicate:true });
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_consent,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
+      if (duplicate) {
+        const [itemsResult,paymentsResult,deliveryResult] = await Promise.all([
+          env.DB.prepare("SELECT product_name_snapshot AS product_name,sku_snapshot AS sku,size_snapshot AS size,color_snapshot AS color,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
+          env.DB.prepare("SELECT p.payment_method AS method,p.amount_paisa,p.change_paisa,a.name AS account_name FROM pos_payments p JOIN financial_accounts a ON a.id=p.account_id WHERE p.sale_id=? ORDER BY p.rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
+          env.DB.prepare("SELECT channel,status FROM pos_receipt_outbox WHERE sale_id=?").bind(String(duplicate.id)).all<Record<string,unknown>>()
+        ]);
+        const delivery = new Map((deliveryResult.results??[]).map(row=>[String(row.channel),String(row.status)]));
+        const payments = paymentsResult.results??[];
+        return json({ sale:{
+          ...duplicate,
+          customer_name:String(duplicate.customer_name??"Walk-in customer"),
+          customer_phone:String(duplicate.customer_phone??""),
+          customer_email:String(duplicate.customer_email??""),
+          email_receipt_consent:Number(duplicate.email_receipt_consent)===1,
+          whatsapp_receipt_consent:Number(duplicate.whatsapp_receipt_consent)===1,
+          receipt_delivery:{email:delivery.get("email")??"not_requested",whatsapp:delivery.get("whatsapp")??"not_requested"},
+          change_paisa:payments.reduce((sum,row)=>sum+Number(row.change_paisa??0),0),
+          items:itemsResult.results??[],
+          payments
+        },duplicate:true });
+      }
       const session = await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>();
       if (!session) return error("Open the cash register before completing a sale",409);
       const combined = new Map<string,number>();
