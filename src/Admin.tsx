@@ -664,13 +664,15 @@ export default function Admin() {
   const previewRentalDocument = async (rental:RentalRequest,side:"cnic_front"|"cnic_back") => {
     const tab=window.open("about:blank","_blank");
     if(!tab){setMessage("Allow pop-ups to preview this private CNIC image.");return;}
-    tab.opener=null;tab.document.title="Loading secure CNIC preview…";
+    tab.opener=null;
+    tab.document.title="Opening secure CNIC image…";
     try{
-      const response=await fetch("/api/admin/rentals/"+rental.id+"/documents/"+side+"/preview-token",{method:"POST",credentials:"same-origin",cache:"no-store",headers:{accept:"application/json","content-type":"application/json"},body:"{}"});
-      const result=await response.json() as {url?:string;error?:string};
-      if(!response.ok||!result.url)throw new Error(result.error||"A secure preview link could not be created.");
-      tab.location.href=new URL(result.url,window.location.origin).toString();
-    }catch(error){tab.close();setMessage(error instanceof Error?error.message:"The private CNIC image could not be loaded.");}
+      const blob=await fetchRentalDocumentBlob(rental,side,false);
+      tab.location.href=URL.createObjectURL(blob);
+    }catch(error){
+      tab.close();
+      setMessage(error instanceof Error?error.message:"The private CNIC image could not be loaded.");
+    }
   };
   const downloadRentalDocument = async (rental:RentalRequest,side:"cnic_front"|"cnic_back") => {
     setBusy(true);setMessage("");
@@ -678,14 +680,6 @@ export default function Admin() {
     catch(error){setMessage(error instanceof Error?error.message:"The private CNIC image could not be downloaded.");}
     finally{setBusy(false);}
   };
-  const deleteRentalDocument = async (rental: RentalRequest, side: "cnic_front" | "cnic_back") => {
-    if(!window.confirm("Permanently delete this private CNIC image?"))return;
-    setBusy(true);setMessage("");
-    try{await api(`/api/admin/rentals/${rental.id}/documents/${side}`,{method:"DELETE"});await loadRentals();setMessage("Private rental document deleted.");}
-    catch(error){setMessage(error instanceof Error?error.message:"Document could not be deleted.");}
-    finally{setBusy(false);}
-  };
-
   const updateRentalStatus = async (rental: RentalRequest, status: RentalRequest["status"]) => {
     if (status === rental.status) return;
     setBusy(true); setMessage("");
@@ -875,7 +869,7 @@ export default function Admin() {
               <div className="admin-order-heading"><div><strong>{rental.reference_code}</strong><span>{new Date(rental.created_at).toLocaleString()}</span></div><span className={`admin-enquiry-status status-${rental.status}`}>{rental.status}</span></div>
               <div className="admin-order-customer"><strong>{rental.customer_name}</strong><a href={`tel:${rental.phone}`}>{rental.phone}</a>{rental.email && <a href={`mailto:${rental.email}`}>{rental.email}</a>}<span>{rental.vehicle_name || "Any available vehicle"} · {rental.vehicle_type || "Vehicle preference not specified"}</span><a className="admin-secondary" href={whatsappHref(rental.phone, `Assalamu Alaikum ${rental.customer_name}, this is De VERVE regarding rental request ${rental.reference_code}. Current status: ${rental.status}. Please reply here to discuss your booking.`)} target="_blank" rel="noreferrer">WhatsApp customer ↗</a></div>
               <div className="admin-rental-dates"><div><span>PICKUP</span><strong>{new Date(rental.pickup_at).toLocaleString()}</strong><small>{rental.pickup_address ? rental.pickup_address + ", " + rental.pickup_city : rental.pickup_location}</small></div><div><span>DESTINATION / RETURN</span><strong>{new Date(rental.return_at).toLocaleString()}</strong><small>{rental.destination_address ? rental.destination_address + ", " + rental.destination_city : rental.destination || "Destination not specified"}</small></div></div>
-              {(rental.cnic_front_uploaded || rental.cnic_back_uploaded) && <div className="admin-rental-documents"><strong>Private CNIC documents</strong><small>Visible only to the owner, manager and authorised rental staff. Access is recorded in the audit history.</small>{rental.cnic_front_uploaded ? <span><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void previewRentalDocument(rental,"cnic_front")}>Preview front</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void downloadRentalDocument(rental,"cnic_front")}>Download front</button>{["owner","manager"].includes(admin.role)&&<button type="button" className="admin-danger-button" disabled={busy} onClick={()=>void deleteRentalDocument(rental,"cnic_front")}>Delete</button>}</span> : <span>Front not uploaded</span>}{rental.cnic_back_uploaded ? <span><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void previewRentalDocument(rental,"cnic_back")}>Preview back</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void downloadRentalDocument(rental,"cnic_back")}>Download back</button>{["owner","manager"].includes(admin.role)&&<button type="button" className="admin-danger-button" disabled={busy} onClick={()=>void deleteRentalDocument(rental,"cnic_back")}>Delete</button>}</span> : <span>Back not uploaded</span>}<small>Keep CNIC images private. Delete them only when verification and the approved retention period allow it.</small></div>}
+              {(rental.cnic_front_uploaded || rental.cnic_back_uploaded) && <div className="admin-rental-documents"><strong>Private CNIC documents</strong><small>Visible only to the owner, manager and authorised rental staff. Access is recorded in the audit history. Viewing a document does not expire or remove the stored file.</small>{rental.cnic_front_uploaded ? <span><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void previewRentalDocument(rental,"cnic_front")}>Preview front</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void downloadRentalDocument(rental,"cnic_front")}>Download front</button></span> : <span>Front not uploaded</span>}{rental.cnic_back_uploaded ? <span><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void previewRentalDocument(rental,"cnic_back")}>Preview back</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>void downloadRentalDocument(rental,"cnic_back")}>Download back</button></span> : <span>Back not uploaded</span>}<small>Stored in private server storage with the rental record. Preview uses your active staff session; the CNIC file does not expire when viewed.</small></div>}
               <label className="admin-rental-note">Assign vehicle<select value={rental.vehicle_id ?? ""} disabled={busy} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, vehicle_id: e.target.value || null, vehicle_name: vehicles.find((vehicle) => vehicle.id === e.target.value)?.name ?? null } : item))}><option value="">Any / not assigned</option>{vehicles.filter((vehicle) => vehicle.status === "available").map((vehicle) => <option key={vehicle.id} value={vehicle.id}>{vehicle.name}</option>)}</select></label>
               <p className="admin-muted">{rental.driver_option.replace("_", " ")} · {rental.rental_days ?? "—"} day(s) · {rental.estimated_daily_rate_paisa !== null && rental.estimated_daily_rate_paisa !== undefined ? `Rs. ${Math.round(rental.estimated_daily_rate_paisa / 100).toLocaleString("en-PK")} / day` : "Rate to confirm"} · {rental.estimated_total_paisa !== null && rental.estimated_total_paisa !== undefined ? `Estimated total Rs. ${Math.round(rental.estimated_total_paisa / 100).toLocaleString("en-PK")}` : "Total to confirm"}{rental.customer_note ? ` · ${rental.customer_note}` : ""}</p>
               {["owner", "manager"].includes(admin.role) && <label className="admin-rental-note">Internal note<input value={rental.admin_note} maxLength={500} onChange={(e) => setRentals((current) => current.map((item) => item.id === rental.id ? { ...item, admin_note: e.target.value } : item))} /></label>}

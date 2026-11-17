@@ -1413,20 +1413,7 @@ async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): 
       } });
     } catch { return error("Rental document could not be loaded", 503); }
   }
-  if (request.method === "DELETE") {
-    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can delete rental documents", 403);
-    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
-    try {
-      const doc = await env.DB.prepare("SELECT id, object_key FROM rental_documents WHERE rental_request_id = ? AND document_side = ? LIMIT 1")
-        .bind(match[1], match[2]).first<{ id: string; object_key: string }>();
-      if (!doc) return error("Rental document not found", 404);
-      try { await env.MEDIA.delete(doc.object_key); } catch { return error("The private file could not be deleted. The document record was kept so an owner can safely retry.", 503); }
-      await env.DB.prepare("DELETE FROM rental_documents WHERE id = ?").bind(doc.id).run();
-      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'rental.document_deleted','rental_request',?,?)")
-        .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ side: match[2] })).run();
-      return json({ deleted: true });
-    } catch { return error("Rental document could not be deleted", 503); }
-  }
+  if (request.method === "DELETE") return error("CNIC records are retained with the rental history; in-app deletion is disabled.", 409);
   return error("Method not allowed", 405);
 }
 
@@ -3683,9 +3670,9 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   return new TextDecoder().decode(plain);
 }
 export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string}> {
-  const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key="+encodeURIComponent(apiKey);
+  const endpoint="https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent";
   try {
-    const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
+    const response=await fetch(endpoint,{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
     const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
     if(!response.ok)return {ok:false,status:response.status,text:"",message:payload.error?.status||payload.error?.message||"Gemini request failed"};
     const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
@@ -3707,7 +3694,7 @@ export async function importConfiguredGeminiEnvKeys(env:Env):Promise<GeminiEnvir
   for(const [label,raw] of slots){
     const apiKey=raw?.trim()||"";
     if(!apiKey){statuses.push({label,configured:false,valid_format:false,imported:false,status:"missing"});continue;}
-    if(!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey)){statuses.push({label,configured:true,valid_format:false,imported:false,status:"invalid_format"});continue;}
+    if(!/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(apiKey)){statuses.push({label,configured:true,valid_format:false,imported:false,status:"invalid_format"});continue;}
     if(mode==="unavailable"){statuses.push({label,configured:true,valid_format:true,imported:false,status:"encryption_unavailable"});continue;}
     const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+apiKey);
     const duplicate=await env.DB.prepare("SELECT id FROM ai_provider_keys WHERE key_fingerprint=? LIMIT 1").bind(fingerprint).first<{id:string}>();
@@ -3736,7 +3723,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
   if(path==="/api/admin/ai/keys"&&request.method==="POST"){
     const body=await readJson(request,4000),label=cleanText(body?.label,80),apiKey=typeof body?.api_key==="string"?body.api_key.trim():"";
-    if(!label||apiKey.length<20||apiKey.length>256||!/^AIza[0-9A-Za-z_-]{20,}$/.test(apiKey))return error("Enter a descriptive label and a valid Google Gemini API key",400);
+    if(!label||apiKey.length<20||apiKey.length>256||!/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(apiKey))return error("Enter a descriptive label and a valid Google Gemini API key",400);
     if(!aiKeyEncryptionSecret(env))return error("The server-side AI encryption secret is not configured",503);
     try{
       const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+apiKey);
@@ -3771,7 +3758,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       const key=await decryptGeminiKey(env,row);
       const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");
-      if(!result.ok)return json({ok:false,message:"Connection failed. Check this key's access, model quota and Google AI Studio project."},200);
+      if(!result.ok)return json({ok:false,message:"Gemini returned HTTP "+result.status+(result.message?": "+result.message.slice(0,140):".")+" Check this key's Generative Language API access, model availability and quota."},200);
       await env.DB.prepare("UPDATE ai_provider_keys SET last_error=NULL,updated_at=? WHERE id=?").bind(new Date().toISOString(),id).run();
       return json({ok:true,model:"gemini-3.8-flash",message:"Gemini connection successful."});
     }catch{return error("The key could not be decrypted or tested. Check the server encryption configuration.",503);}

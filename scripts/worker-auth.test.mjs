@@ -1737,6 +1737,9 @@ test("authorised rental staff can preview and download private CNIC images with 
   const managerPreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
   assert.equal(managerPreview.status, 200);
   assert.equal(db.audits.length, 4);
+  const deletion=await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front","DELETE",undefined,headers),testEnv);
+  assert.equal(deletion.status,409);
+  assert.equal(db.rentalDocuments.has("doc-front"),true);
 });
 
 test("CNIC documents remain unavailable to unauthorised staff roles", async () => {
@@ -1767,41 +1770,39 @@ test("Gemini chat rejects a UI greeting as the first model turn and rejects non-
   assert.match((await repeatedUser.json()).error, /alternate/i);
 });
 
-test("Cloudflare Gemini environment keys import once and key1 receives primary priority", async () => {
+test("Cloudflare imports legacy AIza and modern AQ Gemini keys idempotently in primary/fallback order", async () => {
   const db = new FakeD1();
-  const configured = { ...env(db), NabeelG_Api_key1: "AIza" + "A".repeat(32) };
+  const configured = { ...env(db), NabeelG_Api_key1: "AIza" + "A".repeat(32), NabeelG_Api_key2: "AQ." + "B".repeat(48) };
   const first = await importConfiguredGeminiEnvKeys(configured);
-  assert.equal(first[0].status, "imported");
-  assert.equal(first[0].imported, true);
-  assert.equal(db.aiKeys.size, 1);
-  const saved = [...db.aiKeys.values()][0];
-  assert.equal(saved.label, "NabeelG_Api_key1");
-  assert.equal(saved.priority, 0);
-  assert.equal(saved.enabled, 1);
+  assert.deepEqual(first.map(item => item.status), ["imported", "imported"]);
+  assert.equal(db.aiKeys.size, 2);
+  const saved = [...db.aiKeys.values()].sort((a, b) => a.priority - b.priority);
+  assert.equal(saved[0].label, "NabeelG_Api_key1");
+  assert.equal(saved[0].priority, 0);
+  assert.equal(saved[0].enabled, 1);
+  assert.equal(saved[1].label, "NabeelG_Api_key2");
+  assert.equal(saved[1].priority, 1);
   const second = await importConfiguredGeminiEnvKeys(configured);
-  assert.equal(second[0].status, "already_imported");
-  assert.equal(db.aiKeys.size, 1);
+  assert.deepEqual(second.map(item => item.status), ["already_imported", "already_imported"]);
+  assert.equal(db.aiKeys.size, 2);
 });
 
-test("Gemini 3.8 generateContent omits unsupported temperature configuration", async () => {
-  const originalFetch = globalThis.fetch;
-  let requestUrl = "";
-  let requestBody = null;
-  globalThis.fetch = async (input, init = {}) => {
-    requestUrl = String(input);
-    requestBody = JSON.parse(String(init.body || "{}"));
-    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Hello from Gemini" }] } }] }), {
-      status: 200, headers: { "content-type": "application/json" },
-    });
+test("Gemini 3.8 generateContent uses the API-key header and omits unsupported temperature", async () => {
+  const originalFetch=globalThis.fetch;
+  let requestUrl="",requestHeaders={},requestBody=null;
+  globalThis.fetch=async(input,init={})=>{
+    requestUrl=String(input);requestHeaders=init.headers||{};requestBody=JSON.parse(String(init.body||"{}"));
+    return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"Hello from Gemini"}]}}]}),{status:200,headers:{"content-type":"application/json"}});
   };
-  try {
-    const result = await callGemini("AIza" + "A".repeat(32), [{ role: "user", parts: [{ text: "Hello" }] }], "Test system");
-    assert.equal(result.ok, true);
-    assert.match(requestUrl, /models\/gemini-3\.8-flash:generateContent/);
-    assert.deepEqual(requestBody?.generationConfig, { maxOutputTokens: 650 });
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  try{
+    const key="AQ."+"A".repeat(48);
+    const result=await callGemini(key,[{role:"user",parts:[{text:"Hello"}]}],"Test system");
+    assert.equal(result.ok,true);
+    assert.match(requestUrl,/models\/gemini-3\.8-flash:generateContent$/);
+    assert.equal(new URL(requestUrl).search,"");
+    assert.equal(requestHeaders["x-goog-api-key"],key);
+    assert.deepEqual(requestBody?.generationConfig,{maxOutputTokens:650});
+  }finally{globalThis.fetch=originalFetch;}
 });
 
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {

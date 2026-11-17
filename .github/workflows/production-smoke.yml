@@ -106,7 +106,7 @@ jobs:
           set -euo pipefail
           url="https://deverve-cnic-retention.wastinabeel99.workers.dev/health"
           body="$(curl --fail --silent --show-error --max-time 15 "$url")"
-          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"closed_request_retention_days":30'* || "$body" != *'"unresolved_request_retention_days":90'* ]]; then
+          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"document_retention":"indefinite"'* || "$body" != *'"automatic_document_deletion":false'* ]]; then
             echo "CNIC retention service health check failed: $body"
             exit 1
           fi
