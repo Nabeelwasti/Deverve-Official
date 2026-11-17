@@ -1681,6 +1681,14 @@ test("authorised rental staff can preview and download private CNIC images with 
   assert.equal(download.headers.get("content-disposition"), 'attachment; filename="cnic_front.png"');
   assert.equal(db.audits.length, 2);
   assert.ok(db.audits[1].includes("rental.document_downloaded"));
+
+  db.admins.get(adminId).role = "owner";
+  const ownerPreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
+  assert.equal(ownerPreview.status, 200);
+  db.admins.get(adminId).role = "manager";
+  const managerPreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
+  assert.equal(managerPreview.status, 200);
+  assert.equal(db.audits.length, 4);
 });
 
 test("CNIC documents remain unavailable to unauthorised staff roles", async () => {
