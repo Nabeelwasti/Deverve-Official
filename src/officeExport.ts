@@ -86,7 +86,8 @@ function zipStore(files: Array<{ path: string; content: string }>): Uint8Array {
 }
 
 function downloadOfficeFile(filename: string, mime: string, bytes: Uint8Array): void {
-  const blob = new Blob([bytes], { type: mime });
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  const blob = new Blob([buffer], { type: mime });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
