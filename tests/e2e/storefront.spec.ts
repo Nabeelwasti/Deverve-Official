@@ -350,9 +350,9 @@ test("product page supports auto-advancing galleries, selectable variants and di
   await page.getByRole("button", { name: "Size L" }).click();
   await expect(page.getByText("5 in stock for the selected option")).toBeVisible();
   await page.getByRole("button", { name: /Add to cart/ }).click();
-  const checkout = page.getByRole("dialog", { name: "Choose how to pay" });
-  await expect(checkout).toBeVisible();
-  await expect(checkout).toContainText("De VERVE Hoodie");
+  await expect(page.locator(".product-added-message")).toContainText("Added to your cart");
+  const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));
+  expect(cart[0]).toMatchObject({ variant_id: "44444444-4444-4444-8444-444444444444", size: "L", color: "Black", quantity: 1 });
 });
 
 
