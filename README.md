@@ -121,7 +121,7 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 6. Configure Safepay sandbox merchant credentials and complete an end-to-end sandbox payment plus webhook/reconciliation test before considering live onboarding.
 7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before implementing or enabling that provider.
 8. Configure a verified sender domain, Resend API key and sender address; test delivery, failure handling and retries.
-9. Verify the scheduled CNIC deletion process in a controlled environment and confirm the owner-approved retention policy. Do not use real customer documents as test fixtures.
+9. Implement the owner-approved CNIC deletion process and verify it in a controlled environment before enabling uploads. Do not use real customer documents as test fixtures.
 10. Complete real-device acceptance on Android/iOS and desktop, including a real visible Turnstile challenge. Playwright mocks the challenge/API and does not replace a real human challenge or real transaction.
 11. Decide whether customer email verification/password recovery and SMS are required. POS WhatsApp receipts are implemented but require Meta credentials, an approved Utility template and explicit customer opt-in; SMS is not implemented.
 12. Connect a custom domain only when the owner supplies a domain they control and DNS access.
@@ -146,6 +146,6 @@ Work directly on `main`. Do not create or switch to feature branches, force-push
 ### Rental booking and identity verification
 
 - Rental requests require the front and back of the customer CNIC in the same multipart submission. The Worker validates file type/signature and size, then stores images in private R2 and metadata in D1. A request is not accepted unless both document records are committed.
-- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The scheduled retention Worker remains responsible for automatic deletion.
+- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The current scheduled Worker does not automatically delete these objects; do not promise deletion until an approved purge policy is implemented and verified.
 - Vehicle pricing supports a self-drive daily rate and an optional separate with-driver daily rate. Both rates must be explicitly configured before a vehicle can be published as available. The server independently calculates full 24-hour days (rounded up), daily rate and total; browser estimates are only a preview.
 - Available vehicles must have a self-drive rate. Add vehicles and both rate options in Admin → Vehicle fleet before expecting an automatic price estimate. If no vehicle is selected, the rental team must quote manually.
