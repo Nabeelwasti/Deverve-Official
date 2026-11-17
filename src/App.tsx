@@ -508,7 +508,7 @@ function Storefront() {
             {catalogueState === "ready" && <div className="product-grid">
               {products.slice(0,visibleProductCount).map((product) => (
                 <article className="product-card" key={product.id}>
-                  {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" images={productGalleryImages(product, selectedVariants[product.id], selectedVariantOptions[product.id]?.color)} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
+                  {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" detailsHref={"/product/" + encodeURIComponent(product.slug)} images={productGalleryImages(product, selectedVariants[product.id], selectedVariantOptions[product.id]?.color)} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
                     <button type="button" className={favourites.includes(product.id) ? "favourite-toggle is-saved" : "favourite-toggle"} aria-label={favourites.includes(product.id) ? "Remove from favourites" : "Add to favourites"} aria-pressed={favourites.includes(product.id)} onClick={() => toggleFavourite(product.id)}>{favourites.includes(product.id) ? "♥ Saved" : "♡ Save"}</button>
                     <span className="product-audience">{product.audience} · {product.category}</span>
