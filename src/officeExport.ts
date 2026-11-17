@@ -149,3 +149,96 @@ export function exportOfficeDocument(filename: string, title: string, subtitle: 
   ];
   downloadOfficeFile(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipStore(files));
 }
+
+export function exportOfficeImage(filename: string, title: string, subtitle: string, rows: OfficeRow[], format: "jpeg" | "png" = "jpeg"): void {
+  if (!rows.length) return;
+  const canvas = document.createElement("canvas");
+  const width = 1800;
+  const padding = 88;
+  const tableWidth = width - padding * 2;
+  const columnCount = Math.max(1, ...rows.map(row => row.length));
+  const rowHeight = 58;
+  const headerHeight = 68;
+  const headerBand = 250;
+  const footerHeight = 110;
+  const height = headerBand + headerHeight + Math.max(0, rows.length - 1) * rowHeight + footerHeight + padding;
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Your browser could not prepare the document image.");
+  context.fillStyle = "#ffffff";
+  context.fillRect(0, 0, width, height);
+  context.fillStyle = "#102a43";
+  context.fillRect(0, 0, width, 18);
+  context.fillStyle = "#102a43";
+  context.font = "700 42px Arial, sans-serif";
+  context.fillText("DE VERVE", padding, 86);
+  context.fillStyle = "#60758a";
+  context.font = "18px Arial, sans-serif";
+  context.fillText("JHELUM · PAKISTAN", padding, 122);
+  context.fillStyle = "#102a43";
+  context.font = "700 34px Arial, sans-serif";
+  context.fillText(title, padding, 190, tableWidth);
+  context.fillStyle = "#60758a";
+  context.font = "18px Arial, sans-serif";
+  context.fillText(subtitle, padding, 224, tableWidth);
+  const widths = Array.from({ length: columnCount }, (_, column) => {
+    const longest = Math.max(8, ...rows.slice(0, 100).map(row => String(row[column] ?? "").length));
+    return Math.max(tableWidth / columnCount * 0.65, Math.min(tableWidth / columnCount * 1.5, longest * 11));
+  });
+  const widthTotal = widths.reduce((sum, value) => sum + value, 0);
+  const normalized = widths.map(value => value / widthTotal * tableWidth);
+  const fit = (value: string, maxWidth: number): string => {
+    let result = value;
+    while (result.length > 1 && context.measureText(result).width > maxWidth - 28) result = result.slice(0, -2) + "…";
+    return result;
+  };
+  let y = headerBand;
+  rows.forEach((row, rowIndex) => {
+    const rowH = rowIndex === 0 ? headerHeight : rowHeight;
+    context.fillStyle = rowIndex === 0 ? "#163a5f" : rowIndex % 2 === 0 ? "#f1f5f9" : "#ffffff";
+    context.fillRect(padding, y, tableWidth, rowH);
+    context.strokeStyle = "#d7e0e8";
+    context.lineWidth = 1;
+    context.strokeRect(padding, y, tableWidth, rowH);
+    let x = padding;
+    for (let column = 0; column < columnCount; column++) {
+      const cellWidth = normalized[column];
+      context.fillStyle = rowIndex === 0 ? "#ffffff" : "#263b50";
+      context.font = rowIndex === 0 ? "700 18px Arial, sans-serif" : "16px Arial, sans-serif";
+      const value = String(row[column] ?? "");
+      context.save();
+      context.beginPath();
+      context.rect(x + 12, y + 6, Math.max(0, cellWidth - 24), rowH - 12);
+      context.clip();
+      context.fillText(fit(value, cellWidth), x + 14, y + (rowH + 6) / 2);
+      context.restore();
+      if (column > 0) {
+        context.beginPath();
+        context.moveTo(x, y);
+        context.lineTo(x, y + rowH);
+        context.stroke();
+      }
+      x += cellWidth;
+    }
+    y += rowH;
+  });
+  context.fillStyle = "#60758a";
+  context.font = "16px Arial, sans-serif";
+  context.fillText("De VERVE · +92 319 7553705 · deverve-official.pages.dev", padding, y + 54);
+  context.textAlign = "right";
+  context.fillText("Generated " + new Date().toLocaleString("en-PK"), width - padding, y + 54);
+  context.textAlign = "left";
+  canvas.toBlob(blob => {
+    if (!blob) return;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  }, format === "png" ? "image/png" : "image/jpeg", 0.94);
+}
