@@ -41,7 +41,7 @@ export interface Env {
 export async function processNotificationOutbox(env:Env):Promise<void>{
   const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();
   if(!apiKey||!from||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(from))return;
-  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:false};
+  let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:Boolean(env.OWNER_NOTIFICATION_EMAIL?.trim())};
   try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((item):item is string=>typeof item==="string"),enabled:parsed.enabled};}}catch{return;}
   const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&isSafeNotificationRecipient(value)):[];
   if(!to.length)return;
@@ -136,7 +136,7 @@ interface SessionRow {
 
 export async function processEnquiryEmailQueue(env:Env):Promise<void>{
  const apiKey=env.RESEND_API_KEY?.trim(),from=env.RESEND_FROM_EMAIL?.trim();if(!apiKey||!from||!isValidEmailAddress(from))return;
- let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:false};
+ let recipients:{primary:string;secondary:string[];enabled:boolean}={primary:env.OWNER_NOTIFICATION_EMAIL?.trim()||"",secondary:[],enabled:Boolean(env.OWNER_NOTIFICATION_EMAIL?.trim())};
  try{const saved=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='notification_emails' LIMIT 1").first<{setting_value_json:string}>();if(saved){const parsed=JSON.parse(saved.setting_value_json) as Partial<typeof recipients>;if(typeof parsed.primary==="string"&&Array.isArray(parsed.secondary)&&typeof parsed.enabled==="boolean")recipients={primary:parsed.primary,secondary:parsed.secondary.filter((x):x is string=>typeof x==="string"),enabled:parsed.enabled};}}catch{return;}
  const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((v,i,a)=>a.indexOf(v)===i&&isSafeNotificationRecipient(v)):[];if(!to.length)return;
  const now=new Date().toISOString(),staleBefore=new Date(Date.now()-10*60_000).toISOString();let rows:Record<string,unknown>[]=[];
