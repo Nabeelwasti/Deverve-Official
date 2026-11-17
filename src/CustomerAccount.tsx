@@ -89,6 +89,8 @@ export default function CustomerAccount() {
       setCredentials({ full_name: "", phone: "", email: "", password: "" });
       setMessage(mode === "register" ? "Your De VERVE account is ready." : "Welcome back.");
       await loadAccount();
+      const nextPath = new URLSearchParams(window.location.search).get("next");
+      if (nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")) window.location.assign(nextPath);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Sign-in could not be completed."); }
     finally { setBusy(false); setSecurityToken(""); setSecurityReset((value) => value + 1); }
   };
