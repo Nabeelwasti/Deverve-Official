@@ -710,3 +710,19 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 
 .ai-chat-launcher{right:22px;bottom:calc(30px + env(safe-area-inset-bottom));width:54px;height:54px;z-index:1450;touch-action:manipulation}.ai-chat-panel{right:20px;bottom:calc(98px + env(safe-area-inset-bottom));z-index:1450;height:min(590px,calc(100dvh - 140px))}@media(max-width:720px){.ai-chat-launcher{right:14px;bottom:calc(92px + env(safe-area-inset-bottom));width:54px;height:54px}.ai-chat-panel{right:10px;bottom:calc(158px + env(safe-area-inset-bottom));height:min(560px,calc(100dvh - 190px))}}
 .install-app{position:fixed;z-index:1400;top:calc(8px + env(safe-area-inset-top));right:clamp(12px,2vw,28px);left:auto;bottom:auto;width:auto;height:34px;min-width:86px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;border:1px solid #d5e2ef;border-radius:999px;background:#fff;color:#123f6b;box-shadow:0 3px 14px rgba(6,35,79,.12);font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation}.install-app svg{width:15px;height:15px}.install-app:focus-visible{outline:3px solid #83bdf0;outline-offset:3px}@media print{.install-app,.ai-chat-launcher,.ai-chat-panel{display:none!important}}
+
+
+/* De VERVE production interaction placement: install action belongs to the
+   storefront ribbon; chat stays clear of the mobile navigation dock. */
+.site-header .install-app{position:relative;inset:auto;z-index:3;flex:0 0 auto;width:auto;min-width:78px;height:34px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 11px;border:1px solid #d5e2ef;border-radius:999px;background:#fff;color:#123f6b;box-shadow:0 3px 14px rgba(6,35,79,.10);font-size:11px;font-weight:800;cursor:pointer;touch-action:manipulation}
+.site-header .install-app svg{width:15px;height:15px}
+.site-header .install-app:active{transform:translateY(1px)}
+.ai-chat-launcher{bottom:32px}
+.ai-chat-panel{bottom:102px}
+@media(max-width:720px){
+ .site-header .header-actions{gap:6px}
+ .site-header .install-app{width:36px;min-width:36px;height:36px;padding:0}
+ .site-header .install-app span{display:none}
+ .ai-chat-launcher{right:14px;bottom:calc(108px + env(safe-area-inset-bottom));width:54px;height:54px}
+ .ai-chat-panel{right:10px;bottom:calc(174px + env(safe-area-inset-bottom));width:calc(100vw - 20px);height:min(560px,calc(100dvh - 200px))}
+}

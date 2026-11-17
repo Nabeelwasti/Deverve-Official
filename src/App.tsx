@@ -496,7 +496,7 @@ function Storefront() {
         </button>
         {menuOpen && <button type="button" className="menu-dismiss" aria-label="Close navigation menu" onClick={closeMenu} />}
         <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
-        <div className="header-actions"><button className="header-cart" type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
+        <div className="header-actions"><InstallPrompt /><button className="header-cart" type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
       </header>
 
       <main id="home" className="store-main" data-screen={activeScreen}>
@@ -739,6 +739,6 @@ function Storefront() {
 export default function App() {
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<><InstallPrompt /><AIChatWidget /></>}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <Storefront /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <Storefront /> : <NotFound />}</Suspense></>;
 }
 

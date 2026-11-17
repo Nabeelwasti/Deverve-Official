@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -1868,6 +1868,42 @@ test("public AI chat uses a configured AQ secret directly when the encrypted key
     assert.equal(payload.model, "gemini-3.8-flash");
     assert.equal(receivedKey, key);
     assert.equal(db.aiKeys.size, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("owner notification email validation accepts ordinary business addresses and rejects malformed values", () => {
+  assert.equal(isValidEmailAddress("deverve61@gmail.com"), true);
+  assert.equal(isValidEmailAddress("accounts@deverve.example"), true);
+  assert.equal(isValidEmailAddress("not-an-email"), false);
+  assert.equal(isValidEmailAddress("missing-domain@"), false);
+  assert.equal(isValidEmailAddress("bad address@example.com"), false);
+});
+
+test("public AI chat bypasses a stale vault cooldown using the configured environment secret", async () => {
+  const db = new FakeD1();
+  const key = "AQ." + "E".repeat(48);
+  const configured = { ...env(db), NabeelG_Api_key1: key };
+  await importConfiguredGeminiEnvKeys(configured);
+  const saved = [...db.aiKeys.values()][0];
+  assert.ok(saved);
+  saved.cooldown_until = new Date(Date.now() + 10 * 60_000).toISOString();
+  const originalFetch = globalThis.fetch;
+  let receivedKey = "";
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      receivedKey = init.headers?.["x-goog-api-key"] || "";
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "Chat recovered despite stale cooldown" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await handleRequest(request("/api/ai/chat", "POST", { messages: [{ role: "user", text: "Hello" }] }), configured);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).reply, "Chat recovered despite stale cooldown");
+    assert.equal(receivedKey, key);
   } finally {
     globalThis.fetch = originalFetch;
   }
