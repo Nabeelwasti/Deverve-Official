@@ -479,7 +479,7 @@ test("product card opens from its content and product cart merges by size and co
   await page.goto("/");
   await page.getByRole("button", { name: "Toggle navigation" }).click();
   await page.getByRole("button", { name: "Fashion", exact: true }).click();
-  await page.locator(".product-card h3").getByText("Trouser").click();
+  await page.locator(".product-card h4").getByText("Trouser").click();
   await expect(page).toHaveURL(/\/product\/trouser$/);
   await expect(page.locator(".product-page-media-column")).toBeVisible();
   await expect(page.locator(".product-color-thumb")).toHaveCount(2);
