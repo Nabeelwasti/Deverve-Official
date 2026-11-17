@@ -23,6 +23,8 @@ jobs:
         run: npm install
       - name: Type-check and build
         run: npm run check
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
       - name: Verify Pages security headers are included in build output
         run: |
           test -s dist/_headers
