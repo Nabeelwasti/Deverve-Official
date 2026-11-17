@@ -13,7 +13,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
 - Main branch contains source changes that are not yet live. The production site remains on its previous deployment until the owner explicitly says “deploy now”.
-- Pending database change: apply migration 0030 to production D1 before deploying the matching application code. It has not been applied to the live database.
+- Pending database change: apply migrations 0030, 0031 and 0032 to production D1 before deploying the matching application code. It has not been applied to the live database.
 
 ## Implemented
 
@@ -65,7 +65,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Server-side role checks, hashed random session tokens, HttpOnly/Secure/SameSite=Strict cookies and same-origin mutation checks.
 - Cloudflare Turnstile verification through a separate Worker and D1-backed public rate limits.
 - Security response headers and Content Security Policy.
-- Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are retained indefinitely until an owner-approved retention/deletion policy is implemented and verified. Do not rely on the older 30/90-day wording.
+- Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are permanent evidence. Application code and the scheduled Worker never delete them; D1 triggers prevent deletion or mutation of document rows and block cascade deletion of linked rental records. The owner must also enable an indefinite R2 Bucket Lock rule for the rental-private/ prefix; this dashboard setting is still unverified.
 - GitHub Actions build, type-check, Worker tests, schema checks and desktop/mobile browser tests.
 
 ## Production snapshot — 16 November 2026
@@ -101,7 +101,7 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 - **Social accounts:** Public profile URLs can be stored. OAuth, publishing, inbox management, ad management and analytics imports are not part of this website.
 - **Domain:** The production site uses the Cloudflare Pages hostname. No custom domain is connected.
 - **Customer email lifecycle:** Email verification and email-based password recovery are not active.
-- **CNIC:** Both sides and customer consent are required when uploads are enabled. The current scheduled Worker only expires temporary upload tokens; it does **not** delete stored CNIC objects from private R2. Stored documents are therefore retained indefinitely by the current code. Older 30/90-day wording is not implemented and must not be relied upon. Owner-approved retention wording, a real deletion implementation and a controlled purge test remain mandatory before treating this as closed.
+- **CNIC:** Both sides and customer consent are required when uploads are enabled. The current scheduled Worker only expires temporary upload tokens; it does **not** delete stored CNIC objects from private R2. Stored documents are permanent evidence and must never be deleted. Application code contains no CNIC object-delete operation; D1 triggers reject document-row deletion, metadata changes and parent rental deletion while evidence exists. An indefinite R2 Bucket Lock rule for rental-private/ is required and must be verified in the Cloudflare dashboard before this is considered fully protected.
 - **Business data:** One product with one stock variant and one vehicle are currently present, alongside seven media assets and one rental request. Do not overwrite or delete these records. The catalogue and fleet still need the owner's complete, verified product, price, stock, vehicle, availability and photo information.
 
 ## Latest code and regression coverage
@@ -118,12 +118,12 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 1. Complete and verify the product catalogue, exact sizes/colours/variants, retail and wholesale prices, stock, and genuine product photos.
 2. Complete the vehicle fleet, self-drive/with-driver rates, availability, photos and owner-approved rental terms.
 3. Confirm the business phone/WhatsApp, address, email, opening hours, delivery coverage/fees and wholesale minimums.
-4. Obtain owner approval for customer policies, privacy notice, exchange terms, rental terms and CNIC retention wording.
+4. Obtain owner approval for customer policies, privacy notice, exchange terms, rental terms and the permanent CNIC evidence notice.
 5. Configure real bank/wallet accounts, account titles, account numbers/IBANs, hosted URLs and QR images, then test checkout and manual reconciliation without using fake production transactions.
 6. Configure Safepay sandbox merchant credentials and complete an end-to-end sandbox payment plus webhook/reconciliation test before considering live onboarding.
 7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before implementing or enabling that provider.
 8. Configure a verified sender domain, Resend API key and sender address; test delivery, failure handling and retries.
-9. Implement the owner-approved CNIC deletion process and verify it in a controlled environment before enabling uploads. Do not use real customer documents as test fixtures.
+9. Enable and verify indefinite R2 Bucket Lock for the rental-private/ prefix, establish a second encrypted offsite backup, and verify restore procedures. CNIC documents must never be deleted.
 10. Complete real-device acceptance on Android/iOS and desktop, including a real visible Turnstile challenge. Playwright mocks the challenge/API and does not replace a real human challenge or real transaction.
 11. Decide whether customer email verification/password recovery and SMS are required. POS WhatsApp receipts are implemented but require Meta credentials, an approved Utility template and explicit customer opt-in; SMS is not implemented.
 12. Connect a custom domain only when the owner supplies a domain they control and DNS access.
@@ -148,6 +148,6 @@ Work directly on `main`. Do not create or switch to feature branches, force-push
 ### Rental booking and identity verification
 
 - Rental requests require the front and back of the customer CNIC in the same multipart submission. The Worker validates file type/signature and size, then stores images in private R2 and metadata in D1. A request is not accepted unless both document records are committed.
-- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The current scheduled Worker does not automatically delete these objects; do not promise deletion until an approved purge policy is implemented and verified.
+- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The current scheduled Worker never deletes these objects; database triggers also block document deletion and linked rental deletion. Enable an indefinite R2 Bucket Lock for rental-private/ before considering storage immutability fully protected.
 - Vehicle pricing supports a self-drive daily rate and an optional separate with-driver daily rate. Both rates must be explicitly configured before a vehicle can be published as available. The server independently calculates full 24-hour days (rounded up), daily rate and total; browser estimates are only a preview.
 - Available vehicles must have a self-drive rate. Add vehicles and both rate options in Admin → Vehicle fleet before expecting an automatic price estimate. If no vehicle is selected, the rental team must quote manually.

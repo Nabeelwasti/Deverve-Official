@@ -18,7 +18,7 @@ Latest verified source commit on `main`: `925d729be765af907a150290a2b739520e364b
 - D1: `deverve-production`, ID `355da876-17c4-4762-a59d-bb85f2e4551b`; private R2 bucket: `deverve-media-private`.
 - Direct `sqlite_master` query: 55 application tables. D1 metadata `num_tables` may incorrectly report 0.
 - Current counts: 1 active owner, 7 media assets, 1 product, 1 variant, 1 vehicle, 1 rental request, 1 owner notification; 0 customers, orders, exchange requests, CMS pages and POS sales.
-- Production `cnic_uploads_enabled` is `true`. Do not toggle or change retention settings casually. Both sides and consent are mandatory. Retention Worker is bound to D1/private R2 and scheduled; policy is 30 days after completed/cancelled requests and 90 days for unresolved requests. Health/bindings passed smoke; a real-document purge was not tested.
+- Production `cnic_uploads_enabled` is `true`. Do not toggle or change retention settings casually. Both sides and consent are mandatory. Retention Worker is bound to D1/private R2 and scheduled; the owner has instructed permanent lifetime retention; the application must never delete CNIC evidence. Enable indefinite R2 Bucket Lock for rental-private/ and keep an independent encrypted backup.
 - This session performed read-only D1 queries only. No production business records or customer documents were created, updated or deleted.
 
 ### Next work and release gates

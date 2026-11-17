@@ -9,7 +9,7 @@
 - POS sales now support explicit email and WhatsApp receipt consent. The sale and receipt outbox records are committed together in D1. Email delivery uses Resend; WhatsApp delivery uses the Meta Cloud API and an approved Utility template. The outbox has bounded retries and stale-claim recovery.
 - POS invoices, sales history, expense registers and POS/inventory reports can export as native XLSX and DOCX files, CSV, and print-to-PDF. Office files are generated locally in the browser without sending business data to a third-party conversion service.
 - POS sales history now displays per-channel receipt delivery state. Authorised staff can retry a failed email or WhatsApp receipt; the retry is consent-checked and audit-logged.
-- New D1 migrations 0023_pos_receipt_delivery.sql and 0024_enquiry_email_queue_leases.sql add receipt delivery/consent storage and recoverable contact-email queue leases. These migrations are committed but have not been applied to production D1.
+- New D1 migrations 0030_pos_receipt_delivery.sql, 0031_enquiry_email_queue_lease_index.sql and 0032_permanent_cnic_evidence.sql add receipt delivery, queue indexing and permanent CNIC evidence guards. These migrations are committed but have not been applied to production D1.
 - POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. The customer must opt in for each channel.
 - The previous README statement describing 30/90-day CNIC deletion was incorrect. The current scheduled retention Worker expires temporary upload tokens but does not delete stored CNIC objects. Stored documents are retained indefinitely by the current code. Do not rely on the old 30/90-day wording.
 
@@ -24,7 +24,7 @@
 1. Configure a verified Resend sender, API key and sender address, then verify contact-form owner alerts and POS customer receipt delivery with controlled test addresses.
 2. Configure Meta WhatsApp Cloud API credentials and phone-number ID, create/approve the exact Utility template, and test delivery to an opted-in test number.
 3. Apply D1 migration 0030 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
-4. Implement and verify the owner-approved CNIC retention/deletion policy before enabling public CNIC uploads. Do not infer a deletion schedule from the old documentation.
+4. Enable and verify indefinite R2 Bucket Lock for the rental-private/ prefix, add an independent encrypted offsite backup, and verify restore. CNIC evidence is permanent and must never be deleted.
 5. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
 6. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.
 7. Complete real-device acceptance and post-deployment smoke tests only after an explicitly authorized deployment.
