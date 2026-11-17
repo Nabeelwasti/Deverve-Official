@@ -119,6 +119,7 @@ test("rental request requires both CNIC images and sends them with the request",
   expect(submitted).toContain("cnic_back");
   expect(submitted).toContain("cnic_consent");
   expect(submitted).toContain("e2e-turnstile-token");
+  await expect.poll(() => page.evaluate(() => sessionStorage.getItem("deverve:app-draft:v1:rental-result"))).toContain("DV-R-TEST-123456789012");
 
   await page.reload();
   const restoredSuccess = page.getByRole("dialog", { name: "Request a rental." });
