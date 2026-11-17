@@ -56,6 +56,24 @@ test("queued contact enquiries are delivered to the configured owner email throu
   assert.match(updates[1].sql,/SET status='sent'/);
 });
 
+test("owner audit history searches beyond the first page and returns a stable page window", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const recent = new Date().toISOString();
+  db.audits.push(
+    {id:"audit-1",action:"pos.sale_completed",entity_type:"pos_sale",entity_id:"receipt-001",metadata_json:'{"receipt_number":"DV-001"}',created_at:recent,actor_email:"owner@deverve.example"},
+    {id:"audit-2",action:"staff.invited",entity_type:"staff",entity_id:"staff-001",metadata_json:'{"email":"team@example.com"}',created_at:new Date(Date.now()-1000).toISOString(),actor_email:"owner@deverve.example"}
+  );
+  const response = await handleRequest(new Request(origin+"/api/admin/audit-logs?search=receipt&limit=1&offset=0",{headers:{cookie}}),env(db));
+  assert.equal(response.status,200);
+  const payload = await response.json();
+  assert.equal(payload.events.length,1);
+  assert.equal(payload.events[0].id,"audit-1");
+  assert.equal(payload.has_more,false);
+  assert.equal(payload.offset,0);
+});
+
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);
@@ -502,6 +520,11 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs")) {
+      const [search, pattern, limit, offset] = v;
+      const matches = this.db.audits.filter(row => !search || [row.action,row.entity_type,row.entity_id,row.metadata_json,row.actor_email].join(" ").toLowerCase().includes(String(search).toLowerCase()));
+      return {success:true,results:matches.slice(offset,offset+limit)};
+    }
     if (q.startsWith("SELECT v.id, v.name, v.vehicle_type, v.transmission, v.seats, v.fuel_type, v.daily_rate_paisa, v.with_driver_daily_rate_paisa, v.image_key, v.description, vm.media_asset_id")) {
       return { success: true, results: [...this.db.vehicles.values()].filter((vehicle) => vehicle.status === "available").map((vehicle) => ({ ...vehicle, media_asset_id: null, media_alt_text: null, media_position: null, media_is_primary: null })) };
     }
