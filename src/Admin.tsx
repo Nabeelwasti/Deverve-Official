@@ -1211,7 +1211,7 @@ export default function Admin() {
             <label>Status<select value={form.status} onChange={(e) => updateProductForm({ ...form, status: e.target.value as typeof form.status })} disabled={admin.role === "catalogue"}><option value="draft">Save as draft</option><option value="published">Publish on website</option><option value="archived">Archived</option></select></label>
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save product"}</button></div>
           </form>
-          {barcodeScanTarget === "product" && <BarcodeScanner onDetected={raw => {
+          {barcodeScanTarget === "product" && <BarcodeScanner title="New product tag scanner" onDetected={raw => {
             const value=raw.trim().slice(0,2048); let data:Record<string,unknown>|null=null;
             try { const parsed=JSON.parse(value); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)) data=parsed as Record<string,unknown>; } catch {}
             if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());if(!Object.keys(data).length)data={url:value};}catch{}}
