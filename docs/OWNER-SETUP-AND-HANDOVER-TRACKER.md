@@ -31,7 +31,7 @@ Do not mark a task complete just because a form, button, setting, or provider op
 | DNS / SSL | **[OWNER ACTION]** Verify DNS ownership and HTTPS after domain decision | Owner + developer: test apex, www, redirects, TLS and canonical host |
 | GitHub branch | **[VERIFIED IN REPO]** `main` is the production source branch | Keep changes reviewed and tested |
 | Deployment guard | **[VERIFIED IN REPO / OWNER RULE]** Do not deploy until “deploy now” | Every commit message must contain `[CF-Pages-Skip]`; do not call Cloudflare API/Wrangler to deploy |
-| Production migration state | **[VERIFIED IN REPO]** README records migrations 0030 and 0031 as pending; 0032 CNIC protection applied and verified on 18 Nov 2026 | Developer: reconcile migration state and prepare a safe, backed-up release order. Owner: approve a deployment window later |
+| Production migration state | **[VERIFIED LIVE, READ-ONLY]** 18 Nov audit confirms migrations 0029, 0030 and 0031 are all absent from production schema; 0032 CNIC protection triggers are present. No migration-ledger table exists. | Developer: back up, re-check schema, then apply 0029 → 0030 → 0031 in order and verify each. Never run 0031 without 0029. Deploy only after green CI and release checks. |
 | Release acceptance | **[DEVELOPER ACTION]** CI passing is not equivalent to live acceptance | Run the documented smoke tests only after the owner authorizes deployment |
 
 **Important:** Do not run pending migrations against production, alter production data, or deploy matching code without a reviewed release sequence and a fresh backup. Never bypass CNIC immutability controls.
@@ -212,7 +212,7 @@ Optional tools to evaluate later: analytics (privacy-conscious), search console,
 | Area | Recorded status |
 |---|---|
 | GitHub main CI run #44338347005 | **Passed** (18 Nov 2026) |
-| Cloudflare deployment for this work | **Not performed** — intentionally waiting for “deploy now” |
+| Cloudflare deployment for this work | **Not performed** — development is GitHub-only; final release/deploy is planned after all release gates close |
 | Cloudflare Pages / D1 / private R2 architecture | Existing project architecture |
 | CNIC permanent retention protection | Migration 0032 applied and metadata-update rejection verified |
 | CNIC encrypted per-rental backup | Implemented; manual upload; recovery downloads files but does not reinsert into D1/R2 |
@@ -284,3 +284,19 @@ Do not send passwords or secret values here. Record only non-secret status, publ
 - Owner tracker commit `5cdec943b8de327f634b30cc74064ad6234f2ca9` passed GitHub Actions run [#44341083529](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341083529). All 16 steps completed successfully, including TypeScript/build, production dependency audit, Pages security-header artifact validation, Worker authentication tests, D1 schema validation and storefront browser tests.
 - README tracker-link commit `b9f1c8ac7ee874e4b6f98d7f0b7976822beaba0f` passed GitHub Actions run [#44341122641](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341122641).
 - These were source/CI checks only. No Cloudflare deployment, production migration, secret change, live provider delivery, payment transaction or data mutation was performed.
+
+
+### Live D1 schema audit correction — 18 Nov 2026
+
+A read-only query of the live `deverve-production` D1 database found that the earlier tracker entry was incomplete:
+
+- `enquiry_email_queue` is absent, so migration `0029_enquiry_email_queue.sql` is pending.
+- `pos_sales` does not have `customer_email`, `email_receipt_requested`, or `whatsapp_receipt_consent`, and `pos_receipt_outbox` is absent, so migration `0030_pos_receipt_delivery.sql` is pending.
+- `idx_enquiry_email_queue_lease` cannot exist because its table is absent, so migration `0031_enquiry_email_queue_lease_index.sql` is pending.
+- The CNIC immutability triggers from migration `0032_permanent_cnic_evidence.sql` are present.
+- Production has no migration-ledger table; migration state is checked from actual schema objects.
+- This was a read-only inspection. No production rows, schema, secrets, R2 objects or deployment were changed.
+
+**Release order:** fresh verified encrypted D1 export and independent copy → re-check live schema → apply 0029 → verify → apply 0030 → verify → apply 0031 → verify → verify CNIC guards remain present → deploy matching source → run production smoke and targeted business acceptance. D1 export does not include private R2 image bytes. CNIC originals remain permanent and must never be deleted, overwritten, renamed or expired.
+
+**CI:** the current source checkpoint commit `d82bb53f861f9e37d7cd7f1cd9a8dcfe4a9a0fa5` passed GitHub Actions runs [#44342786822](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44342786822) and [#44342842399](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44342842399). This does not substitute for live provider tests or migration release.
