@@ -769,3 +769,18 @@
 .admin-dashboard[data-admin-screen="audit"] .admin-panel#audit{display:block!important}
 .admin-dashboard[data-admin-screen="ai"] .admin-panel:not(#ai){display:none!important}
 .admin-dashboard[data-admin-screen="ai"] .admin-panel#ai{display:block!important}
+
+.admin-dashboard .admin-nav-icon svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.65;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.admin-dashboard .admin-ribbon-group[open] > summary .admin-nav-icon,
+.admin-dashboard .admin-ribbon button.active .admin-nav-icon {
+  color: #1b5b89;
+}
