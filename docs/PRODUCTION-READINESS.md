@@ -362,3 +362,10 @@ A source audit found a real Worker/schema mismatch in `processNotificationOutbox
 **Source fix committed:** `0bbb2b10fa18ceb1a0b038d65bda75dfe260a044` fixes the binding count, records the claim timestamp, and reclaims stale processing leases. New migration `0033_notification_outbox_lease.sql` adds the missing nullable lease column and a composite due/lease index without rewriting existing notification rows. Regression coverage was added in `scripts/worker-auth.test.mjs`; schema validation now asserts the new column and index.
 
 **Important:** migration 0033 is not yet applied to production. It must be applied after 0029, 0030 and 0031 and verified before deploying the Worker fix. No production data or schema was changed during this audit.
+
+
+## POS expense and prepared-SQL binding audit — 18 November 2026
+
+A second static audit of literal Worker SQL statements found an extra placeholder in the POS business-expense ledger insert. It supplied seven values for eight placeholders, causing expense posting to fail at the D1 binding layer. The SQL statement is corrected in commit `4fdc7c8bb0ee65887ed8434ecf71c50a6d4b7d56`.
+
+A new `scripts/verify_sql_bindings.mjs` audit checks placeholder counts against JavaScript bind argument counts for literal `prepare("...").bind(...)` statements. It is now part of `npm run test:worker`. The first full static scan after the fix found zero remaining mismatches in the Worker file. CI must pass on the exact final SHA before release.
