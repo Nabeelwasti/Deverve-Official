@@ -431,7 +431,7 @@ export default function Admin() {
     const name=pick("name","product_name","title","item"),brand=pick("brand","manufacturer"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
     const gender=pick("audience","gender","department").toLowerCase();
     const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender?"unisex":form.audience;
-    const barcode=pick("barcode","gtin","ean","upc")||raw.trim().slice(0,128),sku=pick("sku","product_code","code");
+    const barcode=pick("barcode","gtin","ean","upc")||(!Object.keys(data).length?raw.trim().slice(0,128):""),sku=pick("sku","product_code","code");
     const retail=price("retail_price","retail_price_paisa","price","mrp","sale_price"),wholesale=price("wholesale_price","wholesale_price_paisa"),cost=price("purchase_cost","cost_price","unit_cost","cost");
     const size=pick("size","sizes"),color=pick("color","colour"),quantity=pick("quantity","qty","stock","stock_on_hand");
     const details=[description,brand?"Brand: "+brand:"",pick("material")?"Material: "+pick("material"):"",pick("country_of_origin")?"Origin: "+pick("country_of_origin"):""].filter(Boolean).join("\n");
