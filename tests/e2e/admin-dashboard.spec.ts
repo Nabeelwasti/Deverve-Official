@@ -30,6 +30,10 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
       rentals: rental ? [rental] : [],
       reviews: [],
       events: [],
+      items: [],
+      accounts: [],
+      registers: [],
+      session: null,
       has_more: false,
     };
 
@@ -162,7 +166,7 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   await page.getByLabel("Add section type").selectOption("image_gallery");
   const block = page.locator(".content-block").last();
   await block.getByLabel("Heading").fill("Campaign gallery");
-  await block.getByLabel("Upload gallery images").setInputFiles({ name: "campaign.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=", "base64") });
+  await block.locator('input[type="file"][multiple][aria-label="Upload gallery images"]').setInputFiles({ name: "campaign.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=", "base64") });
   await expect(block.locator(".content-gallery-preview img")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Move navigation item down" }).first().click();
@@ -194,7 +198,7 @@ test("public CMS pages render gallery, video, product, category and FAQ blocks",
           { id: "1", section_type: "image_gallery", position: 0, content: { heading: "Gallery block", images: "/media/" + imageId } },
           { id: "2", section_type: "video", position: 1, content: { heading: "Video block", video_url: "/media/" + videoId, video_caption: "Campaign film" } },
           { id: "3", section_type: "product_collection", position: 2, content: { heading: "Featured products", limit: "3" } },
-          { id: "4", section_type: "category_grid", position: 3, content: { heading: "Shop categories", categories: "Men\\nWomen" } },
+          { id: "4", section_type: "category_grid", position: 3, content: { heading: "Shop categories", categories: "Men\nWomen" } },
           { id: "5", section_type: "faq", position: 4, content: { heading: "Common questions", faqs: "What sizes? | Contact our team for current availability." } },
         ],
       }),
@@ -224,4 +228,32 @@ test("a published CMS homepage replaces the default storefront homepage", async 
   await expect(page.getByRole("heading", { name: "De VERVE CMS homepage" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "A new home for De VERVE" })).toBeVisible();
   await expect(page.getByText("CMS homepage is live.")).toBeVisible();
+});
+
+test("POS camera scanner requests browser permission only after an explicit user action", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.addInitScript(() => {
+    const state = window as Window & { __cameraRequestCount?: number };
+    state.__cameraRequestCount = 0;
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          state.__cameraRequestCount = (state.__cameraRequestCount ?? 0) + 1;
+          throw Object.assign(new Error("Camera permission blocked"), { name: "NotAllowedError" });
+        },
+      },
+    });
+  });
+
+  await page.goto("/admin?section=pos");
+  await page.getByRole("button", { name: "Camera scan" }).click();
+  await expect(page.getByRole("dialog", { name: "Scan product barcode" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Allow camera access & start scanning" })).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { __cameraRequestCount?: number }).__cameraRequestCount ?? 0)).toBe(0);
+
+  await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
+  await expect(page.getByRole("alert")).toContainText("Camera access was blocked");
+  expect(await page.evaluate(() => (window as Window & { __cameraRequestCount?: number }).__cameraRequestCount ?? 0)).toBe(1);
+  await expect(page.getByRole("button", { name: "Try camera again" })).toBeVisible();
 });
