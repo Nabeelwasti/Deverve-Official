@@ -736,9 +736,16 @@ function Storefront() {
   );
 }
 
+function HomePageRoute() {
+  const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
+  useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
+  if(hasCmsHome===null)return <main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>;
+  return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
+}
+
 export default function App() {
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <Storefront /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
 }
 

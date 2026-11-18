@@ -1,84 +1,32 @@
 import BrandLogo from "./BrandLogo";
-import { useEffect, useState } from "react";
-
-type Section = { id: string; section_type: string; content: Record<string, string>; position: number; is_visible?: boolean };
-type Page = { slug: string; title: string; seo_title: string; seo_description: string; status?: string; sections: Section[] };
-
-export default function PublicPage() {
-  const slug = decodeURIComponent(window.location.pathname.replace(/^\/pages\//, "")).slice(0, 80);
-  const params = new URLSearchParams(window.location.search);
-  const previewId = params.get("id") ?? "";
-  const isPreview = params.get("preview") === "1";
-  const [page, setPage] = useState<Page | null>(null);
-  const [error, setError] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    if (isPreview && !/^[a-f0-9-]{36}$/i.test(previewId)) {
-      setError(true);
-      return () => { active = false; };
-    }
-    const endpoint = isPreview
-      ? "/api/admin/pages/" + encodeURIComponent(previewId)
-      : "/api/pages/" + encodeURIComponent(slug);
-    void fetch(endpoint, { credentials: "same-origin", headers: { accept: "application/json" } })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Page unavailable");
-        return await response.json() as { page: Omit<Page, "sections">; sections: Section[] };
-      })
-      .then((data) => {
-        if (active) setPage({ ...data.page, sections: data.sections });
-      })
-      .catch(() => { if (active) setError(true); });
-    return () => { active = false; };
-  }, [slug, previewId, isPreview]);
-
-  useEffect(() => {
-    if (!page) return;
-    document.title = page.seo_title || page.title;
-    let description = document.querySelector<HTMLMetaElement>('meta[name="description"]');
-    if (!description) {
-      description = document.createElement("meta");
-      description.name = "description";
-      document.head.appendChild(description);
-    }
-    description.content = page.seo_description || "";
-  }, [page]);
-
-  if (error) return (
-    <main className="public-page">
-      {isPreview && <aside className="public-preview-banner"><strong>Draft preview unavailable</strong><span>Sign in with an authorised owner or manager account, then reopen the preview.</span><a href="/admin?section=content">Return to website editor</a></aside>}
-      <a href="/">De VERVE</a><h1>{isPreview ? "Preview unavailable" : "Page not found"}</h1>
-      <p>{isPreview ? "This saved draft could not be loaded." : "This page may be unpublished or no longer available."}</p>
-    </main>
-  );
-  if (!page) return <main className="public-page"><p>Loading page…</p></main>;
-
-  const visibleSections = page.sections.filter((section) => !isPreview || section.is_visible !== false);
-  return (
-    <main className="public-page">
-      {isPreview && <aside className="public-preview-banner"><strong>Draft preview</strong><span>This saved page is visible only to authorised staff. Changes made in the editor must be saved before they appear here.</span><a href="/admin?section=content">Return to website editor</a></aside>}
-      <header className="public-page-header">
-        <a href="/" className="public-page-brand"><BrandLogo className="brand-logo-image" /></a>
-        <nav><a href="/">Home</a><a href="/#fashion">Fashion</a><a href="/#contact">Contact</a></nav>
-      </header>
-      <article className="public-page-content">
-        <p className="public-page-eyebrow">DE VERVE · JHELUM</p>
-        <h1>{page.title}</h1>
-        {visibleSections.map((section) => {
-          const content = section.content;
-          return (
-            <section className={"public-section public-section-" + section.section_type} key={section.id}>
-              {content.eyebrow && <small>{content.eyebrow}</small>}
-              {content.heading && <h2>{content.heading}</h2>}
-              {content.body && <p>{content.body}</p>}
-              {content.image_url && /^\/media\/[a-f0-9-]{36}$/i.test(content.image_url) && <img src={content.image_url} alt={content.heading || page.title} />}
-              {content.button_text && content.button_href && <a className="button button-primary" href={content.button_href}>{content.button_text} ↗</a>}
-            </section>
-          );
-        })}
-      </article>
-      <footer className="public-page-footer">© DE VERVE · JHELUM, PAKISTAN</footer>
-    </main>
-  );
+import { useEffect, useMemo, useState } from "react";
+type Section={id:string;section_type:string;content:Record<string,string>;position:number;is_visible?:boolean};
+type Page={slug:string;title:string;seo_title:string;seo_description:string;page_type?:string;status?:string};
+type Product={id:string;slug:string;name:string;description:string;category:string;retail_price_paisa:number|null;image_key:string|null;media?:Array<{id:string;media_type:string;alt_text:string;is_primary:number}>};
+type NavItem={id:string;label:string;href:string;position:number};
+const mediaId=(value:string)=>/^\/media\/([a-f0-9-]{36})$/i.exec(value)?.[1]??"";
+const mediaSrc=(value:string)=>mediaId(value)?value:"";
+const parseFaqs=(value:string)=>value.split("\n").map(line=>line.trim()).filter(Boolean).map(line=>{const split=line.indexOf("|");return split<1?{question:"",answer:""}:{question:line.slice(0,split).trim(),answer:line.slice(split+1).trim()};}).filter(row=>row.question&&row.answer);
+function SectionContent({section,products}:{section:Section;products:Product[]}){
+ const c=section.content,image=mediaSrc(c.image_url||""),button=c.button_text&&c.button_href?<a className="public-page-button" href={c.button_href}>{c.button_text} <span aria-hidden="true">↗</span></a>:null,cls="public-section public-section-"+section.section_type;
+ if(section.section_type==="image_gallery"){const images=(c.images||"").split("\n").map(mediaSrc).filter(Boolean).slice(0,12);return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}<div className="public-gallery">{images.map((src,i)=><figure key={src+i}><img src={src} alt={(c.heading||"De VERVE gallery")+" · "+(i+1)} loading="lazy"/></figure>)}</div></section>;}
+ if(section.section_type==="video"){const src=mediaSrc(c.video_url||"");return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}{src?<video className="public-video" controls playsInline preload="metadata" src={src}>Your browser does not support embedded video.</video>:<p>Video is not available.</p>}{c.video_caption&&<p className="public-media-caption">{c.video_caption}</p>}</section>;}
+ if(section.section_type==="product_collection")return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}{products.length?<div className="public-product-grid">{products.map(product=>{const cover=product.image_key?mediaSrc("/media/"+product.image_key):mediaSrc("/media/"+(product.media?.find(m=>m.is_primary===1&&m.media_type==="image")?.id||""));return <a className="public-product-card" key={product.id} href={"/product/"+product.slug}>{cover?<img src={cover} alt={product.name} loading="lazy"/>:<div className="public-product-placeholder">DE VERVE</div>}<span>{product.category}</span><strong>{product.name}</strong>{product.retail_price_paisa!==null&&<b>{new Intl.NumberFormat("en-PK",{style:"currency",currency:"PKR",maximumFractionDigits:0}).format(product.retail_price_paisa/100)}</b>}</a>;})}</div>:<p>New arrivals are being prepared. Please check back soon.</p>}{button}</section>;
+ if(section.section_type==="category_grid"){const categories=(c.categories||"").split("\n").map(x=>x.trim()).filter(Boolean).slice(0,12);return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}<div className="public-category-grid">{categories.map((category,i)=><a key={category} href="/?screen=fashion"><span>{String(i+1).padStart(2,"0")}</span><strong>{category}</strong><small>Explore collection ↗</small></a>)}</div></section>;}
+ if(section.section_type==="faq")return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}<div className="public-faq-list">{parseFaqs(c.faqs||"").map((faq,i)=><details key={i}><summary>{faq.question}</summary><p>{faq.answer}</p></details>)}</div></section>;
+ if(section.section_type==="image_text")return <section className={cls+" public-image-text"} key={section.id}><div className="public-image-text-copy">{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}{button}</div>{image&&<img src={image} alt={c.image_alt||c.heading||"De VERVE"} loading="lazy"/>}</section>;
+ return <section className={cls} key={section.id}>{c.eyebrow&&<small>{c.eyebrow}</small>}{c.heading&&<h2>{c.heading}</h2>}{c.body&&<p>{c.body}</p>}{image&&<img src={image} alt={c.image_alt||c.heading||"De VERVE"} loading="lazy"/>}{button}</section>;
+}
+export default function PublicPage({homeMode=false}:{homeMode?:boolean}){
+ const slug=decodeURIComponent(window.location.pathname.replace(/^\/pages\//,"")).slice(0,80),params=new URLSearchParams(window.location.search),previewId=params.get("id")??"",isPreview=params.get("preview")==="1";
+ const [page,setPage]=useState<Page|null>(null),[sections,setSections]=useState<Section[]>([]),[nav,setNav]=useState<NavItem[]>([]),[error,setError]=useState(false),[productData,setProductData]=useState<Record<string,Product[]>>({});
+ const productSections=useMemo(()=>sections.filter(s=>s.section_type==="product_collection"),[sections]);
+ useEffect(()=>{let active=true;if(isPreview&&!/^[a-f0-9-]{36}$/i.test(previewId)){setError(true);return()=>{active=false;};}const endpoint=isPreview?"/api/admin/pages/"+encodeURIComponent(previewId):"/api/pages/"+(homeMode?"home":encodeURIComponent(slug));void fetch(endpoint,{credentials:"same-origin",headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)throw new Error("Page unavailable");return await response.json() as {page:Page;sections:Section[]};}).then(data=>{if(active){setPage(data.page);setSections(data.sections);setError(false);}}).catch(()=>{if(active)setError(true);});return()=>{active=false;};},[slug,previewId,isPreview,homeMode]);
+ useEffect(()=>{let active=true;void fetch("/api/navigation",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)throw new Error("Navigation unavailable");return await response.json() as {items:NavItem[]};}).then(data=>{if(active)setNav(data.items);}).catch(()=>{if(active)setNav([]);});return()=>{active=false;};},[]);
+ useEffect(()=>{let active=true;if(!productSections.length){setProductData({});return()=>{active=false;};}const tasks=productSections.map(async section=>{const category=(section.content.category||"").trim(),raw=Number(section.content.limit||"8"),limit=Number.isInteger(raw)?Math.min(Math.max(raw,1),12):8,query=new URLSearchParams({limit:String(limit)});if(category)query.set("category",category);const response=await fetch("/api/products?"+query.toString(),{headers:{accept:"application/json"}});if(!response.ok)throw new Error("Product collection unavailable");const result=await response.json() as {products:Product[]};return [section.id,result.products||[]] as const;});void Promise.all(tasks).then(rows=>{if(active)setProductData(Object.fromEntries(rows));}).catch(()=>{if(active)setProductData({});});return()=>{active=false;};},[productSections]);
+ useEffect(()=>{if(!page)return;document.title=page.seo_title||page.title;let description=document.querySelector<HTMLMetaElement>('meta[name="description"]');if(!description){description=document.createElement("meta");description.name="description";document.head.appendChild(description);}description.content=page.seo_description||"";let canonical=document.querySelector<HTMLLinkElement>('link[rel="canonical"]');if(!canonical){canonical=document.createElement("link");canonical.rel="canonical";document.head.appendChild(canonical);}canonical.href=window.location.origin+(homeMode?"/":"/pages/"+page.slug);},[page,homeMode]);
+ if(error)return <main className="public-page">{isPreview&&<aside className="public-preview-banner"><strong>Draft preview unavailable</strong><span>Sign in with an authorised owner or manager account, then reopen the preview.</span><a href="/admin?section=content">Return to website editor</a></aside>}<a href="/">De VERVE</a><h1>{isPreview?"Preview unavailable":"Page not found"}</h1><p>{isPreview?"This saved draft could not be loaded.":homeMode?"The published homepage could not be loaded.":"This page may be unpublished or no longer available."}</p></main>;
+ if(!page)return <main className="public-page"><p>Loading page…</p></main>;
+ const visible=sections.filter(section=>!isPreview||section.is_visible!==false),links=nav.length?nav:[{id:"home",label:"Home",href:"/"},{id:"fashion",label:"Fashion",href:"/?screen=fashion"},{id:"contact",label:"Contact",href:"/?screen=contact"}];
+ return <main className="public-page">{isPreview&&<aside className="public-preview-banner"><strong>Draft preview</strong><span>This saved page is visible only to authorised staff. Save changes in the editor, then refresh this preview.</span><a href="/admin?section=content">Return to website editor</a></aside>}<header className="public-page-header"><a href="/" className="public-page-brand"><BrandLogo className="brand-logo-image"/></a><nav aria-label="Website navigation">{links.map(item=><a key={item.id} href={item.href}>{item.label}</a>)}</nav></header><article className="public-page-content"><p className="public-page-eyebrow">DE VERVE · JHELUM</p><h1>{page.title}</h1>{visible.map(section=><SectionContent key={section.id} section={section} products={productData[section.id]||[]}/>)}</article><footer className="public-page-footer">© DE VERVE · JHELUM, PAKISTAN</footer></main>;
 }

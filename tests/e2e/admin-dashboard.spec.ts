@@ -122,3 +122,103 @@ test("saved draft CMS pages can be previewed through the authenticated admin end
   await expect(page.getByText("This is preview-only content.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Return to website editor" })).toBeVisible();
 });
+
+
+test("CMS editor uploads gallery media, edits section-specific content and reorders navigation", async ({ page }) => {
+  const pageId = "66666666-6666-4666-8666-666666666666";
+  const mediaId = "77777777-7777-4777-8777-777777777777";
+  let savedPage: Record<string, unknown> | null = null;
+  let savedNavigation: Array<Record<string, unknown>> = [];
+  await mockAdminApi(page);
+  await page.route("**/api/admin/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const method = request.method();
+    if (url.pathname === "/api/admin/pages" && method === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ pages: [{ id: pageId, slug: "cms-test", title: "CMS test page", page_type: "standard", status: "draft", seo_title: "CMS test", seo_description: "CMS test description", updated_at: "2026-11-18T09:00:00.000Z" }] }) });
+    } else if (url.pathname === "/api/admin/pages/" + pageId && method === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ page: { id: pageId, slug: "cms-test", title: "CMS test page", page_type: "standard", status: "draft", seo_title: "CMS test", seo_description: "CMS test description", updated_at: "2026-11-18T09:00:00.000Z" }, sections: [] }) });
+    } else if (url.pathname === "/api/admin/navigation" && method === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "88888888-8888-4888-8888-888888888888", label: "Home", href: "/", position: 0, is_visible: true }, { id: "99999999-9999-4999-8999-999999999999", label: "Fashion", href: "/?screen=fashion", position: 1, is_visible: true }] }) });
+    } else if (url.pathname === "/api/admin/media" && method === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ media: [] }) });
+    } else if (url.pathname === "/api/admin/media" && method === "POST") {
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ media: { id: mediaId, media_type: "image", mime_type: "image/png", byte_size: 120, alt_text: "CMS gallery image", caption: "", status: "ready" } }) });
+    } else if (url.pathname === "/api/admin/navigation" && method === "PUT") {
+      savedNavigation = (request.postDataJSON() as { items: Array<Record<string, unknown>> }).items;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ updated: true, items: savedNavigation }) });
+    } else if (url.pathname === "/api/admin/pages/" + pageId && method === "PATCH") {
+      savedPage = request.postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ updated: true, status: (savedPage.status as string), revision: 1 }) });
+    } else {
+      await route.fallback();
+    }
+  });
+
+  await page.goto("/admin?section=content");
+  await expect(page.getByRole("heading", { name: "Pages & visual builder" })).toBeVisible();
+  await page.getByRole("button", { name: /CMS test page/ }).click();
+  await expect(page.getByRole("heading", { name: "CMS test page" })).toBeVisible();
+  await page.getByLabel("Add section type").selectOption("image_gallery");
+  const block = page.locator(".content-block").last();
+  await block.getByLabel("Heading").fill("Campaign gallery");
+  await block.getByLabel("Upload gallery images").setInputFiles({ name: "campaign.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=", "base64") });
+  await expect(block.locator(".content-gallery-preview img")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Move navigation item down" }).first().click();
+  await page.getByRole("button", { name: "Save navigation" }).click();
+  await expect(page.getByRole("status")).toContainText("Navigation saved");
+  expect(savedNavigation[0].label).toBe("Fashion");
+
+  const saveRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/admin/pages/" + pageId && request.method() === "PATCH");
+  await page.getByRole("button", { name: "Save draft" }).click();
+  await saveRequest;
+  expect(savedPage).not.toBeNull();
+  const sections = savedPage?.sections as Array<{ section_type: string; content: Record<string, string> }>;
+  expect(sections[0].section_type).toBe("image_gallery");
+  expect(sections[0].content.images).toBe("/media/" + mediaId);
+});
+
+test("public CMS pages render gallery, video, product, category and FAQ blocks", async ({ page }) => {
+  const imageId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const videoId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  await page.route("**/api/pages/cms-render-test", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        page: { slug: "cms-render-test", title: "CMS rendering test", seo_title: "CMS rendering test", seo_description: "Public content blocks test" },
+        sections: [
+          { id: "1", section_type: "image_gallery", position: 0, content: { heading: "Gallery block", images: "/media/" + imageId } },
+          { id: "2", section_type: "video", position: 1, content: { heading: "Video block", video_url: "/media/" + videoId, video_caption: "Campaign film" } },
+          { id: "3", section_type: "product_collection", position: 2, content: { heading: "Featured products", limit: "3" } },
+          { id: "4", section_type: "category_grid", position: 3, content: { heading: "Shop categories", categories: "Men\\nWomen" } },
+          { id: "5", section_type: "faq", position: 4, content: { heading: "Common questions", faqs: "What sizes? | Contact our team for current availability." } },
+        ],
+      }),
+    });
+  });
+  await page.route("**/api/navigation", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [{ id: "nav1", label: "New arrivals", href: "/?screen=fashion", position: 0 }] }) }));
+  await page.route((url) => new URL(url).pathname === "/api/products", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: "product1", slug: "test-hoodie", name: "Test hoodie", category: "Hoodies", retail_price_paisa: 250000, image_key: null, media: [] }] }) });
+  });
+  await page.goto("/pages/cms-render-test");
+  await expect(page.getByRole("heading", { name: "CMS rendering test" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Gallery block" })).toBeVisible();
+  await expect(page.locator("video.public-video")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Test hoodie/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Shop categories" })).toBeVisible();
+  await expect(page.getByText("What sizes?")).toBeVisible();
+  await expect(page.getByRole("link", { name: "New arrivals" })).toBeVisible();
+});
+
+test("a published CMS homepage replaces the default storefront homepage", async ({ page }) => {
+  await page.route("**/api/pages/home", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ page: { slug: "welcome", title: "De VERVE CMS homepage", seo_title: "De VERVE", seo_description: "Welcome" }, sections: [{ id: "home-hero", section_type: "hero", position: 0, content: { heading: "A new home for De VERVE", body: "CMS homepage is live." } }] }) });
+  });
+  await page.route("**/api/navigation", async (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ items: [] }) }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "De VERVE CMS homepage" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A new home for De VERVE" })).toBeVisible();
+  await expect(page.getByText("CMS homepage is live.")).toBeVisible();
+});

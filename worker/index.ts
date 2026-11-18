@@ -2884,29 +2884,41 @@ async function ownerNotificationRoutes(request:Request,env:Env,url:URL):Promise<
 
 const cmsSectionTypes = new Set(["hero","rich_text","image_text","image_gallery","video","product_collection","category_grid","promo_banner","contact_cta","faq"]);
 const cmsSlugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const cmsMediaPath = /^\/media\/([a-f0-9-]{36})$/i;
 function normalizeCmsSection(value: unknown, position: number): {id:string;section_type:string;position:number;content_json:string;is_visible:number}|null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const row=value as Record<string,unknown>;
-  const sectionType=cleanText(row.section_type,40);
+  const row=value as Record<string,unknown>,sectionType=cleanText(row.section_type,40);
   if (!cmsSectionTypes.has(sectionType)) return null;
-  const raw=row.content && typeof row.content==="object" && !Array.isArray(row.content) ? row.content as Record<string,unknown> : {};
+  const raw=row.content&&typeof row.content==="object"&&!Array.isArray(row.content)?row.content as Record<string,unknown>:{};
+  const limits:Record<string,number>={eyebrow:120,heading:180,body:3000,image_url:240,image_alt:240,button_text:80,button_href:240,images:2400,video_url:240,video_caption:240,category:60,limit:2,categories:800,faqs:6000};
   const content:Record<string,string>={};
-  for (const key of ["eyebrow","heading","body","image_url","button_text","button_href"]) {
-    const value=cleanText(raw[key],key==="body"?3000: key==="image_url"||key==="button_href"?240:500);
-    if (!value) continue;
-    if (key==="image_url" && !/^\/media\/[a-f0-9-]{36}$/i.test(value)) return null;
-    if (key==="button_href" && (!value.startsWith("/") || value.startsWith("//") || value.length>240)) return null;
+  for(const [key,max] of Object.entries(limits)){
+    const value=cleanText(raw[key],max);if(!value)continue;
+    if((key==="image_url"||key==="video_url")&&!cmsMediaPath.test(value))return null;
+    if(key==="button_href"&&(!/^\/(?!\/)[A-Za-z0-9/_#?=&%.-]*$/.test(value)||value.includes("\\")))return null;
+    if(key==="images"){const paths=value.split(/\r?\n/).map(item=>item.trim()).filter(Boolean);if(paths.length>12||paths.some(item=>!cmsMediaPath.test(item))||new Set(paths).size!==paths.length)return null;content[key]=paths.join("\n");continue;}
+    if(key==="categories"){const rows=value.split(/\r?\n/).map(item=>cleanText(item,60)).filter(Boolean);if(rows.length>12||new Set(rows.map(item=>item.toLowerCase())).size!==rows.length)return null;content[key]=rows.join("\n");continue;}
+    if(key==="faqs"){const rows=value.split(/\r?\n/).map(item=>item.trim()).filter(Boolean);if(rows.length>20||rows.some(item=>{const split=item.indexOf("|");return split<1||!item.slice(0,split).trim()||!item.slice(split+1).trim();}))return null;content[key]=rows.join("\n");continue;}
+    if(key==="limit"&&!/^(?:[1-9]|1[0-2])$/.test(value))return null;
     content[key]=value;
   }
   const id=cleanText(row.id,64);
-  return {id:/^[a-f0-9-]{36}$/i.test(id)?id:crypto.randomUUID(),section_type:sectionType,position,is_visible:row.is_visible===false?0:1,content_json:JSON.stringify(content)};
+  return{id:/^[a-f0-9-]{36}$/i.test(id)?id:crypto.randomUUID(),section_type:sectionType,position,is_visible:row.is_visible===false?0:1,content_json:JSON.stringify(content)};
 }
 async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Response|null>{
   const path=url.pathname;
+  const publicNavigation=path==="/api/navigation";
+  if(publicNavigation&&request.method==="GET"){
+    try{const rows=await env.DB.prepare("SELECT id,label,href,position FROM site_navigation_items WHERE is_visible=1 ORDER BY position LIMIT 30").all<Record<string,unknown>>();return json({items:rows.results??[]});}
+    catch{return error("Website navigation is temporarily unavailable",503);}
+  }
+  if(publicNavigation)return error("Method not allowed",405);
   const publicMatch=path.match(/^\/api\/pages\/([a-z0-9]+(?:-[a-z0-9]+)*)$/);
   if(publicMatch&&request.method==="GET"){
     try{
-      const page=await env.DB.prepare("SELECT id,slug,title,page_type,seo_title,seo_description FROM site_pages WHERE slug=? AND status='published' LIMIT 1").bind(publicMatch[1]).first<Record<string,unknown>>();
+      const page=publicMatch[1]==="home"
+        ?await env.DB.prepare("SELECT id,slug,title,page_type,seo_title,seo_description FROM site_pages WHERE page_type='home' AND status='published' ORDER BY updated_at DESC LIMIT 1").first<Record<string,unknown>>()
+        :await env.DB.prepare("SELECT id,slug,title,page_type,seo_title,seo_description FROM site_pages WHERE slug=? AND status='published' LIMIT 1").bind(publicMatch[1]).first<Record<string,unknown>>();
       if(!page)return error("Page not found",404);
       const rows=await env.DB.prepare("SELECT id,section_type,position,content_json,is_visible FROM site_page_sections WHERE page_id=? AND is_visible=1 ORDER BY position").bind(page.id).all<Record<string,unknown>>();
       const sections=(rows.results??[]).map(row=>{let content:Record<string,string>={};try{const parsed=JSON.parse(String(row.content_json));if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))content=parsed;}catch{}return{id:row.id,section_type:row.section_type,position:row.position,content};});
@@ -2946,8 +2958,9 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
     for(let i=0;i<items.length;i++){
       const item=items[i] as Record<string,unknown>;
       const label=cleanText(item?.label,60),href=cleanText(item?.href,240);
-      if(label.length<1||!href.startsWith("/")||href.startsWith("//"))return error("Navigation labels and safe internal links are required",400);
-      normalized.push({id:crypto.randomUUID(),label,href,position:i,is_visible:item?.is_visible===false?0:1});
+      if(label.length<1||!/^\/(?!\/)[A-Za-z0-9/_#?=&%.-]*$/.test(href)||href.includes("\\"))return error("Navigation labels and safe internal links are required",400);
+      const suppliedId=cleanText(item?.id,64);
+      normalized.push({id:/^[a-f0-9-]{36}$/i.test(suppliedId)?suppliedId:crypto.randomUUID(),label,href,position:i,is_visible:item?.is_visible===false?0:1});
     }
     try{
       const statements:D1PreparedStatement[]=[env.DB.prepare("DELETE FROM site_navigation_items")];
@@ -2963,6 +2976,7 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       const existing=await env.DB.prepare("SELECT id FROM site_pages WHERE slug=? LIMIT 1").bind(slug).first<{id:string}>();
       if(existing)return error("A page already uses this URL slug",409);
+      if(pageType==="home"){const existingHome=await env.DB.prepare("SELECT id FROM site_pages WHERE page_type='home' AND status<>'archived' LIMIT 1").first<{id:string}>();if(existingHome)return error("A homepage is already configured. Edit the existing homepage instead.",409);}
       const id=crypto.randomUUID(),now=new Date().toISOString();
       await env.DB.batch([
         env.DB.prepare("INSERT INTO site_pages (id,slug,title,page_type,status,seo_title,seo_description,created_by,updated_by,updated_at) VALUES (?,?,?,?,'draft','','',?,?,?)").bind(id,slug,title,pageType,admin.admin_user_id,admin.admin_user_id,now),
@@ -2986,6 +3000,11 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
       if(!current)return error("Page not found",404);
       const duplicate=await env.DB.prepare("SELECT id FROM site_pages WHERE slug=? AND id<>? LIMIT 1").bind(slug,id).first<{id:string}>();
       if(duplicate)return error("A page already uses this URL slug",409);
+      if(pageType==="home"){const existingHome=await env.DB.prepare("SELECT id FROM site_pages WHERE page_type='home' AND status<>'archived' AND id<>? LIMIT 1").bind(id).first<{id:string}>();if(existingHome)return error("Another homepage is already configured. Archive it before changing this page type.",409);}
+      const referencedImages=new Set<string>(),referencedVideos=new Set<string>();
+      for(const section of sections){const parsed=JSON.parse(section.content_json) as Record<string,string>;for(const key of ["image_url","images"]){const value=parsed[key]||"";for(const mediaPath of (key==="images"?value.split("\n"):[value])){const match=cmsMediaPath.exec(mediaPath);if(match)referencedImages.add(match[1]);}}const videoMatch=cmsMediaPath.exec(parsed.video_url||"");if(videoMatch)referencedVideos.add(videoMatch[1]);}
+      if(referencedImages.size){const ids=[...referencedImages],placeholders=ids.map(()=>"?").join(",");const available=await env.DB.prepare("SELECT id FROM media_assets WHERE status='ready' AND media_type='image' AND id IN ("+placeholders+")").bind(...ids).all<{id:string}>();if((available.results??[]).length!==ids.length)return error("One or more selected images are missing or unavailable. Upload them again before saving.",400);}
+      if(referencedVideos.size){const ids=[...referencedVideos],placeholders=ids.map(()=>"?").join(",");const available=await env.DB.prepare("SELECT id FROM media_assets WHERE status='ready' AND media_type='video' AND id IN ("+placeholders+")").bind(...ids).all<{id:string}>();if((available.results??[]).length!==ids.length)return error("The selected video is missing or unavailable. Upload it again before saving.",400);}
       const oldSections=await env.DB.prepare("SELECT id,section_type,position,content_json,is_visible FROM site_page_sections WHERE page_id=? ORDER BY position").bind(id).all<Record<string,unknown>>();
       const snapshot=JSON.stringify({page:current,sections:oldSections.results??[]});
       const revision=await env.DB.prepare("SELECT COALESCE(MAX(revision_number),0)+1 AS next FROM content_revisions WHERE entity_type='page' AND entity_id=?").bind(id).first<{next:number}>();
