@@ -559,7 +559,7 @@ class FakeStatement {
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, wholesale_price_paisa: product.wholesale_price_paisa, retail_price_paisa: product.retail_price_paisa } : null;
     }
     if (q.startsWith("SELECT id, status FROM vehicles WHERE id = ?")) { const row = this.db.vehicles.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
-    if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status, admin_note FROM rental_requests WHERE id = ?") || q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token")) {
@@ -1714,6 +1714,11 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   assert.equal(db.rentalRequests.get(firstId).status, "confirmed");
   assert.equal(db.rentalRequests.get(secondId).vehicle_id, vehicleTwo);
   assert.equal(db.rentalRequests.get(secondId).status, "confirmed");
+  const savedRentalDetails = await handleRequest(request("/api/admin/rentals/" + secondId, "PATCH", {
+    status: "confirmed", vehicle_id: vehicleTwo, admin_note: "Vehicle assignment checked and customer contacted.",
+  }, headers), env(db));
+  assert.equal(savedRentalDetails.status, 200);
+  assert.equal(db.rentalRequests.get(secondId).admin_note, "Vehicle assignment checked and customer contacted.");
 });
 
 
