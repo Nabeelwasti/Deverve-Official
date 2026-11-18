@@ -56,6 +56,18 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
   });
 }
 
+test("admin navigation menus render as independent floating popovers outside the sidebar", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.goto("/admin?section=overview");
+  await page.getByText("Operations", { exact: true }).click();
+  const menu = page.locator("body > .admin-ribbon-popover");
+  await expect(menu).toBeVisible();
+  expect(await menu.evaluate(el => el.parentElement === document.body)).toBe(true);
+  await expect(menu.getByRole("button", { name: "Products & variants" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+});
+
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
   await mockAdminApi(page);
   await page.addInitScript(() => {
@@ -315,6 +327,24 @@ test("a published CMS homepage replaces the default storefront homepage", async 
   await expect(page.getByRole("heading", { name: "De VERVE CMS homepage" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "A new home for De VERVE" })).toBeVisible();
   await expect(page.getByText("CMS homepage is live.")).toBeVisible();
+});
+
+test("POS routes a decoded unknown QR payload into product creation with the full value preserved", async ({ page }) => {
+  const qrPayload = "https://supplier.example/items/hoodie?id=SKU-2026-0001&colour=navy";
+  await mockAdminApi(page);
+  await page.addInitScript((payload) => {
+    const stream = document.createElement("canvas").captureStream(1);
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => stream } });
+    Object.defineProperty(window, "BarcodeDetector", { configurable: true, value: class { constructor(_options: { formats: string[] }) {} async detect() { return [{ rawValue: payload }]; } } });
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+  }, qrPayload);
+  await page.goto("/admin?section=pos");
+  await page.getByRole("button", { name: "Camera scan" }).click();
+  await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
+  await expect(page.getByText("Scanned code: " + qrPayload)).toBeVisible();
+  await page.getByRole("button", { name: "Create product & add this code to stock" }).click();
+  await expect(page).toHaveURL(/section=products&barcode=/);
+  await expect(page).toHaveURL(new RegExp("barcode=" + encodeURIComponent(qrPayload).replace(/[.*+?^${}()|[\]\\]/g, "\\test("POS camera scanner requests browser permission only after an explicit user action", async ({ page }) => {")));
 });
 
 test("POS camera scanner requests browser permission only after an explicit user action", async ({ page }) => {

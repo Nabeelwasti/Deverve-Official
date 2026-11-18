@@ -240,6 +240,11 @@ function cleanText(value: unknown, max: number): string {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
 }
 
+// QR codes can contain URLs or structured text, not just numeric EAN/UPC values.
+function validBarcodeValue(value: string): boolean {
+  return value.length > 0 && value.length <= 2048 && !/[\u0000-\u001F\u007F]/.test(value);
+}
+
 function splitOptionValues(value: string): string[] {
   return [...new Set(value.split(/[,;|\\n]+/).map(item => item.trim()).filter(Boolean))];
 }
@@ -2439,12 +2444,12 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     const size = cleanText(body.size, 32);
     const color = cleanText(body.color, 32);
     const initialStock = body.initial_stock === undefined ? 0 : body.initial_stock;
-    const barcodeText = cleanText(body.barcode, 64).toUpperCase();
+    const barcodeText = cleanText(body.barcode, 2048);
     const sku = skuText || "DV-" + crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase();
     const barcode = barcodeText || generateInternalBarcode();
     const costPrice = body.cost_price_paisa === undefined ? 0 : body.cost_price_paisa;
     const reorderLevel = body.reorder_level === undefined ? 5 : body.reorder_level;
-    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || size.length > 32 || color.length > 32 || size.includes(",") || color.includes(",") || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || !Number.isSafeInteger(costPrice) || Number(costPrice) < 0 || Number(costPrice) > 1_000_000_000_000 || !Number.isSafeInteger(reorderLevel) || Number(reorderLevel) < 0 || Number(reorderLevel) > 1_000_000 || (!size && !color && !skuText && !barcodeText)) {
+    if ((sku && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode && !validBarcodeValue(barcode)) || size.length > 32 || color.length > 32 || size.includes(",") || color.includes(",") || !Number.isSafeInteger(initialStock) || Number(initialStock) < 0 || Number(initialStock) > 1_000_000 || !Number.isSafeInteger(costPrice) || Number(costPrice) < 0 || Number(costPrice) > 1_000_000_000_000 || !Number.isSafeInteger(reorderLevel) || Number(reorderLevel) < 0 || Number(reorderLevel) > 1_000_000 || (!size && !color && !skuText && !barcodeText)) {
       return error("Enter one size and one colour per variant (no comma-separated lists), plus valid barcode, cost and reorder level", 400);
     }
     if (body.cost_price_paisa !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can set purchase cost",403);
@@ -2494,11 +2499,11 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
     const size = Object.prototype.hasOwnProperty.call(body, "size") ? cleanText(body.size, 32) : undefined;
     const color = Object.prototype.hasOwnProperty.call(body, "color") ? cleanText(body.color, 32) : undefined;
     const active = Object.prototype.hasOwnProperty.call(body, "is_active") ? body.is_active : undefined;
-    const barcodeText = Object.prototype.hasOwnProperty.call(body,"barcode") ? cleanText(body.barcode,64).toUpperCase() : undefined;
+    const barcodeText = Object.prototype.hasOwnProperty.call(body,"barcode") ? cleanText(body.barcode,2048) : undefined;
     const barcode = barcodeText === "" ? null : barcodeText;
     const costPrice = Object.prototype.hasOwnProperty.call(body,"cost_price_paisa") ? body.cost_price_paisa : undefined;
     const reorderLevel = Object.prototype.hasOwnProperty.call(body,"reorder_level") ? body.reorder_level : undefined;
-    if ((sku !== undefined && sku !== null && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode !== undefined && barcode !== null && !/^[A-Z0-9][A-Z0-9._/-]{2,63}$/.test(barcode)) || (active !== undefined && active !== 0 && active !== 1 && active !== false && active !== true) || (size !== undefined && size.includes(",")) || (color !== undefined && color.includes(",")) || (costPrice !== undefined && (!Number.isSafeInteger(costPrice) || Number(costPrice)<0 || Number(costPrice)>1_000_000_000_000)) || (reorderLevel !== undefined && (!Number.isSafeInteger(reorderLevel) || Number(reorderLevel)<0 || Number(reorderLevel)>1_000_000))) return error("Enter one size and one colour per variant (no comma-separated lists), plus valid SKU, barcode, cost and reorder level", 400);
+    if ((sku !== undefined && sku !== null && !/^[A-Z0-9][A-Z0-9._/-]{1,63}$/.test(sku)) || (barcode !== undefined && barcode !== null && !validBarcodeValue(barcode)) || (active !== undefined && active !== 0 && active !== 1 && active !== false && active !== true) || (size !== undefined && size.includes(",")) || (color !== undefined && color.includes(",")) || (costPrice !== undefined && (!Number.isSafeInteger(costPrice) || Number(costPrice)<0 || Number(costPrice)>1_000_000_000_000)) || (reorderLevel !== undefined && (!Number.isSafeInteger(reorderLevel) || Number(reorderLevel)<0 || Number(reorderLevel)>1_000_000))) return error("Enter one size and one colour per variant (no comma-separated lists), plus valid SKU, barcode, cost and reorder level", 400);
     if (costPrice !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can edit purchase cost",403);
     try {
       const current = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ? LIMIT 1")

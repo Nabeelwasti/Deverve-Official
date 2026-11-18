@@ -886,3 +886,13 @@
   body.printing-pos-workspace table{width:100%;border-collapse:collapse}
   body.printing-pos-workspace th{background:#163a5f!important;color:#fff!important}
 }
+
+
+/* Portal-mounted admin navigation: independent popovers never expand the sidebar. */
+.admin-ribbon-popover{position:fixed!important;z-index:2500!important;display:grid;gap:4px;min-width:260px;max-width:min(320px,calc(100vw - 24px));padding:9px;border:1px solid #d7e2ed;border-radius:13px;background:#fff;box-shadow:0 22px 58px rgba(10,31,55,.24);overscroll-behavior:contain;}
+.admin-ribbon-popover button,.admin-ribbon-popover a{width:100%;min-height:42px;padding:10px 12px;border:0;border-radius:8px;background:transparent;color:#294966;text-align:left;text-decoration:none;font-size:12px;font-weight:700;white-space:normal;}
+.admin-ribbon-popover button:hover,.admin-ribbon-popover a:hover,.admin-ribbon-popover button.is-current{background:#edf4fb;color:#123e69;}
+.admin-barcode-scan{align-self:end;min-height:42px;white-space:nowrap;}
+.pos-unknown-code{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 15px;margin:12px 0;border:1px solid #e4c98c;border-radius:12px;background:#fffaf0;color:#634b1d;}
+.pos-unknown-code>div{display:grid;gap:4px;flex:1 1 220px;min-width:0;}.pos-unknown-code strong{font-size:12px;overflow-wrap:anywhere;}.pos-unknown-code small{font-size:11px;line-height:1.5;color:#806a3e;}.pos-unknown-code button{min-height:38px;}
+@media(max-width:680px){.admin-ribbon-popover{left:12px!important;right:12px;width:auto!important;max-width:none;max-height:min(70dvh,520px);}.admin-barcode-scan{width:100%;}.pos-unknown-code{align-items:stretch;}.pos-unknown-code button{width:100%;}}

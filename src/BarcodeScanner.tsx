@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 type DetectedBarcode={rawValue:string};
 type DetectorLike={detect(source:HTMLVideoElement):Promise<DetectedBarcode[]>};
-type DetectorConstructor=new(options:{formats:string[]})=>DetectorLike;
+type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSupportedFormats?:()=>Promise<string[]>};
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
 function cameraErrorMessage(caught:unknown):string{
  const name=caught instanceof DOMException?caught.name:caught instanceof Error?caught.name:"";
@@ -38,12 +38,16 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
    stream.current=camera;
    const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
    if(!Detector){stopCamera();setError("Camera permission is available, but this browser does not include a barcode decoder. Use a USB barcode scanner or enter the barcode/SKU in the POS search field.");return;}
-   const detector=new Detector({formats:["ean_13","ean_8","code_128","code_39","upc_a","upc_e","qr_code"]});
+   const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
+   const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
+   const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
+   if(!formats.length)throw new Error("This browser cannot decode common retail barcodes or QR codes. Update Chrome or use a compatible USB/Bluetooth scanner.");
+   const detector=new Detector({formats});
    if(!video.current)throw new Error("The camera preview could not be opened. Close the scanner and try again.");
    video.current.srcObject=camera;
    await video.current.play();
    if(!mounted.current)return;
-   setCameraActive(true);setStatus("Camera is active. Hold the barcode steady inside the guide.");
+   setCameraActive(true);setStatus("Camera is active. Scan EAN / UPC, Code 39 / 93 / 128, ITF, Codabar, PDF417, Data Matrix, Aztec or QR codes supported by this browser.");
    let detecting=false;
    const tick=async()=>{
     if(!mounted.current||detected.current||detecting||!video.current)return;
@@ -67,7 +71,7 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
    {error&&<p className="admin-error" role="alert">{error}</p>}
    <p className="admin-muted" role="status">{cameraActive?status:"Camera access is requested only when you press the start button."}</p>
    {!cameraActive&&<button type="button" className="admin-primary" disabled={starting} onClick={()=>void startCamera()}>{starting?"Requesting camera…":error?"Try camera again":"Allow camera access & start scanning"}</button>}
-   <div className="barcode-manual-entry"><label htmlFor="barcode-manual-value">Or enter barcode / SKU manually</label><div><input id="barcode-manual-value" value={manualCode} onChange={event=>setManualCode(event.target.value)} maxLength={80} autoComplete="off" placeholder="Scan or type product code"/><button type="button" className="admin-primary" disabled={!manualCode.trim()} onClick={()=>{const value=manualCode.trim();stopCamera();callback.current(value);onClose();}}>Use code</button></div></div><button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
+   <div className="barcode-manual-entry"><label htmlFor="barcode-manual-value">Or enter barcode / SKU manually</label><div><input id="barcode-manual-value" value={manualCode} onChange={event=>setManualCode(event.target.value)} maxLength={2048} autoComplete="off" placeholder="Scan or type product code"/><button type="button" className="admin-primary" disabled={!manualCode.trim()} onClick={()=>{const value=manualCode.trim();stopCamera();callback.current(value);onClose();}}>Use code</button></div></div><button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
   </section>
  </div>;
 }
