@@ -111,9 +111,11 @@ test("rental vehicle assignment and internal note can be saved without changing 
     const side = new URL(route.request().url()).pathname.split("/").pop() || "cnic_front";
     await route.fulfill({status:200,contentType:"image/png",headers:{"cache-control":"private, no-store"},body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=","base64")});
   });
-  page.on("dialog", dialog => dialog.accept("Test-Backup-Password-2026!"));
-  const backupDownload = page.waitForEvent("download");
   await card.getByRole("button", {name:"Create encrypted backup"}).click();
+  await card.getByLabel("New backup password").fill("Test-Backup-Password-2026!");
+  await card.getByLabel("Confirm backup password").fill("Test-Backup-Password-2026!");
+  const backupDownload = page.waitForEvent("download");
+  await card.getByRole("button", {name:"Encrypt & download backup"}).click();
   const backup = await backupDownload;
   expect(backup.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic-evidence\.dvbackup$/);
   const backupPath = await backup.path();
@@ -122,8 +124,10 @@ test("rental vehicle assignment and internal note can be saved without changing 
   const chooserPromise = page.waitForEvent("filechooser");
   await card.getByRole("button", {name:"Decrypt & download"}).click();
   const chooser = await chooserPromise;
-  const restoredDownloadPromise = page.waitForEvent("download");
   await chooser.setFiles(backupPath!);
+  await card.getByLabel("Backup password").fill("Test-Backup-Password-2026!");
+  const restoredDownloadPromise = page.waitForEvent("download");
+  await card.getByRole("button", {name:"Decrypt & recover files"}).click();
   const restoredDownload = await restoredDownloadPromise;
   await expect(card.getByRole("status")).toContainText("Backup decrypted and integrity-checked");
   expect(restoredDownload.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic_(front|back)\.(jpg|png|webp)$/);
