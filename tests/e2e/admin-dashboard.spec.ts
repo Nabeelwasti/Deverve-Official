@@ -103,3 +103,22 @@ test("rental vehicle assignment and internal note can be saved without changing 
   await expect(card.getByLabel("Assign vehicle")).toHaveValue(vehicleId);
   await expect(page.getByRole("status")).toContainText("Assignment and internal details saved");
 });
+
+test("saved draft CMS pages can be previewed through the authenticated admin endpoint", async ({ page }) => {
+  const id = "44444444-4444-4444-8444-444444444444";
+  await page.route("**/api/admin/pages/" + id, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        page: { id, slug: "private-draft", title: "Private draft preview", seo_title: "Private draft preview", seo_description: "Draft preview description", status: "draft" },
+        sections: [{ id: "55555555-5555-4555-8555-555555555555", section_type: "hero", position: 0, is_visible: true, content: { eyebrow: "COLLECTION", heading: "A saved draft heading", body: "This is preview-only content." } }],
+      }),
+    });
+  });
+  await page.goto("/pages/private-draft?preview=1&id=" + id);
+  await expect(page.getByText("Draft preview", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Private draft preview" })).toBeVisible();
+  await expect(page.getByText("This is preview-only content.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Return to website editor" })).toBeVisible();
+});
