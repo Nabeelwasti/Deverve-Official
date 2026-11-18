@@ -424,7 +424,7 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
-  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setForm({ ...emptyProduct }); setShowEditor(true); };
+  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setVariantForm({sku:"",size:"",color:"",barcode:pendingInventoryBarcode,cost_price:"0",reorder_level:"5",initial_stock:"0"}); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
     clearAdminFormDraft("admin-product-editor");
     setEditingId(product.id);
@@ -444,7 +444,7 @@ export default function Admin() {
         const newProduct: Product = { id: created.id, slug: form.slug, name: form.name, description: form.description, category: form.category, audience: form.audience, status: form.status, retail_price_paisa: toPaisa(form.retail_price_paisa), wholesale_price_paisa: toPaisa(form.wholesale_price_paisa), image_key: null, seo_title: form.seo_title, seo_description: form.seo_description };
         void loadProducts();
         clearAdminFormDraft("admin-product-editor"); setShowEditor(false); setVariantProduct(newProduct); setVariants([]);
-        setVariantForm({ sku: "", size: "", color: "", barcode: pendingInventoryBarcode, cost_price: ["owner","manager"].includes(admin?.role||"") ? defaultCostPrice : "0", reorder_level: "5", initial_stock: "0" });
+        setVariantForm(current=>({ ...current, barcode: pendingInventoryBarcode || current.barcode, cost_price: current.cost_price !== "0" ? current.cost_price : (["owner","manager"].includes(admin?.role||"") ? defaultCostPrice : "0") }));
         setMessage("Product details saved. Add its first size, colour, purchase cost and opening quantity below. You can then add more variants and colour photos.");
       }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product could not be saved."); }
@@ -1227,12 +1227,17 @@ export default function Admin() {
             const value=raw.trim().slice(0,2048); let data:Record<string,unknown>|null=null;
             try { const parsed=JSON.parse(value); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)) data=parsed as Record<string,unknown>; } catch {}
             if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());if(!Object.keys(data).length)data={url:value};}catch{}}
-            const pick=(...keys:string[])=>{for(const key of keys){const found=Object.entries(data||{}).find(([name])=>name.toLowerCase()===key.toLowerCase())?.[1];if(typeof found==="string"&&found.trim())return found.trim().slice(0,4000);}return "";};
+            const pick=(...keys:string[])=>{for(const key of keys){const found=Object.entries(data||{}).find(([name])=>name.toLowerCase()===key.toLowerCase())?.[1];if(typeof found==="string"&&found.trim())return found.trim().slice(0,4000);if(typeof found==="number"&&Number.isFinite(found))return String(found);}return "";};
             const name=pick("name","product_name","title","item"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
             const gender=pick("audience","gender","department").toLowerCase();
             const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender? "unisex":form.audience;
             const code=pick("barcode","gtin","ean","upc","sku","code")||(!data?value:"");
-            updateProductForm({...form,...(name?{name,slug:editingId?form.slug:name.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}:{}),...(category?{category}:{}),...(description?{description}:{}),audience,...(pick("seo_title")?{seo_title:pick("seo_title")}:{}) ,...(pick("seo_description")?{seo_description:pick("seo_description")}:{})});
+            const retail=pick("retail_price","retail_price_paisa","price","mrp","sale_price"),wholesale=pick("wholesale_price","wholesale_price_paisa");
+            const cost=pick("purchase_cost","cost_price","cost","unit_cost"),size=pick("size","sizes"),color=pick("color","colour"),quantity=pick("quantity","qty","stock","stock_on_hand");
+            const asRupees=(raw:string)=>raw?String(/_paisa$/.test(Object.keys(data||{}).find(key=>String((data||{})[key])===raw)||"")?Number(raw)/100:Number(raw)):"";
+            updateProductForm({...form,...(name?{name,slug:editingId?form.slug:name.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}:{}),...(category?{category}:{}),...(description?{description}:{}),audience,...(retail?{retail_price_paisa:asRupees(retail)}:{}),...(wholesale?{wholesale_price_paisa:asRupees(wholesale)}:{}),...(pick("seo_title")?{seo_title:pick("seo_title")}:{}) ,...(pick("seo_description")?{seo_description:pick("seo_description")}:{})});
+            setVariantForm(current=>({...current,...(size?{size}:{}),...(color?{color}:{}),...(code?{barcode:code}:{}),...(cost?{cost_price:cost}:{}),...(quantity?{initial_stock:quantity}:{})}));
+            if(cost)setDefaultCostPrice(cost);
             if(code)setPendingInventoryBarcode(code);
             setBarcodeScanTarget(null);
             setMessage(name||category||description?"Tag details imported. Review all fields before saving.":"Code captured. Save the product, then add its first variant to attach the barcode.");
