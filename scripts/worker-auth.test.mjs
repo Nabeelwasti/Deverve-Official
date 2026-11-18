@@ -2113,6 +2113,32 @@ test("Gemini retries transient 503 responses on the next supported model", async
   }finally{globalThis.fetch=originalFetch;}
 });
 
+test("authenticated product label scanning sends an image to Gemini and returns structured fields", async () => {
+  const db=new FakeD1();
+  const key="AQ."+"G".repeat(48);
+  const configured={...env(db),NabeelG_Api_key1:key};
+  const bootstrapped=await bootstrap(db);
+  const cookie=bootstrapped.headers.get("set-cookie").split(";")[0];
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(input,init={})=>{
+    if(String(input).includes("generativelanguage.googleapis.com")){
+      const payload=JSON.parse(init.body);
+      assert.ok(payload.contents[0].parts.some(part=>part.inline_data?.mime_type==="image/jpeg"));
+      return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify({name:"Denim Jacket",category:"Jackets",audience:"unisex",barcode:"12345678",sku:"SKU-123",retail_price:3500,purchase_cost:1800,size:"M",color:"Indigo",quantity:5})}]}}]}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    return originalFetch(input,init);
+  };
+  try{
+    const response=await handleRequest(request("/api/admin/products/scan-label","POST",{image_data_url:"data:image/jpeg;base64,aGVsbG8=",barcode:"12345678",sku:"SKU-123"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.15"}),configured);
+    assert.equal(response.status,200);
+    const result=await response.json();
+    assert.equal(result.product.name,"Denim Jacket");
+    assert.equal(result.product.barcode,"12345678");
+    assert.equal(result.product.sku,"SKU-123");
+    assert.equal(result.product.purchase_cost,1800);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
   const db = new FakeD1();
   const vault = await handleRequest(request("/api/admin/ai/keys", "GET"), env(db));
