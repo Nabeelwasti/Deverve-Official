@@ -603,6 +603,17 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+  const saveReturnNote = async (item: AdminReturn) => {
+    const draft = returnRefundDrafts[item.id] ?? { refund_method: "bank_transfer", refund_reference: "", admin_note: item.admin_note ?? "" };
+    setBusy(true); setMessage("");
+    try {
+      await api("/api/admin/returns/" + item.id, { method: "PATCH", body: JSON.stringify({ admin_note: draft.admin_note }) });
+      await loadReturns();
+      setMessage("Internal note saved for " + item.return_number + ".");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Return note could not be saved."); }
+    finally { setBusy(false); }
+  };
+
   const updateReturnStatus = async (item: AdminReturn, status: AdminReturn["status"]) => {
     const draft = returnRefundDrafts[item.id] ?? { refund_method: "bank_transfer", refund_reference: "", admin_note: "" };
     setBusy(true); setMessage("");
@@ -619,6 +630,17 @@ export default function Admin() {
       await loadReturns();
       setMessage("Return " + item.return_number + " updated to " + status + ".");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Return request could not be updated."); }
+    finally { setBusy(false); }
+  };
+
+  const saveExchangeNote = async (item: AdminExchange) => {
+    const note = exchangeNotes[item.id] ?? item.admin_note ?? "";
+    setBusy(true); setMessage("");
+    try {
+      await api("/api/admin/exchanges/" + item.id, { method: "PATCH", body: JSON.stringify({ admin_note: note }) });
+      await loadExchanges();
+      setMessage("Internal note saved for " + item.exchange_number + ".");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Exchange note could not be saved."); }
     finally { setBusy(false); }
   };
 
@@ -944,6 +966,7 @@ export default function Admin() {
             <p className="admin-return-reason"><strong>{item.reason.replaceAll("_", " ")}</strong> · {item.details}</p>
             <div className="admin-order-items">{item.items.map((line, index) => <div key={index}><span>{line.product_name_snapshot} · {[line.size_snapshot, line.color_snapshot].filter(Boolean).join(" / ") || line.sku_snapshot || "Standard"} × {line.quantity}</span><strong>Replacement: {line.requested_size || "same size"} / {line.requested_color || "same colour"}</strong></div>)}</div>
             <label className="admin-return-note">Internal note<textarea rows={2} maxLength={500} value={exchangeNotes[item.id] ?? item.admin_note ?? ""} onChange={(event) => updateExchangeNotes((current) => ({ ...current, [item.id]: event.target.value }))} /></label>
+            <button type="button" className="admin-secondary" disabled={busy} onClick={() => void saveExchangeNote(item)}>Save internal note</button>
             {item.status === "requested" && <div className="admin-return-actions"><button type="button" className="admin-secondary" disabled={busy} onClick={() => void updateExchangeStatus(item, "reviewing")}>Start review</button><button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "approved")}>Approve exchange</button><button type="button" className="admin-danger-button" disabled={busy} onClick={() => void updateExchangeStatus(item, "rejected")}>Reject request</button></div>}
             {item.status === "reviewing" && <div className="admin-return-actions"><button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "approved")}>Approve exchange</button><button type="button" className="admin-danger-button" disabled={busy} onClick={() => void updateExchangeStatus(item, "rejected")}>Reject request</button></div>}
             {item.status === "approved" && <button type="button" className="admin-primary" disabled={busy} onClick={() => void updateExchangeStatus(item, "item_received")}>Confirm item received</button>}
@@ -964,6 +987,7 @@ export default function Admin() {
               <div className="admin-order-items">{item.items.map((line, index) => <div key={index}><span>{line.product_name_snapshot} · {[line.size_snapshot, line.color_snapshot].filter(Boolean).join(" / ") || line.sku_snapshot || "Standard"} × {line.quantity}</span><strong>Rs. {Math.round(line.unit_refund_paisa * line.quantity / 100).toLocaleString("en-PK")}</strong></div>)}</div>
               <div className="admin-return-refund"><span>Item refund estimate</span><strong>Rs. {Math.round(item.refund_amount_paisa / 100).toLocaleString("en-PK")}</strong><small>Delivery charges are excluded. Payment type: {item.payment_provider === "safepay" ? "Safepay" : "COD"} · payment status: {item.payment_status}</small></div>
               <label className="admin-return-note">Internal note<textarea rows={2} maxLength={500} value={draft.admin_note} onChange={(event) => setDraft({ admin_note: event.target.value })} /></label>
+              <button type="button" className="admin-secondary" disabled={busy} onClick={() => void saveReturnNote(item)}>Save internal note</button>
               {item.status === "requested" && <div className="admin-return-actions"><button type="button" className="admin-primary" disabled={busy} onClick={() => void updateReturnStatus(item, "approved")}>Approve return</button><button type="button" className="admin-danger-button" disabled={busy} onClick={() => void updateReturnStatus(item, "rejected")}>Reject request</button></div>}
               {item.status === "approved" && <button type="button" className="admin-primary" disabled={busy} onClick={() => void updateReturnStatus(item, "received")}>Mark items received</button>}
               {item.status === "received" && <div className="admin-return-refund-form"><p>Record a refund only after it has actually been paid. This system does not transfer money or call Safepay refunds.</p><label>Manual refund method<select value={draft.refund_method} onChange={(event) => setDraft({ refund_method: event.target.value })}><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="store_credit">Store credit</option></select></label><label>Refund reference / receipt number<input required minLength={3} maxLength={120} value={draft.refund_reference} onChange={(event) => setDraft({ refund_reference: event.target.value })} placeholder="Transaction ID or receipt reference"/></label><button type="button" className="admin-primary" disabled={busy || draft.refund_reference.trim().length < 3} onClick={() => void updateReturnStatus(item, "refunded")}>Record refund completed</button></div>}

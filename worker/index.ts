@@ -842,7 +842,25 @@ async function adminExchangeRoutes(request: Request, env: Env, url: URL): Promis
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request, 4_000);
-  const nextStatus = cleanText(body?.status, 20);
+  if (!body) return error("Submit a valid exchange update.", 400);
+  if (body.status === undefined) {
+    if (body.admin_note === undefined) return error("Submit an internal note.", 400);
+    try {
+      const current = await env.DB.prepare("SELECT id, status, admin_note FROM exchange_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; status: string; admin_note: string | null }>();
+      if (!current) return error("Exchange request not found.", 404);
+      const note = cleanText(body.admin_note, 500);
+      if (note === (current.admin_note ?? "")) return json({ updated: true, unchanged: true, status: current.status });
+      const now = new Date().toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE exchange_requests SET admin_note = ?, updated_at = ? WHERE id = ? AND status = ?").bind(note, now, current.id, current.status),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, 'exchange.note_updated', 'exchange_request', ?, ? WHERE EXISTS (SELECT 1 FROM exchange_requests WHERE id = ? AND status = ? AND admin_note = ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, current.id, JSON.stringify({ status: current.status, note_length: note.length }), current.id, current.status, note),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Exchange request changed while saving the note. Refresh and try again.", 409);
+      return json({ updated: true, status: current.status });
+    } catch { return error("Exchange note could not be saved.", 503); }
+  }
+  const nextStatus = cleanText(body.status, 20);
   const adminNote = cleanText(body?.admin_note, 500);
   if (!["reviewing", "approved", "rejected", "item_received", "completed"].includes(nextStatus)) return error("Choose a valid exchange status.", 400);
   try {
@@ -899,7 +917,25 @@ async function adminReturnRoutes(request: Request, env: Env, url: URL): Promise<
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request, 4_000);
-  const nextStatus = cleanText(body?.status, 20);
+  if (!body) return error("Submit a valid return update.", 400);
+  if (body.status === undefined) {
+    if (body.admin_note === undefined) return error("Submit an internal note.", 400);
+    try {
+      const current = await env.DB.prepare("SELECT id, status, admin_note FROM return_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; status: string; admin_note: string | null }>();
+      if (!current) return error("Return request not found.", 404);
+      const note = cleanText(body.admin_note, 500);
+      if (note === (current.admin_note ?? "")) return json({ updated: true, unchanged: true, status: current.status });
+      const now = new Date().toISOString();
+      const results = await env.DB.batch([
+        env.DB.prepare("UPDATE return_requests SET admin_note = ?, updated_at = ? WHERE id = ? AND status = ?").bind(note, now, current.id, current.status),
+        env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, ?, 'return.note_updated', 'return_request', ?, ? WHERE EXISTS (SELECT 1 FROM return_requests WHERE id = ? AND status = ? AND admin_note = ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, current.id, JSON.stringify({ status: current.status, note_length: note.length }), current.id, current.status, note),
+      ]);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Return request changed while saving the note. Refresh and try again.", 409);
+      return json({ updated: true, status: current.status });
+    } catch { return error("Return note could not be saved.", 503); }
+  }
+  const nextStatus = cleanText(body.status, 20);
   const adminNote = cleanText(body?.admin_note, 500);
   const refundMethod = cleanText(body?.refund_method, 30);
   const refundReference = cleanText(body?.refund_reference, 120);

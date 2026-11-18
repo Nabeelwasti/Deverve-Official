@@ -545,6 +545,8 @@ class FakeStatement {
     if (q.startsWith("SELECT id,event_type,title,body,entity_type,entity_id,is_read,created_at,read_at FROM owner_notifications")) return { success: true, results: [...this.db.notifications.values()].sort((a,b)=>b.created_at.localeCompare(a.created_at)).slice(0,100) };
     if (q.startsWith("SELECT id, quantity, unit_price_paisa FROM order_items WHERE order_id = ? AND id IN")) { const ids = new Set(v.slice(1)); return null; }
     if (q.startsWith("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, status, admin_note FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, status, admin_note FROM exchange_requests WHERE id = ?")) return this.db.exchangeRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.provider_reference === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
@@ -782,6 +784,20 @@ class FakeStatement {
       const actor_id = actor_type === "customer" ? v[2] : v[4];
       const note = actor_type === "customer" ? "Return request submitted" : v[5];
       this.db.returnStatusEvents.push({ id, return_request_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE return_requests SET admin_note = ?")) {
+      const [admin_note, updated_at, id, expected] = v;
+      const row = this.db.returnRequests.get(id);
+      if (!row || row.status !== expected) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { admin_note, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE exchange_requests SET admin_note = ?")) {
+      const [admin_note, updated_at, id, expected] = v;
+      const row = this.db.exchangeRequests.get(id);
+      if (!row || row.status !== expected) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { admin_note, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE return_requests SET status = ?")) {
@@ -1176,6 +1192,7 @@ class FakeD1 {
   financialTransactions = [];
   paymentWebhookEvents = new Map();
   returnRequests = new Map();
+  exchangeRequests = new Map();
   returnRequestItems = [];
   returnStatusEvents = [];
   rateLimits = new Map();
@@ -1788,6 +1805,26 @@ test("order promotion selection grants exactly one offer and respects strict spe
   assert.equal(advance.freeDelivery, false);
 });
 
+
+test("staff can save internal notes on closed return and exchange records without reopening them", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const exchangeId = crypto.randomUUID();
+  const returnId = crypto.randomUUID();
+  db.exchangeRequests.set(exchangeId, { id: exchangeId, status: "completed", admin_note: "Old exchange note" });
+  db.returnRequests.set(returnId, { id: returnId, status: "refunded", admin_note: "Old return note" });
+
+  const exchange = await handleRequest(request("/api/admin/exchanges/" + exchangeId, "PATCH", { admin_note: "Replacement delivered and customer informed." }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  const returned = await handleRequest(request("/api/admin/returns/" + returnId, "PATCH", { admin_note: "Refund receipt archived with finance records." }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+
+  assert.equal(exchange.status, 200, await exchange.clone().text());
+  assert.equal(returned.status, 200, await returned.clone().text());
+  assert.equal(db.exchangeRequests.get(exchangeId).status, "completed");
+  assert.equal(db.exchangeRequests.get(exchangeId).admin_note, "Replacement delivered and customer informed.");
+  assert.equal(db.returnRequests.get(returnId).status, "refunded");
+  assert.equal(db.returnRequests.get(returnId).admin_note, "Refund receipt archived with finance records.");
+});
 
 test("exchange endpoints require authenticated customer and authorized staff sessions", async () => {
   const db = new FakeD1();
