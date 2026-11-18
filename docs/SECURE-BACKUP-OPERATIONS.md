@@ -34,6 +34,22 @@ My Drive/
             └── <date>-deverve-production-encrypted.7z
 ```
 
+### Enabling direct Google Drive integration in the website
+
+The ChatGPT Google Drive connector being disabled does not prevent a separate De VERVE website integration. The website integration is **not yet configured**. It requires an OAuth client owned by the business:
+
+1. Sign in to [Google Cloud Console](https://console.cloud.google.com/) with `deverve61@gmail.com`.
+2. Create or select a dedicated project named **De VERVE Secure Backup**.
+3. Enable **Google Drive API** for that project.
+4. Configure the OAuth consent screen. Add `deverve61@gmail.com` as an authorized test user if the app remains in testing mode.
+5. Create an OAuth Client ID with application type **Web application**.
+6. Add this authorized JavaScript origin: `https://deverve-official.pages.dev`.
+7. Keep the OAuth Client ID. Do not paste any Google password, OAuth client secret, refresh token or recovery code into chat. A browser-based least-privilege flow needs the public Client ID, not a client secret.
+8. The intended website scope is `https://www.googleapis.com/auth/drive.file`, which limits the app to files it creates or that the user explicitly opens with it. It should not request unrestricted access to the entire Drive.
+9. The public Client ID must be added to the Cloudflare Pages build environment as `VITE_GOOGLE_DRIVE_CLIENT_ID`. This requires a future owner-approved configuration change and deployment; do not deploy until the owner explicitly authorizes it.
+
+After the Client ID is configured, the app still needs its Google sign-in/upload flow, category-folder creation, resumable upload, encrypted file handling and restore tests implemented and verified. Until then, Google Drive uploads remain manual. The Client ID alone does not mean that a connection or backup has been completed.
+
 ### Uploading an encrypted CNIC backup
 
 1. Sign in to Google Drive using the business account above. Confirm the account avatar/email before uploading.
