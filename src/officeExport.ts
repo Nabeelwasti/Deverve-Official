@@ -131,7 +131,8 @@ function columnName(index: number): string {
   return result;
 }
 
-export function exportOfficeSpreadsheet(filename: string, sheetName: string, rows: OfficeRow[]): void {
+export async function exportOfficeSpreadsheet(filename: string, sheetName: string, rows: OfficeRow[]): Promise<void> {
+  const logoPng = await loadBrandLogoPng();
   if (!rows.length) return;
   const safeSheet = Array.from(sheetName, character => "[]:*?/\\\\".includes(character) ? " " : character).join("").trim().slice(0, 31) || "Report";
   const columnCount = Math.max(1, ...rows.map(row => row.length));
@@ -141,14 +142,14 @@ export function exportOfficeSpreadsheet(filename: string, sheetName: string, row
   const sheetRows = rows.map((row, rowIndex) => {
     const cells = Array.from({ length: columnCount }, (_, columnIndex) => {
       const value = row[columnIndex];
-      const reference = columnName(columnIndex) + (rowIndex + 1);
+      const reference = columnName(columnIndex) + (rowIndex + 6);
       const style = rowIndex === headerIndex ? ' s="1"' : "";
       if (typeof value === "number" && Number.isFinite(value)) return "<c r=\"" + reference + "\"" + style + "><v>" + value + "</v></c>";
       if (typeof value === "boolean") return "<c r=\"" + reference + "\" t=\"b\"" + style + "><v>" + (value ? 1 : 0) + "</v></c>";
       return "<c r=\"" + reference + "\" t=\"inlineStr\"" + style + "><is><t xml:space=\"preserve\">" + xmlEscape(String(value ?? "")) + "</t></is></c>";
     }).join("");
     const height = rowIndex === headerIndex ? ' ht="30" customHeight="1"' : "";
-    return "<row r=\"" + (rowIndex + 1) + "\"" + height + ">" + cells + "</row>";
+    return "<row r=\"" + (rowIndex + 6) + "\"" + height + ">" + cells + "</row>";
   }).join("");
   const widths = Array.from({ length: columnCount }, (_, column) => {
     const longest = Math.max(10, ...rows.slice(0, 250).map(row => String(row[column] ?? "").length));
@@ -156,15 +157,27 @@ export function exportOfficeSpreadsheet(filename: string, sheetName: string, row
   });
   const columns = widths.map((width, index) => "<col min=\"" + (index + 1) + "\" max=\"" + (index + 1) + "\" width=\"" + width + "\" customWidth=\"1\"/>").join("");
   const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><color rgb="FF263B50"/><name val="Aptos"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Aptos"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF163A5F"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFD7E0E8"/></left><right style="thin"><color rgb="FFD7E0E8"/></right><top style="thin"><color rgb="FFD7E0E8"/></top><bottom style="thin"><color rgb="FFD7E0E8"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
-  const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="A1:' + lastColumn + lastRow + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="' + (headerIndex + 1) + '" topLeftCell="A' + (headerIndex + 2) + '" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A' + (headerIndex + 2) + '" sqref="A' + (headerIndex + 2) + '"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="22"/><cols>' + columns + '</cols><sheetData>' + sheetRows + '</sheetData><autoFilter ref="A' + (headerIndex + 1) + ':' + lastColumn + lastRow + '"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>';
+  const sheet = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><dimension ref="A1:' + lastColumn + (lastRow + 5) + '"/><sheetViews><sheetView workbookViewId="0"><pane ySplit="' + (headerIndex + 6) + '" topLeftCell="A' + (headerIndex + 7) + '" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A' + (headerIndex + 7) + '" sqref="A' + (headerIndex + 7) + '"/></sheetView></sheetViews><sheetFormatPr defaultRowHeight="22"/><cols>' + columns + '</cols><sheetData>' + sheetRows + '</sheetData><autoFilter ref="A' + (headerIndex + 6) + ':' + lastColumn + (lastRow + 5) + '"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.5" header="0.2" footer="0.2"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/></worksheet>';
   const files = [
-    { path: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
+    { path: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/xl/drawings/drawing1.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>' },
     { path: "_rels/.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
     { path: "xl/workbook.xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="' + xmlEscape(safeSheet) + '" sheetId="1" r:id="rId1"/></sheets></workbook>' },
     { path: "xl/_rels/workbook.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
     { path: "xl/worksheets/sheet1.xml", content: sheet },
+    { path: "xl/worksheets/_rels/sheet1.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>' },
+    { path: "xl/drawings/drawing1.xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:twoCellAnchor editAs="oneCell"><xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>0</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>4</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="1" name="De VERVE logo"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>' },
+    { path: "xl/drawings/_rels/drawing1.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/de-verve-logo.png"/></Relationships>' },
     { path: "xl/styles.xml", content: styles },
   ];
+  if (logoPng) files.push({ path: "xl/media/de-verve-logo.png", content: logoPng });
+  else {
+    const relIndex = files.findIndex(file => file.path === "xl/worksheets/_rels/sheet1.xml.rels");
+    const drawIndex = files.findIndex(file => file.path === "xl/drawings/drawing1.xml");
+    const drawRelsIndex = files.findIndex(file => file.path === "xl/drawings/_rels/drawing1.xml.rels");
+    for (const index of [relIndex, drawIndex, drawRelsIndex].filter(index => index >= 0).sort((a,b) => b-a)) files.splice(index, 1);
+    const sheetFile = files.find(file => file.path === "xl/worksheets/sheet1.xml");
+    if (sheetFile && typeof sheetFile.content === "string") sheetFile.content = sheetFile.content.replace('<drawing r:id="rId1"/>', "");
+  }
   downloadOfficeFile(filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipStore(files));
 }
 
