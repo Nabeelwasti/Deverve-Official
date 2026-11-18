@@ -23,7 +23,7 @@ function countSqlPlaceholders(sql) {
       }
       continue;
     }
-    if (char === "'" || char === '"' || char === "`") {
+    if (char === "'" || char === '"' || char === "\`") {
       quote = char;
       continue;
     }
@@ -52,7 +52,7 @@ function readBindArguments(text, openParen) {
       hasValue = true;
       continue;
     }
-    if (char === "'" || char === '"' || char === "`") {
+    if (char === "'" || char === '"' || char === "\`") {
       quote = char;
       hasValue = true;
       continue;
@@ -72,25 +72,25 @@ function readBindArguments(text, openParen) {
       commas += 1;
       continue;
     }
-    if (!/\\s/.test(char)) hasValue = true;
+    if (!/\s/.test(char)) hasValue = true;
   }
   return null;
 }
 
 const mismatches = [];
-const prepare = /\\.prepare\("((?:\\\\.|[^"\\\\])*)"\)/g;
+const prepare = /\.prepare\("((?:\\.|[^"\\])*)"\)/g;
 let match;
 while ((match = prepare.exec(source))) {
   let cursor = prepare.lastIndex;
-  while (/\\s/.test(source[cursor] || "")) cursor += 1;
+  while (/\s/.test(source[cursor] || "")) cursor += 1;
   if (!source.startsWith(".bind(", cursor)) continue;
   const openParen = cursor + ".bind(".length;
   const parsed = readBindArguments(source, openParen);
   if (!parsed) continue;
-  const sql = match[1].replace(/\\\\(["\\\\])/g, "$1");
+  const sql = match[1].replace(/\\(["\\])/g, "$1");
   const placeholders = countSqlPlaceholders(sql);
   if (placeholders !== parsed.count) {
-    const line = source.slice(0, match.index).split("\\n").length;
+    const line = source.slice(0, match.index).split("\n").length;
     mismatches.push({ line, placeholders, arguments: parsed.count, sql: sql.slice(0, 220) });
   }
   prepare.lastIndex = parsed.end + 1;
@@ -98,7 +98,7 @@ while ((match = prepare.exec(source))) {
 
 if (mismatches.length) {
   for (const mismatch of mismatches) {
-    console.error(`SQL bind mismatch at worker/index.ts:${mismatch.line}: ${mismatch.placeholders} placeholders, ${mismatch.arguments} arguments\\n${mismatch.sql}`);
+    console.error("SQL bind mismatch at worker/index.ts:" + mismatch.line + ": " + mismatch.placeholders + " placeholders, " + mismatch.arguments + " arguments\n" + mismatch.sql);
   }
   process.exitCode = 1;
 } else {
