@@ -310,3 +310,8 @@ The Worker audit identified a production schema mismatch in the owner email noti
 ### Additional live schema gap — migration 0028 — 18 Nov 2026
 
 Read-only production inspection confirms `enquiries.contact_type` is absent. The current Worker inserts this field for every website enquiry; the insert fails and the endpoint returns HTTP 503 when the column is missing. This is a live functional blocker, not just a future enhancement. Migration `0028_enquiry_contact_types.sql` must be applied first, followed by 0029, 0030, 0031 and 0033. The checked product colour, SEO, rental pricing, customer, AI-key, review and rental preview-token schema is present. Migration 0032's CNIC guards are already present and must remain untouched.
+
+
+### POS release compatibility — 18 Nov 2026
+
+Migration 0030 is critical for the current POS handler. The current Worker always inserts the receipt contact/consent columns in `pos_sales` and writes optional `pos_receipt_outbox` rows. The live schema has neither, so a matching Worker deployment before 0030 would break POS sale creation. Do not deploy until 0030 is applied and read-back verified.
