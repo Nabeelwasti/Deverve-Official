@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -62,6 +62,61 @@ test("queued contact enquiries are delivered to the configured owner email throu
   assert.equal(updates.length,2);
   assert.match(updates[0].sql,/SET status='processing'/);
   assert.match(updates[1].sql,/SET status='sent'/);
+});
+
+test("owner notification outbox uses matching bindings and reclaims stale processing leases", async () => {
+  const calls=[];
+  const batches=[];
+  const db={
+    prepare(sql){
+      let values=[];
+      const statement={
+        sql,
+        values,
+        bind(...next){values=next;statement.values=next;return statement;},
+        async first(){
+          if(sql.includes("FROM store_settings"))return null;
+          if(sql.includes("SELECT order_number FROM orders"))return {order_number:"DV-TEST-001"};
+          return null;
+        },
+        async all(){
+          calls.push({kind:"all",sql,values});
+          return {results:[{id:"notification-1",order_id:"order-1",rental_request_id:null,template_key:"owner_order_created",attempts:0,created_at:new Date().toISOString()}]};
+        },
+        async run(){
+          calls.push({kind:"run",sql,values});
+          return {success:true,meta:{changes:1}};
+        }
+      };
+      return statement;
+    },
+    async batch(statements){batches.push(statements);return [];}
+  };
+  const originalFetch=globalThis.fetch;
+  let sentRequest;
+  globalThis.fetch=async(input,init={})=>{
+    if(String(input)==="https://api.resend.com/emails"){
+      sentRequest={url:String(input),body:JSON.parse(String(init.body||"{}"))};
+      return new Response(JSON.stringify({id:"resend-owner-message-1"}),{status:200,headers:{"content-type":"application/json"}});
+    }
+    return originalFetch(input,init);
+  };
+  try{
+    await processNotificationOutbox({DB:db,RESEND_API_KEY:"test-resend-key",RESEND_FROM_EMAIL:"receipts@deverve.example",OWNER_NOTIFICATION_EMAIL:"owner@deverve.example"});
+  }finally{
+    globalThis.fetch=originalFetch;
+  }
+  const select=calls.find(call=>call.kind==="all");
+  const claim=calls.find(call=>call.kind==="run");
+  assert.equal(select.values.length,2,"queue SELECT must bind both due and stale-lease timestamps");
+  assert.match(select.sql,/status='queued' AND next_attempt_at<=\?/);
+  assert.match(select.sql,/status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=\?/);
+  assert.equal(claim.values.length,4,"lease claim must bind claim time, row id, due time and stale time");
+  assert.match(claim.sql,/processing_started_at=\?/);
+  assert.match(claim.sql,/status='processing'/);
+  assert.equal(sentRequest?.body.to[0],"owner@deverve.example");
+  assert.equal(batches.length,1);
+  assert.match(batches[0][0].sql,/processing_started_at=NULL/);
 });
 
 test("owner audit history searches beyond the first page and returns a stable page window", async () => {
