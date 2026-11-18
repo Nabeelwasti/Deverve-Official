@@ -769,8 +769,14 @@ export default function Admin() {
     const withDriverRate = vehicleForm.with_driver_daily_rate.trim() === "" ? null : Math.round(Number(vehicleForm.with_driver_daily_rate) * 100);
     if ((rate !== null && (!Number.isSafeInteger(rate) || rate < 0)) || (withDriverRate !== null && (!Number.isSafeInteger(withDriverRate) || withDriverRate < 0)) || (vehicleForm.status === "available" && (rate === null || withDriverRate === null))) { setMessage("Enter both self-drive and with-driver daily rates before making a vehicle available."); setBusy(false); return; }
     try {
-      await api(editingVehicleId ? `/api/admin/vehicles/${editingVehicleId}` : "/api/admin/vehicles", { method: editingVehicleId ? "PATCH" : "POST", body: JSON.stringify({ ...vehicleForm, seats: Number(vehicleForm.seats), daily_rate_paisa: rate, with_driver_daily_rate_paisa: withDriverRate }) });
-      await loadVehicles(); clearAdminFormDraft("admin-vehicle-editor"); setShowVehicleEditor(false); setMessage("Vehicle saved.");
+      if (editingVehicleId) {
+        await api(`/api/admin/vehicles/${editingVehicleId}`, { method: "PATCH", body: JSON.stringify({ ...vehicleForm, seats: Number(vehicleForm.seats), daily_rate_paisa: rate, with_driver_daily_rate_paisa: withDriverRate }) });
+        await loadVehicles(); clearAdminFormDraft("admin-vehicle-editor"); setShowVehicleEditor(false); setMessage("Vehicle saved.");
+      } else {
+        const created = await api<{vehicle_id:string}>("/api/admin/vehicles", { method: "POST", body: JSON.stringify({ ...vehicleForm, seats: Number(vehicleForm.seats), daily_rate_paisa: rate, with_driver_daily_rate_paisa: withDriverRate }) });
+        const newVehicle:Vehicle={id:created.vehicle_id,name:vehicleForm.name,vehicle_type:vehicleForm.vehicle_type,transmission:vehicleForm.transmission,seats:Number(vehicleForm.seats),fuel_type:vehicleForm.fuel_type,daily_rate_paisa:rate,with_driver_daily_rate_paisa:withDriverRate,status:vehicleForm.status,image_key:vehicleForm.image_key||null,description:vehicleForm.description};
+        await loadVehicles(); clearAdminFormDraft("admin-vehicle-editor"); setShowVehicleEditor(false); setVehicleGalleryTarget(newVehicle); setMessage("Vehicle saved. Add its photos now—up to 50 images can be attached to this vehicle.");
+      }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Vehicle could not be saved."); }
     finally { setBusy(false); }
   };
@@ -1168,7 +1174,7 @@ export default function Admin() {
           {mediaProduct.image_key && <button type="button" className="admin-danger-button" disabled={busy} onClick={() => void attachMedia(null)}>Clear cover image</button>}
         </section></div>}
         {variantProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-variant-editor" role="dialog" aria-modal="true" aria-labelledby="variant-editor-title">
-          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); setVariantEditTarget(null); }} aria-label="Close">×</button></div>
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT OPTIONS & INVENTORY</p><h2 id="variant-editor-title">{variantProduct.name}</h2><p className="admin-muted">Manage sizes, colours, SKUs and recorded stock movements. {variants.length} variants · {variants.reduce((sum,item)=>sum+item.stock_on_hand,0).toLocaleString("en-PK")} total physical units · {variants.reduce((sum,item)=>sum+item.available_quantity,0).toLocaleString("en-PK")} available.</p></div><button type="button" className="admin-close" onClick={() => { setVariantProduct(null); setStockTarget(null); setMovementTarget(null); setVariantEditTarget(null); }} aria-label="Close">×</button></div>
           <div className="admin-variant-list">{variants.length === 0 ? <div className="admin-empty"><strong>No variants yet</strong><p>Add a size, colour or SKU option to begin tracking stock.</p></div> : variants.map((variant) => <article className="admin-variant-row" key={variant.id}>
             <div><strong>{variant.sku || "No SKU"}</strong><span>{[variant.size, variant.color].filter(Boolean).join(" · ") || "General option"}</span><small>{variant.is_active ? "Active" : "Inactive"}</small></div>
             <div className="admin-variant-stock"><strong>{variant.available_quantity}</strong><span>available</span><small>{variant.reserved_quantity} reserved · {variant.stock_on_hand} physical</small></div>
