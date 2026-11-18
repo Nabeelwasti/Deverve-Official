@@ -65,7 +65,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner"}:
   finally{if(mounted.current)setStarting(false);}
  };
  return <div className="barcode-camera-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
-  <section className="barcode-camera-modal" role="dialog" aria-modal="true" aria-label={title === "POS scanner" ? "Scan product barcode" : "Scan product tag or QR code"} aria-labelledby="barcode-camera-title">
+  <section className="barcode-camera-modal" role="dialog" aria-modal="true" aria-label={title === "POS scanner" ? "Scan product barcode" : "Scan product tag or QR code"}>
    <header><div><p className="admin-eyebrow">DE VERVE · {title.toUpperCase()}</p><h3 id="barcode-camera-title">Scan barcode or QR code</h3></div><button type="button" className="admin-close" aria-label="Close camera scanner" onClick={onClose}>×</button></header>
    <div className="barcode-camera-stage"><video ref={video} autoPlay muted playsInline className={cameraActive?"is-active":"is-idle"} aria-hidden={!cameraActive}/>{!cameraActive&&<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
    {error&&<p className="admin-error" role="alert">{error}</p>}
