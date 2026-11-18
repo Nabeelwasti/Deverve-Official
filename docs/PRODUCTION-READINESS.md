@@ -313,3 +313,39 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 - Before a later release: export and verify D1 backup; reconcile migration ledger; stage migrations `0030` and `0031` in an isolated copy; test all Worker/browser paths; obtain owner/provider approvals; deploy only after the owner explicitly says **“deploy now”**; then run the live smoke and restore/transaction acceptance plan.
 
 **Verdict:** source CI is passing, but the service is **not certified production-ready for unrestricted commerce**. External integrations, backup/recovery, migration release, owner data, legal approval and live acceptance are real blockers—not tasks that can responsibly be marked complete from source code alone.
+
+
+---
+
+## Production schema reconciliation — read-only audit, 18 November 2026
+
+**Live database:** `deverve-production` (`355da876-17c4-4762-a59d-bb85f2e4551b`). The following checks used read-only D1 metadata and SELECT/PRAGMA queries only. No production data, schema, secrets, R2 objects, or deployments were changed.
+
+### Confirmed findings
+
+- Production contains the existing commerce, customer, rental, POS, inventory, finance, CMS and audit tables.
+- `rental_documents` still has the two previously recorded evidence rows; the D1 CNIC protection triggers `trg_rental_documents_no_delete` and `trg_rental_documents_no_update` are present.
+- `pos_sales` currently has its original POS columns only. It does **not** contain `customer_email`, `email_receipt_requested`, or `whatsapp_receipt_consent`.
+- Production does **not** contain `pos_receipt_outbox`.
+- Production does **not** contain `enquiry_email_queue`.
+- Production has no migration-ledger table. Migration state must be established by direct schema inspection, not inferred from a missing ledger or old tracker notes.
+- These observations establish that migrations `0029_enquiry_email_queue.sql`, `0030_pos_receipt_delivery.sql`, and `0031_enquiry_email_queue_lease_index.sql` are not fully applied. Migration 0031 depends on the queue created by 0029; applying 0031 alone is invalid.
+
+### Required additive release sequence
+
+1. Take a fresh D1 export and verify that the encrypted archive is stored outside the Cloudflare account. Keep a separate recovery copy. Do not use a D1 export as a substitute for R2 evidence backup.
+2. Re-check the live schema immediately before release to ensure the three migrations have not already been applied by another operator.
+3. Apply `0029` first. Verify `enquiry_email_queue` and `idx_enquiry_email_queue_due`.
+4. Apply `0030` second. Verify the three `pos_sales` columns and `pos_receipt_outbox` plus `idx_pos_receipt_outbox_due`.
+5. Apply `0031` third. Verify `idx_enquiry_email_queue_lease`.
+6. Confirm the two CNIC protection triggers still exist and run only a harmless rejected-operation test against a disposable test record in a non-production database. Never probe by modifying a real CNIC record.
+7. Only after schema verification, green CI on the exact release SHA, confirmed backup, owner acceptance of the provider-dependent limitations, and the final deployment authorization should the Pages release be deployed.
+8. Immediately after deployment, run the production smoke workflow and targeted enquiry/POS/admin/rental checks. If any critical check fails, stop new transactions and follow the documented rollback plan; do not reverse migrations by deleting business data.
+
+### Feature impact while migrations are pending
+
+- Enquiry creation and POS receipt code in the current source expects these queue/table/column definitions. The provider processors fail closed when queue reads cannot run, but write paths that enqueue messages must be validated against the schema before deployment.
+- Do not claim website enquiry email or POS email/WhatsApp receipt delivery is production-ready until the schema is present, provider configuration is verified, and an opted-in end-to-end delivery test succeeds.
+- The migration files are additive. The existing records are not to be rewritten or deleted by this sequence.
+
+**Release status after this audit:** production schema reconciliation is now accurately documented. The three migrations remain unapplied; no deployment or production mutation has been performed.
