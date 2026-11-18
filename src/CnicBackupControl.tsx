@@ -37,6 +37,12 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
  };
  return <div className="admin-cnic-backup">
   <div><strong>Encrypted offline backup</strong><small>Creates a password-protected AES-256-GCM copy in this browser. No CNIC image or password is sent to another service. Keep the password separately from the backup file.</small></div>
+  <div className="admin-cnic-backup-destination">
+   <strong>Business backup destination · Google Drive</strong>
+   <small>Use the business-controlled Google account <b>deverve61@gmail.com</b>. Sign in to Drive, create a restricted folder named “De VERVE Secure Backups / CNIC Evidence”, then upload the encrypted .dvbackup file after it downloads. Do not email CNIC images or decrypted ZIP files.</small>
+   <a href="https://drive.google.com/drive/u/0/my-drive" target="_blank" rel="noopener noreferrer">Open Google Drive</a>
+   <small>Google Drive upload is currently a manual owner action. This website is not connected to the Google account and never receives its password. Keep the backup password in a separate password manager or sealed offline record, not in the same Drive folder.</small>
+  </div>
   <div className="admin-form-actions">
    <button type="button" className="admin-secondary" disabled={busy||!sides.length} onClick={()=>{setMessage("");setMode(mode==="backup"?null:"backup");setRestoreFile(null);}}>Create encrypted backup</button>
    <button type="button" className="admin-secondary" disabled={busy} onClick={()=>{setMessage("");fileInput.current?.click();}}>Decrypt & download</button>
