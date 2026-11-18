@@ -767,3 +767,42 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
     flex-basis: 36px;
   }
 }
+
+
+/* Installation guidance is a real cross-browser workflow, not an unsupported-browser error. */
+.install-help-panel {
+  width: min(520px, 100%);
+  border: 1px solid #dce6ef;
+}
+.install-help-panel .install-help-heading h2 {
+  max-width: 390px;
+  color: #173b63;
+  font-weight: 800;
+  letter-spacing: -.025em;
+}
+.install-help-steps {
+  display: grid;
+  gap: 10px;
+  padding-left: 24px;
+  margin: 18px 0;
+  color: #526a83;
+  counter-reset: install-step;
+}
+.install-help-steps li {
+  padding-left: 3px;
+  line-height: 1.6;
+}
+.install-help-steps li::marker {
+  color: #174f7d;
+  font-weight: 800;
+}
+.install-help-panel .install-help-note {
+  margin: 14px 0 18px;
+  border: 1px solid #e0eaf3;
+  background: #f5f8fb;
+  color: #5d7288;
+}
+.install-app:disabled {
+  opacity: .65;
+  cursor: progress;
+}
