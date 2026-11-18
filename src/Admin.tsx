@@ -241,6 +241,10 @@ export default function Admin() {
   const [cropFiles, setCropFiles] = useState<File[] | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
+  const [bulkSizes, setBulkSizes] = useState("S, M, L, XL");
+  const [bulkColors, setBulkColors] = useState("Black, White");
+  const [bulkRows, setBulkRows] = useState<Array<{ size: string; color: string; initial_stock: string; reorder_level: string; cost_price: string }>>([]);
+
   const [defaultCostPrice, setDefaultCostPrice] = useState("0");
   const [variantEditTarget, setVariantEditTarget] = useState<Variant | null>(null);
   const [variantEditForm, setVariantEditForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5" });
@@ -583,6 +587,54 @@ export default function Admin() {
       setMovementTarget(variant); setMovements(result.movements);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Stock history could not be loaded."); }
     finally { setBusy(false); }
+  };
+
+  const generateVariantMatrix = () => {
+    const sizes = [...new Set(bulkSizes.split(/[,;\\n]+/).map(value => value.trim()).filter(Boolean))];
+    const colors = [...new Set(bulkColors.split(/[,;\\n]+/).map(value => value.trim()).filter(Boolean))];
+    if (!sizes.length || !colors.length) { setMessage("Enter at least one size and one colour to build the stock matrix."); return; }
+    if (sizes.length * colors.length > 100) { setMessage("A single product matrix is limited to 100 size-and-colour combinations. Split larger assortments into batches."); return; }
+    const existing = new Set(variants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
+    const rows = sizes.flatMap(size => colors.map(color => ({ size, color, initial_stock: "0", reorder_level: "5", cost_price: variantForm.cost_price || "0" })))
+      .filter(row => !existing.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
+    setBulkRows(rows);
+    setMessage(rows.length ? rows.length + " new combinations prepared. Set the opening quantity for each size and colour before saving." : "All requested size-and-colour combinations already exist for this product.");
+  };
+  const updateBulkVariant = (index: number, key: "initial_stock" | "reorder_level" | "cost_price", value: string) => {
+    setBulkRows(current => current.map((row, rowIndex) => rowIndex === index ? { ...row, [key]: value } : row));
+  };
+  const saveVariantMatrix = async () => {
+    if (!variantProduct || !bulkRows.length) return;
+    if (bulkRows.some(row => !Number.isSafeInteger(Number(row.initial_stock)) || Number(row.initial_stock) < 0 || Number(row.initial_stock) > 1000000 || !Number.isSafeInteger(Number(row.reorder_level)) || Number(row.reorder_level) < 0 || Number(row.reorder_level) > 1000000 || !Number.isFinite(Number(row.cost_price)) || Number(row.cost_price) < 0)) {
+      setMessage("Check every quantity, reorder level and purchase cost. Quantities must be whole numbers and costs cannot be negative."); return;
+    }
+    setBusy(true); setMessage("");
+    let created = 0;
+    const failures: string[] = [];
+    try {
+      for (const row of bulkRows) {
+        try {
+          await api(`/api/admin/products/${variantProduct.id}/variants`, {
+            method: "POST",
+            body: JSON.stringify({
+              size: row.size, color: row.color, initial_stock: Number(row.initial_stock),
+              reorder_level: Number(row.reorder_level),
+              ...(["owner", "manager"].includes(admin?.role || "") ? { cost_price_paisa: Math.round(Number(row.cost_price) * 100) } : {})
+            })
+          });
+          created++;
+        } catch (error) {
+          failures.push(row.size + " / " + row.color + ": " + (error instanceof Error ? error.message : "Could not save"));
+        }
+      }
+      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
+      setVariants(result.variants);
+      await loadProducts();
+      if (!failures.length) { setBulkRows([]); setMessage("Successfully created all " + created + " variants. Total opening stock: " + bulkRows.reduce((sum, row) => sum + Number(row.initial_stock), 0) + " units."); }
+      else setMessage(created + " of " + bulkRows.length + " variants saved. " + failures.slice(0, 4).join(" · ") + (failures.length > 4 ? " · +" + (failures.length - 4) + " more" : ""));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The stock matrix could not be refreshed.");
+    } finally { setBusy(false); }
   };
 
   const createVariant = async (event: FormEvent<HTMLFormElement>) => {
@@ -1219,6 +1271,16 @@ export default function Admin() {
           </form>}
           {movementTarget && <section className="admin-movement-history"><div className="admin-panel-heading"><div><h3>Stock history</h3><p className="admin-muted">{movementTarget.sku || [movementTarget.size, movementTarget.color].filter(Boolean).join(" / ")}</p></div><button type="button" className="admin-secondary" onClick={() => setMovementTarget(null)}>Close history</button></div>
             {movements.length === 0 ? <p className="admin-muted">No stock movements recorded.</p> : <div className="admin-movement-list">{movements.map((movement) => <article key={movement.id}><div><strong>{movement.movement_type.replaceAll("_", " ")}</strong><span>{movement.note}</span><small>{movement.reference_type}{movement.reference_id ? ` · ${movement.reference_id}` : ""}</small></div><b className={movement.quantity_delta < 0 ? "movement-negative" : "movement-positive"}>{movement.quantity_delta > 0 ? "+" : ""}{movement.quantity_delta}</b><time dateTime={movement.created_at}>{new Date(movement.created_at).toLocaleString()}</time></article>)}</div>}
+          </section>}
+          {["owner", "manager", "catalogue"].includes(admin.role) && <section className="admin-panel admin-variant-matrix">
+            <div className="admin-panel-heading"><div><h3>Bulk size & colour stock matrix</h3><p className="admin-muted">Create the full assortment together, then enter the exact opening quantity for every size-and-colour combination.</p></div><span className="admin-muted">{variants.reduce((sum, item) => sum + item.stock_on_hand, 0).toLocaleString()} units currently in stock</span></div>
+            <div className="admin-variant-fields">
+              <label>Available sizes <small>Separate values with commas</small><input value={bulkSizes} onChange={event => setBulkSizes(event.target.value)} placeholder="S, M, L, XL, 30, 32, 34" /></label>
+              <label>Available colours <small>Separate values with commas</small><input list="deverve-colour-options" value={bulkColors} onChange={event => setBulkColors(event.target.value)} placeholder="Black, Navy, Stone" /></label>
+            </div>
+            <div className="admin-row-actions"><button type="button" className="admin-secondary" disabled={busy} onClick={generateVariantMatrix}>Generate combinations</button>{bulkRows.length>0&&<span className="admin-muted">{bulkRows.length} new combinations · {bulkRows.reduce((sum,row)=>sum+Number(row.initial_stock||0),0).toLocaleString()} opening units</span>}</div>
+            {bulkRows.length>0&&<div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Size</th><th>Colour</th><th>Opening qty</th><th>Reorder at</th>{["owner","manager"].includes(admin.role)&&<th>Cost (PKR)</th>}</tr></thead><tbody>{bulkRows.map((row,index)=><tr key={row.size+"::"+row.color}><td><strong>{row.size}</strong></td><td>{row.color}</td><td><input aria-label={"Opening quantity "+row.size+" "+row.color} type="number" min="0" max="1000000" step="1" value={row.initial_stock} onChange={event=>updateBulkVariant(index,"initial_stock",event.target.value)} /></td><td><input aria-label={"Reorder level "+row.size+" "+row.color} type="number" min="0" max="1000000" step="1" value={row.reorder_level} onChange={event=>updateBulkVariant(index,"reorder_level",event.target.value)} /></td>{["owner","manager"].includes(admin.role)&&<td><input aria-label={"Purchase cost "+row.size+" "+row.color} type="number" min="0" step="0.01" value={row.cost_price} onChange={event=>updateBulkVariant(index,"cost_price",event.target.value)} /></td>}</tr>)}</tbody><tfoot><tr><th colSpan={2}>Total opening stock</th><th>{bulkRows.reduce((sum,row)=>sum+Number(row.initial_stock||0),0).toLocaleString()}</th><th colSpan={["owner","manager"].includes(admin.role)?2:1}></th></tr></tfoot></table></div>}
+            {bulkRows.length>0&&<div className="admin-row-actions"><button type="button" className="admin-primary" disabled={busy} onClick={()=>void saveVariantMatrix()}>{busy?"Saving variants…":"Save all "+bulkRows.length+" variants"}</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>setBulkRows([])}>Clear matrix</button></div>}
           </section>}
           {["owner", "manager", "catalogue"].includes(admin.role) && <form className="admin-form admin-variant-form" onSubmit={createVariant}>
             <div className="admin-panel-heading"><div><h3>Add variant</h3><p className="admin-muted">One row per size and colour. Quantity and purchase cost are tracked separately for every combination.</p></div><button type="button" className="admin-secondary" disabled={!variants.length||busy} onClick={()=>void openMediaLibrary(variantProduct)}>Manage colour photos</button></div><p className="admin-muted admin-full">Add each exact size + colour combination separately. The opening quantity is the stock for this specific combination. Colour photos can be uploaded in batches and assigned to their matching colour.</p><div className="admin-variant-fields">
