@@ -40,7 +40,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 ### Admin and business operations
 - Owner bootstrap/login, hashed server-side sessions, login throttling, role-based staff invitations and full-history audit search with server-side filtering and pagination.
 - Owner-only staff creation and permission changes; managers cannot grant themselves owner privileges.
-- Product, variant, stock, inventory movement, media and vehicle management. Inventory, POS, expenses, customer order invoices, delivery slips, rental request summaries and wholesale quotations support branded XLSX/DOCX, CSV, JPG and browser print-to-PDF exports where shown in the relevant workspace.
+- Product, variant, stock, inventory movement, media and vehicle management. Inventory, POS, expenses, customer order invoices, delivery slips, rental request summaries and wholesale quotations support branded XLSX/DOCX, CSV, JPG and browser print-to-PDF exports where shown in the relevant workspace. Admin → Inventory can also generate printable Code 128 labels from each variant's saved barcode, falling back to its SKU; POS lookup matches either value.
 - Orders, delivery quotations, wholesale, rental requests, customer CRM, enquiries and follow-up inbox.
 - Block-based CMS workspace for pages, sections, navigation, draft/publish/archive, revision snapshots and audit events.
 - Product SEO title/description, canonical and Open Graph metadata, Product JSON-LD, dedicated product routes and dynamic sitemap.
