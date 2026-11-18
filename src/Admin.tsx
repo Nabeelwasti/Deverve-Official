@@ -152,7 +152,7 @@ export default function Admin() {
   const [openAdminMenu, setOpenAdminMenu] = useState<"operations" | "sales" | "customers" | "administration" | null>(null);
   const adminNavRef = useRef<HTMLElement | null>(null);
   const [adminMenuPosition,setAdminMenuPosition] = useState<{top:number;left:number;width:number}|null>(null);
-  const [barcodeScanTarget,setBarcodeScanTarget] = useState<"variant"|null>(null);
+  const [barcodeScanTarget,setBarcodeScanTarget] = useState<"variant"|"product"|null>(null);
   const [pendingInventoryBarcode,setPendingInventoryBarcode] = useState(() => (new URLSearchParams(window.location.search).get("barcode") || "").trim().slice(0,2048));
   const navigateAdminScreen = (screen: string) => { setActiveAdminScreen(screen); setOpenAdminMenu(null); setAdminMenuPosition(null); const url = new URL(window.location.href); url.searchParams.set("section", screen); window.history.pushState({ section: screen }, "", url.pathname + url.search + url.hash); };
   const toggleAdminMenu = (menu:"operations"|"sales"|"customers"|"administration",event:MouseEvent<HTMLElement>) => { event.preventDefault(); if(openAdminMenu===menu){setOpenAdminMenu(null);setAdminMenuPosition(null);return;} const rect=event.currentTarget.getBoundingClientRect(); const width=Math.min(320,Math.max(260,window.innerWidth-24)); const left=Math.max(12,Math.min(rect.right+10,window.innerWidth-width-12)); const top=Math.max(12,Math.min(rect.top,window.innerHeight-220)); setAdminMenuPosition({top,left,width}); setOpenAdminMenu(menu); };
@@ -1199,6 +1199,7 @@ export default function Admin() {
         </section></div>}
         {showEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="product-editor-title"><div className="admin-panel-heading"><div><p className="admin-eyebrow">CATALOGUE MANAGEMENT</p><h2 id="product-editor-title">{editingId ? "Edit product" : "Add a product"}</h2></div><button type="button" className="admin-close" onClick={() => setShowEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" data-draft-key="admin-product-editor" onSubmit={saveProduct}>
+            {!editingId && <div className="admin-full admin-scan-import"><div><strong>Scan a product tag or supplier label</strong><p className="admin-muted">Scan a barcode or QR code to import readable product details. Plain barcodes are saved for the first variant after the product is created.</p></div><button type="button" className="admin-secondary admin-barcode-scan" onClick={() => setBarcodeScanTarget("product")}>Scan tag / QR</button>{pendingInventoryBarcode && <p className="admin-message" role="status">Scanned code ready for the first product variant: {pendingInventoryBarcode}</p>}</div>}
             <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => updateProductForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
             <label>URL slug<input required value={form.slug} onChange={(e) => updateProductForm({ ...form, slug: e.target.value })} /></label>
             <label>Category<input required minLength={2} maxLength={60} placeholder="e.g. Hoodies" value={form.category} onChange={(e) => updateProductForm({ ...form, category: e.target.value })} /></label>
@@ -1210,6 +1211,20 @@ export default function Admin() {
             <label>Status<select value={form.status} onChange={(e) => updateProductForm({ ...form, status: e.target.value as typeof form.status })} disabled={admin.role === "catalogue"}><option value="draft">Save as draft</option><option value="published">Publish on website</option><option value="archived">Archived</option></select></label>
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save product"}</button></div>
           </form>
+          {barcodeScanTarget === "product" && <BarcodeScanner onDetected={raw => {
+            const value=raw.trim().slice(0,2048); let data:Record<string,unknown>|null=null;
+            try { const parsed=JSON.parse(value); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)) data=parsed as Record<string,unknown>; } catch {}
+            if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());if(!Object.keys(data).length)data={url:value};}catch{}}
+            const pick=(...keys:string[])=>{for(const key of keys){const found=Object.entries(data||{}).find(([name])=>name.toLowerCase()===key.toLowerCase())?.[1];if(typeof found==="string"&&found.trim())return found.trim().slice(0,4000);}return "";};
+            const name=pick("name","product_name","title","item"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
+            const gender=pick("audience","gender","department").toLowerCase();
+            const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender? "unisex":form.audience;
+            const code=pick("barcode","gtin","ean","upc","sku","code")||(!data?value:"");
+            updateProductForm({...form,...(name?{name,slug:editingId?form.slug:name.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}:{}),...(category?{category}:{}),...(description?{description}:{}),audience,...(pick("seo_title")?{seo_title:pick("seo_title")}:{}) ,...(pick("seo_description")?{seo_description:pick("seo_description")}:{})});
+            if(code)setPendingInventoryBarcode(code);
+            setBarcodeScanTarget(null);
+            setMessage(name||category||description?"Tag details imported. Review all fields before saving.":"Code captured. Save the product, then add its first variant to attach the barcode.");
+          }} onClose={()=>setBarcodeScanTarget(null)} />
         </section></div>}
         {message && <p className="admin-message" role="status">{message}</p>}
       </section>
