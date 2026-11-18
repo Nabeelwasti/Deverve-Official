@@ -224,6 +224,7 @@ function Storefront() {
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  useEffect(()=>{if(!products.length)return;setCart(current=>{let changed=false;const next=current.map(line=>{if(line.image_url)return line;const product=products.find(item=>item.id===line.product_id);if(!product)return line;const imageUrl=productGalleryImages(product,line.variant_id,line.color)[0]?.url||(product.image_key?"/media/"+product.image_key:undefined);if(!imageUrl)return line;changed=true;return {...line,image_url:imageUrl};});return changed?next:current;});},[products]);
   const filteredProducts=useMemo(()=>{const category=selectedCategory.trim().toLocaleLowerCase();if(!category)return products;if(["men","mens","men’s","men's fashion","mens fashion"].includes(category))return products.filter(product=>product.audience==="men"||product.audience==="unisex");if(["women","womens","women’s","women's fashion","womens fashion"].includes(category))return products.filter(product=>product.audience==="women"||product.audience==="unisex");if(["kids","kids' fashion","children"].includes(category))return products.filter(product=>product.audience==="kids");return products.filter(product=>product.category.trim().toLocaleLowerCase()===category);},[products,selectedCategory]);
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
