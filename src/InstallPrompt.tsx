@@ -26,10 +26,11 @@ function detectBrowser(): BrowserFamily {
   const ios = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   if (ios) return "ios";
   if (/android/i.test(ua)) {
-    if (/edg\//i.test(ua)) return "edge-android";
+    if (/edg(?:a|i|ios)?\//i.test(ua)) return "edge-android";
     if (/samsungbrowser/i.test(ua)) return "samsung";
     if (/firefox|fxios/i.test(ua)) return "firefox-android";
-    if (/chrome|crios/i.test(ua) && !/edg\//i.test(ua)) return "chrome-android";
+    if (/opr\//i.test(ua)) return "opera";
+    if (/chrome|crios/i.test(ua) && !/edg(?:a|i|ios)?\//i.test(ua)) return "chrome-android";
     return "android-other";
   }
   if (/macintosh|mac os x/i.test(ua) && /safari/i.test(ua) && !/chrome|chromium|crios|edg|opr/i.test(ua)) return "safari-mac";
