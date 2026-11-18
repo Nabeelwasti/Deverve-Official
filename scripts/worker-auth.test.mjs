@@ -2096,6 +2096,23 @@ test("Gemini skips an unavailable stable model and reports the model that actual
   }finally{globalThis.fetch=originalFetch;}
 });
 
+test("Gemini retries transient 503 responses on the next supported model", async () => {
+  const originalFetch=globalThis.fetch;
+  const attempted=[];
+  globalThis.fetch=async(input)=>{
+    const model=new URL(String(input)).pathname.match(/models\/([^:]+):generateContent$/)?.[1]||"";
+    attempted.push(model);
+    if(model==="gemini-3.8-flash")return new Response(JSON.stringify({error:{status:"UNAVAILABLE",message:"Temporary service unavailable"}}),{status:503,headers:{"content-type":"application/json"}});
+    return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"Fallback model answered"}]}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const result=await callGemini("AQ."+"A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
+    assert.equal(result.ok,true);
+    assert.equal(result.model,"gemini-3.7-flash");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.7-flash"]);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
   const db = new FakeD1();
   const vault = await handleRequest(request("/api/admin/ai/keys", "GET"), env(db));
