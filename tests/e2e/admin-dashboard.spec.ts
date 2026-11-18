@@ -140,6 +140,32 @@ test("rental vehicle assignment and internal note can be saved without changing 
   expect(recoveredPath).toBeTruthy();
   const recoveredZip = await readFile(recoveredPath!);
   expect(recoveredZip.subarray(0,4).toString("hex")).toBe("504b0304");
+
+  const wordPromise = page.waitForEvent("download");
+  await card.getByRole("button", { name: "Word", exact: true }).click();
+  const wordDownload = await wordPromise;
+  const wordPath = await wordDownload.path();
+  expect(wordPath).toBeTruthy();
+  const wordBytes = await readFile(wordPath!);
+  expect(wordBytes.includes(Buffer.from("word/media/de-verve-logo.png"))).toBe(true);
+  expect(wordBytes.includes(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))).toBe(true);
+
+  const excelPromise = page.waitForEvent("download");
+  await card.getByRole("button", { name: "Excel", exact: true }).click();
+  const excelDownload = await excelPromise;
+  const excelPath = await excelDownload.path();
+  expect(excelPath).toBeTruthy();
+  const excelBytes = await readFile(excelPath!);
+  expect(excelBytes.includes(Buffer.from("xl/media/de-verve-logo.png"))).toBe(true);
+  expect(excelBytes.includes(Buffer.from("xl/drawings/drawing1.xml"))).toBe(true);
+
+  const jpgPromise = page.waitForEvent("download");
+  await card.getByRole("button", { name: "JPG", exact: true }).click();
+  const jpgDownload = await jpgPromise;
+  const jpgPath = await jpgDownload.path();
+  expect(jpgPath).toBeTruthy();
+  const jpgBytes = await readFile(jpgPath!);
+  expect(jpgBytes.subarray(0, 2).toString("hex")).toBe("ffd8");
 });
 
 test("saved draft CMS pages can be previewed through the authenticated admin endpoint", async ({ page }) => {
