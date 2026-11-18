@@ -59,7 +59,7 @@ type StoreVariant = { id: string; sku: string | null; size: string; color: strin
 type StoreProductMedia = { id: string; media_type: "image" | "video"; mime_type: string; alt_text: string; caption: string; is_primary: number; color?: string; url: string };
 type StoreProduct = { id: string; slug: string; name: string; description: string; category: string; audience: string; retail_price_paisa: number | null; image_key: string | null; seo_title: string; seo_description: string; variants: StoreVariant[]; media: StoreProductMedia[] };
 type StoreVehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa?: number | null; image_key: string | null; image_url: string | null; description: string; media?: Array<{id:string;url:string;alt_text:string;position:number;is_primary:number}> };
-type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number };
+type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number; image_url?: string };
 
 function splitProductOptions(value: string) { return [...new Set(value.split(/[,;|\n]+/).map(item => item.trim()).filter(Boolean))]; }
 function productGalleryImages(product: StoreProduct, selectedVariantId?: string, selectedColor?: string) {
@@ -347,10 +347,10 @@ function Storefront() {
       || product.variants.find((item) => item.available_quantity > 0);
     if (!variant || product.retail_price_paisa === null) { setCheckoutMessage("Please choose an available size and colour before adding this item."); return; }
     const option=selectedVariantOptions[product.id];
-    const line:CartLine={variant_id:variant.id,product_id:product.id,name:product.name,sku:variant.sku,size:option?.size||splitProductOptions(variant.size)[0]||variant.size,color:option?.color||splitProductOptions(variant.color)[0]||variant.color,quantity:1,unit_price_paisa:product.retail_price_paisa,available_quantity:variant.available_quantity};
+    const selectedColor=option?.color||splitProductOptions(variant.color)[0]||variant.color;const imageUrl=productGalleryImages(product,variant.id,selectedColor)[0]?.url||(product.image_key?"/media/"+product.image_key:undefined);const line:CartLine={variant_id:variant.id,product_id:product.id,name:product.name,sku:variant.sku,size:option?.size||splitProductOptions(variant.size)[0]||variant.size,color:selectedColor,quantity:1,unit_price_paisa:product.retail_price_paisa,available_quantity:variant.available_quantity,image_url:imageUrl};
     setCart((current) => {
       const key=cartLineKey(line),existing=current.find((item) => cartLineKey(item)===key);
-      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, variant_id:line.variant_id, sku:line.sku, name:line.name, size:line.size, color:line.color, unit_price_paisa:line.unit_price_paisa, available_quantity:line.available_quantity, quantity: Math.min(item.quantity + 1, line.available_quantity,10) } : item);
+      if (existing) return current.map((item) => cartLineKey(item)===key ? { ...item, variant_id:line.variant_id, sku:line.sku, name:line.name, size:line.size, color:line.color, image_url:line.image_url, unit_price_paisa:line.unit_price_paisa, available_quantity:line.available_quantity, quantity: Math.min(item.quantity + 1, line.available_quantity,10) } : item);
       return [...current, line].slice(0,20);
     });
   };
@@ -602,7 +602,7 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">YOUR SHOPPING BAG</p><h2 id="cart-title">Your cart ({cart.reduce((sum,item)=>sum+item.quantity,0)})</h2><p>Review your selected products before continuing.</p></div><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}>×</button></div>
           {cart.length===0 ? <div className="cart-empty-state"><strong>Your cart is waiting for something you love.</strong><p>Explore the collection and add a product to get started.</p><button type="button" className="button button-primary" onClick={()=>{setCartOpen(false);navigate("fashion");}}>Continue shopping <span>↗</span></button></div> : <>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
-              <div className="cart-line-image" aria-hidden="true"><span>DV</span></div>
+              <div className="cart-line-image" aria-hidden="true">{item.image_url?<img src={item.image_url} alt="" loading="lazy"/>:<span>DV</span>}</div>
               <div className="cart-line-main"><strong>{item.name}</strong><small>{[item.size,item.color].filter(Boolean).join(" · ")||"Standard option"}{item.sku?" · "+item.sku:""}</small><b>{formatPrice(item.unit_price_paisa)}</b>
                 <div className="cart-line-controls"><button type="button" aria-label={"Decrease quantity of "+item.name} disabled={item.quantity<=1} onClick={()=>changeCartQuantity(item,item.quantity-1)}>−</button><output>{item.quantity}</output><button type="button" aria-label={"Increase quantity of "+item.name} disabled={item.quantity>=Math.min(10,item.available_quantity)} onClick={()=>changeCartQuantity(item,item.quantity+1)}>+</button><button type="button" className="cart-line-remove" onClick={()=>removeCartItem(item)}>Remove</button></div>
               </div><strong className="cart-line-total">{formatPrice(item.unit_price_paisa*item.quantity)}</strong>

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
 import BarcodeScanner from "./BarcodeScanner";
+import BrandLogo from "./BrandLogo";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
 import { adminRequest as api } from "./adminApi";
 import "./admin.css";
@@ -835,7 +836,7 @@ export default function Admin() {
   if (!admin) return (
     <main className="admin-screen">
       <section className="admin-auth-card">
-        <a className="admin-brand" href="/">De VERVE<span>.</span><small>BUSINESS CONTROL CENTRE</small></a>
+        <a className="admin-brand" href="/"><BrandLogo className="admin-brand-logo"/><small>BUSINESS CONTROL CENTRE</small></a>
         <p className="admin-eyebrow">SECURE ADMIN ACCESS</p>
         <h1>{setupMode ? "Create your owner account" : "Welcome back."}</h1>
         <p className="admin-muted">{setupMode ? "One-time setup for the first business owner." : "Sign in to manage your De VERVE business."}</p>

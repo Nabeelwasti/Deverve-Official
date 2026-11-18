@@ -3900,7 +3900,7 @@ export async function callGemini(apiKey:string,contents:Array<{role:"user"|"mode
     try{
       const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
       const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
-      if(!response.ok){const message=payload.error?.status||payload.error?.message||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};if(response.status===404||(response.status===400&&/model.{0,30}(not found|not supported|unknown|unavailable)/i.test(message)))continue;return last;}
+      if(!response.ok){const message=[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};if(response.status===404||(response.status===400&&/model.{0,30}(not found|not supported|unknown|unavailable)/i.test(message))||[500,502,503,504].includes(response.status))continue;return last;}
       const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
       if(text)return {ok:true,status:200,text,message:"",model};
       last={ok:false,status:502,text:"",message:"Gemini returned an empty response",model};
