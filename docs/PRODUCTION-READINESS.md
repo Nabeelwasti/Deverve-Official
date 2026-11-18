@@ -1,6 +1,6 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Source:** `main` at `4b892490d1b7a47f1f96a2b7d3460b9e615e41fa`. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
+**Source:** `main` at the latest documentation/code commit; see the GitHub main branch for the current SHA. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
 
 ## Live Cloudflare verification — read-only inspection plus one additive safety migration
 
@@ -13,7 +13,7 @@ The Cloudflare account was inspected directly on 18 November 2026. No Pages depl
 - **Private R2 bucket:** `deverve-media-private`, Standard storage, APAC location. Its managed public `r2.dev` domain is disabled and no custom public domains are configured.
 - **R2 CNIC retention:** Cloudflare read-back confirmed the enabled rule `deverve-rental-cnic-indefinite`, scoped to `rental-private/`, with condition `Indefinite`. Cloudflare documents that this protects both existing and future matching objects from overwrite and deletion, including lifecycle deletion. The only current lifecycle rule aborts incomplete multipart uploads after seven days; it does not expire completed CNIC objects.
 - **D1 recovery:** D1 Time Travel is enabled automatically. On the Workers Free plan the documented point-in-time recovery window is seven days. It is useful for accidental SQL changes, but it is not a long-term archive and does not back up R2 images.
-- **Backup gap:** no independent, separately controlled backup of CNIC image bytes has yet been verified. R2 Bucket Lock is strong retention protection, not a second copy and not protection against loss of the entire Cloudflare account or removal of the lock rule by an account administrator. A second encrypted copy under a separately controlled account/provider and a tested restore are still required.
+- **Offline backup control:** the admin rental workspace now offers per-rental encrypted `.dvbackup` export and restore. It uses browser-native PBKDF2-SHA-256 (310,000 iterations) and AES-256-GCM, includes an authenticated encryption tag, validates file types/sizes and verifies image lengths on restore. It sends no CNIC image to a third-party service and stores no backup password. The owner must choose a strong password, keep it separately, and save each backup outside the Cloudflare account (for example, an encrypted offline drive or an independently controlled storage account). This is a manual export, not a scheduled automatic backup. A second copy and a documented restore drill are operational requirements.
 
 ## Current security boundaries and next technical work
 
@@ -22,13 +22,13 @@ The Cloudflare account was inspected directly on 18 November 2026. No Pages depl
 3. Add an automated, scheduled D1 SQL export to a separate locked R2 backup bucket using Cloudflare Workflows, with checksums, retention manifests and restore drills. The backup must be encrypted and must not silently overwrite older snapshots. Workflows is available on Free, but its free execution, step and storage allowances are finite; check usage before enabling schedules.
 4. Add an independently encrypted off-account copy for CNIC originals. A second bucket in the same Cloudflare account is useful for operational recovery but is not an independent disaster-recovery copy.
 5. Keep production migrations additive and reviewed. Do not apply 0030/0031 until their release sequence is ready; do not deploy until the owner explicitly says **“deploy now”**.
-6. Add barcode generation to inventory variants and printed labels. The existing camera scanner uses the browser's native `BarcodeDetector` API; it is not a Cloudflare barcode service. Browser support varies, so retain USB scanner and manual SKU/barcode search fallbacks.
+6. Native Code 128 label generation is now available in Admin → Inventory. Labels encode the saved barcode, or the SKU when no barcode is set; POS lookup already matches both barcode and SKU. Camera scanning uses the browser's native `BarcodeDetector` API, with USB scanner and manual search fallbacks. It does not yet include a bundled open-source camera decoder for browsers without `BarcodeDetector`.
 7. Do not treat OCR as identity authentication. OCR can read fields and flag mismatches, but cannot prove a CNIC is genuine. A genuine check needs an authorized NADRA verification channel or trained staff process. Cloudflare does not provide a CNIC authenticity or face-recognition verification service.
 8. Any selfie/liveness or face comparison must be optional only where legally justified, based on explicit informed consent, minimized retention, strict staff access and a manual alternative. Do not create or retain face templates merely because an AI model can compare images.
 
 ## Document and report branding status
 
-The POS print invoice already displays the De VERVE logo. The browser-generated Word/Excel/JPG exports currently use text branding and branded table styling; they do not yet embed the actual logo image in every exported file. Treat universal logo embedding across invoices, bills, reports, quotations and all supported formats as outstanding work. Preview/print-to-PDF, Word, Excel, CSV and JPG availability varies by workspace; do not claim every document type supports every format until each export path is verified.
+The POS print invoice already displays the De VERVE logo. The POS invoice and barcode label print sheet use the actual De VERVE logo asset. Generic Word/Excel/JPG report exports retain a text-based De VERVE brand lockup; actual embedded logo imagery across every Office export remains outstanding. CSV is text-only by format. Browser print-to-PDF retains the branded source document where the workspace supplies it. Preview/print-to-PDF, Word, Excel, CSV and JPG availability varies by workspace; do not claim every document type supports every format until each export path is verified.
 
 ## Cloudflare free-tier options relevant to this application
 
@@ -40,7 +40,7 @@ The POS print invoice already displays the De VERVE logo. The browser-generated 
 - **AI Search OCR:** OCR is available, but it is a searchable-content ingestion feature, not a private CNIC verification service. Do not send identity documents into a search index.
 - **Workers AI / AI Gateway / Queues / Cron Triggers / Analytics Engine:** useful for selected automation, non-sensitive AI assistance, asynchronous processing and operational metrics. Never send CNIC images or biometric data to these services by default.
 
-**Release verdict:** CI is green and the live CNIC database triggers plus R2 indefinite retention are now verified. The application is still not fully release-certified: the independent CNIC image backup, scheduled D1 archive/restore, 0030/0031 release migrations, end-to-end private preview/download audit, logo embedding across all exports, owner/legal approvals and real-device acceptance remain open. No deployment has been performed.
+**Release verdict:** CI must pass on the current source commit before this change is considered verified. Live CNIC database triggers, indefinite R2 retention and object-to-record integrity are verified. A browser-native encrypted per-rental backup/restore tool and native Code 128 inventory labels have been added to source. Remaining gates include a tested owner-controlled off-account backup/restore drill, D1 long-term export, 0030/0031 release migrations, universal actual-logo embedding in Office exports, camera scanning on real Android devices, owner/legal approvals and live business data acceptance. No deployment has been performed.
 
 
 ---
