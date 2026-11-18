@@ -1,6 +1,6 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Latest source:** `e82a5d718c1f9ff578ae1734e0ed781c63395156`. The latest full code-validation run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) completed successfully: TypeScript/build, Worker authentication tests, D1 schema validation, security-header checks, production dependency audit and all **58 desktop/mobile browser tests** passed. The new regression checks verified the De VERVE PNG logo is embedded in DOCX/XLSX exports and that JPG exports download successfully. Documentation-only run [44325031957](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44325031957) is queued. This verifies source and browser behavior, not a live Cloudflare deployment.
+**Latest source:** `0fefa17d2ceeace9bcbef42339c58f386f392bc6`. The latest full code-validation run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) completed successfully: TypeScript/build, Worker authentication tests, D1 schema validation, security-header checks, production dependency audit and all **58 desktop/mobile browser tests** passed. The new regression checks verified the De VERVE PNG logo is embedded in DOCX/XLSX exports and that JPG exports download successfully. Documentation-only run [44325294013](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44325294013) is pending. This verifies source and browser behavior, not a live Cloudflare deployment.
 
 ## Connected business cloud storage
 
