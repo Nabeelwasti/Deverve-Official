@@ -732,3 +732,38 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .public-quote-downloads button:hover{background:#f1f5f9;border-color:#163a5f}
 @media(max-width:600px){.public-quote-downloads{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.public-quote-downloads button{width:100%}}
 @media print{.public-quote-header,.public-quote-actions,.public-quote-downloads,.public-quote-contact,.public-quote-footer{display:none!important}.public-quote-screen{background:#fff!important;padding:0!important}.public-quote-card{max-width:100%!important;margin:0!important;box-shadow:none!important;border:0!important}.public-quote-items,.public-quote-meta,.public-quote-total{break-inside:avoid;page-break-inside:avoid}}
+
+
+/* Keep the uploaded brand mark restrained in every header/footer placement. */
+.brand-logo-image {
+  display: block;
+  width: 40px;
+  height: 40px;
+  max-width: 40px;
+  max-height: 40px;
+  object-fit: contain;
+  flex: 0 0 40px;
+}
+.brand-lockup .brand-logo-image {
+  width: 40px;
+  height: 40px;
+  max-width: 40px;
+  max-height: 40px;
+  flex-basis: 40px;
+}
+.footer-wordmark .brand-logo-image {
+  width: 32px;
+  height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+  flex-basis: 32px;
+}
+@media (max-width: 480px) {
+  .brand-lockup .brand-logo-image {
+    width: 36px;
+    height: 36px;
+    max-width: 36px;
+    max-height: 36px;
+    flex-basis: 36px;
+  }
+}
