@@ -4030,7 +4030,15 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
    if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
   }
  }catch{/* Keep the built-in icon if public brand settings are temporarily unavailable. */}
- const icons=iconUrl.startsWith("/media/")?[{src:iconUrl,sizes:"192x192",type:iconType,purpose:"any"},{src:iconUrl,sizes:"512x512",type:iconType,purpose:"any maskable"}]:[{src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},{src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any maskable"}];
+ const icons:Array<{src:string;sizes:string;type:string;purpose:string}>=[
+  // Keep guaranteed, correctly sized square app icons as the installability baseline.
+  // A merchant-uploaded favicon is an optional brand icon, not a substitute for the
+  // 192px and 512px install icons (the uploaded asset's dimensions are not trusted).
+  {src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},
+  {src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"},
+  {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
+ ];
+ if(iconUrl.startsWith("/media/"))icons.push({src:iconUrl,sizes:"any",type:iconType,purpose:"any"});
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
