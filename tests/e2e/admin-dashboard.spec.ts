@@ -130,7 +130,7 @@ test("rental vehicle assignment and internal note can be saved without changing 
   await card.getByRole("button", {name:"Decrypt & recover files"}).click();
   const restoredDownload = await restoredDownloadPromise;
   await expect(card.getByRole("status")).toContainText("Backup decrypted and integrity-checked");
-  expect(restoredDownload.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic_(front|back)\.(jpg|png|webp)$/);
+  expect(restoredDownload.suggestedFilename()).toBe("DV-R-TEST-0001-recovered-evidence.zip");
 });
 
 test("saved draft CMS pages can be previewed through the authenticated admin endpoint", async ({ page }) => {
