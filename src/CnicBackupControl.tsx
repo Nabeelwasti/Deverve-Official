@@ -28,7 +28,7 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
   const password=window.prompt("Enter the password for this encrypted De VERVE backup.");
   if(password===null)return;
   setBusy(true);setMessage("");
-  try{const payload=await decryptEvidenceBackup(file,password);downloadRestoredEvidence(payload);setMessage("Backup decrypted and integrity-checked. Restored image files and a manifest have been downloaded.");}
+  try{const payload=await decryptEvidenceBackup(file,password);downloadRestoredEvidence(payload);setMessage("Backup decrypted and integrity-checked. Original images and a manifest have been downloaded to this device; this does not reinsert records into production D1/R2.");}
   catch(error){setMessage(error instanceof Error?error.message:"The backup could not be restored.");}
   finally{setBusy(false);if(fileInput.current)fileInput.current.value="";}
  };
@@ -36,7 +36,7 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
   <div><strong>Encrypted offline backup</strong><small>Creates a password-protected AES-256-GCM copy in this browser. No CNIC image is sent to another service.</small></div>
   <div className="admin-form-actions">
    <button type="button" className="admin-secondary" disabled={busy||!sides.length} onClick={()=>void createBackup()}>{busy?"Preparing…":"Create encrypted backup"}</button>
-   <button type="button" className="admin-secondary" disabled={busy} onClick={()=>fileInput.current?.click()}>Restore backup</button>
+   <button type="button" className="admin-secondary" disabled={busy} onClick={()=>fileInput.current?.click()}>Decrypt & download</button>
    <input ref={fileInput} type="file" accept=".dvbackup,application/json" hidden onChange={event=>{const file=event.target.files?.[0];if(file)void restoreBackup(file);}}/>
   </div>
   {message&&<small role="status" className="admin-muted">{message}</small>}
