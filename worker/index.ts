@@ -394,7 +394,14 @@ async function constantTimeTextEqual(left: string, right: string): Promise<boole
 }
 
 function requireSameOrigin(request: Request, url: URL): boolean {
-  return request.headers.get("origin") === url.origin && request.headers.get("sec-fetch-site") !== "cross-site";
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site") return false;
+  const origin = request.headers.get("origin");
+  if (origin) return origin === url.origin;
+  if (fetchSite === "same-origin") return true;
+  const referer = request.headers.get("referer");
+  if (!referer) return false;
+  try { return new URL(referer).origin === url.origin; } catch { return false; }
 }
 
 function cookieValue(request: Request, name: string): string {
@@ -1359,6 +1366,8 @@ async function adminVehicleMediaRoutes(request: Request, env: Env, url: URL): Pr
       ]);
       if (!vehicle) return error("Vehicle not found", 404);
       if (!media) return error("Image not found or unavailable", 404);
+      const alreadyAttached = await env.DB.prepare("SELECT media_asset_id FROM vehicle_media_assets WHERE vehicle_id = ? AND media_asset_id = ? LIMIT 1").bind(vehicleId, mediaId).first<{media_asset_id:string}>();
+      if (!alreadyAttached) { const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM vehicle_media_assets WHERE vehicle_id = ?").bind(vehicleId).first<{total:number}>(); if (Number(count?.total ?? 0) >= 50) return error("A rental vehicle can have up to 50 photos. Remove an existing photo before adding another.", 409); }
       const primary = makePrimary || !vehicle.image_key;
       const statements = [];
       if (primary) statements.push(env.DB.prepare("UPDATE vehicle_media_assets SET is_primary = 0 WHERE vehicle_id = ?").bind(vehicleId));
