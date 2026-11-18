@@ -6,9 +6,10 @@ const xmlEscape = (value: string): string => value.replace(/[\u0000-\u0008\u000B
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 async function loadBrandLogoPng(): Promise<Uint8Array | null> {
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><rect width="600" height="600" fill="#fff"/><circle cx="300" cy="300" r="276" fill="#06234f"/><circle cx="300" cy="300" r="252" fill="none" stroke="#fff" stroke-width="12"/><text x="300" y="330" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="100" font-weight="800" letter-spacing="-5">DeVERVE</text></svg>';
   try {
     const image = new Image();
-    image.src = "/brand/de-verve-logo.svg";
+    image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
     await image.decode();
     const canvas = document.createElement("canvas");
     canvas.width = 512;
@@ -19,8 +20,7 @@ async function loadBrandLogoPng(): Promise<Uint8Array | null> {
     context.fillRect(0, 0, 512, 512);
     context.drawImage(image, 0, 0, 512, 512);
     const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
-    if (!png) return null;
-    return new Uint8Array(await png.arrayBuffer());
+    return png ? new Uint8Array(await png.arrayBuffer()) : null;
   } catch {
     return null;
   }
