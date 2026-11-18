@@ -731,3 +731,41 @@
     font-size: 11px;
   }
 }
+
+
+/* Explicit one-workspace-at-a-time routing for every registered admin section. */
+.admin-dashboard[data-admin-screen="overview"] .admin-panel{display:none!important}
+.admin-dashboard[data-admin-screen="followups"] .admin-panel:not(#followups){display:none!important}
+.admin-dashboard[data-admin-screen="followups"] .admin-panel#followups{display:block!important}
+.admin-dashboard[data-admin-screen="products"] .admin-panel:not(#products){display:none!important}
+.admin-dashboard[data-admin-screen="products"] .admin-panel#products{display:block!important}
+.admin-dashboard[data-admin-screen="inventory"] .admin-panel:not(#inventory){display:none!important}
+.admin-dashboard[data-admin-screen="inventory"] .admin-panel#inventory{display:block!important}
+.admin-dashboard[data-admin-screen="pos"] .admin-panel:not(#pos){display:none!important}
+.admin-dashboard[data-admin-screen="pos"] .admin-panel#pos{display:block!important}
+.admin-dashboard[data-admin-screen="vehicles"] .admin-panel:not(#vehicles){display:none!important}
+.admin-dashboard[data-admin-screen="vehicles"] .admin-panel#vehicles{display:block!important}
+.admin-dashboard[data-admin-screen="rentals"] .admin-panel:not(#rentals){display:none!important}
+.admin-dashboard[data-admin-screen="rentals"] .admin-panel#rentals{display:block!important}
+.admin-dashboard[data-admin-screen="orders"] .admin-panel:not(#orders){display:none!important}
+.admin-dashboard[data-admin-screen="orders"] .admin-panel#orders{display:block!important}
+.admin-dashboard[data-admin-screen="exchanges"] .admin-panel:not(#exchanges){display:none!important}
+.admin-dashboard[data-admin-screen="exchanges"] .admin-panel#exchanges{display:block!important}
+.admin-dashboard[data-admin-screen="returns"] .admin-panel:not(#returns){display:none!important}
+.admin-dashboard[data-admin-screen="returns"] .admin-panel#returns{display:block!important}
+.admin-dashboard[data-admin-screen="wholesale"] .admin-panel:not(#wholesale){display:none!important}
+.admin-dashboard[data-admin-screen="wholesale"] .admin-panel#wholesale{display:block!important}
+.admin-dashboard[data-admin-screen="product-reviews"] .admin-panel:not(#product-reviews){display:none!important}
+.admin-dashboard[data-admin-screen="product-reviews"] .admin-panel#product-reviews{display:block!important}
+.admin-dashboard[data-admin-screen="customers"] .admin-panel:not(#customers){display:none!important}
+.admin-dashboard[data-admin-screen="customers"] .admin-panel#customers{display:block!important}
+.admin-dashboard[data-admin-screen="enquiries"] .admin-panel:not(#enquiries){display:none!important}
+.admin-dashboard[data-admin-screen="enquiries"] .admin-panel#enquiries{display:block!important}
+.admin-dashboard[data-admin-screen="staff"] .admin-panel:not(#staff){display:none!important}
+.admin-dashboard[data-admin-screen="staff"] .admin-panel#staff{display:block!important}
+.admin-dashboard[data-admin-screen="settings"] .admin-panel:not(#settings){display:none!important}
+.admin-dashboard[data-admin-screen="settings"] .admin-panel#settings{display:block!important}
+.admin-dashboard[data-admin-screen="audit"] .admin-panel:not(#audit){display:none!important}
+.admin-dashboard[data-admin-screen="audit"] .admin-panel#audit{display:block!important}
+.admin-dashboard[data-admin-screen="ai"] .admin-panel:not(#ai){display:none!important}
+.admin-dashboard[data-admin-screen="ai"] .admin-panel#ai{display:block!important}
