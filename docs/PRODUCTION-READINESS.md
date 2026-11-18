@@ -1,35 +1,47 @@
-# Current source review — 18 November 2026
+# Current source and production data-protection review — 18 November 2026
 
-**Source state:** GitHub main contains additional receipt, audit-search, contact-email queue and Office-export changes. Latest source commit at this review: `de877981554ad52ee8929330ff6b76828df1831b`. CI run #838 passed all workflow stages, including build, production dependency audit, Worker authentication tests, D1 schema checks and browser E2E. These changes have not been deployed to Cloudflare. Do not treat the older release verdict below as the state of the current source.
+**Source:** `main` at `4b892490d1b7a47f1f96a2b7d3460b9e615e41fa`. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
 
-## Changes added after the previous verified CI run
+## Live Cloudflare verification — read-only inspection plus one additive safety migration
 
-- The Pages API wrapper now passes its execution context to mutating Worker requests, allowing queued contact-form email delivery to run in the background. A Resend delivery test covers owner notification dispatch.
-- Owner audit history now searches the full D1 audit log with server-side filtering and paginated results instead of filtering only the latest 100 records in the browser.
-- POS email invoice copies are queued transactionally when a customer email address is entered. WhatsApp receipts use a Meta Utility template and are queued only after the cashier records the customer's opt-in. The outbox has bounded retries and stale-claim recovery.
-- POS invoices, sales history, expense registers, customer order invoices, delivery slips, wholesale quotations and POS/inventory reports now expose branded XLSX/DOCX, CSV, JPG and print-to-PDF exports where supported. Office files are generated locally in the browser without sending business data to a third-party conversion service.
-- POS sales history now displays per-channel receipt delivery state. Authorised staff can retry a failed email or WhatsApp receipt; the retry is consent-checked and audit-logged.
-- New D1 migrations 0030_pos_receipt_delivery.sql, 0031_enquiry_email_queue_lease_index.sql and 0032_permanent_cnic_evidence.sql add receipt delivery, queue indexing and permanent CNIC evidence guards. These migrations are committed but have not been applied to production D1.
-- POS receipt provider delivery is not active until the owner configures the provider secrets and, for WhatsApp, creates and obtains approval for the matching template. A customer-provided email address queues a transactional invoice copy; only WhatsApp delivery requires recorded opt-in.
-- The previous README statement describing 30/90-day CNIC deletion was incorrect. The current scheduled retention Worker expires temporary upload tokens but does not delete stored CNIC objects. Stored documents are retained indefinitely by the current code. Do not rely on the old 30/90-day wording.
+The Cloudflare account was inspected directly on 18 November 2026. No Pages deployment, Worker deployment, D1 export, data import, data deletion or R2 object deletion was performed.
 
-## Verification boundary
+- **Production D1:** `deverve-production`, production storage backend, APAC primary, 57 tables, approximately 1 MB reported database size. Cloudflare's metadata endpoint reports 57 tables; the earlier `num_tables=0` result was stale/inconsistent and must not be relied upon.
+- **Existing rental evidence:** one rental request and two `rental_documents` records were present before and after the safety change. No document IDs, customer identity details or object keys are copied into this report.
+- **CNIC database protection:** production initially had no CNIC protection triggers. The exact additive SQL from `migrations/0032_permanent_cnic_evidence.sql` was applied directly to production D1. Read-back confirmed both `trg_rental_documents_no_delete` and `trg_rental_documents_no_update`. A harmless no-op metadata update against an existing document was rejected by the new trigger, and the document count remained two. The existing migration also protects parent rental deletion through the child-row cascade trigger. No CNIC document was deleted or modified.
+- **Other pending migrations:** `0030_pos_receipt_delivery.sql` and `0031_enquiry_email_queue_lease_index.sql` remain unapplied to production. They must be applied in the planned release sequence before deploying the matching receipt/email code. Migration 0032 is the only one of these three applied directly as an isolated evidence-protection safeguard.
+- **Private R2 bucket:** `deverve-media-private`, Standard storage, APAC location. Its managed public `r2.dev` domain is disabled and no custom public domains are configured.
+- **R2 CNIC retention:** Cloudflare read-back confirmed the enabled rule `deverve-rental-cnic-indefinite`, scoped to `rental-private/`, with condition `Indefinite`. Cloudflare documents that this protects both existing and future matching objects from overwrite and deletion, including lifecycle deletion. The only current lifecycle rule aborts incomplete multipart uploads after seven days; it does not expire completed CNIC objects.
+- **D1 recovery:** D1 Time Travel is enabled automatically. On the Workers Free plan the documented point-in-time recovery window is seven days. It is useful for accidental SQL changes, but it is not a long-term archive and does not back up R2 images.
+- **Backup gap:** no independent, separately controlled backup of CNIC image bytes has yet been verified. R2 Bucket Lock is strong retention protection, not a second copy and not protection against loss of the entire Cloudflare account or removal of the lock rule by an account administrator. A second encrypted copy under a separately controlled account/provider and a tested restore are still required.
 
-- The previously successful CI run #771 applies to commit `a9c8d2a770710eb516302de68695f2a63a6a19e4`, not the additional commits listed above.
-- CI run #838 passed on the current source commit. The repeated failures in runs #801–#812 were traced to the enquiry email queue lease migration running before the table-creation migration; the migration sequence is corrected and the current D1 schema test passes.
-- No Cloudflare API or Wrangler deployment has been run for these changes. The live website remains on its previously deployed version until the owner explicitly authorizes deployment. The historical production snapshot below is not a live read-back for this source commit.
+## Current security boundaries and next technical work
 
-## Remaining release gates
+1. Keep CNIC originals in the private R2 bucket under `rental-private/`. Never place them in public media, public website paths, AI Search indexes, analytics, logs, GitHub, email attachments or public share links.
+2. Keep CNIC preview/download behind authenticated, role-checked server routes. Use short-lived, single-document access grants where direct R2 access is needed; do not make the bucket public. Audit every staff preview/download event without logging the CNIC number, image bytes or full object key.
+3. Add an automated, scheduled D1 SQL export to a separate locked R2 backup bucket using Cloudflare Workflows, with checksums, retention manifests and restore drills. The backup must be encrypted and must not silently overwrite older snapshots. Workflows is available on Free, but its free execution, step and storage allowances are finite; check usage before enabling schedules.
+4. Add an independently encrypted off-account copy for CNIC originals. A second bucket in the same Cloudflare account is useful for operational recovery but is not an independent disaster-recovery copy.
+5. Keep production migrations additive and reviewed. Do not apply 0030/0031 until their release sequence is ready; do not deploy until the owner explicitly says **“deploy now”**.
+6. Add barcode generation to inventory variants and printed labels. The existing camera scanner uses the browser's native `BarcodeDetector` API; it is not a Cloudflare barcode service. Browser support varies, so retain USB scanner and manual SKU/barcode search fallbacks.
+7. Do not treat OCR as identity authentication. OCR can read fields and flag mismatches, but cannot prove a CNIC is genuine. A genuine check needs an authorized NADRA verification channel or trained staff process. Cloudflare does not provide a CNIC authenticity or face-recognition verification service.
+8. Any selfie/liveness or face comparison must be optional only where legally justified, based on explicit informed consent, minimized retention, strict staff access and a manual alternative. Do not create or retain face templates merely because an AI model can compare images.
 
-1. Configure a verified Resend sender, API key and sender address, then verify contact-form owner alerts and POS customer receipt delivery with controlled test addresses.
-2. Configure Meta WhatsApp Cloud API credentials and phone-number ID, create/approve the exact Utility template, and test delivery to an opted-in test number.
-3. Apply D1 migrations 0030, 0031 and 0032 to production before deploying the matching Worker/frontend code. This must happen only after the owner explicitly authorizes deployment.
-4. Enable and verify indefinite R2 Bucket Lock for the rental-private/ prefix, add an independent encrypted offsite backup, and verify restore. CNIC evidence is permanent and must never be deleted.
-5. Complete owner-approved business policies, legal/privacy text, verified contact details, catalogue, variant stock/prices/photos, and vehicle fleet/rates/availability.
-6. Configure and verify real payment accounts and complete Safepay sandbox onboarding/transaction/webhook reconciliation before enabling gateway checkout.
-7. Complete real-device acceptance and post-deployment smoke tests only after an explicitly authorized deployment.
+## Document and report branding status
 
-**Release verdict:** not yet certified as production-ready. Source improvements are in progress; provider credentials, owner decisions, fresh CI and live acceptance remain required. Do not claim live delivery or production behavior for code that has not been deployed.
+The POS print invoice already displays the De VERVE logo. The browser-generated Word/Excel/JPG exports currently use text branding and branded table styling; they do not yet embed the actual logo image in every exported file. Treat universal logo embedding across invoices, bills, reports, quotations and all supported formats as outstanding work. Preview/print-to-PDF, Word, Excel, CSV and JPG availability varies by workspace; do not claim every document type supports every format until each export path is verified.
+
+## Cloudflare free-tier options relevant to this application
+
+- **R2:** the documented Free allowance is 10 GB-month Standard storage, 1 million Class A operations and 10 million Class B operations per month, with free internet egress. The allowance is shared across the account.
+- **D1:** Free limits include 500 MB per database, 5 GB aggregate storage and seven days of Time Travel recovery. Use indexes and monitor daily row-read/write quotas.
+- **Turnstile:** Free plan supports production use and unlimited challenge/verifications within the published plan, subject to widget/hostname limits. Keep server-side Siteverify mandatory for sensitive writes.
+- **Workers/WAF:** Free WAF features include custom rules and one rate-limiting rule; use the available controls without assuming paid managed rules or advanced bot detection.
+- **Workflows:** available on Free, with finite daily execution/step and persisted-state allowances. Suitable for retryable D1 exports and scheduled integrity checks when usage is monitored.
+- **AI Search OCR:** OCR is available, but it is a searchable-content ingestion feature, not a private CNIC verification service. Do not send identity documents into a search index.
+- **Workers AI / AI Gateway / Queues / Cron Triggers / Analytics Engine:** useful for selected automation, non-sensitive AI assistance, asynchronous processing and operational metrics. Never send CNIC images or biometric data to these services by default.
+
+**Release verdict:** CI is green and the live CNIC database triggers plus R2 indefinite retention are now verified. The application is still not fully release-certified: the independent CNIC image backup, scheduled D1 archive/restore, 0030/0031 release migrations, end-to-end private preview/download audit, logo embedding across all exports, owner/legal approvals and real-device acceptance remain open. No deployment has been performed.
+
 
 ---
 
