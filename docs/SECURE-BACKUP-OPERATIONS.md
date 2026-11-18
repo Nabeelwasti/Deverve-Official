@@ -46,6 +46,18 @@ My Drive/
 
 **Important:** the app currently creates one encrypted backup per rental, not one automated all-rentals archive. Repeat for each rental containing CNIC evidence. The Google Drive step is manual. ChatGPT's Google Drive connection is unavailable in this workspace because it is disabled by the workspace administrator; this does not prevent the owner from using Drive directly in a browser.
 
+### Business-wide file classification
+
+Use the same folder categories for matching business records:
+
+- **Always encrypt before cloud upload:** CNIC/identity documents, D1 exports, customer contact/order data, financial statements, payment evidence, staff/HR files, contracts containing personal information, and any archive containing these records.
+- **Restricted access even when not encrypted:** invoices, sales/POS reports, customer orders, quotations and operational reports. Share only with named staff who need them.
+- **May be stored as ordinary files when intended for public use:** approved product photography, public marketing creatives, published brand assets and public website copy. Check that no customer or staff information is visible.
+- Keep dated versions. Do not overwrite the last known-good backup. Maintain a register with file name, category, date, source, size, checksum, custodian and restore-test status. Never put passwords in the register.
+- Keep at least two independent copies: a restricted cloud archive and a separately encrypted offline copy. Two providers under the same login email are not independent account-security domains.
+
+The current website does not yet produce one complete all-business archive or upload every category automatically. Export records from their authorized workspaces, encrypt sensitive exports before upload, and keep public marketing assets separate. A full automated D1 + private R2 + business-media archive and tested restore pipeline remains a release requirement.
+
 ## 3. Password custody
 
 - Use a different random password for each backup or a formally managed business vault entry.
