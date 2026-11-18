@@ -7,7 +7,7 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
  const [password,setPassword]=useState(""),[confirmation,setConfirmation]=useState(""),[restorePassword,setRestorePassword]=useState("");
  const [restoreFile,setRestoreFile]=useState<File|null>(null);
  const fileInput=useRef<HTMLInputElement|null>(null);
- const reset=()=>{setPassword("");setConfirmation("");setRestorePassword("");setRestoreFile(null);setMode(null);};
+ const reset=()=>{setPassword("");setConfirmation("");setRestorePassword("");setRestoreFile(null);setMode(null);if(fileInput.current)fileInput.current.value="";};
  const createBackup=async(event:FormEvent<HTMLFormElement>)=>{
   event.preventDefault();
   if(password.length<12){setMessage("Use at least 12 characters for the backup password.");return;}
