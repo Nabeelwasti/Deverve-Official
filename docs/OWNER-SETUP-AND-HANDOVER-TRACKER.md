@@ -31,7 +31,7 @@ Do not mark a task complete just because a form, button, setting, or provider op
 | DNS / SSL | **[OWNER ACTION]** Verify DNS ownership and HTTPS after domain decision | Owner + developer: test apex, www, redirects, TLS and canonical host |
 | GitHub branch | **[VERIFIED IN REPO]** `main` is the production source branch | Keep changes reviewed and tested |
 | Deployment guard | **[VERIFIED IN REPO / OWNER RULE]** Do not deploy until “deploy now” | Every commit message must contain `[CF-Pages-Skip]`; do not call Cloudflare API/Wrangler to deploy |
-| Production migration state | **[VERIFIED LIVE, READ-ONLY]** 18 Nov audit confirms migrations 0029, 0030 and 0031 are all absent from production schema; 0032 CNIC protection triggers are present. No migration-ledger table exists. | Developer: back up, re-check schema, then apply 0029 → 0030 → 0031 → 0033 in order and verify each. Never run 0031 without 0029; 0033 adds the owner-notification delivery lease. Deploy only after green CI and release checks. |
+| Production migration state | **[VERIFIED LIVE, READ-ONLY]** 18 Nov audit confirms migrations 0028, 0029, 0030 and 0031 are absent from production schema; 0032 CNIC protection triggers are present; new migration 0033 is required for owner notification retry leases. No migration-ledger table exists. | Developer: back up, re-check schema, then apply 0028 → 0029 → 0030 → 0031 → 0033 in order and verify each. 0028 is required by the current enquiry handler; never run 0031 without 0029; 0033 adds the owner-notification delivery lease. Deploy only after green CI and release checks. |
 | Release acceptance | **[DEVELOPER ACTION]** CI passing is not equivalent to live acceptance | Run the documented smoke tests only after the owner authorizes deployment |
 
 **Important:** Do not run pending migrations against production, alter production data, or deploy matching code without a reviewed release sequence and a fresh backup. Never bypass CNIC immutability controls.
@@ -297,7 +297,7 @@ A read-only query of the live `deverve-production` D1 database found that the ea
 - Production has no migration-ledger table; migration state is checked from actual schema objects.
 - This was a read-only inspection. No production rows, schema, secrets, R2 objects or deployment were changed.
 
-**Release order:** fresh verified encrypted D1 export and independent copy → re-check live schema → apply 0029 → verify → apply 0030 → verify → apply 0031 → verify → apply 0033 → verify → verify CNIC guards remain present → deploy matching source → run production smoke and targeted business acceptance. D1 export does not include private R2 image bytes. CNIC originals remain permanent and must never be deleted, overwritten, renamed or expired.
+**Release order:** fresh verified encrypted D1 export and independent copy → re-check live schema → apply 0028 → verify → apply 0029 → verify → apply 0030 → verify → apply 0031 → verify → apply 0033 → verify → verify CNIC guards remain present → deploy matching source → run production smoke and targeted business acceptance. D1 export does not include private R2 image bytes. CNIC originals remain permanent and must never be deleted, overwritten, renamed or expired.
 
 **CI:** the current source checkpoint commit `d82bb53f861f9e37d7cd7f1cd9a8dcfe4a9a0fa5` passed GitHub Actions runs [#44342786822](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44342786822) and [#44342842399](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44342842399). This does not substitute for live provider tests or migration release.
 
@@ -305,3 +305,8 @@ A read-only query of the live `deverve-production` D1 database found that the ea
 ### Owner notification queue repair — 18 Nov 2026
 
 The Worker audit identified a production schema mismatch in the owner email notification processor. The code was using a missing `notification_outbox.processing_started_at` column and had an incorrect SQL binding count. The source has been repaired and a regression test plus schema assertion have been added. New migration `0033_notification_outbox_lease.sql` is required after 0029–0031. Production currently lacks this column and index; do not deploy the repaired Worker until 0033 is applied and verified. This migration is additive and preserves existing notification rows.
+
+
+### Additional live schema gap — migration 0028 — 18 Nov 2026
+
+Read-only production inspection confirms `enquiries.contact_type` is absent. The current Worker inserts this field for every website enquiry; the insert fails and the endpoint returns HTTP 503 when the column is missing. This is a live functional blocker, not just a future enhancement. Migration `0028_enquiry_contact_types.sql` must be applied first, followed by 0029, 0030, 0031 and 0033. The checked product colour, SEO, rental pricing, customer, AI-key, review and rental preview-token schema is present. Migration 0032's CNIC guards are already present and must remain untouched.
