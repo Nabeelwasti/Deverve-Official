@@ -1224,7 +1224,7 @@ export default function Admin() {
             if(code)setPendingInventoryBarcode(code);
             setBarcodeScanTarget(null);
             setMessage(name||category||description?"Tag details imported. Review all fields before saving.":"Code captured. Save the product, then add its first variant to attach the barcode.");
-          }} onClose={()=>setBarcodeScanTarget(null)} />
+          }} onClose={()=>setBarcodeScanTarget(null)} />}
         </section></div>}
         {message && <p className="admin-message" role="status">{message}</p>}
       </section>
