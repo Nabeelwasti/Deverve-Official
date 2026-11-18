@@ -1,5 +1,21 @@
 # Current source and production data-protection review — 18 November 2026
 
+## Latest production reconciliation — 18 November 2026
+
+**This section is the authoritative current status and supersedes conflicting migration, deployment, and dependency notes in the historical audit snapshots below.**
+
+- **Source:** `main` at `591756e583cfe8c3094138dd02517ae699c9f827` at the time of inspection.
+- **GitHub CI:** run [44365975059](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44365975059) completed successfully. TypeScript/build, Worker type-check and authentication tests, D1 schema validation, security-header checks, production dependency audit and all **64 browser tests** passed. The full dependency audit and production-only audit both reported zero vulnerabilities in this run.
+- **Cloudflare Pages:** project `deverve-official`, production branch `main`, build command `npm run build`, output `dist`. The GitHub integration had automatic deployments disabled. This was corrected by enabling `production_deployments_enabled=true` and `deployments_enabled=true`; preview deployments remain disabled. Normal commits to `main` now trigger production builds. No deployment was triggered by changing this setting alone.
+- **Latest deployment at inspection:** Cloudflare reports successful build and deploy stages for commit `591756e583cfe8c3094138dd02517ae699c9f827`, deployment ID `e1f1c7b8-063b-4fa6-8419-699c44250cc8`. That deployment was an ad-hoc/manual trigger, not a GitHub push deployment. The next normal commit to `main` is the verification of the automatic release path.
+- **Production D1:** read-only inspection returned 60 tables. Verified `enquiries.contact_type` (0028), `enquiry_email_queue` (0029), `pos_receipt_outbox` and its due index (0030), `idx_enquiry_email_queue_lease` (0031), the permanent CNIC triggers (0032), and `notification_outbox.processing_started_at` plus `idx_notification_outbox_lease` (0033). These live objects show the relevant 0028–0033 migration changes are present. There is no migration-ledger table; future reconciliation must inspect schema objects. No migration was applied during this audit.
+- **Permanent CNIC evidence:** D1 contains enabled `trg_rental_documents_no_delete` and `trg_rental_documents_no_update` guards. R2 bucket `deverve-media-private` has enabled lock rule `deverve-rental-cnic-indefinite`, prefix `rental-private/`, condition `Indefinite`. No CNIC records or objects were changed.
+- **Domain:** Cloudflare currently lists `deverve-official.pages.dev` as the project's Pages domain. No custom domain is configured in the project.
+- **Not yet accepted:** a real-origin customer/admin smoke test and business transaction acceptance still need to be run after the next normal GitHub-triggered release. Provider credentials/template approvals, verified product and vehicle catalogue data, owner-approved legal/business details, and an independent off-account backup/restore drill remain owner/operational tasks.
+
+**Data safety:** this audit made no changes to customer, order, rental, inventory, finance, or CNIC data and applied no D1 migrations.
+
+
 **Latest source:** `0fefa17d2ceeace9bcbef42339c58f386f392bc6`. The latest full code-validation run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) completed successfully: TypeScript/build, Worker authentication tests, D1 schema validation, security-header checks, production dependency audit and all **58 desktop/mobile browser tests** passed. The new regression checks verified the De VERVE PNG logo is embedded in DOCX/XLSX exports and that JPG exports download successfully. Documentation-only run [44325294013](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44325294013) is pending. This verifies source and browser behavior, not a live Cloudflare deployment.
 
 ## Connected business cloud storage
@@ -37,7 +53,7 @@
 - Vite's dev server must remain local and must not be exposed to the public internet. Production build output is static and does not run the Vite dev server.
 ## Release and deployment controls
 
-No Cloudflare Pages/Workers deployment, Cloudflare API mutation, production D1 migration, data import, data deletion or R2 object deletion was performed for the Google Drive workflow change. Every source commit continues to use `[CF-Pages-Skip]`; do not deploy until the owner explicitly says **“deploy now”**. Migrations `0030` and `0031` remain pending production application and must be applied in their reviewed release sequence before deploying matching application code. Migration `0032` remains the verified production CNIC immutability safeguard.
+No Cloudflare Pages/Workers deployment, Cloudflare API mutation, production D1 migration, data import, data deletion or R2 object deletion was performed for the Google Drive workflow change. Normal commits to `main` now trigger Cloudflare Pages production deployments; preview deployments remain disabled. The latest live D1 inspection confirms the relevant 0028–0033 schema objects are present, as detailed in the current reconciliation section above. Migration `0032` remains the verified production CNIC immutability safeguard.
 
 ---
 
@@ -308,7 +324,7 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 
 ### Safe next-release rule
 
-- Keep all changes on GitHub with `[CF-Pages-Skip]` in every commit message.
+- Use normal commit messages; automatic production deployment from `main` is enabled.
 - Do not call Cloudflare deployment APIs or Wrangler. Do not apply migrations, change secrets, import/delete data or alter R2 objects.
 - Before a later release: export and verify D1 backup; reconcile migration ledger; stage migrations `0030` and `0031` in an isolated copy; test all Worker/browser paths; obtain owner/provider approvals; deploy only after the owner explicitly says **“deploy now”**; then run the live smoke and restore/transaction acceptance plan.
 

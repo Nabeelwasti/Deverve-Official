@@ -163,4 +163,4 @@ Do not enable sign-in or advertise the buttons until all of these pass:
 11. Configure production provider IDs/secrets only after owner approval.
 12. Run the complete CI suite and real-origin production smoke test after the owner explicitly authorizes deployment.
 
-No live deployment, Cloudflare API mutation, D1 migration, customer data migration, or permission change is authorized by this plan. Continue to include [CF-Pages-Skip] in every GitHub commit message and wait for the owner's explicit **“deploy now”** instruction.
+This provider-integration plan does not authorize external account creation, provider-secret changes, customer data migration, or production data changes. Cloudflare Pages production deployments are configured to trigger automatically from normal commits to `main`; no deployment-suppression prefix is required.

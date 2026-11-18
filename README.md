@@ -12,8 +12,9 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Hosting: Cloudflare Pages (`deverve-official`)
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
-- Main branch contains source changes that are not yet live. The production site remains on its previous deployment until the owner explicitly says “deploy now”.
-- Pending database changes: migrations 0030 and 0031 remain unapplied to production D1. Migration 0032 (permanent CNIC evidence protection) was applied directly to production on 18 November 2026 and verified with a rejected metadata-update test. Do not deploy matching application code until migrations 0030/0031 are applied in the planned release sequence.
+- GitHub is connected to Cloudflare Pages. Normal commits pushed to `main` now trigger production deployments automatically; preview deployments are disabled to avoid unnecessary builds.
+- Latest verified source at this audit: `591756e583cfe8c3094138dd02517ae699c9f827`. Cloudflare reports that its production build and deploy stages succeeded for this commit. The previous deployment was manually triggered; automatic GitHub production deployment was disabled at that time and has now been enabled.
+- Live D1 schema reconciliation on 18 November 2026 confirms the required objects for migrations 0028–0033 are present: `enquiries.contact_type`, `enquiry_email_queue`, `pos_receipt_outbox`, `notification_outbox`, their lease/delivery indexes, and the permanent CNIC protection triggers. There is no migration-ledger table, so verify schema objects rather than relying on a ledger. Do not rerun already-present migrations.
 
 ## Implemented
 

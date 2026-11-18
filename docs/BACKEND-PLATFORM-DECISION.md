@@ -79,8 +79,8 @@ Only choose Supabase if the measured benefits justify the operational migration.
 This decision does not complete or replace:
 - Google Drive website OAuth, encrypted uploads, and verified restore.
 - Full business-wide D1 + private R2 + media backup and restore.
-- Production application of migrations 0030 and 0031 in the reviewed release sequence.
+- A verified real-origin production smoke test and owner-approved business acceptance after the next normal GitHub-triggered release.
 - CNIC recovery into a replacement environment; the current CNIC restore tool downloads and verifies files but does not reinsert them into D1/R2.
 - A full owner-approved production restore drill.
 
-No Cloudflare deployment, API mutation, migration, data import, or deletion is authorized by this document. Continue to use `[CF-Pages-Skip]` on every GitHub commit and wait for the owner's explicit **“deploy now”** instruction.
+This document does not authorize production data changes, database migrations, external provider setup, or deletion. Cloudflare Pages production deployments are now automatically triggered by normal commits to `main`; do not add a deployment-suppression prefix.

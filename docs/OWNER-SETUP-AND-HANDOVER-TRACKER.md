@@ -1,10 +1,10 @@
 # De VERVE Owner Setup & Handover Tracker
 
-**Last reviewed:** 18 November 2026  
+**Last reviewed:** 18 November 2026 (live Cloudflare/GitHub reconciliation)  
 **Repository:** `Nabeelwasti/Deverve-Official`  
 **Production site currently documented:** https://deverve-official.pages.dev/  
 **Admin:** https://deverve-official.pages.dev/admin  
-**Rule:** GitHub changes only until the owner explicitly says **“deploy now”**. Never call Cloudflare deployment APIs or Wrangler before that instruction.
+**Release rule:** Normal commits pushed to `main` automatically trigger Cloudflare Pages production deployments. Preview deployments are disabled. Obtain owner approval before production data changes, database migrations, secret changes, or external provider/account changes.
 
 This is the single owner-facing register for external accounts, approvals, business information, provider choices, credentials, and acceptance work. Keep it updated as tasks are completed. Do not put passwords, API keys, access tokens, private keys, CNICs, or payment credentials in this file, GitHub issues, source code, or ChatGPT messages.
 
@@ -30,11 +30,11 @@ Do not mark a task complete just because a form, button, setting, or provider op
 | Custom domain | **[BLOCKED]** No final custom domain recorded in this tracker | Owner: decide the official domain (if any), purchase/control it, and share the exact hostname |
 | DNS / SSL | **[OWNER ACTION]** Verify DNS ownership and HTTPS after domain decision | Owner + developer: test apex, www, redirects, TLS and canonical host |
 | GitHub branch | **[VERIFIED IN REPO]** `main` is the production source branch | Keep changes reviewed and tested |
-| Deployment guard | **[VERIFIED IN REPO / OWNER RULE]** Do not deploy until “deploy now” | Every commit message must contain `[CF-Pages-Skip]`; do not call Cloudflare API/Wrangler to deploy |
-| Production migration state | **[VERIFIED LIVE, READ-ONLY]** 18 Nov audit confirms migrations 0028, 0029, 0030 and 0031 are absent from production schema; 0032 CNIC protection triggers are present; new migration 0033 is required for owner notification retry leases. No migration-ledger table exists. | Developer: back up, re-check schema, then apply 0028 → 0029 → 0030 → 0031 → 0033 in order and verify each. 0028 is required by the current enquiry handler; never run 0031 without 0029; 0033 adds the owner-notification delivery lease. Deploy only after green CI and release checks. |
+| Git-to-Cloudflare release | **[VERIFIED LIVE]** Cloudflare Pages is connected to this GitHub repository; automatic production deployments from `main` are enabled and preview deployments are disabled | Use a normal commit message (no deployment-suppression prefix). Verify the Cloudflare build/deploy status for the exact commit after every release |
+| Production migration state | **[VERIFIED LIVE, READ-ONLY · 18 Nov 2026]** D1 contains `enquiries.contact_type`, `enquiry_email_queue`, `pos_receipt_outbox`, `notification_outbox`, the 0031/0033 lease indexes and the 0032 CNIC immutability triggers. The related 0028–0033 schema objects are present. No migration-ledger table exists. | Do not rerun these migrations. Reconcile schema objects directly before any future migration; preserve the CNIC triggers and indefinite R2 lock. |
 | Release acceptance | **[DEVELOPER ACTION]** CI passing is not equivalent to live acceptance | Run the documented smoke tests only after the owner authorizes deployment |
 
-**Important:** Do not run pending migrations against production, alter production data, or deploy matching code without a reviewed release sequence and a fresh backup. Never bypass CNIC immutability controls.
+**Important:** The migration gaps recorded in older sections below have been superseded by the 18 November 2026 live schema reconciliation above. Do not rerun migrations whose objects are already present. Never bypass CNIC immutability controls or the indefinite R2 lock.
 
 ## 2. Meta / Facebook / Instagram / WhatsApp
 

@@ -374,3 +374,30 @@ test("POS camera scanner requests browser permission only after an explicit user
   expect(await page.evaluate(() => (window as Window & { __cameraRequestCount?: number }).__cameraRequestCount ?? 0)).toBe(1);
   await expect(page.getByRole("button", { name: "Try camera again" })).toBeVisible();
 });
+
+
+test("unknown QR payload is prefilled in the new stock variant form", async ({ page }) => {
+  const productId = "88888888-8888-4888-8888-888888888888";
+  const qrPayload = "https://supplier.example/items/hoodie?id=SKU-2026-0001&colour=navy";
+  await mockAdminApi(page);
+  await page.route("**/api/admin/**", async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/api/admin/products" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{ id: productId, slug: "navy-hoodie", name: "Navy hoodie", description: "Test product", category: "Hoodies", audience: "unisex", status: "draft", retail_price_paisa: 250000, wholesale_price_paisa: null, image_key: null, seo_title: "", seo_description: "" }] }) });
+      return;
+    }
+    if (url.pathname === "/api/admin/products/" + productId + "/variants" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ variants: [] }) });
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto("/admin?section=products&barcode=" + encodeURIComponent(qrPayload));
+  await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
+  await page.getByRole("button", { name: "Variants & stock" }).click();
+  const editor = page.locator(".admin-variant-editor");
+  await expect(editor).toBeVisible();
+  await expect(editor.getByLabel("Barcode")).toHaveValue(qrPayload);
+});
