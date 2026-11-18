@@ -369,3 +369,10 @@ A source audit found a real Worker/schema mismatch in `processNotificationOutbox
 A second static audit of literal Worker SQL statements found an extra placeholder in the POS business-expense ledger insert. It supplied seven values for eight placeholders, causing expense posting to fail at the D1 binding layer. The SQL statement is corrected in commit `4fdc7c8bb0ee65887ed8434ecf71c50a6d4b7d56`.
 
 A new `scripts/verify_sql_bindings.mjs` audit checks placeholder counts against JavaScript bind argument counts for literal `prepare("...").bind(...)` statements. It is now part of `npm run test:worker`. The first full static scan after the fix found zero remaining mismatches in the Worker file. CI must pass on the exact final SHA before release.
+
+
+### Additional schema gap found — migration 0028 — 18 November 2026
+
+A second read-only D1 check confirmed `enquiries.contact_type` is absent in production. The current public enquiry handler inserts this column and returns HTTP 503 when the insert fails. Therefore the public contact/complaint form is currently unable to save submissions against the inspected production schema. Migration `0028_enquiry_contact_types.sql` is required before 0029–0031 and 0033. The `product_media_assets.color`, rental pricing, product SEO, customer, AI key, product review and rental preview-token columns/tables checked in the same audit are present, so the confirmed pending range is 0028–0031 plus 0033; migration 0032's CNIC triggers are already present.
+
+**Updated release sequence:** backup → 0028 → 0029 → 0030 → 0031 → 0033 → verify 0032 CNIC triggers remain → deploy matching source → production smoke tests. Re-check the schema immediately before each migration because production has no migration ledger.
