@@ -258,7 +258,7 @@ Do not send passwords or secret values here. Record only non-secret status, publ
 | 18 | Complete a non-production disaster recovery drill | Pending |
 | 19 | Approve staff accounts and role assignments | Pending |
 | 20 | Complete real-device business acceptance | Pending |
-| 21 | Explicitly authorize release by saying “deploy now” | Not authorized |
+| 21 | Explicitly authorize release by saying “deploy now” | **Authorized by user on 18 Nov 2026** — execute only after backup, schema migrations, green CI and final preflight pass |
 
 ## 12. Safe credential handover procedure
 
