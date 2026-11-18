@@ -14,9 +14,9 @@
 
 ## 2. Cloud backup destinations
 
-### Connected Dropbox vault
+### Dropbox connection
 
-The connected Dropbox account has been verified as display name **Deverve**, email **deverve61@gmail.com**. The root folder `/De VERVE Business Vault` and its category folders have been created. The root currently has no shared links. Use the CNIC-only folder `/De VERVE Business Vault/01 - CNIC Evidence (Encrypted Only)` for encrypted `.dvbackup` files only. Other business files should go into their matching category folders. Dropbox uploads from this workflow remain manual; no app OAuth integration or unattended sync is configured.
+The Dropbox connector is now connected to ChatGPT for the business account. This is **not** the same as authorizing the De VERVE website or its Cloudflare Worker to upload files. No website-side Dropbox API token, folder permission, or completed file upload has been verified. Create or verify a restricted root folder `/De VERVE Business Vault` with category folders, including `/01 - CNIC Evidence (Encrypted Only)`. Store encrypted `.dvbackup` files only in the CNIC folder. Do not create public/shared links for identity evidence. Other approved business files can be organized in separate folders. Until a separately reviewed website OAuth integration is configured, uploads from the website remain manual.
 
 ### Google Drive destination
 
