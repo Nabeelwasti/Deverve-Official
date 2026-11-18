@@ -40,16 +40,16 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    if(!mounted.current){camera.getTracks().forEach(track=>track.stop());return;}
    stream.current=camera;
    const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
-   if(!Detector){stopCamera();setError("Camera permission is available, but this browser does not include a barcode decoder. Use a USB barcode scanner or enter the barcode/SKU in the POS search field.");return;}
-   const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
-   const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
-   const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
-   if(!formats.length)throw new Error("This browser cannot decode common retail barcodes or QR codes. Update Chrome or use a compatible USB/Bluetooth scanner.");
-   const detector=new Detector({formats});
    if(!video.current)throw new Error("The camera preview could not be opened. Close the scanner and try again.");
    video.current.srcObject=camera;
    await video.current.play();
    if(!mounted.current)return;
+   if(!Detector){if(!imageCallback.current){stopCamera();setError("This browser does not include a barcode decoder. Update Chrome or use a USB/Bluetooth scanner.");return;}setCameraActive(true);setStatus("Barcode decoding is not supported in this browser, but you can still capture the printed tag and read it with AI.");return;}
+   const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
+   const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
+   const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
+   if(!formats.length){if(!imageCallback.current){stopCamera();setError("This browser cannot decode common retail barcodes or QR codes. Update Chrome or use a compatible USB/Bluetooth scanner.");return;}setCameraActive(true);setStatus("Barcode decoding is unavailable, but you can still capture the printed tag and read it with AI.");return;}
+   const detector=new Detector({formats});
    setCameraActive(true);setStatus("Camera is active. Scan EAN / UPC, Code 39 / 93 / 128, ITF, Codabar, PDF417, Data Matrix, Aztec or QR codes supported by this browser.");
    let detecting=false;
    const tick=async()=>{
