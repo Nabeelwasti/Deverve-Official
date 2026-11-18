@@ -78,7 +78,9 @@ export async function decryptEvidenceBackup(file: File, password: string): Promi
 
 export function downloadRestoredEvidence(payload: EvidencePayload): void {
   for (const entry of payload.files) {
-    const blob = new Blob([fromBase64(entry.data)], { type: entry.type });
+    const bytes = fromBase64(entry.data);
+    const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+    const blob = new Blob([data], { type: entry.type });
     const extension = entry.type === "image/png" ? "png" : entry.type === "image/webp" ? "webp" : "jpg";
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
