@@ -31,7 +31,7 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
   try{
    const payload=await decryptEvidenceBackup(restoreFile,restorePassword);
    downloadRestoredEvidence(payload);
-   reset();setMessage("Backup decrypted and integrity-checked. Original images and a manifest have been downloaded to this device; this does not reinsert records into production D1/R2.");
+   reset();setMessage("Backup decrypted and integrity-checked. Original images and a manifest have been packaged into one ZIP download; this does not reinsert records into production D1/R2.");
   }catch(error){setMessage(error instanceof Error?error.message:"The backup could not be decrypted.");}
   finally{setBusy(false);setRestorePassword("");}
  };
