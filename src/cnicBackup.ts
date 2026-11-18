@@ -24,6 +24,12 @@ async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey>
   const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
+function hasImageSignature(type: string, bytes: Uint8Array): boolean {
+  if (type === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (type === "image/png") return bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  if (type === "image/webp") return bytes.length >= 12 && String.fromCharCode(...bytes.subarray(0,4)) === "RIFF" && String.fromCharCode(...bytes.subarray(8,12)) === "WEBP";
+  return false;
+}
 function safeName(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 100) || "rental-evidence";
 }
@@ -37,8 +43,10 @@ export async function createEncryptedEvidenceBackup(referenceCode: string, files
   for (const file of files) {
     if (!["image/jpeg","image/png","image/webp"].includes(file.blob.type)) throw new Error("Only JPEG, PNG and WebP CNIC images can be backed up.");
     if (file.blob.size < 1 || file.blob.size > MAX_FILE_BYTES) throw new Error("A CNIC image exceeds the 10 MB backup safety limit.");
+    const bytes = new Uint8Array(await file.blob.arrayBuffer());
+    if (!hasImageSignature(file.blob.type, bytes)) throw new Error("A CNIC image did not pass its file-signature check.");
     totalBytes += file.blob.size;
-    encryptedFiles.push({ name: safeName(file.name), type: file.blob.type, size: file.blob.size, data: toBase64(new Uint8Array(await file.blob.arrayBuffer())) });
+    encryptedFiles.push({ name: safeName(file.name), type: file.blob.type, size: file.blob.size, data: toBase64(bytes) });
   }
   if (totalBytes > 2 * MAX_FILE_BYTES) throw new Error("The evidence backup exceeds the allowed size.");
   const payload: EvidencePayload = { format: FORMAT, version: VERSION, referenceCode: safeName(referenceCode), createdAt: new Date().toISOString(), files: encryptedFiles };
@@ -69,7 +77,7 @@ export async function decryptEvidenceBackup(file: File, password: string): Promi
   for (const entry of payload.files) {
     if (!entry || typeof entry.name !== "string" || !["image/jpeg","image/png","image/webp"].includes(entry.type) || typeof entry.data !== "string") throw new Error("The backup contains an unsupported file entry.");
     const bytes = fromBase64(entry.data);
-    if (bytes.length !== entry.size || bytes.length < 1 || bytes.length > MAX_FILE_BYTES) throw new Error("A restored image failed its size/integrity check.");
+    if (bytes.length !== entry.size || bytes.length < 1 || bytes.length > MAX_FILE_BYTES || !hasImageSignature(entry.type, bytes)) throw new Error("A restored image failed its size or file-signature integrity check.");
     total += bytes.length;
   }
   if (total > 2 * MAX_FILE_BYTES) throw new Error("The restored backup exceeds the allowed size.");
