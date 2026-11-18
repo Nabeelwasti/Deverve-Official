@@ -13,7 +13,7 @@ function cameraErrorMessage(caught:unknown):string{
  if(name==="AbortError")return "The camera request was interrupted. Please try again.";
  return caught instanceof Error?caught.message:"The camera could not be started. Check site permissions and try again.";
 }
-export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:string)=>void;onClose:()=>void}){
+export default function BarcodeScanner({onDetected,onClose,title="POS scanner"}:{onDetected:(value:string)=>void;onClose:()=>void;title?:string}){
  const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
  const [status,setStatus]=useState("Allow camera access to scan product barcodes. Your camera is used only while this scanner is open.");
  const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false),[manualCode,setManualCode]=useState("");
@@ -66,7 +66,7 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
  };
  return <div className="barcode-camera-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
   <section className="barcode-camera-modal" role="dialog" aria-modal="true" aria-labelledby="barcode-camera-title">
-   <header><div><p className="admin-eyebrow">DE VERVE · POS SCANNER</p><h3 id="barcode-camera-title">Scan product barcode</h3></div><button type="button" className="admin-close" aria-label="Close camera scanner" onClick={onClose}>×</button></header>
+   <header><div><p className="admin-eyebrow">DE VERVE · {title.toUpperCase()}</p><h3 id="barcode-camera-title">Scan barcode or QR code</h3></div><button type="button" className="admin-close" aria-label="Close camera scanner" onClick={onClose}>×</button></header>
    <div className="barcode-camera-stage"><video ref={video} autoPlay muted playsInline className={cameraActive?"is-active":"is-idle"} aria-hidden={!cameraActive}/>{!cameraActive&&<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
    {error&&<p className="admin-error" role="alert">{error}</p>}
    <p className="admin-muted" role="status">{cameraActive?status:"Camera access is requested only when you press the start button."}</p>
