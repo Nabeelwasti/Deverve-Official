@@ -1,5 +1,10 @@
 name: Build and type-check
 
+# Keep only the newest validation for a branch; rapid follow-up commits supersede older builds.
+concurrency:
+  group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
