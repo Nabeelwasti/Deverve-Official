@@ -224,7 +224,7 @@ function Storefront() {
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
-  const filteredProducts=useMemo(()=>{const category=selectedCategory.trim().toLocaleLowerCase();return category?products.filter(product=>product.category.trim().toLocaleLowerCase()===category):products;},[products,selectedCategory]);
+  const filteredProducts=useMemo(()=>{const category=selectedCategory.trim().toLocaleLowerCase();if(!category)return products;if(["men","mens","men’s","men's fashion","mens fashion"].includes(category))return products.filter(product=>product.audience==="men"||product.audience==="unisex");if(["women","womens","women’s","women's fashion","womens fashion"].includes(category))return products.filter(product=>product.audience==="women"||product.audience==="unisex");if(["kids","kids' fashion","children"].includes(category))return products.filter(product=>product.audience==="kids");return products.filter(product=>product.category.trim().toLocaleLowerCase()===category);},[products,selectedCategory]);
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});

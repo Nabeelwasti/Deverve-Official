@@ -888,8 +888,8 @@ export default function Admin() {
   return (
     <main className="admin-screen admin-dashboard" data-admin-screen={activeAdminScreen}>
       <header className="admin-topbar">
-        <a className="admin-brand" href="/">De VERVE<span>.</span><small>BUSINESS CONTROL CENTRE</small></a>
-        <div className="admin-user"><span>{admin.email}<small>{admin.role}</small></span><button type="button" onClick={signOut} disabled={busy}>Sign out</button></div>
+        <a className="admin-brand" href="/"><BrandLogo className="admin-brand-logo"/><small>BUSINESS CONTROL CENTRE</small></a>
+        <div className="admin-user"><span>{admin.email}<small>{admin.role}</small></span>{canEditProducts&&<button type="button" className="admin-primary" onClick={startNew} disabled={busy}>＋ Add product</button>}<button type="button" onClick={signOut} disabled={busy}>Sign out</button></div>
       </header>
       <section className="admin-content">
         <div className="admin-heading-row"><div><p className="admin-eyebrow">YOUR BUSINESS, ONE PLACE</p><h1>{({overview:"Overview",followups:"Follow-up inbox",products:"Products & catalogue",inventory:"Inventory management",pos:"Point of sale",vehicles:"Vehicle fleet",rentals:"Rental bookings",orders:"Orders & payments",returns:"Return records",exchanges:"Exchange management",wholesale:"Wholesale quotations", "product-reviews":"Product reviews",customers:"Customer directory",audit:"Activity history",enquiries:"Customer enquiries",staff:"Staff & permissions",settings:"Website settings",content:"Pages & visual designer",notifications:"Notifications",ai:"AI & live chat"} as Record<string,string>)[activeAdminScreen] ?? "Workspace"}</h1><p className="admin-muted">{activeAdminScreen==="overview"?"Your business at a glance. Choose a workspace to manage a specific area.":"Manage this part of your De VERVE business from one focused screen."}</p></div>{canEditProducts && activeAdminScreen === "products" && <button className="admin-primary" onClick={startNew}>＋ Add product</button>}</div>
