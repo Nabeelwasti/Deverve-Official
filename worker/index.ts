@@ -46,13 +46,15 @@ export async function processNotificationOutbox(env:Env):Promise<void>{
   const to=recipients.enabled?[recipients.primary,...recipients.secondary].filter((value,index,list)=>list.indexOf(value)===index&&isSafeNotificationRecipient(value)):[];
   if(!to.length)return;
   const now=new Date().toISOString();
+  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
   let rows:Record<string,unknown>[]=[];
-  try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND status='queued' AND next_attempt_at<=? ORDER BY created_at LIMIT 10").bind(now,new Date(Date.now()-10*60_000).toISOString()).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
+  try{const result=await env.DB.prepare("SELECT id,order_id,rental_request_id,template_key,attempts,created_at FROM notification_outbox WHERE channel='email' AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) ORDER BY created_at LIMIT 10").bind(now,staleBefore).all<Record<string,unknown>>();rows=result.results??[];}catch{return;}
   for(const row of rows){
     const id=String(row.id),template=String(row.template_key);
     if(!["owner_order_created","owner_rental_created","owner_payment_succeeded","owner_exchange_created"].includes(template))continue;
     try{
-      const claim=await env.DB.prepare("UPDATE notification_outbox SET status='processing',attempts=attempts+1 WHERE id=? AND status='queued' AND next_attempt_at<=?").bind(id,now).run();
+      const claimedAt=new Date().toISOString();
+      const claim=await env.DB.prepare("UPDATE notification_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?))").bind(claimedAt,id,now,staleBefore).run();
       if((claim.meta?.changes??0)!==1)continue;
       let subject="De VERVE business alert",reference="";
       if(template==="owner_order_created"||template==="owner_payment_succeeded"){
