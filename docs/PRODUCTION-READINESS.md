@@ -1,6 +1,6 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Source:** application changes through `c4fad1d044c728b7299a574781fc7d854e959df2`; the latest documentation updates are on `main`. CI for the new encrypted-backup/Code 128 changes must be checked before release. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
+**Source:** application changes through `68c35a22d6845f859ea8e5c7eb3eb125d478446a`; the latest documentation updates are on `main`. CI for the new encrypted-backup/Code 128 changes must be checked before release. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
 
 ## Live Cloudflare verification — read-only inspection plus one additive safety migration
 
@@ -28,7 +28,7 @@ The Cloudflare account was inspected directly on 18 November 2026. No Pages depl
 
 ## Document and report branding status
 
-The POS print invoice already displays the De VERVE logo. The POS invoice and barcode label print sheet use the actual De VERVE logo asset. Generic Word/Excel/JPG report exports retain a text-based De VERVE brand lockup; actual embedded logo imagery across every Office export remains outstanding. CSV is text-only by format. Browser print-to-PDF retains the branded source document where the workspace supplies it. Preview/print-to-PDF, Word, Excel, CSV and JPG availability varies by workspace; do not claim every document type supports every format until each export path is verified.
+The POS print invoice already displays the De VERVE logo. The POS invoice, rental request summary printout and barcode label print sheet use the actual De VERVE logo asset. Generic Word/Excel/JPG report exports retain a text-based De VERVE brand lockup; actual embedded logo imagery across every Office export remains outstanding. CSV is text-only by format. Browser print-to-PDF retains the branded source document where the workspace supplies it. Preview/print-to-PDF, Word, Excel, CSV and JPG availability varies by workspace; do not claim every document type supports every format until each export path is verified.
 
 ## Cloudflare free-tier options relevant to this application
 
