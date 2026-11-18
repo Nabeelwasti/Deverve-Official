@@ -1103,22 +1103,13 @@ async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promis
 
 async function publicRentalSettingsRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/rentals/settings" || request.method !== "GET") return null;
-  try {
-    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
-    return json({ cnic_uploads_enabled: setting?.setting_value_json === "true" });
-  } catch { return error("Rental document settings are temporarily unavailable", 503); }
+  return json({ cnic_uploads_enabled: true });
 }
 
 async function publicRentalDocumentRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const match = url.pathname.match(/^\/api\/rentals\/(DV-R-[A-Z0-9-]{12,40})\/documents$/i);
   if (!match || request.method !== "POST") return null;
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
-  let documentUploadsEnabled = false;
-  try {
-    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
-    documentUploadsEnabled = setting?.setting_value_json === "true";
-  } catch { return error("Secure document settings are temporarily unavailable", 503); }
-  if (!documentUploadsEnabled) return error("Secure CNIC uploads are disabled. Our rental team will contact you if identity documents are required.", 503);
   const limited = await enforcePublicRateLimit(request, env, "rental-documents", 3);
   if (limited) return limited;
   const length = Number(request.headers.get("content-length") || 0);
@@ -1194,12 +1185,6 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
   let form: FormData;
   try { form = await request.formData(); } catch { return error("Submit the rental form with both CNIC images attached", 400); }
   if (cleanText(form.get("website"), 120)) return json({ accepted: true });
-  let documentUploadsEnabled = false;
-  try {
-    const setting = await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key = 'cnic_uploads_enabled' LIMIT 1").first<{ setting_value_json: string }>();
-    documentUploadsEnabled = setting?.setting_value_json === "true";
-  } catch { return error("Rental document settings are temporarily unavailable", 503); }
-  if (!documentUploadsEnabled) return error("Secure CNIC uploads are currently unavailable. Please contact De VERVE.", 503);
   if (!(await verifyTurnstile(request, form.get("turnstile_token")))) return error("Please complete the security check and try again.", 403);
 
   const front = form.get("cnic_front");
@@ -1845,6 +1830,9 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
   catch { return error("Media service is temporarily unavailable", 503); }
   if (!admin) return error("Authentication required", 401);
   const canManage = ["owner", "manager", "catalogue"].includes(admin.role);
+  if ((collection && request.method === "GET") || (fileMatch && request.method === "GET")) {
+    if (!canManage) return error("You do not have permission to view private media", 403);
+  }
 
   if (collection && request.method === "GET") {
     try {
@@ -2730,7 +2718,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:false,notification_emails:{primary:"",secondary:[],enabled:false}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:true,notification_emails:{primary:"",secondary:[],enabled:false}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else if(row.setting_key==="cnic_uploads_enabled")settings.cnic_uploads_enabled=true;else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -2742,6 +2730,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   const hasPaymentMethods=body?.payment_methods!==undefined;
   if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
+   if(hasCnicUploads&&body?.cnic_uploads_enabled!==true)return error("CNIC uploads are mandatory and cannot be disabled",409);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
   if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!isSafeNotificationRecipient(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid business-owned primary email (the legacy placeholder is blocked), up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!isSafeNotificationRecipient(address))return error("One of the secondary email addresses is invalid or is the blocked legacy placeholder",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
   let paymentMethods: {methods:Array<{id:string;label:string;kind:string;provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>}|undefined;
@@ -2785,7 +2774,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(paymentMethods){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('payment_methods',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(paymentMethods),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.payment_methods_updated','store_settings','payment_methods',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({method_count:paymentMethods.methods.length,enabled_count:paymentMethods.methods.filter(m=>m.enabled).length})));}
   if(hasNotificationEmails&&notificationEmails){statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('notification_emails',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(notificationEmails),admin.admin_user_id,now));statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'owner.notification_emails_updated','store_settings','notification_emails',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({primary:notificationEmails.primary,secondary_count:notificationEmails.secondary.length,enabled:notificationEmails.enabled})));}
   if(hasCnicUploads){
-    const enabled=body?.cnic_uploads_enabled===true;
+    const enabled=true;
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('cnic_uploads_enabled',?,0,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=0,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(enabled),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.cnic_upload_setting_changed','store_settings','cnic_uploads_enabled',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({enabled})));
   }
@@ -2805,7 +2794,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:body?.cnic_uploads_enabled===true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{

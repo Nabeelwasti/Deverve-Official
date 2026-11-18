@@ -408,18 +408,32 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   assert.equal(repeat.status, 410);
 });
 
-test("public rental settings expose only whether optional CNIC uploads are enabled", async () => {
-  const response = await handleRequest(request("/api/rentals/settings", "GET"), env(new FakeD1()));
+test("rental settings always require CNIC uploads even when the legacy setting is false", async () => {
+  const db = new FakeD1();
+  db.storeSettings.set("cnic_uploads_enabled", { setting_value_json: "false" });
+  const response = await handleRequest(request("/api/rentals/settings", "GET"), env(db));
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { cnic_uploads_enabled: false });
+  assert.deepEqual(await response.json(), { cnic_uploads_enabled: true });
 });
 
-test("CNIC document uploads stay disabled until a retention policy is approved", async () => {
+test("owner cannot disable mandatory CNIC evidence through website settings", async () => {
   const db = new FakeD1();
-  const response = await handleRequest(request("/api/rentals/DV-R-20261115-ABC123/documents", "POST", {}), env(db));
-  assert.equal(response.status, 503);
-  const payload = await response.json();
-  assert.match(payload.error, /disabled/i);
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const response = await handleRequest(request("/api/admin/settings", "PATCH", { cnic_uploads_enabled: false }, { cookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(response.status, 409);
+  assert.match((await response.json()).error, /mandatory/i);
+});
+
+test("private media library and file previews are unavailable to read-only staff", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  [...db.admins.values()][0].role = "viewer";
+  const library = await handleRequest(request("/api/admin/media", "GET", undefined, { cookie }), env(db));
+  const file = await handleRequest(request("/api/admin/media/" + crypto.randomUUID() + "/file", "GET", undefined, { cookie }), env(db));
+  assert.equal(library.status, 403);
+  assert.equal(file.status, 403);
 });
 
 
@@ -1626,7 +1640,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
 
 test("rental submission requires both CNIC images, calculates driver-specific pricing and blocks unverified confirmation", async () => {
   const db = new FakeD1();
-  db.storeSettings.set("cnic_uploads_enabled", { setting_value_json: "true" });
+  db.storeSettings.set("cnic_uploads_enabled", { setting_value_json: "false" });
   const setup = await bootstrap(db);
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const headers = { cookie, "sec-fetch-site": "same-origin" };
