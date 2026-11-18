@@ -5,6 +5,22 @@ const xmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&
 const xmlEscape = (value: string): string => value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/[&<>"\']/g, character => xmlEntities[character] ?? character);
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+async function loadBrandLogoPng(): Promise<Uint8Array | null> {
+  try {
+    const response = await fetch("/brand/de-verve-logo.svg", { credentials: "same-origin", cache: "force-cache" });
+    if (!response.ok) return null;
+    const bitmap = await createImageBitmap(await response.blob());
+    const canvas = document.createElement("canvas");
+    canvas.width = 512; canvas.height = 512;
+    const context = canvas.getContext("2d");
+    if (!context) { bitmap.close(); return null; }
+    context.fillStyle = "#ffffff"; context.fillRect(0, 0, 512, 512);
+    context.drawImage(bitmap, 0, 0, 512, 512); bitmap.close();
+    const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
+    return png ? new Uint8Array(await png.arrayBuffer()) : null;
+  } catch { return null; }
+}
+
 
 function crc32(bytes: Uint8Array): number {
   let crc = 0xffffffff;
@@ -15,7 +31,7 @@ function crc32(bytes: Uint8Array): number {
   return (crc ^ 0xffffffff) >>> 0;
 }
 
-function zipStore(files: Array<{ path: string; content: string }>): Uint8Array {
+function zipStore(files: Array<{ path: string; content: string | Uint8Array }>): Uint8Array {
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];
   let localOffset = 0;
@@ -23,7 +39,7 @@ function zipStore(files: Array<{ path: string; content: string }>): Uint8Array {
   const date = 0x0021;
   for (const file of files) {
     const name = utf8(file.path);
-    const data = utf8(file.content);
+    const data = typeof file.content === "string" ? utf8(file.content) : file.content;
     const crc = crc32(data);
     const local = new Uint8Array(30 + name.length + data.length);
     const lv = new DataView(local.buffer);
