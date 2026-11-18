@@ -84,21 +84,45 @@ export async function decryptEvidenceBackup(file: File, password: string): Promi
   return payload;
 }
 
-export function downloadRestoredEvidence(payload: EvidencePayload): void {
-  for (const entry of payload.files) {
-    const bytes = fromBase64(entry.data);
-    const data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const blob = new Blob([data], { type: entry.type });
-    const extension = entry.type === "image/png" ? "png" : entry.type === "image/webp" ? "webp" : "jpg";
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = safeName(payload.referenceCode) + "-" + safeName(entry.name) + "." + extension;
-    document.body.appendChild(anchor); anchor.click(); anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 120000);
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
   }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function zipStored(files: Array<{path:string;bytes:Uint8Array}>): Uint8Array {
+  const encoder=new TextEncoder(),localParts:Uint8Array[]=[],centralParts:Uint8Array[]=[];
+  let localOffset=0,centralSize=0;
+  for(const file of files){
+    const name=encoder.encode(file.path),data=file.bytes,crc=crc32(data);
+    const local=new Uint8Array(30+name.length+data.length),lv=new DataView(local.buffer);
+    lv.setUint32(0,0x04034b50,true);lv.setUint16(4,20,true);lv.setUint16(6,0x0800,true);lv.setUint16(8,0,true);lv.setUint16(10,0,true);lv.setUint16(12,0x0021,true);lv.setUint32(14,crc,true);lv.setUint32(18,data.length,true);lv.setUint32(22,data.length,true);lv.setUint16(26,name.length,true);lv.setUint16(28,0,true);
+    local.set(name,30);local.set(data,30+name.length);localParts.push(local);
+    const central=new Uint8Array(46+name.length),cv=new DataView(central.buffer);
+    cv.setUint32(0,0x02014b50,true);cv.setUint16(4,20,true);cv.setUint16(6,20,true);cv.setUint16(8,0x0800,true);cv.setUint16(10,0,true);cv.setUint16(12,0,true);cv.setUint16(14,0x0021,true);cv.setUint32(16,crc,true);cv.setUint32(20,data.length,true);cv.setUint32(24,data.length,true);cv.setUint16(28,name.length,true);cv.setUint16(30,0,true);cv.setUint16(32,0,true);cv.setUint16(34,0,true);cv.setUint16(36,0,true);cv.setUint32(38,0,true);cv.setUint32(42,localOffset,true);central.set(name,46);centralParts.push(central);
+    localOffset+=local.length;centralSize+=central.length;
+  }
+  const end=new Uint8Array(22),ev=new DataView(end.buffer);
+  ev.setUint32(0,0x06054b50,true);ev.setUint16(4,0,true);ev.setUint16(6,0,true);ev.setUint16(8,files.length,true);ev.setUint16(10,files.length,true);ev.setUint32(12,centralSize,true);ev.setUint32(16,localOffset,true);ev.setUint16(20,0,true);
+  const output=new Uint8Array(localOffset+centralSize+end.length);let offset=0;
+  for(const part of localParts){output.set(part,offset);offset+=part.length;}
+  for(const part of centralParts){output.set(part,offset);offset+=part.length;}
+  output.set(end,offset);return output;
+}
+
+export function downloadRestoredEvidence(payload: EvidencePayload): void {
+  const files = payload.files.map(entry => {
+    const bytes = fromBase64(entry.data);
+    const extension = entry.type === "image/png" ? "png" : entry.type === "image/webp" ? "webp" : "jpg";
+    return { path: safeName(payload.referenceCode) + "-" + safeName(entry.name) + "." + extension, bytes };
+  });
   const manifest = { format: FORMAT, version: VERSION, referenceCode: payload.referenceCode, createdAt: payload.createdAt, restoredAt: new Date().toISOString(), files: payload.files.map(({name,type,size})=>({name,type,size})) };
-  const manifestUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest,null,2)],{type:"application/json"}));
-  const link = document.createElement("a"); link.href=manifestUrl; link.download=safeName(payload.referenceCode)+"-evidence-manifest.json"; document.body.appendChild(link); link.click(); link.remove();
-  window.setTimeout(()=>URL.revokeObjectURL(manifestUrl),120000);
+  files.push({ path: safeName(payload.referenceCode) + "-evidence-manifest.json", bytes: new TextEncoder().encode(JSON.stringify(manifest,null,2)) });
+  const archive = zipStored(files);
+  const data = archive.buffer.slice(archive.byteOffset, archive.byteOffset + archive.byteLength) as ArrayBuffer;
+  const url = URL.createObjectURL(new Blob([data], { type: "application/zip" }));
+  const link = document.createElement("a"); link.href=url; link.download=safeName(payload.referenceCode)+"-recovered-evidence.zip"; document.body.appendChild(link); link.click(); link.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),120000);
 }
