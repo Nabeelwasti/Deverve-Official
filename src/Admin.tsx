@@ -424,6 +424,32 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
+  const applyProductTagData = (raw:string, data:Record<string,unknown>) => {
+    const entry=(...keys:string[])=>Object.entries(data).find(([name])=>keys.some(key=>name.toLowerCase()===key.toLowerCase()));
+    const pick=(...keys:string[])=>{const found=entry(...keys)?.[1];return typeof found==="string"?found.trim().slice(0,4000):typeof found==="number"&&Number.isFinite(found)?String(found):"";};
+    const price=(...keys:string[])=>{const found=entry(...keys);if(!found)return "";const numeric=typeof found[1]==="number"?found[1]:typeof found[1]==="string"?Number(found[1]):NaN;return Number.isFinite(numeric)&&numeric>=0?String(found[0].toLowerCase().endsWith("_paisa")?numeric/100:numeric):"";};
+    const name=pick("name","product_name","title","item"),brand=pick("brand","manufacturer"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
+    const gender=pick("audience","gender","department").toLowerCase();
+    const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender?"unisex":form.audience;
+    const barcode=pick("barcode","gtin","ean","upc")||raw.trim().slice(0,128),sku=pick("sku","product_code","code");
+    const retail=price("retail_price","retail_price_paisa","price","mrp","sale_price"),wholesale=price("wholesale_price","wholesale_price_paisa"),cost=price("purchase_cost","cost_price","unit_cost","cost");
+    const size=pick("size","sizes"),color=pick("color","colour"),quantity=pick("quantity","qty","stock","stock_on_hand");
+    const details=[description,brand?"Brand: "+brand:"",pick("material")?"Material: "+pick("material"):"",pick("country_of_origin")?"Origin: "+pick("country_of_origin"):""].filter(Boolean).join("\n");
+    updateProductForm({...form,...(name?{name,slug:editingId?form.slug:name.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}:{}),...(category?{category}:{}),...(details?{description:details}:{}),...(gender?{audience}:{}),...(retail?{retail_price_paisa:retail}:{}),...(wholesale?{wholesale_price_paisa:wholesale}:{}),...(pick("seo_title")?{seo_title:pick("seo_title")}:{}) ,...(pick("seo_description")?{seo_description:pick("seo_description")}:{})});
+    setVariantForm(current=>({...current,...(size?{size}:{}),...(color?{color}:{}),...(barcode?{barcode}:{}),...(sku?{sku}:{}),...(cost?{cost_price:cost}:{}),...(quantity?{initial_stock:quantity}:{})}));
+    if(cost)setDefaultCostPrice(cost);
+    if(barcode)setPendingInventoryBarcode(barcode);
+    return [name,category,description,brand,size,color,barcode,sku,retail,cost,quantity].some(Boolean);
+  };
+  const readProductLabel = async(imageDataUrl:string,barcode="") => {
+    setMessage("Reading the product label with Gemini AI…");
+    try{
+      const result=await api<{ok:boolean;product:Record<string,unknown>;model:string}>("/api/admin/products/scan-label",{method:"POST",body:JSON.stringify({image_data_url:imageDataUrl,barcode})});
+      const imported=applyProductTagData(barcode,result.product);
+      setBarcodeScanTarget(null);
+      setMessage(imported?"AI extracted the readable label details. Review prices, sizes, colour, quantity and every field before saving.":"The label was scanned, but no reliable product fields were readable. Enter the missing details manually.");
+    }catch(error){setMessage(error instanceof Error?error.message:"The product label could not be read. Try a clearer, closer photo.");}
+  };
   const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setVariantForm({sku:"",size:"",color:"",barcode:pendingInventoryBarcode,cost_price:"0",reorder_level:"5",initial_stock:"0"}); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
     clearAdminFormDraft("admin-product-editor");
@@ -1233,21 +1259,10 @@ export default function Admin() {
             const value=raw.trim().slice(0,2048); let data:Record<string,unknown>|null=null;
             try { const parsed=JSON.parse(value); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)) data=parsed as Record<string,unknown>; } catch {}
             if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());if(!Object.keys(data).length)data={url:value};}catch{}}
-            const pick=(...keys:string[])=>{for(const key of keys){const found=Object.entries(data||{}).find(([name])=>name.toLowerCase()===key.toLowerCase())?.[1];if(typeof found==="string"&&found.trim())return found.trim().slice(0,4000);if(typeof found==="number"&&Number.isFinite(found))return String(found);}return "";};
-            const name=pick("name","product_name","title","item"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
-            const gender=pick("audience","gender","department").toLowerCase();
-            const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender? "unisex":form.audience;
-            const code=pick("barcode","gtin","ean","upc","sku","code")||(!data?value:"");
-            const retail=pick("retail_price","retail_price_paisa","price","mrp","sale_price"),wholesale=pick("wholesale_price","wholesale_price_paisa");
-            const cost=pick("purchase_cost","cost_price","cost","unit_cost"),size=pick("size","sizes"),color=pick("color","colour"),quantity=pick("quantity","qty","stock","stock_on_hand");
-            const asRupees=(raw:string)=>raw?String(/_paisa$/.test(Object.keys(data||{}).find(key=>String((data||{})[key])===raw)||"")?Number(raw)/100:Number(raw)):"";
-            updateProductForm({...form,...(name?{name,slug:editingId?form.slug:name.toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")}:{}),...(category?{category}:{}),...(description?{description}:{}),audience,...(retail?{retail_price_paisa:asRupees(retail)}:{}),...(wholesale?{wholesale_price_paisa:asRupees(wholesale)}:{}),...(pick("seo_title")?{seo_title:pick("seo_title")}:{}) ,...(pick("seo_description")?{seo_description:pick("seo_description")}:{})});
-            setVariantForm(current=>({...current,...(size?{size}:{}),...(color?{color}:{}),...(code?{barcode:code}:{}),...(cost?{cost_price:cost}:{}),...(quantity?{initial_stock:quantity}:{})}));
-            if(cost)setDefaultCostPrice(cost);
-            if(code)setPendingInventoryBarcode(code);
+            const imported=applyProductTagData(value,data||{});
             setBarcodeScanTarget(null);
-            setMessage(name||category||description?"Tag details imported. Review all fields before saving.":"Code captured. Save the product, then add its first variant to attach the barcode.");
-          }} onClose={()=>setBarcodeScanTarget(null)} />}
+            setMessage(imported?"Tag details imported. Review all fields before saving.":"Code captured. Use the camera's AI label reader to extract printed details, or enter them manually.");
+          }} onDetectedWithImage={(raw,image)=>readProductLabel(image,raw)} onImageCaptured={image=>readProductLabel(image)} onClose={()=>setBarcodeScanTarget(null)} />}
         </section></div>}
         {message && <p className="admin-message" role="status">{message}</p>}
       </section>
