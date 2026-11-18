@@ -7,18 +7,23 @@ const xmlEscape = (value: string): string => value.replace(/[\u0000-\u0008\u000B
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 async function loadBrandLogoPng(): Promise<Uint8Array | null> {
   try {
-    const response = await fetch("/brand/de-verve-logo.svg", { credentials: "same-origin", cache: "force-cache" });
-    if (!response.ok) return null;
-    const bitmap = await createImageBitmap(await response.blob());
+    const image = new Image();
+    image.src = "/brand/de-verve-logo.svg";
+    await image.decode();
     const canvas = document.createElement("canvas");
-    canvas.width = 512; canvas.height = 512;
+    canvas.width = 512;
+    canvas.height = 512;
     const context = canvas.getContext("2d");
-    if (!context) { bitmap.close(); return null; }
-    context.fillStyle = "#ffffff"; context.fillRect(0, 0, 512, 512);
-    context.drawImage(bitmap, 0, 0, 512, 512); bitmap.close();
+    if (!context) return null;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, 512, 512);
+    context.drawImage(image, 0, 0, 512, 512);
     const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
-    return png ? new Uint8Array(await png.arrayBuffer()) : null;
-  } catch { return null; }
+    if (!png) return null;
+    return new Uint8Array(await png.arrayBuffer());
+  } catch {
+    return null;
+  }
 }
 
 
