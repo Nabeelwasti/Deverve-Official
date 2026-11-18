@@ -1541,36 +1541,55 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
   if (!match || request.method !== "PATCH") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
   const body = await readJson(request);
-  const nextStatus = cleanText(body?.status, 20);
-  const adminNote = cleanText(body?.admin_note, 500);
-  const requestedVehicle = body?.vehicle_id;
-  if (!["reviewing", "confirmed", "active", "completed", "cancelled"].includes(nextStatus)) return error("Choose a valid rental status", 400);
+  if (!body) return error("Submit valid rental changes", 400);
+  const statusProvided = body.status !== undefined;
+  const requestedStatus = statusProvided ? cleanText(body.status, 20) : "";
+  if (statusProvided && !["reviewing", "confirmed", "active", "completed", "cancelled"].includes(requestedStatus)) return error("Choose a valid rental status", 400);
+  const requestedVehicle = body.vehicle_id;
   if (requestedVehicle !== undefined && requestedVehicle !== null && (typeof requestedVehicle !== "string" || !/^[a-f0-9-]{36}$/i.test(requestedVehicle))) return error("Choose a valid vehicle", 400);
   try {
-    const current = await env.DB.prepare("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ? LIMIT 1").bind(match[1]).first<{ id: string; vehicle_id: string | null; pickup_at: string; return_at: string; status: string }>();
+    const current = await env.DB.prepare("SELECT id, vehicle_id, pickup_at, return_at, status, admin_note FROM rental_requests WHERE id = ? LIMIT 1")
+      .bind(match[1]).first<{ id: string; vehicle_id: string | null; pickup_at: string; return_at: string; status: string; admin_note: string | null }>();
     if (!current) return error("Rental request not found", 404);
+    const nextStatus = statusProvided ? requestedStatus : current.status;
+    const adminNote = body.admin_note === undefined ? (current.admin_note ?? "") : cleanText(body.admin_note, 500);
     const allowed: Record<string, string[]> = {
       requested: ["reviewing", "cancelled"], reviewing: ["confirmed", "cancelled"],
       confirmed: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [],
     };
-    if (!allowed[current.status]?.includes(nextStatus)) return error("That rental status change is not allowed", 409);
-    if (nextStatus === "confirmed") {
-      const documents = await env.DB.prepare("SELECT COUNT(*) AS document_count FROM rental_documents WHERE rental_request_id = ? AND document_side IN ('cnic_front','cnic_back')").bind(match[1]).first<{ document_count: number }>();
+    const statusChanged = nextStatus !== current.status;
+    if (statusChanged && !allowed[current.status]?.includes(nextStatus)) return error("That rental status change is not allowed", 409);
+    const targetVehicleId = requestedVehicle === undefined ? current.vehicle_id : requestedVehicle;
+    const vehicleChanged = targetVehicleId !== current.vehicle_id;
+    const noteChanged = adminNote !== (current.admin_note ?? "");
+    if (!statusChanged && !vehicleChanged && !noteChanged) return json({ updated: true, unchanged: true, status: current.status });
+    if (current.status === "active" && vehicleChanged) return error("An active rental vehicle cannot be reassigned after handover", 409);
+    if (["completed", "cancelled"].includes(current.status) && vehicleChanged) return error("A closed rental vehicle assignment cannot be changed", 409);
+    if (nextStatus === "active" && !targetVehicleId) return error("Assign a vehicle before marking the rental active", 409);
+    if (statusChanged && nextStatus === "confirmed") {
+      const documents = await env.DB.prepare("SELECT COUNT(*) AS document_count FROM rental_documents WHERE rental_request_id = ? AND document_side IN ('cnic_front','cnic_back')")
+        .bind(match[1]).first<{ document_count: number }>();
       if ((documents?.document_count ?? 0) !== 2) return error("Both CNIC images must be received and verified before confirming this rental", 409);
     }
-    const targetVehicleId = requestedVehicle === undefined ? current.vehicle_id : requestedVehicle;
     if (targetVehicleId) {
-      const vehicle = await env.DB.prepare("SELECT id, status FROM vehicles WHERE id = ? LIMIT 1").bind(targetVehicleId).first<{ id: string; status: string }>();
-      if (!vehicle || (nextStatus === "confirmed" && vehicle.status !== "available")) return error("Choose a vehicle that is currently available", 409);
+      const vehicle = await env.DB.prepare("SELECT id, status FROM vehicles WHERE id = ? LIMIT 1")
+        .bind(targetVehicleId).first<{ id: string; status: string }>();
+      if (!vehicle) return error("Choose a vehicle that exists in the fleet", 404);
+      if ((nextStatus === "confirmed" || vehicleChanged) && vehicle.status !== "available") return error("Choose a vehicle that is currently available", 409);
+      if (vehicleChanged) {
+        const conflict = await env.DB.prepare("SELECT id FROM rental_requests WHERE vehicle_id = ? AND id <> ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ? LIMIT 1")
+          .bind(targetVehicleId, match[1], current.return_at, current.pickup_at).first<{ id: string }>();
+        if (conflict) return error("This vehicle is already assigned to another confirmed rental during these dates", 409);
+      }
     }
     const now = new Date().toISOString();
     const result = await env.DB.prepare("UPDATE rental_requests SET vehicle_id = ?, status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = ? AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
       .bind(targetVehicleId, nextStatus, adminNote, now, match[1], current.status, nextStatus, targetVehicleId, targetVehicleId, targetVehicleId).run();
     if ((result.meta?.changes ?? 0) !== 1) return error("The vehicle is unavailable for these dates, or the request changed. Refresh and try again.", 409);
-    await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'rental.status_changed', 'rental_request', ?, ?)")
-      .bind(crypto.randomUUID(), admin.admin_user_id, match[1], JSON.stringify({ from: current.status, to: nextStatus })).run();
-    return json({ updated: true, status: nextStatus });
-  } catch { return error("Rental status could not be updated", 503); }
+    await env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, ?, 'rental_request', ?, ?)")
+      .bind(crypto.randomUUID(), admin.admin_user_id, statusChanged ? "rental.status_changed" : "rental.details_updated", match[1], JSON.stringify({ from: current.status, to: nextStatus, vehicle_id: targetVehicleId, vehicle_changed: vehicleChanged, note_changed: noteChanged })).run();
+    return json({ updated: true, status: nextStatus, vehicle_id: targetVehicleId });
+  } catch { return error("Rental details could not be saved", 503); }
 }
 
 interface WholesaleQuoteRow {
