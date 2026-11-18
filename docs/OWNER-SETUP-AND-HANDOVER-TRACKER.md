@@ -277,3 +277,10 @@ Do not send passwords or secret values here. Record only non-secret status, publ
 
 - **18 Nov 2026:** Latest documented identity-provider and platform architecture notes are on `main`; CI run #44338347005 passed. No Cloudflare deployment was performed. Added this owner setup register to keep pending owner inputs and developer work in one place.
 - **18 Nov 2026:** README records production CNIC immutability migration 0032 applied and verified. Do not delete or overwrite originals.
+
+
+### CI verification follow-up — 18 Nov 2026
+
+- Owner tracker commit `5cdec943b8de327f634b30cc74064ad6234f2ca9` passed GitHub Actions run [#44341083529](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341083529). All 16 steps completed successfully, including TypeScript/build, production dependency audit, Pages security-header artifact validation, Worker authentication tests, D1 schema validation and storefront browser tests.
+- README tracker-link commit `b9f1c8ac7ee874e4b6f98d7f0b7976822beaba0f` passed GitHub Actions run [#44341122641](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341122641).
+- These were source/CI checks only. No Cloudflare deployment, production migration, secret change, live provider delivery, payment transaction or data mutation was performed.
