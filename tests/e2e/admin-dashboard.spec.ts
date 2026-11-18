@@ -344,7 +344,7 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
   await expect(page.getByText("Scanned code: " + qrPayload)).toBeVisible();
   await page.getByRole("button", { name: "Create product & add this code to stock" }).click();
   await expect(page).toHaveURL(/section=products&barcode=/);
-  await expect(page).toHaveURL(new RegExp("barcode=" + encodeURIComponent(qrPayload).replace(/[.*+?^${}()|[\]\\]/g, "\\test("POS camera scanner requests browser permission only after an explicit user action", async ({ page }) => {")));
+  await expect(page).toHaveURL(url => new URL(url).searchParams.get("barcode") === qrPayload);
 });
 
 test("POS camera scanner requests browser permission only after an explicit user action", async ({ page }) => {
