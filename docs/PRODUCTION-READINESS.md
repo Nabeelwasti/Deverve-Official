@@ -1,6 +1,16 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Latest source:** `7b1371a4e76e5382f1d66e6307b84a1de5089c5f`. GitHub Actions run [44309433019](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44309433019) is running the full build and browser suite; do not treat the new Google Drive backup guidance/UI copy as verified until that run completes successfully. The previous full run [44306748422](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44306748422) passed all 13 build steps, including dependency audit, TypeScript/build, security headers, Worker authentication, D1 schema validation and Chromium browser tests.
+**Latest source:** `26dbc26cd2ea11150686f2257c9e4386ea9c6107`. GitHub Actions run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) is validating the latest export-logo and Dropbox UI changes; status was in progress at the time of this update. The previous full run [44323584308](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44323584308) passed its complete workflow. Earlier browser tests exposed an embedded-logo regression, which is being addressed in the latest commits; do not release until the newest browser suite passes.
+
+## Connected business cloud storage
+
+- Dropbox connection verified as account display name **Deverve**, email `deverve61@gmail.com`.
+- Created root folder `/De VERVE Business Vault` with ten category folders for encrypted CNIC evidence, encrypted database backups, finance, HR, inventory, customers/orders, legal, marketing, system backups, and operations.
+- The root folder has no direct shared links in the current listing. No business files or CNIC evidence have been uploaded yet.
+- The website's cloud backup links are guidance only: there is no Dropbox or Google Drive OAuth integration or unattended upload.
+- Google Drive's ChatGPT connector is disabled by the workspace administrator. The owner can still use Drive directly in a browser under the same email, but this workspace cannot access it.
+- Upload CNIC evidence to the Dropbox CNIC folder only as client-encrypted `.dvbackup` files. Do not upload raw CNIC images or decrypted recovery ZIPs. Keep passwords separately.
+
 
 ## Google Drive backup workflow — added to source
 
