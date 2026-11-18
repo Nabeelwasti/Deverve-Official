@@ -241,6 +241,7 @@ export default function Admin() {
   const [cropFiles, setCropFiles] = useState<File[] | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
+  const [defaultCostPrice, setDefaultCostPrice] = useState("0");
   const [variantEditTarget, setVariantEditTarget] = useState<Variant | null>(null);
   const [variantEditForm, setVariantEditForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
@@ -423,7 +424,7 @@ export default function Admin() {
     finally { setBusy(false); }
   };
 
-  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setForm({ ...emptyProduct }); setShowEditor(true); };
+  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
     clearAdminFormDraft("admin-product-editor");
     setEditingId(product.id);
@@ -435,8 +436,17 @@ export default function Admin() {
     const toPaisa = (value: string) => value.trim() === "" ? null : Math.round(Number(value) * 100);
     const payload = { ...form, retail_price_paisa: toPaisa(form.retail_price_paisa), wholesale_price_paisa: toPaisa(form.wholesale_price_paisa) };
     try {
-      await api(editingId ? `/api/admin/products/${editingId}` : "/api/admin/products", { method: editingId ? "PATCH" : "POST", body: JSON.stringify(payload) });
-      await loadProducts(); clearAdminFormDraft("admin-product-editor"); setShowEditor(false); setMessage("Product saved successfully.");
+      if (editingId) {
+        await api(`/api/admin/products/${editingId}`, { method: "PATCH", body: JSON.stringify(payload) });
+        await loadProducts(); clearAdminFormDraft("admin-product-editor"); setShowEditor(false); setMessage("Product saved successfully.");
+      } else {
+        const created = await api<{ id: string }>("/api/admin/products", { method: "POST", body: JSON.stringify(payload) });
+        const newProduct: Product = { id: created.id, slug: form.slug, name: form.name, description: form.description, category: form.category, audience: form.audience, status: form.status, retail_price_paisa: toPaisa(form.retail_price_paisa), wholesale_price_paisa: toPaisa(form.wholesale_price_paisa), image_key: null, seo_title: form.seo_title, seo_description: form.seo_description };
+        void loadProducts();
+        clearAdminFormDraft("admin-product-editor"); setShowEditor(false); setVariantProduct(newProduct); setVariants([]);
+        setVariantForm({ sku: "", size: "", color: "", barcode: pendingInventoryBarcode, cost_price: ["owner","manager"].includes(admin?.role||"") ? defaultCostPrice : "0", reorder_level: "5", initial_stock: "0" });
+        setMessage("Product details saved. Add its first size, colour, purchase cost and opening quantity below. You can then add more variants and colour photos.");
+      }
     } catch (error) { setMessage(error instanceof Error ? error.message : "Product could not be saved."); }
     finally { setBusy(false); }
   };
@@ -1179,10 +1189,10 @@ export default function Admin() {
             {movements.length === 0 ? <p className="admin-muted">No stock movements recorded.</p> : <div className="admin-movement-list">{movements.map((movement) => <article key={movement.id}><div><strong>{movement.movement_type.replaceAll("_", " ")}</strong><span>{movement.note}</span><small>{movement.reference_type}{movement.reference_id ? ` · ${movement.reference_id}` : ""}</small></div><b className={movement.quantity_delta < 0 ? "movement-negative" : "movement-positive"}>{movement.quantity_delta > 0 ? "+" : ""}{movement.quantity_delta}</b><time dateTime={movement.created_at}>{new Date(movement.created_at).toLocaleString()}</time></article>)}</div>}
           </section>}
           {["owner", "manager", "catalogue"].includes(admin.role) && <form className="admin-form admin-variant-form" onSubmit={createVariant}>
-            <h3>Add variant</h3><p className="admin-muted admin-full">Create one stock row for each exact size + colour combination. Do not enter comma-separated lists. Example: M / Black, L / Black, M / Navy. Enter the real quantity for each combination so checkout and inventory stay accurate.</p><div className="admin-variant-fields">
+            <div className="admin-panel-heading"><div><h3>Add variant</h3><p className="admin-muted">One row per size and colour. Quantity and purchase cost are tracked separately for every combination.</p></div><button type="button" className="admin-secondary" onClick={()=>void openMediaLibrary(variantProduct)}>Manage colour photos</button></div><p className="admin-muted admin-full">Add each exact size + colour combination separately. The opening quantity is the stock for this specific combination. Colour photos can be uploaded in batches and assigned to their matching colour.</p><div className="admin-variant-fields">
               <label>SKU <small>Automatically generated if left blank</small><input maxLength={64} placeholder="Leave blank to auto-generate" value={variantForm.sku} onChange={(e) => setVariantForm({ ...variantForm, sku: e.target.value })} /></label>
-              <label>Size<input maxLength={32} placeholder="e.g. M" value={variantForm.size} onChange={(e) => setVariantForm({ ...variantForm, size: e.target.value })} /></label>
-              <label>Colour<input maxLength={32} placeholder="e.g. Black" value={variantForm.color} onChange={(e) => setVariantForm({ ...variantForm, color: e.target.value })} /></label>
+              <label>Size<input list="deverve-size-options" maxLength={32} placeholder="Choose or type a size" value={variantForm.size} onChange={(e) => setVariantForm({ ...variantForm, size: e.target.value })} /><datalist id="deverve-size-options">{["XXS","XS","S","M","L","XL","2XL","3XL","4XL","5XL","6XL","28","29","30","31","32","33","34","36","38","40","42","44","46","48","50","52","54","56","One Size"].map(value=><option key={value} value={value}/>)}</datalist></label>
+              <label>Colour<input list="deverve-colour-options" maxLength={32} placeholder="Search or type any colour" value={variantForm.color} onChange={(e) => setVariantForm({ ...variantForm, color: e.target.value })} /><datalist id="deverve-colour-options">{["Black","White","Off White","Ivory","Cream","Beige","Taupe","Brown","Chocolate","Camel","Tan","Khaki","Olive","Sage","Green","Mint","Emerald","Teal","Turquoise","Cyan","Sky Blue","Baby Blue","Light Blue","Royal Blue","Navy","Denim Blue","Indigo","Purple","Lavender","Lilac","Violet","Magenta","Pink","Baby Pink","Rose","Coral","Red","Maroon","Burgundy","Wine","Orange","Rust","Mustard","Yellow","Gold","Silver","Grey","Charcoal","Slate","Multi","Multicolour"].map(value=><option key={value} value={value}/>)}</datalist></label>
               <label>Barcode <small>Scan a retail barcode or QR code, or enter its value manually</small><input maxLength={2048} placeholder="Scan or enter barcode / QR value" value={variantForm.barcode} onChange={(e) => setVariantForm({ ...variantForm, barcode: e.target.value })} /></label><button type="button" className="admin-secondary admin-barcode-scan" onClick={() => setBarcodeScanTarget("variant")}>Scan barcode / QR</button>
               <label>Opening stock<input type="number" min="0" max="1000000" step="1" value={variantForm.initial_stock} onChange={(e) => setVariantForm({ ...variantForm, initial_stock: e.target.value })} /></label>
               <label>Reorder alert at<input type="number" min="0" max="1000000" step="1" value={variantForm.reorder_level} onChange={(e) => setVariantForm({ ...variantForm, reorder_level: e.target.value })} /></label>
@@ -1207,6 +1217,7 @@ export default function Admin() {
             <label>For<select value={form.audience} onChange={(e) => updateProductForm({ ...form, audience: e.target.value as typeof form.audience })}><option value="men">Men</option><option value="women">Women</option><option value="kids">Kids</option><option value="unisex">Unisex</option></select></label>
             <label>Retail price (PKR, optional)<input type="number" min="0" step="0.01" value={form.retail_price_paisa} onChange={(e) => updateProductForm({ ...form, retail_price_paisa: e.target.value })} /></label>
             <label>Wholesale price (PKR, optional)<input type="number" min="0" step="0.01" value={form.wholesale_price_paisa} onChange={(e) => updateProductForm({ ...form, wholesale_price_paisa: e.target.value })} /></label>
+            {!editingId && ["owner","manager"].includes(admin.role) && <label>Default purchase cost (PKR)<small>Prefills the first stock variant. Record the actual cost for each size/colour if costs differ.</small><input type="number" min="0" step="0.01" value={defaultCostPrice} onChange={e=>setDefaultCostPrice(e.target.value)} /></label>
             <label className="admin-full">Description<textarea rows={4} maxLength={4000} value={form.description} onChange={(e) => updateProductForm({ ...form, description: e.target.value })} /></label>
             <div className="admin-full admin-seo-fields"><h3>Search engine preview</h3><p className="admin-muted">These fields appear in search results and social previews. Keep titles under 70 characters and descriptions under 160.</p><label>SEO title<input maxLength={70} value={form.seo_title} onChange={(e) => updateProductForm({ ...form, seo_title: e.target.value })} placeholder={form.name || "Product name · De VERVE"} /></label><small>{form.seo_title.length}/70 characters</small><label>SEO description<textarea rows={2} maxLength={160} value={form.seo_description} onChange={(e) => updateProductForm({ ...form, seo_description: e.target.value })} placeholder={form.description.slice(0,160) || "Describe this product clearly for search visitors."} /></label><small>{form.seo_description.length}/160 characters</small></div>
             <label>Status<select value={form.status} onChange={(e) => updateProductForm({ ...form, status: e.target.value as typeof form.status })} disabled={admin.role === "catalogue"}><option value="draft">Save as draft</option><option value="published">Publish on website</option><option value="archived">Archived</option></select></label>
