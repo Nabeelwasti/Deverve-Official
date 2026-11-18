@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 const owner = { id: "11111111-1111-4111-8111-111111111111", email: "owner@deverve.test", role: "owner" };
 const vehicleId = "22222222-2222-4222-8222-222222222222";
@@ -120,6 +121,10 @@ test("rental vehicle assignment and internal note can be saved without changing 
   expect(backup.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic-evidence\.dvbackup$/);
   const backupPath = await backup.path();
   expect(backupPath).toBeTruthy();
+  const encryptedEnvelope = JSON.parse(await readFile(backupPath!, "utf8")) as Record<string, unknown>;
+  expect(encryptedEnvelope).toMatchObject({format:"DEVERVE-CNIC-BACKUP",cipher:"AES-256-GCM",kdf:"PBKDF2-SHA-256"});
+  expect(JSON.stringify(encryptedEnvelope)).not.toContain("cnic_front");
+  expect(JSON.stringify(encryptedEnvelope)).not.toContain("iVBORw0KGgo");
 
   const chooserPromise = page.waitForEvent("filechooser");
   await card.getByRole("button", {name:"Decrypt & download"}).click();
@@ -131,6 +136,10 @@ test("rental vehicle assignment and internal note can be saved without changing 
   const restoredDownload = await restoredDownloadPromise;
   await expect(card.getByRole("status")).toContainText("Backup decrypted and integrity-checked");
   expect(restoredDownload.suggestedFilename()).toBe("DV-R-TEST-0001-recovered-evidence.zip");
+  const recoveredPath = await restoredDownload.path();
+  expect(recoveredPath).toBeTruthy();
+  const recoveredZip = await readFile(recoveredPath!);
+  expect(recoveredZip.subarray(0,4).toString("hex")).toBe("504b0304");
 });
 
 test("saved draft CMS pages can be previewed through the authenticated admin endpoint", async ({ page }) => {
