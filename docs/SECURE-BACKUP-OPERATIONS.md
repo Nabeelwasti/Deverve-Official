@@ -16,7 +16,7 @@
 
 ### Dropbox connection
 
-The Dropbox connector is now connected to ChatGPT for the business account. This is **not** the same as authorizing the De VERVE website or its Cloudflare Worker to upload files. No website-side Dropbox API token, folder permission, or completed file upload has been verified. Create or verify a restricted root folder `/De VERVE Business Vault` with category folders, including `/01 - CNIC Evidence (Encrypted Only)`. Store encrypted `.dvbackup` files only in the CNIC folder. Do not create public/shared links for identity evidence. Other approved business files can be organized in separate folders. Until a separately reviewed website OAuth integration is configured, uploads from the website remain manual.
+The Dropbox connector is connected to the verified business account (display name **Deverve**, email `deverve61@gmail.com`). The root folder `/De VERVE Business Vault` and ten category folders have been created, including `/De VERVE Business Vault/01 - CNIC Evidence (Encrypted Only)` and `/De VERVE Business Vault/02 - Database Backups (Encrypted)`. A direct shared-link check on the root returned no links. No files have been uploaded yet. This ChatGPT Dropbox connection is **not** the same as authorizing the De VERVE website or its Cloudflare Worker to upload files. No website-side Dropbox API token or unattended sync is configured. Store encrypted `.dvbackup` files only in the CNIC folder; do not create public/shared links for identity evidence. Other approved business files belong in their matching category folders. Until a separately reviewed website OAuth integration is configured, uploads from the website remain manual.
 
 ### Google Drive destination
 
@@ -103,6 +103,7 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 | Emailing CNIC backups | Not used and not recommended |
 | Scheduled D1 SQL export | Not configured |
 | Automated R2-to-Google-Drive replication | Not configured |
+| Automated R2-to-Dropbox replication | Not configured |
 | Full replacement-system CNIC import | Requires a separately reviewed recovery importer |
 | Tested end-to-end disaster recovery drill | Still required |
 
@@ -119,4 +120,4 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 - [ ] Perform a restore drill on a non-production environment and record the result.
 - [ ] Approve a named owner and backup custodian, with access review dates.
 
-**Release limitation:** these procedures improve independent recovery, but they do not certify a completed disaster-recovery program until the owner has completed and documented the actual Drive uploads, independent copy and restore drill.
+**Release limitation:** these procedures improve independent recovery, but they do not certify a completed disaster-recovery program until the owner has completed and documented the actual Drive/Dropbox uploads, independent copy and restore drill.
