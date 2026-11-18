@@ -4097,14 +4097,14 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
   const dataUrl=typeof body?.image_data_url==="string"?body.image_data_url:"";
   const match=dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/);
   if(!match||match[2].length>6_500_000)return error("Capture a clear JPG, PNG or WebP product label (maximum 5 MB)",400);
-  const scannedCode=typeof body?.barcode==="string"?body.barcode.trim().slice(0,128):"";
+  const scannedCode=typeof body?.barcode==="string"?body.barcode.trim().slice(0,128):"";const scannedSku=typeof body?.sku==="string"?body.sku.trim().slice(0,128):"";
   let keys:GeminiKeyRow[]=[];
   try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
   const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
   const envKeys=[env.NabeelG_Api_key1?.trim(),env.NabeelG_Api_key2?.trim()].filter((key):key is string=>Boolean(key&&/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)));
   const tried=new Set<string>(),undecryptable=new Set<string>();
   const prompt="Read this garment, clothing, retail product tag or supplier label. Extract only facts that are clearly visible. Return one valid JSON object only, without Markdown, using exactly these keys: name, brand, category, description, audience, retail_price, wholesale_price, purchase_cost, size, color, sku, barcode, quantity, material, country_of_origin. Use a short string for text values, numbers for clearly printed prices or quantities, and null when a value is missing or unreadable. Prices are in PKR only when the label explicitly shows PKR, Rs or ₨; otherwise set the price fields to null. Never invent a price, brand, size, colour, barcode, quantity or product detail. Distinguish retail price from wholesale price and purchase cost. Preserve every barcode digit exactly. If the image contains several items, describe only the primary tag in the centre.";
-  const contents=[{role:"user" as const,parts:[{text:prompt+(scannedCode?" The scanner also detected this exact code: "+scannedCode:"")},{inline_data:{mime_type:match[1],data:match[2]}}]}];
+  const contents=[{role:"user" as const,parts:[{text:prompt+(scannedCode?" The scanner detected this exact barcode: "+scannedCode:"")+(scannedSku?" The scanner detected this exact SKU: "+scannedSku:"")},{inline_data:{mime_type:match[1],data:match[2]}}]}];
   const run=async(key:string,row?:GeminiKeyRow)=>{
     const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+key);
     if(tried.has(fingerprint))return null;tried.add(fingerprint);
@@ -4117,7 +4117,7 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
       const clean:Record<string,string|number|null>={};
       for(const field of ["name","brand","category","description","audience","size","color","sku","barcode","material","country_of_origin"]){const value=parsed[field];clean[field]=typeof value==="string"?value.trim().slice(0,field==="description"?1500:240):null;}
       for(const field of ["retail_price","wholesale_price","purchase_cost","quantity"]){const value=parsed[field];clean[field]=typeof value==="number"&&Number.isFinite(value)&&value>=0?value:typeof value==="string"&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):null;}
-      if(scannedCode&&!clean.barcode)clean.barcode=scannedCode;
+      if(scannedCode&&!clean.barcode)clean.barcode=scannedCode;if(scannedSku&&!clean.sku)clean.sku=scannedSku;
       return {product:clean,model:result.model};
     }
     if(row){const cooldown=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;const label=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":result.status>=500?"provider_unavailable":"request_failed";try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+cooldown).toISOString(),label,new Date().toISOString(),row.id).run();}catch{}}
