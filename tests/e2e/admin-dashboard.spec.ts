@@ -120,7 +120,7 @@ test("rental vehicle assignment and internal note can be saved without changing 
   expect(backupPath).toBeTruthy();
 
   const chooserPromise = page.waitForEvent("filechooser");
-  await card.getByRole("button", {name:"Restore backup"}).click();
+  await card.getByRole("button", {name:"Decrypt & download"}).click();
   const chooser = await chooserPromise;
   const restoredDownloadPromise = page.waitForEvent("download");
   await chooser.setFiles(backupPath!);
