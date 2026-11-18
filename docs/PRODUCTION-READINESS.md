@@ -1,5 +1,24 @@
 # Current source and production data-protection review — 18 November 2026
 
+**Latest source:** `7b1371a4e76e5382f1d66e6307b84a1de5089c5f`. GitHub Actions run [44309433019](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44309433019) is running the full build and browser suite; do not treat the new Google Drive backup guidance/UI copy as verified until that run completes successfully. The previous full run [44306748422](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44306748422) passed all 13 build steps, including dependency audit, TypeScript/build, security headers, Worker authentication, D1 schema validation and Chromium browser tests.
+
+## Google Drive backup workflow — added to source
+
+- The admin CNIC backup control now identifies the owner-designated storage account `deverve61@gmail.com`, links to Google Drive and explains the manual upload procedure.
+- The app creates client-side encrypted `.dvbackup` files; upload the encrypted file, never the decrypted recovery ZIP or an ordinary CNIC image.
+- Google Drive upload is currently a manual owner action. No Google OAuth client, Drive API integration, unattended upload or scheduled Drive sync has been configured.
+- The ChatGPT Google Drive connector is disabled by the workspace administrator, so ChatGPT cannot directly upload to that account from this session.
+- Detailed owner steps, folder structure, D1 export guidance, password custody, recovery limits and restore-drill checklist are in [docs/SECURE-BACKUP-OPERATIONS.md](SECURE-BACKUP-OPERATIONS.md).
+- Local backup artifacts are excluded from Git via `.gitignore`.
+
+**Important recovery boundary:** the CNIC recovery control decrypts and downloads the original images and a manifest in a ZIP. It does not reinsert images or records into production D1/R2. The D1 export process is separately documented and does not include R2 image bytes. A tested replacement-system import process remains required.
+
+## Release and deployment controls
+
+No Cloudflare Pages/Workers deployment, Cloudflare API mutation, production D1 migration, data import, data deletion or R2 object deletion was performed for the Google Drive workflow change. Every source commit continues to use `[CF-Pages-Skip]`; do not deploy until the owner explicitly says **“deploy now”**. Migrations `0030` and `0031` remain pending production application and must be applied in their reviewed release sequence before deploying matching application code. Migration `0032` remains the verified production CNIC immutability safeguard.
+
+---
+
 **Source:** application changes through `e9ecfee57fd524ecf48dc0fe3812807b5cc59dcb`; the latest documentation updates are on `main`. CI for the new encrypted-backup/Code 128 changes must be checked before release. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
 
 ## Live Cloudflare verification — read-only inspection plus one additive safety migration
