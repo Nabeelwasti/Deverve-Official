@@ -13,7 +13,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
 - Main branch contains source changes that are not yet live. The production site remains on its previous deployment until the owner explicitly says “deploy now”.
-- Pending database change: apply migrations 0030, 0031 and 0032 to production D1 before deploying the matching application code. It has not been applied to the live database.
+- Pending database changes: migrations 0030 and 0031 remain unapplied to production D1. Migration 0032 (permanent CNIC evidence protection) was applied directly to production on 18 November 2026 and verified with a rejected metadata-update test. Do not deploy matching application code until migrations 0030/0031 are applied in the planned release sequence.
 
 ## Implemented
 
@@ -179,6 +179,6 @@ Work directly on `main`. Do not create or switch to feature branches, force-push
 ### Rental booking and identity verification
 
 - Rental requests require the front and back of the customer CNIC in the same multipart submission. The Worker validates file type/signature and size, then stores images in private R2 and metadata in D1. A request is not accepted unless both document records are committed.
-- Authorized rental staff can view private CNIC images through authenticated admin routes. The server prevents a rental from being confirmed until both sides are present. The current scheduled Worker never deletes these objects; database triggers also block document deletion and linked rental deletion. Enable an indefinite R2 Bucket Lock for rental-private/ before considering storage immutability fully protected.
+- Authorized rental staff can preview/download private CNIC images through authenticated, audited admin routes. Production D1 has verified triggers blocking document deletion, metadata mutation and linked rental deletion. Production R2 has the enabled indefinite Bucket Lock rule `deverve-rental-cnic-indefinite` for `rental-private/`; the public R2 domain is disabled. An owner/staff encrypted offline backup and restore control is available per rental: it uses browser-native PBKDF2-SHA-256 and AES-256-GCM, sends no CNIC image to an external service, and requires a user-managed password. Downloaded `.dvbackup` files must be stored outside the Cloudflare account, with the password stored separately. This is a manual backup workflow, not an automatic scheduled backup; the independent restore drill and off-account storage process must be included in operational acceptance.
 - Vehicle pricing supports a self-drive daily rate and an optional separate with-driver daily rate. Both rates must be explicitly configured before a vehicle can be published as available. The server independently calculates full 24-hour days (rounded up), daily rate and total; browser estimates are only a preview.
 - Available vehicles must have a self-drive rate. Add vehicles and both rate options in Admin → Vehicle fleet before expecting an automatic price estimate. If no vehicle is selected, the rental team must quote manually.
