@@ -1,9 +1,10 @@
-import { handleRequest, processNotificationOutbox, processPosReceiptOutbox, type Env } from "../../worker/index";
+import { handleRequest, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, type Env } from "../../worker/index";
 
 export async function onRequest(context: { request: Request; env: Env; waitUntil(promise: Promise<unknown>): void }): Promise<Response> {
-  // Pass the Pages execution context on every API request so queued contact
-  // emails can resume after credentials are configured, without delaying replies.
   const response = await handleRequest(context.request, context.env, context);
+  // Resume durable enquiry notifications on API traffic. The processor fails closed
+  // when its queue or provider configuration is unavailable, without delaying replies.
+  context.waitUntil(processEnquiryEmailQueue(context.env));
   if (context.request.method !== "GET" && context.request.method !== "HEAD") {
     context.waitUntil(processNotificationOutbox(context.env));
   }
