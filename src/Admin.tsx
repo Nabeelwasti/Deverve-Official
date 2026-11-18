@@ -590,8 +590,8 @@ export default function Admin() {
   };
 
   const generateVariantMatrix = () => {
-    const sizes = [...new Set(bulkSizes.split(/[,;\\n]+/).map(value => value.trim()).filter(Boolean))];
-    const colors = [...new Set(bulkColors.split(/[,;\\n]+/).map(value => value.trim()).filter(Boolean))];
+    const sizes = [...new Set(bulkSizes.split(/[,;\n]+/).map(value => value.trim()).filter(Boolean))];
+    const colors = [...new Set(bulkColors.split(/[,;\n]+/).map(value => value.trim()).filter(Boolean))];
     if (!sizes.length || !colors.length) { setMessage("Enter at least one size and one colour to build the stock matrix."); return; }
     if (sizes.length * colors.length > 100) { setMessage("A single product matrix is limited to 100 size-and-colour combinations. Split larger assortments into batches."); return; }
     const existing = new Set(variants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
