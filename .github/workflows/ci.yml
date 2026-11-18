@@ -1,9 +1,9 @@
 name: Build and type-check
 
-# Keep only the newest validation for a branch; rapid follow-up commits supersede older builds.
+# Validate every main-branch push; do not silently cancel earlier validation runs.
 concurrency:
   group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   push:
@@ -12,11 +12,12 @@ on:
     branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -24,9 +25,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: npm install
-      - name: Capture dependency lockfile and full audit report
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Capture dependency audit report
         run: |
           npm audit --json > npm-audit.json || true
           node -e 'const report = JSON.parse(require("node:fs").readFileSync("npm-audit.json", "utf8")); const counts = report.metadata?.vulnerabilities || {}; console.log("Full dependency audit:", JSON.stringify(counts)); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(name + ": " + item.severity + ", direct=" + item.isDirect + ", fixAvailable=" + JSON.stringify(item.fixAvailable));'
@@ -39,17 +41,6 @@ jobs:
             npm-audit.json
           if-no-files-found: error
           retention-days: 7
-      - name: Commit the generated lockfile once and verify npm ci
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          if ! git ls-files --error-unmatch package-lock.json >/dev/null 2>&1; then
-              git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add package-lock.json
-            git commit -m "[CF-Pages-Skip] Add deterministic npm lockfile and use npm ci"
-            git push origin HEAD:main
-            npm ci
-          fi
       - name: Type-check and build
         run: npm run check
       - name: Audit production dependencies
