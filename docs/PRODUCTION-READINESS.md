@@ -376,3 +376,8 @@ A new `scripts/verify_sql_bindings.mjs` audit checks placeholder counts against 
 A second read-only D1 check confirmed `enquiries.contact_type` is absent in production. The current public enquiry handler inserts this column and returns HTTP 503 when the insert fails. Therefore the public contact/complaint form is currently unable to save submissions against the inspected production schema. Migration `0028_enquiry_contact_types.sql` is required before 0029–0031 and 0033. The `product_media_assets.color`, rental pricing, product SEO, customer, AI key, product review and rental preview-token columns/tables checked in the same audit are present, so the confirmed pending range is 0028–0031 plus 0033; migration 0032's CNIC triggers are already present.
 
 **Updated release sequence:** backup → 0028 → 0029 → 0030 → 0031 → 0033 → verify 0032 CNIC triggers remain → deploy matching source → production smoke tests. Re-check the schema immediately before each migration because production has no migration ledger.
+
+
+### POS sale impact of migration 0030 — 18 November 2026
+
+The current POS sale handler always inserts `customer_email`, `email_receipt_requested`, and `whatsapp_receipt_consent` into `pos_sales`, even when no receipt is requested, and conditionally inserts rows into `pos_receipt_outbox`. The inspected production schema has none of these columns/table. Therefore deploying the current POS Worker before migration 0030 would cause POS sale creation to fail at the D1 batch. Migration 0030 is a critical compatibility gate, not an optional email/WhatsApp enhancement.
