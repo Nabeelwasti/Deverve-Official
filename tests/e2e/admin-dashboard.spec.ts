@@ -122,8 +122,9 @@ test("rental vehicle assignment and internal note can be saved without changing 
   const chooserPromise = page.waitForEvent("filechooser");
   await card.getByRole("button", {name:"Restore backup"}).click();
   const chooser = await chooserPromise;
+  const restoredDownloadPromise = page.waitForEvent("download");
   await chooser.setFiles(backupPath!);
-  const restoredDownload = await page.waitForEvent("download");
+  const restoredDownload = await restoredDownloadPromise;
   await expect(card.getByRole("status")).toContainText("Backup decrypted and integrity-checked");
   expect(restoredDownload.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic_(front|back)\.(jpg|png|webp)$/);
 });
