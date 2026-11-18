@@ -2,7 +2,7 @@ const FORMAT = "DEVERVE-CNIC-BACKUP";
 const VERSION = 1;
 const ITERATIONS = 310000;
 const AAD = new TextEncoder().encode("De VERVE permanent evidence backup v1");
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
 
 export type EvidenceFile = { name: string; type: string; size: number; data: string };
@@ -42,13 +42,13 @@ export async function createEncryptedEvidenceBackup(referenceCode: string, files
   const encryptedFiles: EvidenceFile[] = [];
   for (const file of files) {
     if (!["image/jpeg","image/png","image/webp"].includes(file.blob.type)) throw new Error("Only JPEG, PNG and WebP CNIC images can be backed up.");
-    if (file.blob.size < 1 || file.blob.size > MAX_FILE_BYTES) throw new Error("A CNIC image exceeds the 10 MB backup safety limit.");
+    if (file.blob.size < 1 || file.blob.size > MAX_FILE_BYTES) throw new Error("A CNIC image exceeds the 8 MB backup safety limit.");
     const bytes = new Uint8Array(await file.blob.arrayBuffer());
     if (!hasImageSignature(file.blob.type, bytes)) throw new Error("A CNIC image did not pass its file-signature check.");
     totalBytes += file.blob.size;
     encryptedFiles.push({ name: safeName(file.name), type: file.blob.type, size: file.blob.size, data: toBase64(bytes) });
   }
-  if (totalBytes > 2 * MAX_FILE_BYTES) throw new Error("The evidence backup exceeds the allowed size.");
+  if (totalBytes > 2 * MAX_FILE_BYTES) throw new Error("The evidence backup exceeds the allowed 16 MB combined size.");
   const payload: EvidencePayload = { format: FORMAT, version: VERSION, referenceCode: safeName(referenceCode), createdAt: new Date().toISOString(), files: encryptedFiles };
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const iv = crypto.getRandomValues(new Uint8Array(12));
