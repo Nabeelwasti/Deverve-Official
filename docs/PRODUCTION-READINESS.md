@@ -349,3 +349,16 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 - The migration files are additive. The existing records are not to be rewritten or deleted by this sequence.
 
 **Release status after this audit:** production schema reconciliation is now accurately documented. The three migrations remain unapplied; no deployment or production mutation has been performed.
+
+
+## Owner notification delivery repair — 18 November 2026
+
+A source audit found a real Worker/schema mismatch in `processNotificationOutbox`:
+
+- The processor bound two values to a SELECT statement containing only one placeholder.
+- The processor also read/wrote `processing_started_at`, but migration 0012 did not define that column. Production `PRAGMA table_info(notification_outbox)` confirms the column is absent.
+- The old claim logic did not reclaim stale `processing` rows after a Worker interruption.
+
+**Source fix committed:** `0bbb2b10fa18ceb1a0b038d65bda75dfe260a044` fixes the binding count, records the claim timestamp, and reclaims stale processing leases. New migration `0033_notification_outbox_lease.sql` adds the missing nullable lease column and a composite due/lease index without rewriting existing notification rows. Regression coverage was added in `scripts/worker-auth.test.mjs`; schema validation now asserts the new column and index.
+
+**Important:** migration 0033 is not yet applied to production. It must be applied after 0029, 0030 and 0031 and verified before deploying the Worker fix. No production data or schema was changed during this audit.
