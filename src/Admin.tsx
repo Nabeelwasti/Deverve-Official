@@ -431,7 +431,7 @@ export default function Admin() {
     const name=pick("name","product_name","title","item"),brand=pick("brand","manufacturer"),category=pick("category","product_type","type"),description=pick("description","details","specification","specs");
     const gender=pick("audience","gender","department").toLowerCase();
     const audience=gender.includes("women")||gender==="female"?"women":gender.includes("men")||gender==="male"?"men":gender.includes("kid")||gender.includes("child")?"kids":gender?"unisex":form.audience;
-    const barcode=pick("barcode","gtin","ean","upc")||(!Object.keys(data).length?raw.trim().slice(0,128):""),sku=pick("sku","product_code","code");
+    const rawCode=raw.trim().slice(0,128),numericCode=/^\d{8,14}$/.test(rawCode),barcode=pick("barcode","gtin","ean","upc")||(!Object.keys(data).length&&numericCode?rawCode:""),sku=pick("sku","product_code","code")||(!Object.keys(data).length&&!numericCode?rawCode:"");
     const retail=price("retail_price","retail_price_paisa","price","mrp","sale_price"),wholesale=price("wholesale_price","wholesale_price_paisa"),cost=price("purchase_cost","cost_price","unit_cost","cost");
     const size=pick("size","sizes"),color=pick("color","colour"),quantity=pick("quantity","qty","stock","stock_on_hand");
     const details=[description,brand?"Brand: "+brand:"",pick("material")?"Material: "+pick("material"):"",pick("country_of_origin")?"Origin: "+pick("country_of_origin"):""].filter(Boolean).join("\n");
@@ -441,11 +441,11 @@ export default function Admin() {
     if(barcode)setPendingInventoryBarcode(barcode);
     return [name,category,description,brand,size,color,barcode,sku,retail,cost,quantity].some(Boolean);
   };
-  const readProductLabel = async(imageDataUrl:string,barcode="") => {
+  const readProductLabel = async(imageDataUrl:string,barcode="",sku="") => {
     setMessage("Reading the product label with Gemini AI…");
     try{
-      const result=await api<{ok:boolean;product:Record<string,unknown>;model:string}>("/api/admin/products/scan-label",{method:"POST",body:JSON.stringify({image_data_url:imageDataUrl,barcode})});
-      const imported=applyProductTagData(barcode,result.product);
+      const result=await api<{ok:boolean;product:Record<string,unknown>;model:string}>("/api/admin/products/scan-label",{method:"POST",body:JSON.stringify({image_data_url:imageDataUrl,barcode,sku})});
+      const imported=applyProductTagData(barcode||sku,result.product);
       setBarcodeScanTarget(null);
       setMessage(imported?"AI extracted the readable label details. Review prices, sizes, colour, quantity and every field before saving.":"The label was scanned, but no reliable product fields were readable. Enter the missing details manually.");
     }catch(error){setMessage(error instanceof Error?error.message:"The product label could not be read. Try a clearer, closer photo.");}
@@ -1262,7 +1262,7 @@ export default function Admin() {
             const imported=applyProductTagData(value,data||{});
             setBarcodeScanTarget(null);
             setMessage(imported?"Tag details imported. Review all fields before saving.":"Code captured. Use the camera's AI label reader to extract printed details, or enter them manually.");
-          }} onDetectedWithImage={(raw,image)=>readProductLabel(image,raw)} onImageCaptured={image=>readProductLabel(image)} onClose={()=>setBarcodeScanTarget(null)} />}
+          }} onDetectedWithImage={(raw,image)=>{const value=raw.trim().slice(0,2048);let data:Record<string,unknown>|null=null;try{const parsed=JSON.parse(value);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))data=parsed as Record<string,unknown>;}catch{}if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());}catch{}}if(data)applyProductTagData(value,data);const find=(...keys:string[])=>Object.entries(data||{}).find(([name])=>keys.some(key=>name.toLowerCase()===key.toLowerCase()))?.[1];const barcodeValue=find("barcode","gtin","ean","upc"),skuValue=find("sku","product_code","code");const barcode=typeof barcodeValue==="string"||typeof barcodeValue==="number"?String(barcodeValue):!data&&/^\d{8,14}$/.test(value)?value:"";const sku=typeof skuValue==="string"||typeof skuValue==="number"?String(skuValue):!data&&!barcode?value:"";void readProductLabel(image,barcode,sku);}} onImageCaptured={image=>readProductLabel(image)}  onClose={()=>setBarcodeScanTarget(null)} />}
         </section></div>}
         {message && <p className="admin-message" role="status">{message}</p>}
       </section>
