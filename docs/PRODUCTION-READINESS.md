@@ -279,3 +279,37 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 - Production D1 currently has zero vehicle records. Automatic price estimates will only appear after the owner adds vehicles with rates in Admin → Vehicle fleet. With no selected vehicle, the request can still be sent and the team must quote manually.
 - Migration migrations/0020_rental_pricing.sql was applied to production D1 after a successful export snapshot. PRAGMA read-back confirmed with_driver_daily_rate_paisa, rental_days, estimated_daily_rate_paisa and estimated_total_paisa. The saved CNIC uploads setting was also read back as true.
 - CI must pass build/type checks, Worker tests, schema validation and browser tests. Live acceptance must confirm Turnstile, CNIC R2 writes, admin-only retrieval, confirmation gating, retention cleanup and both pricing modes.
+
+
+---
+
+## Source readiness checkpoint — 18 November 2026
+
+**Scope:** read-only review of current `main`, Worker entry points, current migration files, customer account UI, AI key manager, backup procedures and the owner handover tracker. No production environment was changed.
+
+### Verified source and CI
+
+- Owner setup tracker commit `5cdec943b8de327f634b30cc74064ad6234f2ca9` passed GitHub Actions [#44341083529](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341083529).
+- README tracker-link commit `b9f1c8ac7ee874e4b6f98d7f0b7976822beaba0f` passed [#44341122641](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44341122641).
+- Both runs completed the build/type-check, production dependency audit, Pages security-header artifact check, Worker authentication tests, D1 schema validation and browser tests. This proves the tested source builds; it does not prove the current main commit is deployed or that external services are configured.
+- Worker currently has explicit server-side bindings for Safepay, Resend, Gemini keys, and WhatsApp Cloud API. The presence of a binding or delivery queue is not proof of provider credentials, verified sender/phone, approved template or real delivery.
+- Customer accounts currently use the native De VERVE password/session system. Google and Microsoft OIDC are not implemented. Google Drive upload is manual; encrypted CNIC recovery downloads a local ZIP and does not restore into D1/R2.
+- AI key manager currently manages Gemini keys in a server-side encrypted vault and supports testing/fallback order. Owner must still verify configured keys and approve which data can be processed. Never send CNIC evidence, customer PII, HR, finance or rental contract data to consumer AI providers.
+
+### Release blockers confirmed in source/docs
+
+1. **Database release ordering:** migrations `0030` and `0031` are still recorded as pending production. They must be reviewed against the live migration ledger and backed-up production schema before a controlled release. Migration `0032` is the separately applied CNIC protection safeguard. Do not run migrations or deploy in this task.
+2. **Payments:** Safepay adapter is sandbox-only and dormant without the three sandbox secrets; no sandbox transaction has been completed. No live merchant onboarding, live payment or automated provider refund is verified. COD remains the only confirmed checkout path. Do not enable a wallet/payment option based only on a setting label.
+3. **Email and WhatsApp:** Resend and WhatsApp outbox processors exist, but provider credentials, sender/domain, WABA/phone ID, approved template and end-to-end delivery remain owner-dependent and unverified. Customer email verification/password recovery are not active.
+4. **Backup/restore:** CNIC original retention protection is a hard invariant. Per-rental encrypted backup is manual. Business-wide D1 + R2/media backup, Google Drive OAuth upload, off-account automation and a successful isolated restore drill remain incomplete. D1 export alone does not contain R2 image bytes.
+5. **Identity:** Google/Microsoft customer login remains documentation-only. Provider app IDs, exact final hostname and redirect configuration are needed before safely activating identity flows. OAuth must not grant admin access.
+6. **AI:** Gemini key manager exists, but active provider health, rate/usage caps, data classification, prompt-injection protections and owner policy approval must be validated before describing public AI chat as production-ready.
+7. **Business acceptance:** actual product/variant/stock and vehicle/fleet/rates are intentionally owner-supplied. Legal policy approval, real device tests, operational support and real transaction/notification acceptance are outstanding.
+
+### Safe next-release rule
+
+- Keep all changes on GitHub with `[CF-Pages-Skip]` in every commit message.
+- Do not call Cloudflare deployment APIs or Wrangler. Do not apply migrations, change secrets, import/delete data or alter R2 objects.
+- Before a later release: export and verify D1 backup; reconcile migration ledger; stage migrations `0030` and `0031` in an isolated copy; test all Worker/browser paths; obtain owner/provider approvals; deploy only after the owner explicitly says **“deploy now”**; then run the live smoke and restore/transaction acceptance plan.
+
+**Verdict:** source CI is passing, but the service is **not certified production-ready for unrestricted commerce**. External integrations, backup/recovery, migration release, owner data, legal approval and live acceptance are real blockers—not tasks that can responsibly be marked complete from source code alone.
