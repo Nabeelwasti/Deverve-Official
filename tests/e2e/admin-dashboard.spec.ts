@@ -165,6 +165,7 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   await expect(page.getByRole("heading", { name: "CMS test page" }).first()).toBeVisible();
   await page.getByLabel("Add section type").selectOption("image_gallery");
   const block = page.locator(".content-block").last();
+  await expect(block.locator(".content-block-head strong")).toHaveText("Image gallery");
   await block.getByLabel("Heading").fill("Campaign gallery");
   await block.locator('input[type="file"][multiple][aria-label="Upload gallery images"]').setInputFiles({ name: "campaign.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=", "base64") });
   await expect(block.locator(".content-gallery-preview img")).toHaveCount(1);

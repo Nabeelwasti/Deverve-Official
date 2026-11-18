@@ -57,7 +57,7 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
     if(mounted.current&&!detected.current)frame.current=requestAnimationFrame(()=>void tick());
    };
    frame.current=requestAnimationFrame(()=>void tick());
-  }catch(caught){if(mounted.current){setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}}
+  }catch(caught){if(mounted.current){stopCamera();setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}else{stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;}}
   finally{if(mounted.current)setStarting(false);}
  };
  return <div className="barcode-camera-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
@@ -65,7 +65,7 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
    <header><div><p className="admin-eyebrow">DE VERVE · POS SCANNER</p><h3 id="barcode-camera-title">Scan product barcode</h3></div><button type="button" className="admin-close" aria-label="Close camera scanner" onClick={onClose}>×</button></header>
    <div className="barcode-camera-stage">{cameraActive?<video ref={video} autoPlay muted playsInline/>:<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
    {error&&<p className="admin-error" role="alert">{error}</p>}
-   <p className="admin-muted" role="status">{cameraActive?status:"Your camera is not accessed until you choose the start button."}</p>
+   <p className="admin-muted" role="status">{cameraActive?status:"Camera access is requested only when you press the start button."}</p>
    {!cameraActive&&<button type="button" className="admin-primary" disabled={starting} onClick={()=>void startCamera()}>{starting?"Requesting camera…":error?"Try camera again":"Allow camera access & start scanning"}</button>}
    <button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
   </section>
