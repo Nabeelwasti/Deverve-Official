@@ -109,7 +109,7 @@ test("rental vehicle assignment and internal note can be saved without changing 
 
   await page.route("**/api/admin/rentals/" + rentalId + "/documents/**", async route => {
     const side = new URL(route.request().url()).pathname.split("/").pop() || "cnic_front";
-    await route.fulfill({status:200,contentType:"image/jpeg",headers:{"cache-control":"private, no-store"},body:Buffer.from("test-cnic-image-bytes-"+side)});
+    await route.fulfill({status:200,contentType:"image/png",headers:{"cache-control":"private, no-store"},body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=","base64")});
   });
   page.on("dialog", dialog => dialog.accept("Test-Backup-Password-2026!"));
   const backupDownload = page.waitForEvent("download");
