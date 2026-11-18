@@ -203,6 +203,19 @@ test("authorized POS staff can retry only failed receipts with recorded customer
   assert.equal(db.audits.some(row=>row.action==="pos.receipt_retry_requested"),true);
 });
 
+test("same-origin admin writes remain usable when embedded browsers omit Origin and Referer", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const response = await handleRequest(new Request(origin + "/api/admin/products", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", "x-deverve-admin-request": "same-origin" },
+    body: JSON.stringify({}),
+  }), env(db));
+  assert.notEqual(response.status, 403, "trusted same-origin marker should pass origin verification");
+  assert.equal(response.status, 400, "invalid product payload should be rejected after origin verification");
+});
+
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);

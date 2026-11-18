@@ -1,6 +1,7 @@
 export async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "application/json");
+  if (options.method && !["GET", "HEAD", "OPTIONS"].includes(options.method.toUpperCase())) headers.set("x-deverve-admin-request", "same-origin");
   const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
   if (options.body && !isFormData && !headers.has("content-type")) headers.set("content-type", "application/json");
 

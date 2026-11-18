@@ -399,6 +399,10 @@ function requireSameOrigin(request: Request, url: URL): boolean {
   const origin = request.headers.get("origin");
   if (origin) return origin === url.origin;
   if (fetchSite === "same-origin") return true;
+  // Same-origin admin clients in embedded browsers may omit Origin and Referer.
+  // This non-simple header is only accepted when no explicit cross-site signal exists;
+  // cross-origin callers cannot send it without a successful CORS preflight.
+  if (request.headers.get("x-deverve-admin-request") === "same-origin") return true;
   const referer = request.headers.get("referer");
   if (!referer) return false;
   try { return new URL(referer).origin === url.origin; } catch { return false; }
