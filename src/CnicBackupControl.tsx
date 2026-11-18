@@ -38,10 +38,11 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
  return <div className="admin-cnic-backup">
   <div><strong>Encrypted offline backup</strong><small>Creates a password-protected AES-256-GCM copy in this browser. No CNIC image or password is sent to another service. Keep the password separately from the backup file.</small></div>
   <div className="admin-cnic-backup-destination">
-   <strong>Business backup destination · Google Drive</strong>
-   <small>Use the business-controlled Google account <b>deverve61@gmail.com</b>. Sign in to Drive, create a restricted folder named “De VERVE Secure Backups / CNIC Evidence”, then upload the encrypted .dvbackup file after it downloads. Do not email CNIC images or decrypted ZIP files.</small>
+   <strong>Business backup destinations · Google Drive and Dropbox</strong>
+   <small>Business account: <b>deverve61@gmail.com</b>. Google Drive and Dropbox are separate services even when they use the same email address. The connected Dropbox vault is ready at <b>/De VERVE Business Vault/01 - CNIC Evidence (Encrypted Only)</b>. Upload only the encrypted .dvbackup file there; never email CNIC images or upload decrypted recovery ZIPs.</small>
+   <a href="https://www.dropbox.com/home" target="_blank" rel="noopener noreferrer">Open Dropbox Business Vault</a>
    <a href="https://drive.google.com/drive/u/0/my-drive" target="_blank" rel="noopener noreferrer">Open Google Drive</a>
-   <small>Google Drive upload is currently a manual owner action. This website is not connected to the Google account and never receives its password. Keep the backup password in a separate password manager or sealed offline record, not in the same Drive folder.</small>
+   <small>Uploads are currently manual owner actions. The website is not connected to either cloud account and never receives their passwords. Google Drive's ChatGPT connection is disabled by the workspace administrator. Keep the backup password in a separate password manager or sealed offline record, not beside the backup.</small>
   </div>
   <div className="admin-form-actions">
    <button type="button" className="admin-secondary" disabled={busy||!sides.length} onClick={()=>{setMessage("");setMode(mode==="backup"?null:"backup");setRestoreFile(null);}}>Create encrypted backup</button>

@@ -1,8 +1,8 @@
 # De VERVE secure backup and recovery operations
 
-**Business backup account:** `deverve61@gmail.com`  
+**Business account:** `deverve61@gmail.com` (Google Drive and Dropbox are separate services using the same email identity)  
 **Applies to:** production D1 business records, permanent CNIC evidence metadata, and encrypted CNIC evidence files  
-**Status:** manual owner-controlled process; no unattended Google Drive integration is configured
+**Status:** manual owner-controlled process; Dropbox folder structure is ready, but no unattended Dropbox or Google Drive integration is configured
 
 ## 1. Non-negotiable evidence rules
 
@@ -12,9 +12,15 @@
 - Do not delete, overwrite, rename, or attempt to replace an original CNIC evidence object. The backup is an additional copy, not permission to alter the original.
 - Do not put the decryption password in the same Drive folder as its encrypted backup.
 
-## 2. Google Drive destination
+## 2. Cloud backup destinations
 
-The intended business-controlled account is **deverve61@gmail.com**. Use this folder layout:
+### Connected Dropbox vault
+
+The connected Dropbox account has been verified as display name **Deverve**, email **deverve61@gmail.com**. The root folder `/De VERVE Business Vault` and its category folders have been created. The root currently has no shared links. Use the CNIC-only folder `/De VERVE Business Vault/01 - CNIC Evidence (Encrypted Only)` for encrypted `.dvbackup` files only. Other business files should go into their matching category folders. Dropbox uploads from this workflow remain manual; no app OAuth integration or unattended sync is configured.
+
+### Google Drive destination
+
+The intended Google account is **deverve61@gmail.com**. Google Drive and Dropbox are different storage providers even when the login email is the same. The Google Drive connector is disabled by the ChatGPT workspace administrator; the owner can still sign into Drive directly in a browser. Use this folder layout:
 
 ```text
 My Drive/
@@ -92,7 +98,8 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 | D1 protection against CNIC metadata update/delete | Production triggers verified |
 | Per-rental browser-side encrypted CNIC backup | Implemented |
 | CNIC backup decryption and local ZIP recovery | Implemented; does not reinsert into D1/R2 |
-| Google Drive upload | Manual owner upload; no OAuth integration |
+| Dropbox vault | Folder structure created in verified business account; no files uploaded yet; no OAuth sync |
+| Google Drive upload | Manual owner upload; ChatGPT Drive connector disabled by workspace administrator; no website OAuth integration |
 | Emailing CNIC backups | Not used and not recommended |
 | Scheduled D1 SQL export | Not configured |
 | Automated R2-to-Google-Drive replication | Not configured |
@@ -103,7 +110,8 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 
 - [ ] Confirm the business owns and controls `deverve61@gmail.com`.
 - [ ] Enable two-step verification and confirm account recovery access.
-- [ ] Create the restricted Drive folder structure; verify no public links exist.
+- [ ] Review Dropbox Business Vault membership and verify no shared links or unapproved members exist.
+- [ ] Create the restricted Google Drive folder structure; verify no public links exist.
 - [ ] Create encrypted CNIC backups for every existing rental with evidence and upload them.
 - [ ] Create a weekly encrypted D1 export and upload it.
 - [ ] Keep a second encrypted copy on a separate offline drive.

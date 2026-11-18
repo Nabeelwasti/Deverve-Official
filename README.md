@@ -186,4 +186,4 @@ Work directly on `main`. Do not create or switch to feature branches, force-push
 
 ## Secure business backups
 
-See [Secure backup and recovery operations](docs/SECURE-BACKUP-OPERATIONS.md) for the owner procedure covering encrypted CNIC evidence files, Google Drive storage under `deverve61@gmail.com`, D1 SQL exports, recovery boundaries and restore drills. CNIC images must never be sent as ordinary email attachments or placed in public/shared links. Google Drive upload is currently manual; no Google OAuth connection or unattended upload is configured.
+See [Secure backup and recovery operations](docs/SECURE-BACKUP-OPERATIONS.md) for the owner procedure covering encrypted CNIC evidence files, Google Drive and Dropbox storage under `deverve61@gmail.com`, D1 SQL exports, recovery boundaries and restore drills. CNIC images must never be sent as ordinary email attachments or placed in public/shared links. Google Drive upload is currently manual; no Google OAuth connection or unattended upload is configured.
