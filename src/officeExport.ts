@@ -299,16 +299,15 @@ export async function exportOfficeImage(filename: string, title: string, subtitl
   context.textAlign = "right";
   context.fillText("Generated " + new Date().toLocaleString("en-PK"), width - padding, y + 54);
   context.textAlign = "left";
-  canvas.toBlob(blob => {
-    if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.style.display = "none";
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
-  }, format === "png" ? "image/png" : "image/jpeg", 0.94);
+  const imageBlob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, format === "png" ? "image/png" : "image/jpeg", 0.94));
+  if (!imageBlob || imageBlob.size === 0) throw new Error("Your browser could not create the report image. Please try again.");
+  const url = URL.createObjectURL(imageBlob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
