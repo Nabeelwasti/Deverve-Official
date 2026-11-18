@@ -28,6 +28,10 @@ actual_tables = {
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
 
+notification_outbox_columns = {row[1] for row in db.execute("PRAGMA table_info(notification_outbox)")}
+assert "processing_started_at" in notification_outbox_columns, "Owner notification lease timestamp is missing"
+assert any(row[1] == "idx_notification_outbox_lease" for row in db.execute("PRAGMA index_list(notification_outbox)")), "Owner notification lease index is missing"
+
 product_columns = {row[1] for row in db.execute("PRAGMA table_info(products)")}
 assert {"seo_title", "seo_description"} <= product_columns, "Product SEO metadata columns are missing"
 
