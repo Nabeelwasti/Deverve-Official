@@ -1,6 +1,6 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Source:** application changes through `68c35a22d6845f859ea8e5c7eb3eb125d478446a`; the latest documentation updates are on `main`. CI for the new encrypted-backup/Code 128 changes must be checked before release. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
+**Source:** application changes through `1c589d4fedb8e89b38b00451d60bc428abb311aa`; the latest documentation updates are on `main`. CI for the new encrypted-backup/Code 128 changes must be checked before release. GitHub Actions run [44298634220](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44298634220) passed the complete build job, including dependency audit, TypeScript/build, security-header output, Worker authentication tests, D1 schema checks, Chromium installation and storefront browser tests.
 
 ## Live Cloudflare verification — read-only inspection plus one additive safety migration
 
