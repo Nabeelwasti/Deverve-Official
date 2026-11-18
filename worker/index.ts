@@ -3902,21 +3902,24 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:fromBase64Url(row.key_iv)},key,fromBase64Url(row.key_ciphertext));
   return new TextDecoder().decode(plain);
 }
-const GEMINI_MODEL_FALLBACKS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-2.5-flash-lite"] as const;
+const GEMINI_MODEL_FALLBACKS=["gemini-3.8-flash","gemini-3.7-flash","gemini-3.6-flash","gemini-3.5-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-2.5-flash-lite"] as const;
 type GeminiInputPart = { text: string } | { inline_data: { mime_type: string; data: string } };
 export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:GeminiInputPart[]}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string;model:string}> {
   let last:{ok:boolean;status:number;text:string;message:string;model:string}={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model:GEMINI_MODEL_FALLBACKS[0]};
+  const attempted:string[]=[];const startedAt=Date.now();
   for(const model of GEMINI_MODEL_FALLBACKS){
+    if(Date.now()-startedAt>28000)break;
+    attempted.push(model);
     try{
       const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(18000)});
       const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
-      if(!response.ok){const message=[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};if(response.status===404||(response.status===400&&/model.{0,30}(not found|not supported|unknown|unavailable)/i.test(message))||[500,502,503,504].includes(response.status))continue;return last;}
+      if(!response.ok){const message=[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};const unsupportedModel=response.status===404||(response.status===400&&/model.{0,50}(not found|not supported|unknown|unavailable)/i.test(message));const modelPermissionIssue=response.status===403&&/model.{0,60}(not available|not enabled|not allowed|permission|access|unavailable)/i.test(message);const modelQuotaIssue=response.status===429&&/model|per.model/i.test(message);if(unsupportedModel||modelPermissionIssue||modelQuotaIssue||[500,502,503,504].includes(response.status))continue;return {...last,message:message+" (model tried: "+model+")"};}
       const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
       if(text)return {ok:true,status:200,text,message:"",model};
       last={ok:false,status:502,text:"",message:"Gemini returned an empty response",model};
     }catch{last={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model};}
   }
-  return last;
+  return {...last,message:last.message+"; models tried: "+(attempted.join(", ")||"none")};
 }
 
 type GeminiEnvironmentKeyStatus = {
