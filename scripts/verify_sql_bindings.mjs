@@ -84,7 +84,7 @@ while ((match = prepare.exec(source))) {
   let cursor = prepare.lastIndex;
   while (/\\s/.test(source[cursor] || "")) cursor += 1;
   if (!source.startsWith(".bind(", cursor)) continue;
-  const openParen = cursor + ".bind".length;
+  const openParen = cursor + ".bind(".length;
   const parsed = readBindArguments(source, openParen);
   if (!parsed) continue;
   const sql = match[1].replace(/\\\\(["\\\\])/g, "$1");
