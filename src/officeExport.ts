@@ -168,7 +168,8 @@ export function exportOfficeSpreadsheet(filename: string, sheetName: string, row
   downloadOfficeFile(filename, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", zipStore(files));
 }
 
-export function exportOfficeDocument(filename: string, title: string, subtitle: string, rows: OfficeRow[]): void {
+export async function exportOfficeDocument(filename: string, title: string, subtitle: string, rows: OfficeRow[]): Promise<void> {
+  const logoPng = await loadBrandLogoPng();
   const columnCount = Math.max(1, ...rows.map(row => row.length));
   const headerIndex = officeHeaderIndex(rows);
   const cellWidth = Math.floor(9360 / columnCount);
@@ -184,22 +185,24 @@ export function exportOfficeDocument(filename: string, title: string, subtitle: 
     const header = rowIndex === 0 ? '<w:trPr><w:tblHeader/></w:trPr>' : "";
     return "<w:tr>" + header + cells + "</w:tr>";
   }).join("");
-  const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:pPr><w:pStyle w:val="BrandLine"/></w:pPr><w:r><w:t>DE VERVE  ·  JHELUM, PAKISTAN</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>' + xmlEscape(title) + '</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Subtitle"/></w:pPr><w:r><w:t>' + xmlEscape(subtitle) + '</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D7E0E8"/><w:left w:val="single" w:sz="4" w:color="D7E0E8"/><w:bottom w:val="single" w:sz="4" w:color="D7E0E8"/><w:right w:val="single" w:sz="4" w:color="D7E0E8"/><w:insideH w:val="single" w:sz="4" w:color="D7E0E8"/><w:insideV w:val="single" w:sz="4" w:color="D7E0E8"/></w:tblBorders></w:tblPr><w:tblGrid>' + grid + '</w:tblGrid>' + tableRows + '</w:tbl><w:p><w:pPr><w:spacing w:before="240" w:after="80"/></w:pPr><w:r><w:rPr><w:color w:val="60758A"/><w:sz w:val="18"/></w:rPr><w:t>De VERVE  ·  +92 319 7553705  ·  deverve-official.pages.dev</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="450" w:footer="450" w:gutter="0"/><w:footerReference w:type="default" r:id="rId2"/></w:sectPr></w:body></w:document>';
+  const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>' + (logoPng ? '<w:p><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="762000" cy="762000"/><wp:docPr id="1" name="De VERVE logo"/><wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="De VERVE logo"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rId3"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="762000" cy="762000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>' : '') + '<w:p><w:pPr><w:pStyle w:val="BrandLine"/></w:pPr><w:r><w:t>DE VERVE  ·  JHELUM, PAKISTAN</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>' + xmlEscape(title) + '</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Subtitle"/></w:pPr><w:r><w:t>' + xmlEscape(subtitle) + '</w:t></w:r></w:p><w:tbl><w:tblPr><w:tblStyle w:val="TableGrid"/><w:tblW w:w="9360" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="4" w:color="D7E0E8"/><w:left w:val="single" w:sz="4" w:color="D7E0E8"/><w:bottom w:val="single" w:sz="4" w:color="D7E0E8"/><w:right w:val="single" w:sz="4" w:color="D7E0E8"/><w:insideH w:val="single" w:sz="4" w:color="D7E0E8"/><w:insideV w:val="single" w:sz="4" w:color="D7E0E8"/></w:tblBorders></w:tblPr><w:tblGrid>' + grid + '</w:tblGrid>' + tableRows + '</w:tbl><w:p><w:pPr><w:spacing w:before="240" w:after="80"/></w:pPr><w:r><w:rPr><w:color w:val="60758A"/><w:sz w:val="18"/></w:rPr><w:t>De VERVE  ·  +92 319 7553705  ·  deverve-official.pages.dev</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="450" w:footer="450" w:gutter="0"/><w:footerReference w:type="default" r:id="rId2"/></w:sectPr></w:body></w:document>';
   const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Aptos" w:hAnsi="Aptos"/><w:sz w:val="20"/><w:color w:val="263B50"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:pPr><w:spacing w:before="120" w:after="80"/></w:pPr><w:rPr><w:b/><w:sz w:val="34"/><w:color w:val="102A43"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:rPr><w:sz w:val="20"/><w:color w:val="60758A"/></w:rPr></w:style><w:style w:type="paragraph" w:styleId="BrandLine"><w:name w:val="Brand line"/><w:basedOn w:val="Normal"/><w:rPr><w:b/><w:sz w:val="18"/><w:color w:val="163A5F"/></w:rPr></w:style><w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/></w:style></w:styles>';
   const footer = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:color w:val="60758A"/><w:sz w:val="16"/></w:rPr><w:t>De VERVE · Business document · Page </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>';
   const files = [
-    { path: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>' },
+    { path: "[Content_Types].xml", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>' },
     { path: "_rels/.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
     { path: "word/document.xml", content: documentXml },
     { path: "word/styles.xml", content: styles },
     { path: "word/footer1.xml", content: footer },
-    { path: "word/_rels/document.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>' },
+    { path: "word/_rels/document.xml.rels", content: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/>' + (logoPng ? '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/de-verve-logo.png"/>' : '') + '</Relationships>' },
   ];
+  if (logoPng) files.push({ path: "word/media/de-verve-logo.png", content: logoPng });
   downloadOfficeFile(filename, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", zipStore(files));
 }
 
-export function exportOfficeImage(filename: string, title: string, subtitle: string, rows: OfficeRow[], format: "jpeg" | "png" = "jpeg"): void {
+export async function exportOfficeImage(filename: string, title: string, subtitle: string, rows: OfficeRow[], format: "jpeg" | "png" = "jpeg"): Promise<void> {
   if (!rows.length) return;
+  const logoPng = await loadBrandLogoPng();
   const canvas = document.createElement("canvas");
   const width = 1800;
   const padding = 88;
@@ -219,12 +222,17 @@ export function exportOfficeImage(filename: string, title: string, subtitle: str
   context.fillRect(0, 0, width, height);
   context.fillStyle = "#102a43";
   context.fillRect(0, 0, width, 18);
+  if (logoPng) {
+    const logoUrl = URL.createObjectURL(new Blob([logoPng], { type: "image/png" }));
+    try { const logo = new Image(); logo.src = logoUrl; await logo.decode(); context.drawImage(logo, padding, 34, 112, 112); }
+    finally { URL.revokeObjectURL(logoUrl); }
+  }
   context.fillStyle = "#102a43";
   context.font = "700 42px Arial, sans-serif";
-  context.fillText("DE VERVE", padding, 86);
+  context.fillText("DE VERVE", padding + (logoPng ? 132 : 0), 86);
   context.fillStyle = "#60758a";
   context.font = "18px Arial, sans-serif";
-  context.fillText("JHELUM · PAKISTAN", padding, 122);
+  context.fillText("JHELUM · PAKISTAN", padding + (logoPng ? 132 : 0), 122);
   context.fillStyle = "#102a43";
   context.font = "700 34px Arial, sans-serif";
   context.fillText(title, padding, 190, tableWidth);
