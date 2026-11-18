@@ -478,7 +478,7 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
-  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); if(screen!=="fashion")url.searchParams.delete("category"); url.hash = ""; setSelectedCategory(screen==="fashion"?url.searchParams.get("category")||"": ""); window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (screen: StoreScreen) => { if(screen==="home"){window.location.assign("/");return;} setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); if(screen!=="fashion")url.searchParams.delete("category"); url.hash = ""; setSelectedCategory(screen==="fashion"?url.searchParams.get("category")||"": ""); window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => setFavourites((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
 
   return (

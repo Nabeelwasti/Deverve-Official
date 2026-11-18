@@ -4168,7 +4168,7 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
       const rows = slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)
         ? await env.DB.prepare(columns + " AND slug = ? LIMIT 1").bind(slug).all<ProductRow>()
         : category
-          ? await env.DB.prepare(columns + " AND category = ? ORDER BY created_at DESC LIMIT ?").bind(category, limit).all<ProductRow>()
+          ? await env.DB.prepare(columns + " AND category = ? COLLATE NOCASE ORDER BY created_at DESC LIMIT ?").bind(category, limit).all<ProductRow>()
           : await env.DB.prepare(columns + " ORDER BY created_at DESC LIMIT ?").bind(limit).all<ProductRow>();
       const products = rows.results ?? [];
       if (!products.length) return json({ products: [] });
