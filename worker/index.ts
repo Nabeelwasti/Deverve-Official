@@ -1576,11 +1576,6 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
         .bind(targetVehicleId).first<{ id: string; status: string }>();
       if (!vehicle) return error("Choose a vehicle that exists in the fleet", 404);
       if ((nextStatus === "confirmed" || vehicleChanged) && vehicle.status !== "available") return error("Choose a vehicle that is currently available", 409);
-      if (vehicleChanged) {
-        const conflict = await env.DB.prepare("SELECT id FROM rental_requests WHERE vehicle_id = ? AND id <> ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ? LIMIT 1")
-          .bind(targetVehicleId, match[1], current.return_at, current.pickup_at).first<{ id: string }>();
-        if (conflict) return error("This vehicle is already assigned to another confirmed rental during these dates", 409);
-      }
     }
     const now = new Date().toISOString();
     const result = await env.DB.prepare("UPDATE rental_requests SET vehicle_id = ?, status = ?, admin_note = ?, updated_at = ? WHERE id = ? AND status = ? AND (? <> 'confirmed' OR (? IS NOT NULL AND EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests other WHERE other.vehicle_id = ? AND other.id <> rental_requests.id AND other.status IN ('confirmed','active') AND other.pickup_at < rental_requests.return_at AND other.return_at > rental_requests.pickup_at)))")
