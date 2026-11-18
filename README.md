@@ -187,3 +187,8 @@ Work directly on `main`. Do not create or switch to feature branches, force-push
 ## Secure business backups
 
 See [Secure backup and recovery operations](docs/SECURE-BACKUP-OPERATIONS.md) for the owner procedure covering encrypted CNIC evidence files, Google Drive and Dropbox storage under `deverve61@gmail.com`, D1 SQL exports, recovery boundaries and restore drills. CNIC images must never be sent as ordinary email attachments or placed in public/shared links. Google Drive upload is currently manual; no Google OAuth connection or unattended upload is configured. Dropbox is connected to ChatGPT, but this does not authorize the De VERVE website to upload to Dropbox.
+
+
+## Owner setup and external integrations
+
+Use [`docs/OWNER-SETUP-AND-HANDOVER-TRACKER.md`](docs/OWNER-SETUP-AND-HANDOVER-TRACKER.md) as the single checklist for owner-supplied details and approvals, including Meta/Facebook/Instagram, WhatsApp, Resend email, payment-provider choice, Google Drive backups, Google/Microsoft sign-in, AI provider decisions, business data, legal approvals and release acceptance. It distinguishes verified repository implementation from owner actions and unfinished developer work. Never place secrets in the tracker, GitHub, or chat.
