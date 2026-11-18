@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check:worker": "tsc -p tsconfig.worker.json",
     "check": "npm run build && npm run check:worker",
-    "test:worker": "tsc -p tsconfig.worker.test.json && node --test scripts/worker-auth.test.mjs scripts/cnic-retention.test.mjs",
+    "test:worker": "tsc -p tsconfig.worker.test.json && node scripts/verify_sql_bindings.mjs && node --test scripts/worker-auth.test.mjs scripts/cnic-retention.test.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
