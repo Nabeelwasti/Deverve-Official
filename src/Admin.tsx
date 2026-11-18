@@ -166,7 +166,6 @@ export default function Admin() {
   const [newInviteUrl, setNewInviteUrl] = useState("");
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({facebook:"",instagram:"",tiktok:"",youtube:"",linkedin:"",pinterest:"",threads:"",x:""});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
-  const cnicUploadsEnabled = true;
   const [ownerPrimaryEmail,setOwnerPrimaryEmail]=useState("");
   const [ownerSecondaryEmails,setOwnerSecondaryEmails]=useState("");
   const [ownerEmailsEnabled,setOwnerEmailsEnabled]=useState(true);
