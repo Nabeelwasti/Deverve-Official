@@ -4046,9 +4046,9 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   // The encrypted D1 vault is an optional key source. A valid platform secret
   // must still be usable if the vault migration or D1 query is temporarily unavailable.
   try{await importConfiguredGeminiEnvKeys(env);}catch{}
-  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
+  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
   if(!keys.length&&!configuredEnvKeys.length)return error("No usable Gemini key is configured. Check the server secrets or add a key in Admin → AI & live chat.",503);
-  const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
+  const now=Date.now(),available=keys.filter(row=>Number(row.enabled)===1&&(!row.cooldown_until||Date.parse(row.cooldown_until)<=now));
   let productContext="No published product details are currently available.";
   let vehicleContext="No available vehicle details are currently available.";
   try{const result=await env.DB.prepare("SELECT p.name,p.category,p.retail_price_paisa,v.size,v.color,v.stock_on_hand,v.reserved_quantity FROM products p LEFT JOIN product_variants v ON v.product_id=p.id AND v.is_active=1 WHERE p.status='published' ORDER BY p.name,v.size,v.color LIMIT 80").all<{name:string;category:string;retail_price_paisa:number|null;size:string|null;color:string|null;stock_on_hand:number|null;reserved_quantity:number|null}>();if(result.results?.length)productContext=result.results.map(p=>p.name+" ("+p.category+")"+(p.retail_price_paisa===null?"":" — Rs. "+Math.round(p.retail_price_paisa/100).toLocaleString("en-PK"))+(p.size?" · size "+p.size:"")+(p.color?" · colour "+p.color:"")+(p.stock_on_hand===null?"":" · recorded available units "+Math.max(0,(p.stock_on_hand??0)-(p.reserved_quantity??0)))).join("\n");}catch{}
@@ -4099,8 +4099,8 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
   if(!match||match[2].length>6_500_000)return error("Capture a clear JPG, PNG or WebP product label (maximum 5 MB)",400);
   const scannedCode=typeof body?.barcode==="string"?body.barcode.trim().slice(0,128):"";const scannedSku=typeof body?.sku==="string"?body.sku.trim().slice(0,128):"";
   let keys:GeminiKeyRow[]=[];
-  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
-  const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
+  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
+  const now=Date.now(),available=keys.filter(row=>Number(row.enabled)===1&&(!row.cooldown_until||Date.parse(row.cooldown_until)<=now));
   const envKeys=[env.NabeelG_Api_key1?.trim(),env.NabeelG_Api_key2?.trim()].filter((key):key is string=>Boolean(key&&/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)));
   const tried=new Set<string>(),undecryptable=new Set<string>();
   const prompt="Read this garment, clothing, retail product tag or supplier label. Extract only facts that are clearly visible. Return one valid JSON object only, without Markdown, using exactly these keys: name, brand, category, description, audience, retail_price, wholesale_price, purchase_cost, size, color, sku, barcode, quantity, material, country_of_origin. Use a short string for text values, numbers for clearly printed prices or quantities, and null when a value is missing or unreadable. Prices are in PKR only when the label explicitly shows PKR, Rs or ₨; otherwise set the price fields to null. Never invent a price, brand, size, colour, barcode, quantity or product detail. Distinguish retail price from wholesale price and purchase cost. Preserve every barcode digit exactly. If the image contains several items, describe only the primary tag in the centre.";
