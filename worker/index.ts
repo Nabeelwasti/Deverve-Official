@@ -2088,9 +2088,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (request.method === "GET" && path === "/api/admin/pos/sales") {
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 50) || 50));
     try {
-      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.name AS cashier_name, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='email' LIMIT 1),'not_requested') AS email_receipt_status, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='whatsapp' LIMIT 1),'not_requested') AS whatsapp_receipt_status FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
+      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.email AS cashier_name, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='email' LIMIT 1),'not_requested') AS email_receipt_status, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='whatsapp' LIMIT 1),'not_requested') AS whatsapp_receipt_status FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
       return json({ sales: rows.results ?? [] });
-    } catch { return error("POS sales history could not be loaded", 503); }
+    } catch (caught) { console.error("[pos_sales_history] failed", caught instanceof Error ? caught.message : "unknown error"); return error("POS sales history could not be loaded", 503); }
   }
   if (request.method === "POST" && path === "/api/admin/pos/receipts/retry") {
     if (!requireSameOrigin(request,url)) return error("Request origin could not be verified",403);
@@ -2381,9 +2381,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (request.method === "GET" && path === "/api/admin/pos/expenses") {
     if (!canManageMoney) return error("Only an owner or manager can view business expenses",403);
     try {
-      const rows=await env.DB.prepare("SELECT e.id,e.expense_number,e.category,e.description,e.amount_paisa,e.expense_date,e.status,a.name AS account_name,ad.name AS created_by FROM business_expenses e JOIN financial_accounts a ON a.id=e.account_id LEFT JOIN admin_users ad ON ad.id=e.created_by_admin_id ORDER BY e.expense_date DESC,e.created_at DESC LIMIT 100").all<Record<string,unknown>>();
+      const rows=await env.DB.prepare("SELECT e.id,e.expense_number,e.category,e.description,e.amount_paisa,e.expense_date,e.status,a.name AS account_name,ad.email AS created_by FROM business_expenses e JOIN financial_accounts a ON a.id=e.account_id LEFT JOIN admin_users ad ON ad.id=e.created_by_admin_id ORDER BY e.expense_date DESC,e.created_at DESC LIMIT 100").all<Record<string,unknown>>();
       return json({expenses:rows.results??[]});
-    }catch{return error("Expenses could not be loaded",503);}
+    }catch(caught){console.error("[pos_expenses_list] failed",caught instanceof Error?caught.message:"unknown error");return error("Expenses could not be loaded",503);}
   }
   return error("Method not allowed",405);
 }
