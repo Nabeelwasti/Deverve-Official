@@ -762,7 +762,7 @@ class FakeStatement {
         .filter(item=>!q.includes("NOT IN ('complaint','dmca','legal','business','other')")||!["complaint","dmca","legal","business","other"].includes(item.enquiry_type));
       return { success: true, results: rows.slice(0, v[0]) };
     }
-    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at")) { if(this.db.failAiKeyRead) throw new Error("simulated D1 outage"); return { success: true, results: [...this.db.aiKeys.values()].filter(row=>row.enabled===1).sort((a,b)=>a.priority-b.priority) }; }
+    if (q.startsWith("SELECT * FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at")) { if(this.db.failAiKeyRead) throw new Error("simulated D1 outage"); return { success: true, results: [...this.db.aiKeys.values()].sort((a,b)=>a.priority-b.priority) }; }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, retail_price_paisa, image_key, seo_title, seo_description FROM products")) {
       const category = q.includes("category = ?") ? v[0] : null;
       const limit = v[v.length - 1];
@@ -2091,8 +2091,8 @@ test("Gemini skips an unavailable stable model and reports the model that actual
   try{
     const result=await callGemini("AQ."+"A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
     assert.equal(result.ok,true);
-    assert.equal(result.model,"gemini-3.6-flash");
-    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.6-flash"]);
+    assert.equal(result.model,"gemini-3.7-flash");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.7-flash"]);
   }finally{globalThis.fetch=originalFetch;}
 });
 
