@@ -1,6 +1,6 @@
 # Current source and production data-protection review — 18 November 2026
 
-**Latest source:** `26dbc26cd2ea11150686f2257c9e4386ea9c6107`. GitHub Actions run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) is validating the latest export-logo and Dropbox UI changes; status was in progress at the time of this update. The previous full run [44323584308](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44323584308) passed its complete workflow. Earlier browser tests exposed an embedded-logo regression, which is being addressed in the latest commits; do not release until the newest browser suite passes.
+**Latest source:** `e82a5d718c1f9ff578ae1734e0ed781c63395156`. The latest full code-validation run [44324552622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44324552622) completed successfully: TypeScript/build, Worker authentication tests, D1 schema validation, security-header checks, production dependency audit and all **58 desktop/mobile browser tests** passed. The new regression checks verified the De VERVE PNG logo is embedded in DOCX/XLSX exports and that JPG exports download successfully. Documentation-only run [44325031957](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44325031957) is queued. This verifies source and browser behavior, not a live Cloudflare deployment.
 
 ## Connected business cloud storage
 
@@ -23,6 +23,18 @@
 
 **Important recovery boundary:** the CNIC recovery control decrypts and downloads the original images and a manifest in a ZIP. It does not reinsert images or records into production D1/R2. The D1 export process is separately documented and does not include R2 image bytes. A tested replacement-system import process remains required.
 
+## Branded document export coverage
+
+- The shared export engine now embeds the De VERVE logo as a real PNG image in generic Word (DOCX), Excel (XLSX) and JPG/PNG image exports used by the admin, inventory and POS workspaces.
+- Spreadsheet export reserves a clean logo header area and uses a valid drawing relationship; Word export embeds the logo media and relationship; image exports draw the logo into the canvas.
+- Browser regression coverage verifies the embedded image entries in DOCX/XLSX and successful JPEG output. The 58-test browser suite passed in run 44324552622.
+- CSV remains text-only by design because the CSV format cannot contain embedded images. Browser print/PDF uses the relevant workspace's print template.
+
+## Dependency security status
+
+- Production dependency audit: **0 vulnerabilities** in the successful run.
+- Full development-tool dependency audit still reports four high-severity transitive findings in build tooling (`fdir`, `picomatch`, `tinyglobby`, and `vite`). They are development/build dependencies, not production runtime dependencies. Keep the audit artifact and reassess after upstream fixes; do not force a major downgrade simply to make the count disappear.
+- Vite's dev server must remain local and must not be exposed to the public internet. Production build output is static and does not run the Vite dev server.
 ## Release and deployment controls
 
 No Cloudflare Pages/Workers deployment, Cloudflare API mutation, production D1 migration, data import, data deletion or R2 object deletion was performed for the Google Drive workflow change. Every source commit continues to use `[CF-Pages-Skip]`; do not deploy until the owner explicitly says **“deploy now”**. Migrations `0030` and `0031` remain pending production application and must be applied in their reviewed release sequence before deploying matching application code. Migration `0032` remains the verified production CNIC immutability safeguard.
