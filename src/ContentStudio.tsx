@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { adminRequest as request } from "./adminApi";
 
 type PageSection = { id: string; section_type: string; position: number; content: Record<string,string>; is_visible: boolean };
 type Page = { id: string; slug: string; title: string; page_type: "standard"|"landing"|"policy"|"home"; status: "draft"|"published"|"archived"; seo_title: string; seo_description: string; updated_at: string; sections?: PageSection[] };
@@ -6,7 +7,6 @@ type NavItem = { id: string; label: string; href: string; position: number; is_v
 const sectionTypes = ["hero","rich_text","image_text","image_gallery","video","product_collection","category_grid","promo_banner","contact_cta","faq"];
 const sectionLabels: Record<string,string> = {hero:"Hero banner",rich_text:"Text block",image_text:"Image with text",image_gallery:"Image gallery",video:"Video",product_collection:"Product collection",category_grid:"Category grid",promo_banner:"Promotion banner",contact_cta:"Contact call-to-action",faq:"FAQs"};
 const blankSection = (type="hero"): PageSection => ({id:crypto.randomUUID(),section_type:type,position:0,is_visible:true,content:{eyebrow:"DE VERVE",heading:"Your next favourite look.",body:"Add a short, clear message for your visitors.",image_url:"",button_text:"Explore collection",button_href:"/"}});
-async function request<T>(path:string,init:RequestInit={}):Promise<T>{const response=await fetch(path,{...init,credentials:"same-origin",headers:{accept:"application/json",...(init.body?{"content-type":"application/json"}:{}),...init.headers}});const data=await response.json() as T & {error?:string};if(!response.ok)throw new Error(data.error||"Request failed. Please try again.");return data;}
 export default function ContentStudio({onClose}:{onClose:()=>void}){
  const [pages,setPages]=useState<Page[]>([]),[page,setPage]=useState<Page|null>(null),[sections,setSections]=useState<PageSection[]>([]),[nav,setNav]=useState<NavItem[]>([]);
  const [busy,setBusy]=useState(false),[message,setMessage]=useState(""),[creating,setCreating]=useState(false),[newTitle,setNewTitle]=useState(""),[newSlug,setNewSlug]=useState("");

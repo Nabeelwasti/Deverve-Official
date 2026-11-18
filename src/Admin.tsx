@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
+import { adminRequest as api } from "./adminApi";
 import "./admin.css";
 import ContentStudio from "./ContentStudio";
 import NotificationCenter from "./NotificationCenter";
@@ -138,17 +139,6 @@ function printOrderDocument(order: AdminOrder, kind: "invoice" | "delivery"): vo
   const html="<!doctype html><html><head><meta charset='utf-8'><title>"+esc(title)+" · "+esc(order.order_number)+"</title><style>@page{size:A4;margin:16mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#263b50;margin:0;font-size:12px}.top{height:8px;background:#163a5f;margin-bottom:28px}.brand{font-size:25px;font-weight:800;letter-spacing:2px;color:#102a43}.muted{color:#60758a}.title{display:flex;justify-content:space-between;align-items:end;margin:24px 0 18px}.title h1{font-size:25px;margin:0;color:#102a43}.ref{text-align:right}.ref strong{display:block;font-size:15px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#f1f5f9;padding:16px;border-radius:8px;margin-bottom:22px}.grid div{padding:4px 0}.grid small{display:block;text-transform:uppercase;color:#60758a;font-size:9px;letter-spacing:1px;margin-bottom:4px}.grid strong{font-size:12px;overflow-wrap:anywhere}table{width:100%;border-collapse:collapse;margin:16px 0}th{background:#163a5f;color:#fff;text-align:left;padding:11px 9px;font-size:10px;text-transform:uppercase;letter-spacing:.5px}td{padding:12px 9px;border-bottom:1px solid #d7e0e8;vertical-align:top}tbody tr:nth-child(even){background:#f7f9fb}td small{display:block;color:#60758a;margin-top:4px}.totals{width:48%;margin:18px 0 0 auto}.totals div{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #e3eaf0}.totals .grand{background:#163a5f;color:white;font-size:14px;font-weight:700;margin-top:6px}.note{margin-top:30px;padding-top:14px;border-top:1px solid #d7e0e8;color:#60758a;font-size:10px;line-height:1.6}.sign{display:flex;justify-content:space-between;margin-top:48px}.sign span{border-top:1px solid #8093a5;padding-top:8px;width:42%;color:#60758a}.footer{margin-top:30px;text-align:center;color:#60758a;font-size:10px}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body><div class='top'></div><div class='brand'>DE VERVE</div><div class='muted'>JHELUM · PAKISTAN · +92 319 7553705</div><div class='title'><h1>"+title+"</h1><div class='ref'><strong>"+esc(order.order_number)+"</strong><span class='muted'>"+esc(new Date(order.created_at).toLocaleString("en-PK"))+"</span></div></div><div class='grid'><div><small>Customer</small><strong>"+esc(order.customer_name)+"</strong></div><div><small>Contact</small><strong>"+esc(order.phone)+" · "+esc(order.email||"")+"</strong></div><div><small>Delivery address</small><strong>"+esc(order.delivery_address+", "+order.city)+"</strong></div><div><small>Order / payment status</small><strong>"+esc(order.order_status)+" · "+esc(order.payment_status)+"</strong></div></div><table><thead><tr><th>Item / variant</th><th>Qty</th>"+(invoice?"<th>Unit price</th><th>Amount</th>":"")+"</tr></thead><tbody>"+rows+"</tbody></table>"+totals+"<div class='sign'><span>Prepared by De VERVE</span><span>Received by customer</span></div><div class='note'>"+(invoice?"This is a system-generated sales invoice for the order shown above. Please retain it for your records. Delivery and payment are subject to the final confirmed order terms.":"Please verify the listed items and quantities at handover. This slip is not proof of payment. Any shortage or damage should be reported to the delivery representative before signing.")+"</div><div class='footer'>De VERVE · deverve-official.pages.dev · Thank you for choosing us.</div></body></html>";
   popup.addEventListener("load",()=>{popup.focus();popup.print();},{once:true});
   popup.document.open();popup.document.write(html);popup.document.close();
-}
-
-async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    ...options,
-    credentials: "same-origin",
-    headers: { accept: "application/json", ...(options.body ? { "content-type": "application/json" } : {}), ...options.headers },
-  });
-  const payload = await response.json() as T & { error?: string };
-  if (!response.ok) throw new Error(payload.error || "Something went wrong. Please try again.");
-  return payload;
 }
 
 export default function Admin() {
@@ -369,9 +359,8 @@ export default function Admin() {
     setBusy(true);setMessage("");
     try{
       const data=new FormData();data.append("file",file);data.append("alt_text",kind==="logo"?"Official De VERVE logo":"De VERVE website favicon");
-      const response=await fetch("/api/admin/media",{method:"POST",credentials:"same-origin",headers:{accept:"application/json"},body:data});
-      const result=await response.json() as {error?:string;media?:MediaAsset};
-      if(!response.ok||!result.media)throw new Error(result.error||"Brand image upload failed.");
+      const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
+      if(!result.media)throw new Error("Upload returned no media record.");
       const next={...brandAssets,[kind+"_id"]:result.media.id} as {logo_id:string|null;favicon_id:string|null};
       await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({brand_assets:next})});
       setBrandAssets(next);setBrandPreviews((current)=>({...current,[kind]:"/api/admin/media/"+result.media!.id+"/file"}));
@@ -384,9 +373,8 @@ export default function Admin() {
     setBusy(true);setMessage("");
     try{
       const data=new FormData();data.append("file",file);data.append("alt_text","De VERVE customer payment QR code");
-      const response=await fetch("/api/admin/media",{method:"POST",credentials:"same-origin",headers:{accept:"application/json"},body:data});
-      const result=await response.json() as {error?:string;media?:MediaAsset};
-      if(!response.ok||!result.media)throw new Error(result.error||"Payment QR upload failed.");
+      const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
+      if(!result.media)throw new Error("Upload returned no media record.");
       setPaymentMethods(items=>items.map((item,i)=>i===index?{...item,qr_media_id:result.media!.id}:item));
       setMessage("Payment QR uploaded. Save website settings to publish it at checkout.");
     }catch(error){setMessage(error instanceof Error?error.message:"Payment QR could not be uploaded.");}
@@ -477,9 +465,8 @@ export default function Admin() {
           const data = new FormData(); data.append("file", file);
           const description = (mediaAlt.trim() ? mediaAlt.trim() + " · " : "") + mediaProduct.name + " · " + file.name;
           data.append("alt_text", description.slice(0, 240));
-          const response = await fetch("/api/admin/media", { method: "POST", credentials: "same-origin", headers: { accept: "application/json" }, body: data });
-          const result = await response.json() as { error?: string; media?: MediaAsset };
-          if (!response.ok || !result.media) throw new Error(result.error || "Upload failed.");
+          const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
+      if(!result.media)throw new Error("Upload returned no media record.");
           setMediaAssets((current) => [result.media!, ...current.filter((item) => item.id !== result.media!.id)]);
           const makeCover = !mediaProduct.image_key && attachedCount === 0 && !mediaColor;
           await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: mediaColor, is_primary: makeCover, position: productMedia.length + attachedCount }) });
@@ -715,9 +702,8 @@ export default function Admin() {
     setBusy(true);setMessage("");
     try{
       const data=new FormData();data.append("file",file);data.append("alt_text",vehicleForm.name?vehicleForm.name+" vehicle photo":"De VERVE rental vehicle");
-      const response=await fetch("/api/admin/media",{method:"POST",credentials:"same-origin",headers:{accept:"application/json"},body:data});
-      const result=await response.json() as {error?:string;media?:MediaAsset};
-      if(!response.ok||!result.media)throw new Error(result.error||"Vehicle photo upload failed.");
+      const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
+      if(!result.media)throw new Error("Upload returned no media record.");
       setVehicleMediaAssets((current)=>[result.media!,...current]);
       setVehicleForm((current)=>({...current,image_key:result.media!.id}));
       setMessage("Vehicle photo uploaded and selected.");
@@ -1161,8 +1147,8 @@ export default function Admin() {
             <label>URL slug<input required value={form.slug} onChange={(e) => updateProductForm({ ...form, slug: e.target.value })} /></label>
             <label>Category<input required minLength={2} maxLength={60} placeholder="e.g. Hoodies" value={form.category} onChange={(e) => updateProductForm({ ...form, category: e.target.value })} /></label>
             <label>For<select value={form.audience} onChange={(e) => updateProductForm({ ...form, audience: e.target.value as typeof form.audience })}><option value="men">Men</option><option value="women">Women</option><option value="kids">Kids</option><option value="unisex">Unisex</option></select></label>
-            <label>Retail price (PKR, optional)<input type="number" min="0" step="1" value={form.retail_price_paisa} onChange={(e) => updateProductForm({ ...form, retail_price_paisa: e.target.value })} /></label>
-            <label>Wholesale price (PKR, optional)<input type="number" min="0" step="1" value={form.wholesale_price_paisa} onChange={(e) => updateProductForm({ ...form, wholesale_price_paisa: e.target.value })} /></label>
+            <label>Retail price (PKR, optional)<input type="number" min="0" step="0.01" value={form.retail_price_paisa} onChange={(e) => updateProductForm({ ...form, retail_price_paisa: e.target.value })} /></label>
+            <label>Wholesale price (PKR, optional)<input type="number" min="0" step="0.01" value={form.wholesale_price_paisa} onChange={(e) => updateProductForm({ ...form, wholesale_price_paisa: e.target.value })} /></label>
             <label className="admin-full">Description<textarea rows={4} maxLength={4000} value={form.description} onChange={(e) => updateProductForm({ ...form, description: e.target.value })} /></label>
             <div className="admin-full admin-seo-fields"><h3>Search engine preview</h3><p className="admin-muted">These fields appear in search results and social previews. Keep titles under 70 characters and descriptions under 160.</p><label>SEO title<input maxLength={70} value={form.seo_title} onChange={(e) => updateProductForm({ ...form, seo_title: e.target.value })} placeholder={form.name || "Product name · De VERVE"} /></label><small>{form.seo_title.length}/70 characters</small><label>SEO description<textarea rows={2} maxLength={160} value={form.seo_description} onChange={(e) => updateProductForm({ ...form, seo_description: e.target.value })} placeholder={form.description.slice(0,160) || "Describe this product clearly for search visitors."} /></label><small>{form.seo_description.length}/160 characters</small></div>
             <label>Status<select value={form.status} onChange={(e) => updateProductForm({ ...form, status: e.target.value as typeof form.status })} disabled={admin.role === "catalogue"}><option value="draft">Save as draft</option><option value="published">Publish on website</option><option value="archived">Archived</option></select></label>

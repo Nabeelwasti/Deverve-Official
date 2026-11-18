@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import { adminRequest as request } from "./adminApi";
 type KeyRow={id:string;label:string;priority:number;enabled:number;failure_count:number;cooldown_until:string|null;last_used_at:string|null;last_error:string|null;created_at:string};
 type EnvironmentKeyStatus={label:string;configured:boolean;valid_format:boolean;imported:boolean;status:"missing"|"invalid_format"|"encryption_unavailable"|"imported"|"already_imported"};
 type Vault={keys:KeyRow[];environment_keys:EnvironmentKeyStatus[];encryption_ready:boolean;encryption_mode:"dedicated"|"bootstrap-derived"|"unavailable";model:string};
@@ -9,7 +10,6 @@ const environmentStatusText=(status:EnvironmentKeyStatus["status"])=>({
  imported:"imported into the encrypted vault",
  already_imported:"already present in the encrypted vault"
 }[status]);
-async function request<T>(path:string,init:RequestInit={}):Promise<T>{const response=await fetch(path,{...init,credentials:"same-origin",headers:{accept:"application/json",...(init.body?{"content-type":"application/json"}:{}),...(init.headers||{})}});const data=await response.json() as T&{error?:string};if(!response.ok)throw new Error(data.error||"AI settings request failed");return data;}
 export default function AIKeyManager(){
  const [vault,setVault]=useState<Vault|null>(null),[label,setLabel]=useState("NabeelG_Api_key2"),[apiKey,setApiKey]=useState(""),[busy,setBusy]=useState(false),[message,setMessage]=useState(""),[testResults,setTestResults]=useState<Record<string,string>>({});
  const load=async()=>{const result=await request<Vault>("/api/admin/ai/keys");setVault(result);};

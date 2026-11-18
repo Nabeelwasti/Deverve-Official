@@ -1,6 +1,6 @@
 import {useEffect,useState} from "react";
+import { adminRequest as call } from "./adminApi";
 type Notice={id:string;event_type:string;title:string;body:string;entity_type:string;entity_id:string;is_read:number;created_at:string;read_at:string|null};
-async function call<T>(path:string,init:RequestInit={}):Promise<T>{const r=await fetch(path,{...init,credentials:"same-origin",headers:{accept:"application/json",...(init.body?{"content-type":"application/json"}:{}),...init.headers}});const data=await r.json() as T&{error?:string};if(!r.ok)throw new Error(data.error||"Notifications could not be loaded.");return data;}
 export default function NotificationCenter({onClose}:{onClose:()=>void}){const [items,setItems]=useState<Notice[]>([]),[unread,setUnread]=useState(0),[emailConfigured,setEmailConfigured]=useState(false),[busy,setBusy]=useState(false),[message,setMessage]=useState("");
  const refresh=async()=>{const [data,settings]=await Promise.all([call<{notifications:Notice[];unread:number}>("/api/admin/notifications"),call<{email_configured:boolean}>("/api/admin/notification-settings")]);setItems(data.notifications);setUnread(data.unread);setEmailConfigured(settings.email_configured);};
  useEffect(()=>{void refresh().catch(e=>setMessage(e instanceof Error?e.message:"Notification inbox unavailable."));},[]);
