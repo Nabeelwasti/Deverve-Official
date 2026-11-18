@@ -833,3 +833,56 @@
 .admin-cnic-backup-destination strong{color:var(--admin-text,#18324b);font-size:.92rem}
 .admin-cnic-backup-destination small{display:block;color:var(--admin-muted,#60758a);line-height:1.55}
 .admin-cnic-backup-destination a{width:max-content;max-width:100%;font-weight:700;color:var(--admin-link,#174d83);text-decoration:underline;text-underline-offset:3px}
+
+
+/* Floating admin workspace menus: keep choices visible without scrolling the sidebar. */
+.admin-dashboard .admin-ribbon-popover[style]{
+  z-index:2100;display:grid;gap:4px;padding:9px;border:1px solid #d8e4ef;
+  border-radius:13px;background:#fff;box-shadow:0 18px 52px rgba(10,35,62,.22);
+  overscroll-behavior:contain;
+}
+.admin-dashboard .admin-ribbon-popover[style] button,
+.admin-dashboard .admin-ribbon-popover[style] a{min-height:42px;padding:10px 12px;color:#294966;font-size:12px}
+.admin-dashboard .admin-ribbon-popover[style] button:focus-visible,
+.admin-dashboard .admin-ribbon-popover[style] a:focus-visible{outline:3px solid #cfe4f8;outline-offset:1px}
+
+/* Camera preview is mounted before getUserMedia resolves. */
+.barcode-camera-stage video.is-idle{display:none}
+.barcode-camera-stage video.is-active{display:block}
+.barcode-camera-stage video{width:100%;height:auto;min-height:220px;max-height:58vh;object-fit:cover}
+.barcode-manual-entry{display:grid;gap:8px;margin:14px 0 4px}
+.barcode-manual-entry>label{font-size:12px;font-weight:750;color:#36536f}
+.barcode-manual-entry>div{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}
+.barcode-manual-entry input{min-width:0;width:100%;min-height:42px;padding:10px 12px;border:1px solid #d6e1eb;border-radius:9px;font:inherit}
+.barcode-manual-entry input:focus{outline:3px solid #d9eafa;border-color:#5d9acb}
+.barcode-manual-entry button{min-height:42px;padding:9px 14px}
+@media(max-width:440px){.barcode-manual-entry>div{grid-template-columns:1fr}.barcode-manual-entry button{width:100%}}
+
+/* Print only the selected POS register/report and include the official brand mark. */
+.pos-print-header{display:none}
+@media print{
+  body.printing-pos-workspace *{visibility:hidden!important}
+  body.printing-pos-workspace .pos-workspace.pos-print-active,
+  body.printing-pos-workspace .pos-workspace.pos-print-active *{visibility:visible!important}
+  body.printing-pos-workspace .pos-workspace.pos-print-active{
+    position:absolute!important;top:0!important;left:0!important;width:100%!important;
+    max-width:none!important;margin:0!important;padding:0!important;background:#fff!important;
+    display:block!important;box-shadow:none!important;
+  }
+  body.printing-pos-workspace .pos-print-header{
+    display:flex!important;align-items:center;gap:14px;margin:0 0 18px;padding:0 0 14px;
+    border-bottom:2px solid #163a5f;color:#163a5f;
+  }
+  body.printing-pos-workspace .pos-print-header img{display:block;width:58px;height:58px;object-fit:contain}
+  body.printing-pos-workspace .pos-print-header div{display:grid;gap:4px}
+  body.printing-pos-workspace .pos-print-header strong{font-size:18px;letter-spacing:1.5px}
+  body.printing-pos-workspace .pos-print-header span{font-size:9px;letter-spacing:1px;color:#60758a}
+  body.printing-pos-workspace .pos-print-header time{margin-left:auto;font-size:9px;color:#60758a}
+  body.printing-pos-workspace .pos-report-actions,
+  body.printing-pos-workspace .pos-tabs,
+  body.printing-pos-workspace .pos-session-bar{display:none!important}
+  body.printing-pos-workspace .pos-card{padding:0!important;border:0!important;box-shadow:none!important;break-inside:avoid}
+  body.printing-pos-workspace .pos-table-wrap{overflow:visible!important}
+  body.printing-pos-workspace table{width:100%;border-collapse:collapse}
+  body.printing-pos-workspace th{background:#163a5f!important;color:#fff!important}
+}

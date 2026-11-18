@@ -16,7 +16,7 @@ function cameraErrorMessage(caught:unknown):string{
 export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:string)=>void;onClose:()=>void}){
  const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
  const [status,setStatus]=useState("Allow camera access to scan product barcodes. Your camera is used only while this scanner is open.");
- const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false);
+ const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false),[manualCode,setManualCode]=useState("");
  callback.current=onDetected;
  const stopCamera=()=>{
   if(frame.current!==null){cancelAnimationFrame(frame.current);frame.current=null;}
@@ -63,11 +63,11 @@ export default function BarcodeScanner({onDetected,onClose}:{onDetected:(value:s
  return <div className="barcode-camera-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
   <section className="barcode-camera-modal" role="dialog" aria-modal="true" aria-labelledby="barcode-camera-title">
    <header><div><p className="admin-eyebrow">DE VERVE · POS SCANNER</p><h3 id="barcode-camera-title">Scan product barcode</h3></div><button type="button" className="admin-close" aria-label="Close camera scanner" onClick={onClose}>×</button></header>
-   <div className="barcode-camera-stage">{cameraActive?<video ref={video} autoPlay muted playsInline/>:<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
+   <div className="barcode-camera-stage"><video ref={video} autoPlay muted playsInline className={cameraActive?"is-active":"is-idle"} aria-hidden={!cameraActive}/>{!cameraActive&&<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
    {error&&<p className="admin-error" role="alert">{error}</p>}
    <p className="admin-muted" role="status">{cameraActive?status:"Camera access is requested only when you press the start button."}</p>
    {!cameraActive&&<button type="button" className="admin-primary" disabled={starting} onClick={()=>void startCamera()}>{starting?"Requesting camera…":error?"Try camera again":"Allow camera access & start scanning"}</button>}
-   <button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
+   <div className="barcode-manual-entry"><label htmlFor="barcode-manual-value">Or enter barcode / SKU manually</label><div><input id="barcode-manual-value" value={manualCode} onChange={event=>setManualCode(event.target.value)} maxLength={80} autoComplete="off" placeholder="Scan or type product code"/><button type="button" className="admin-primary" disabled={!manualCode.trim()} onClick={()=>{const value=manualCode.trim();stopCamera();callback.current(value);onClose();}}>Use code</button></div></div><button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
   </section>
  </div>;
 }

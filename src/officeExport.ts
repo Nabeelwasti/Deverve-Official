@@ -5,25 +5,48 @@ const xmlEntities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&
 const xmlEscape = (value: string): string => value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "").replace(/[&<>"\']/g, character => xmlEntities[character] ?? character);
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
-async function loadBrandLogoPng(): Promise<Uint8Array | null> {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600"><rect width="600" height="600" fill="#fff"/><circle cx="300" cy="300" r="276" fill="#06234f"/><circle cx="300" cy="300" r="252" fill="none" stroke="#fff" stroke-width="12"/><text x="300" y="330" text-anchor="middle" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="100" font-weight="800" letter-spacing="-5">DeVERVE</text></svg>';
-  try {
-    const image = new Image();
-    image.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
-    await image.decode();
-    const canvas = document.createElement("canvas");
-    canvas.width = 512;
-    canvas.height = 512;
-    const context = canvas.getContext("2d");
-    if (!context) return null;
-    context.fillStyle = "#ffffff";
-    context.fillRect(0, 0, 512, 512);
-    context.drawImage(image, 0, 0, 512, 512);
-    const png = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
-    return png ? new Uint8Array(await png.arrayBuffer()) : null;
-  } catch {
-    return null;
+async function loadBrandLogoPng(): Promise<Uint8Array> {
+  const canvas=document.createElement("canvas");
+  canvas.width=512;
+  canvas.height=512;
+  const context=canvas.getContext("2d");
+  if(!context)throw new Error("A canvas is required to prepare the branded document logo.");
+  context.fillStyle="#ffffff";
+  context.fillRect(0,0,512,512);
+  let rendered=false;
+  try{
+    const response=await fetch("/brand/de-verve-logo.svg",{credentials:"same-origin",cache:"force-cache"});
+    if(!response.ok)throw new Error("The official brand logo could not be loaded.");
+    const svg=await response.text();
+    const objectUrl=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"}));
+    try{
+      const image=new Image();
+      image.src=objectUrl;
+      await image.decode();
+      context.drawImage(image,0,0,512,512);
+      rendered=true;
+    }finally{URL.revokeObjectURL(objectUrl);}
+  }catch{
+    context.fillStyle="#06234f";
+    context.beginPath();
+    context.arc(256,256,236,0,Math.PI*2);
+    context.fill();
+    context.strokeStyle="#ffffff";
+    context.lineWidth=10;
+    context.beginPath();
+    context.arc(256,256,214,0,Math.PI*2);
+    context.stroke();
+    context.fillStyle="#ffffff";
+    context.font="800 72px Arial,Helvetica,sans-serif";
+    context.textAlign="center";
+    context.textBaseline="middle";
+    context.fillText("DeVERVE",256,260);
+    rendered=true;
   }
+  if(!rendered)throw new Error("The De VERVE logo could not be rendered.");
+  const png=await new Promise<Blob|null>(resolve=>canvas.toBlob(resolve,"image/png"));
+  if(!png)throw new Error("The De VERVE logo image could not be encoded.");
+  return new Uint8Array(await png.arrayBuffer());
 }
 
 

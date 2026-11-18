@@ -56,6 +56,32 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
   });
 }
 
+test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.addInitScript(() => {
+    const stream = document.createElement("canvas").captureStream(1);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(window, "BarcodeDetector", {
+      configurable: true,
+      value: class {
+        constructor(_options: { formats: string[] }) {}
+        async detect() { return []; }
+      },
+    });
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+  });
+  await page.goto("/admin?section=pos");
+  await page.getByRole("button", { name: "Camera scan" }).click();
+  await expect(page.getByRole("dialog", { name: "Scan product barcode" })).toBeVisible();
+  await expect(page.locator(".barcode-camera-stage video")).toBeAttached();
+  await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
+  await expect(page.locator(".barcode-camera-stage video.is-active")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Camera is active");
+});
+
 test("direct links load product review and audit workspace data", async ({ page }) => {
   await mockAdminApi(page);
 
