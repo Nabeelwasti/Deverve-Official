@@ -3903,7 +3903,8 @@ async function decryptGeminiKey(env:Env,row:GeminiKeyRow):Promise<string> {
   return new TextDecoder().decode(plain);
 }
 const GEMINI_MODEL_FALLBACKS=["gemini-3.8-flash","gemini-3.6-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite","gemini-2.5-flash","gemini-2.5-flash-lite"] as const;
-export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:Array<{text:string}>}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string;model:string}> {
+type GeminiInputPart = { text: string } | { inline_data: { mime_type: string; data: string } };
+export async function callGemini(apiKey:string,contents:Array<{role:"user"|"model";parts:GeminiInputPart[]}>,systemInstruction:string):Promise<{ok:boolean;status:number;text:string;message:string;model:string}> {
   let last:{ok:boolean;status:number;text:string;message:string;model:string}={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model:GEMINI_MODEL_FALLBACKS[0]};
   for(const model of GEMINI_MODEL_FALLBACKS){
     try{
@@ -4084,6 +4085,48 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   }
   return json({error:attempted?"Our assistant is temporarily busy. Please try again shortly or contact De VERVE.":"Our live assistant is not available"},503,{"retry-after":"60"});
 }
+async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
+  if(url.pathname!=="/api/admin/products/scan-label")return null;
+  if(request.method!=="POST")return error("Method not allowed",405);
+  const admin=await currentAdmin(request,env.DB).catch(()=>null);
+  if(!admin)return error("Authentication required",401);
+  if(!["owner","manager","catalogue","orders"].includes(admin.role))return error("You do not have permission to scan product labels",403);
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  const limited=await enforcePublicRateLimit(request,env,"admin_product_label_scan",12,15*60);if(limited)return limited;
+  const body=await readJson(request,7_000_000);
+  const dataUrl=typeof body?.image_data_url==="string"?body.image_data_url:"";
+  const match=dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/);
+  if(!match||match[2].length>6_500_000)return error("Capture a clear JPG, PNG or WebP product label (maximum 5 MB)",400);
+  const scannedCode=typeof body?.barcode==="string"?body.barcode.trim().slice(0,128):"";
+  let keys:GeminiKeyRow[]=[];
+  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();keys=result.results??[];}catch{}
+  const now=Date.now(),available=keys.filter(row=>!row.cooldown_until||Date.parse(row.cooldown_until)<=now);
+  const envKeys=[env.NabeelG_Api_key1?.trim(),env.NabeelG_Api_key2?.trim()].filter((key):key is string=>Boolean(key&&/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)));
+  const tried=new Set<string>();
+  const prompt="Read this garment, clothing, retail product tag or supplier label. Extract only facts that are clearly visible. Return one valid JSON object only, without Markdown, using exactly these keys: name, brand, category, description, audience, retail_price, wholesale_price, purchase_cost, size, color, sku, barcode, quantity, material, country_of_origin. Use a short string for text values, numbers for clearly printed prices or quantities, and null when a value is missing or unreadable. Prices are in PKR only when the label explicitly shows PKR, Rs or ₨; otherwise set the price fields to null. Never invent a price, brand, size, colour, barcode, quantity or product detail. Distinguish retail price from wholesale price and purchase cost. Preserve every barcode digit exactly. If the image contains several items, describe only the primary tag in the centre.";
+  const contents=[{role:"user" as const,parts:[{text:prompt+(scannedCode?" The scanner also detected this exact code: "+scannedCode:"")},{inline_data:{mime_type:match[1],data:match[2]}}]}];
+  const run=async(key:string,row?:GeminiKeyRow)=>{
+    const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+key);
+    if(tried.has(fingerprint))return null;tried.add(fingerprint);
+    const result=await callGemini(key,contents,"You are a careful product-label OCR and structured data extraction service. Return JSON only.");
+    if(result.ok){
+      if(row)try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),row.id).run();}catch{}
+      let parsed:Record<string,unknown>|null=null;
+      try{parsed=JSON.parse(result.text) as Record<string,unknown>;}catch{const jsonMatch=result.text.match(/\{[\s\S]*\}/);if(jsonMatch)try{parsed=JSON.parse(jsonMatch[0]) as Record<string,unknown>;}catch{}}
+      if(!parsed)return {error:"The label was read, but the result was not valid structured data. Please capture a sharper photo.",status:422};
+      const clean:Record<string,string|number|null>={};
+      for(const field of ["name","brand","category","description","audience","size","color","sku","barcode","material","country_of_origin"]){const value=parsed[field];clean[field]=typeof value==="string"?value.trim().slice(0,field==="description"?1500:240):null;}
+      for(const field of ["retail_price","wholesale_price","purchase_cost","quantity"]){const value=parsed[field];clean[field]=typeof value==="number"&&Number.isFinite(value)&&value>=0?value:typeof value==="string"&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):null;}
+      if(scannedCode&&!clean.barcode)clean.barcode=scannedCode;
+      return {product:clean,model:result.model};
+    }
+    if(row){const cooldown=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;const label=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":result.status>=500?"provider_unavailable":"request_failed";try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+cooldown).toISOString(),label,new Date().toISOString(),row.id).run();}catch{}}
+    return {error:"Gemini could not read this label (HTTP "+result.status+": "+result.message.slice(0,160)+"). Check the configured API key and try again.",status:503};
+  };
+  for(const row of available){let key="";try{key=await decryptGeminiKey(env,row);}catch{continue;}const result=await run(key,row);if(result&&"product" in result)return json({ok:true,product:result.product,model:result.model});if(result&&"error" in result&&result.status===422)return error(result.error,422);}
+  for(const key of envKeys){const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+key);const saved=keys.find(row=>row.key_fingerprint===fingerprint);if(saved)continue;const result=await run(key);if(result&&"product" in result)return json({ok:true,product:result.product,model:result.model});if(result&&"error" in result&&result.status===422)return error(result.error,422);}
+  return error("No configured Gemini key could read the label. Check Admin → AI live chat & API keys, then try again.",503);
+}
 async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
   const publicResponse=await publicAIChatRoute(request,env);if(publicResponse)return publicResponse;
   return adminAIKeyRoutes(request,env,url);
@@ -4139,6 +4182,8 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
   const aiResponse = await aiRoutes(request, env, url);
   if (aiResponse) return aiResponse;
+  const productLabelScanResponse = await adminProductLabelScanRoute(request, env, url);
+  if (productLabelScanResponse) return productLabelScanResponse;
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
