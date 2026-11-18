@@ -106,6 +106,26 @@ test("rental vehicle assignment and internal note can be saved without changing 
   });
   await expect(card.getByLabel("Assign vehicle")).toHaveValue(vehicleId);
   await expect(page.getByRole("status")).toContainText("Assignment and internal details saved");
+
+  await page.route("**/api/admin/rentals/" + rentalId + "/documents/**", async route => {
+    const side = new URL(route.request().url()).pathname.split("/").pop() || "cnic_front";
+    await route.fulfill({status:200,contentType:"image/jpeg",headers:{"cache-control":"private, no-store"},body:Buffer.from("test-cnic-image-bytes-"+side)});
+  });
+  page.on("dialog", dialog => dialog.accept("Test-Backup-Password-2026!"));
+  const backupDownload = page.waitForEvent("download");
+  await card.getByRole("button", {name:"Create encrypted backup"}).click();
+  const backup = await backupDownload;
+  expect(backup.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic-evidence\.dvbackup$/);
+  const backupPath = await backup.path();
+  expect(backupPath).toBeTruthy();
+
+  const chooserPromise = page.waitForEvent("filechooser");
+  await card.getByRole("button", {name:"Restore backup"}).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles(backupPath!);
+  const restoredDownload = await page.waitForEvent("download");
+  await expect(card.getByRole("status")).toContainText("Backup decrypted and integrity-checked");
+  expect(restoredDownload.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic_(front|back)\.(jpg|png|webp)$/);
 });
 
 test("saved draft CMS pages can be previewed through the authenticated admin endpoint", async ({ page }) => {
