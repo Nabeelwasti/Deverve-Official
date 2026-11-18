@@ -2947,7 +2947,7 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
         return json({page,sections});
       }
       const rows=await env.DB.prepare("SELECT id,label,href,position,is_visible FROM site_navigation_items ORDER BY position LIMIT 50").all<Record<string,unknown>>();
-      return json({items:rows.results??[]});
+      return json({items:(rows.results??[]).map(row=>({...row,is_visible:row.is_visible===1}))});
     }catch{return error("Website content could not be loaded",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -2966,7 +2966,7 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
       const statements:D1PreparedStatement[]=[env.DB.prepare("DELETE FROM site_navigation_items")];
       for(const item of normalized)statements.push(env.DB.prepare("INSERT INTO site_navigation_items (id,label,href,position,is_visible) VALUES (?,?,?,?,?)").bind(item.id,item.label,item.href,item.position,item.is_visible));
       statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.navigation_updated','store_settings','navigation',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({count:normalized.length})));
-      await env.DB.batch(statements);return json({updated:true,items:normalized});
+      await env.DB.batch(statements);return json({updated:true,items:normalized.map(item=>({...item,is_visible:item.is_visible===1}))});
     }catch{return error("Navigation could not be saved",503);}
   }
   if(adminCollection&&request.method==="POST"){

@@ -166,9 +166,11 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   await expect(block.locator(".content-gallery-preview img")).toHaveCount(1);
 
   await page.getByRole("button", { name: "Move navigation item down" }).first().click();
+  await page.getByLabel("Visible").first().uncheck();
   await page.getByRole("button", { name: "Save navigation" }).click();
   await expect(page.getByRole("status")).toContainText("Navigation saved");
   expect(savedNavigation[0].label).toBe("Fashion");
+  expect(savedNavigation[0].is_visible).toBe(false);
 
   const saveRequest = page.waitForRequest((request) => new URL(request.url()).pathname === "/api/admin/pages/" + pageId && request.method() === "PATCH");
   await page.getByRole("button", { name: "Save draft" }).click();
