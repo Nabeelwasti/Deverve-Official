@@ -212,6 +212,7 @@ function Storefront() {
   const [favourites, setFavourites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("deverve-favourites") || "[]") as string[]; } catch { return []; } });
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
+  const [selectedCategory,setSelectedCategory]=useState(()=>new URLSearchParams(window.location.search).get("category")||"");
   const [showAll, setShowAll] = useState(false);
   const [visibleProductCount,setVisibleProductCount]=useState(8);
   const emptyEnquiry = { name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" };
@@ -223,6 +224,8 @@ function Storefront() {
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
+  const filteredProducts=useMemo(()=>{const category=selectedCategory.trim().toLocaleLowerCase();return category?products.filter(product=>product.category.trim().toLocaleLowerCase()===category):products;},[products,selectedCategory]);
+  useEffect(()=>{setVisibleProductCount(8);},[selectedCategory]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
@@ -270,7 +273,7 @@ function Storefront() {
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || rentalOpen) { const vehicle = url.searchParams.get("vehicle") || rentalForm.vehicle_id || ""; void openRentalRequest(vehicle, true); } }, []);
-  useEffect(() => { const onPopState = () => setActiveScreen(readScreen()); window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
+  useEffect(() => { const onPopState = () => { setActiveScreen(readScreen()); setSelectedCategory(new URL(window.location.href).searchParams.get("category")||""); }; window.addEventListener("popstate", onPopState); return () => window.removeEventListener("popstate", onPopState); }, []);
   useEffect(() => { try { sessionStorage.setItem("deverve:ui:cart-open", cartOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:checkout-open", checkoutOpen ? "1" : "0"); sessionStorage.setItem("deverve:ui:rental-open", rentalOpen ? "1" : "0"); } catch { /* Storage restrictions must not interrupt the storefront. */ } }, [cartOpen, checkoutOpen, rentalOpen]);
   useEffect(() => { writeAppDraft("enquiry", enquiry); }, [enquiry]);
   useEffect(() => { writeAppDraft("rental", rentalForm); }, [rentalForm]);
@@ -475,7 +478,7 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
-  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); url.hash = ""; window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const navigate = (screen: StoreScreen) => { setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); if(screen!=="fashion")url.searchParams.delete("category"); url.hash = ""; setSelectedCategory(screen==="fashion"?url.searchParams.get("category")||"": ""); window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => setFavourites((current) => current.includes(productId) ? current.filter((id) => id !== productId) : [...current, productId]);
 
   return (
@@ -555,14 +558,14 @@ function Storefront() {
           <p className="catalogue-note">Category artwork is illustrative. Product photographs, prices, sizes and live stock will be added to the catalogue after the inventory is entered.</p>
           <div className="live-catalogue" aria-live="polite">
             <div className="live-catalogue-heading">
-              <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>Featured pieces</h3></div>
+              <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>{selectedCategory?selectedCategory+" collection":"Featured pieces"}</h3>{selectedCategory&&<button type="button" className="text-link" onClick={()=>{const url=new URL(window.location.href);url.searchParams.delete("category");window.history.replaceState({screen:"fashion"},"",url.pathname+url.search);setSelectedCategory("");}}>Clear category ×</button>}</div>
               <div className="live-catalogue-actions"><span>REAL LISTINGS · UPDATED BY OUR TEAM</span><button type="button" className="cart-open-button" disabled={!cart.length} onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)}) · {formatPrice(cartSubtotal)}</button></div>
             </div>
             {catalogueState === "loading" && <p className="catalogue-feedback">Loading available listings…</p>}
             {catalogueState === "error" && <p className="catalogue-feedback">The live catalogue is not connected yet. Please contact our team for current collections.</p>}
             {catalogueState === "empty" && <p className="catalogue-feedback">New pieces are being added. Contact us to ask about current arrivals and availability.</p>}
             {catalogueState === "ready" && <div className="product-grid">
-              {products.slice(0,visibleProductCount).map((product) => (
+              {filteredProducts.slice(0,visibleProductCount).map((product) => (
                 <article className="product-card" key={product.id} role="link" tabIndex={0} aria-label={"View "+product.name} onClick={(event)=>{if((event.target as HTMLElement).closest("a,button,input,select,textarea,label"))return;window.location.href="/product/"+encodeURIComponent(product.slug);}} onKeyDown={(event)=>{if((event.target as HTMLElement).closest("a,button,input,select,textarea,label"))return;if(event.key==="Enter"||event.key===" "){event.preventDefault();window.location.href="/product/"+encodeURIComponent(product.slug);}}}>
                   {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" detailsHref={"/product/" + encodeURIComponent(product.slug)} images={productGalleryImages(product, selectedVariants[product.id], selectedVariantOptions[product.id]?.color)} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
@@ -576,7 +579,7 @@ function Storefront() {
                 </article>
               ))}
             </div>}
-            {catalogueState === "ready" && products.length > visibleProductCount && <div className="catalogue-pagination"><span>Showing {Math.min(visibleProductCount,products.length)} of {products.length} listings</span><button type="button" className="button button-outline" onClick={() => setVisibleProductCount((count)=>Math.min(count+8,products.length))}>Load more products</button></div>}
+            {catalogueState === "ready" && filteredProducts.length===0 && selectedCategory && <p className="catalogue-feedback">No published products are currently listed in “{selectedCategory}”. Browse all products or contact our team for availability.</p>}{catalogueState === "ready" && filteredProducts.length > visibleProductCount && <div className="catalogue-pagination"><span>Showing {Math.min(visibleProductCount,filteredProducts.length)} of {filteredProducts.length} listings</span><button type="button" className="button button-outline" onClick={() => setVisibleProductCount((count)=>Math.min(count+8,filteredProducts.length))}>Load more products</button></div>}
           </div>
         </section>
 
@@ -737,8 +740,10 @@ function Storefront() {
 }
 
 function HomePageRoute() {
+  const requestedScreen=new URLSearchParams(window.location.search).get("screen");
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
   useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
+  if(requestedScreen&&["fashion","wholesale","mobility","contact","favourites","policies"].includes(requestedScreen))return <Storefront/>;
   if(hasCmsHome===null)return <main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>;
   return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
 }

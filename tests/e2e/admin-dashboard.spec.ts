@@ -158,7 +158,7 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   await page.goto("/admin?section=content");
   await expect(page.getByRole("heading", { name: "Pages & visual builder" })).toBeVisible();
   await page.getByRole("button", { name: /CMS test page/ }).click();
-  await expect(page.getByRole("heading", { name: "CMS test page" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "CMS test page" }).first()).toBeVisible();
   await page.getByLabel("Add section type").selectOption("image_gallery");
   const block = page.locator(".content-block").last();
   await block.getByLabel("Heading").fill("Campaign gallery");
@@ -208,6 +208,7 @@ test("public CMS pages render gallery, video, product, category and FAQ blocks",
   await expect(page.locator("video.public-video")).toBeVisible();
   await expect(page.getByRole("link", { name: /Test hoodie/ })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Shop categories" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Men/ })).toHaveAttribute("href", "/?screen=fashion&category=Men");
   await expect(page.getByText("What sizes?")).toBeVisible();
   await expect(page.getByRole("link", { name: "New arrivals" })).toBeVisible();
 });
