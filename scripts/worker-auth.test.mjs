@@ -818,6 +818,9 @@ class FakeStatement {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
       return { success: true, results: rows };
     }
+    if (q.startsWith("SELECT size, color, is_active FROM product_variants WHERE product_id = ?")) {
+      return { success: true, results: [...this.db.variants.values()].filter(row => row.product_id === v[0]).map(row => ({ size: row.size ?? "", color: row.color ?? "", is_active: row.is_active ?? 1 })) };
+    }
     if (q.startsWith("SELECT id, size, color, is_active FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter(row => row.product_id === v[0]).map(row => ({ id: row.id, size: row.size ?? "", color: row.color ?? "", is_active: row.is_active ?? 1 })) };
     }
