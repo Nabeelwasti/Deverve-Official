@@ -178,7 +178,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         await api("/api/admin/products/" + createdId + "/variants", { method: "POST", body: JSON.stringify({ size: "One Size", color: "Standard", barcode: draft.barcode || "", sku: draft.sku || "", initial_stock: 0, reorder_level: 5 }) });
       }
       let uploaded = 0;
-      for (const file of files.filter(item => item.type.startsWith("image/"))) {
+      for (const file of files.filter(item => attachmentMime(item).startsWith("image/"))) {
         const data = new FormData(); data.append("file", file); data.append("alt_text", (draft.name + " · " + file.name).slice(0, 240));
         const result = await api<{ media?: { id: string } }>("/api/admin/media", { method: "POST", body: data });
         if (!result.media?.id) throw new Error("Image upload returned no media record.");
