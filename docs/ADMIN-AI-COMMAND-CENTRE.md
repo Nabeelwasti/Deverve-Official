@@ -36,6 +36,16 @@
 - Do not enable autonomous settings changes, product publishing, payment actions, stock changes, staff access changes or destructive actions until each action has explicit role checks, a preview/approval step, idempotency where needed, audit logging and dedicated integration tests.
 
 
+## Resumable bulk media pipeline — 19 November 2026
+
+- Added the authenticated same-origin `POST /api/admin/media/bulk` endpoint for batches of up to four JPG/PNG/WebP images and 20 MB total.
+- Every file has a stable client-generated UUID derived from its filename and SHA-256 content. The server validates MIME signatures, computes SHA-256 itself, and records the digest in R2 object custom metadata.
+- A retry with the same ID, owner, bytes and media metadata reuses the existing media record rather than creating a duplicate. Reusing an ID with different bytes or another uploader is rejected.
+- Each file is processed independently and the response reports successful/reused assets and per-file failures. Successfully completed files remain available when another file fails.
+- AI product intake now uploads images in bounded four-file batches and attaches confirmed media records to the draft product. It uses the same stable IDs on retries.
+- Added Worker regression coverage for successful upload, safe retry reuse, and identifier/content collision rejection.
+- This pipeline is now implemented in source; its latest CI run must pass before it is considered verified. Large 100-image real-device interruption/recovery testing remains required.
+
 ## Follow-up engineering audit — 19 November 2026
 
 - AI exact-SKU stock commands now update the stock balance and append a matching `adjustment` row to `inventory_movements` in the same D1 batch, followed by the AI audit record. Inactive variants are rejected, reserved quantities cannot be undercut, and a no-op quantity does not create a zero-delta movement.
