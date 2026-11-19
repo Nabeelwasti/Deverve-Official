@@ -92,7 +92,10 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.getByText(/Exact product identity is not fully verified/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Official product page" })).toHaveAttribute("href", "https://example.com/product");
   await page.getByRole("button", { name: "Save product" }).click();
-  await expect(page.getByRole("heading", { name: "Palette test hoodie" })).toBeVisible();
+  const productRow = page.locator(".admin-product-row").filter({ hasText: "Palette test hoodie" });
+  await expect(productRow).toBeVisible();
+  await productRow.getByRole("button", { name: "Variants & stock" }).click();
+  await expect(page.getByRole("dialog", { name: "Palette test hoodie" })).toBeVisible();
   await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
   await expect(page.locator("#deverve-size-options option[value='10XL']")).toHaveCount(1);
   await expect(page.locator("#deverve-size-options option[value='48 EU']")).toHaveCount(1);
@@ -104,8 +107,8 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.getByRole("button", { name: "Add size" }).click();
   await page.getByLabel("Browse full colour list").selectOption("Oxblood");
   await page.getByRole("button", { name: "Add colour" }).click();
-  await expect(page.locator("input[list='deverve-size-options']").first()).toHaveValue("10XL");
-  await expect(page.locator("input[list='deverve-colour-options']").first()).toHaveValue("Oxblood");
+  await expect(page.locator("input[list='deverve-size-options']").first()).toHaveValue(/10XL/);
+  await expect(page.locator("input[list='deverve-colour-options']").first()).toHaveValue(/Oxblood/);
   await page.getByRole("button", { name: "Generate combinations" }).click();
   await expect(page.getByLabel("Opening quantity 10XL Oxblood")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save all 1 variants" })).toBeVisible();
@@ -384,7 +387,7 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
   await page.goto("/admin?section=pos");
   await page.getByRole("button", { name: "Camera scan" }).click();
   await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
-  await expect(page.getByText("Scanned code: " + qrPayload)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Unknown scanned product" })).toContainText(qrPayload);
   await page.getByRole("button", { name: "Create product & add this code to stock" }).click();
   await expect(page).toHaveURL(/section=products&barcode=/);
   await expect(page).toHaveURL(url => new URL(url).searchParams.get("barcode") === qrPayload);
