@@ -4532,7 +4532,7 @@ async function adminAITaskHistoryRoute(request:Request,env:Env,url:URL):Promise<
   if(match){
    const task=await env.DB.prepare("SELECT id,task_type,status,current_step,completed_batches,failed_batches,last_error,created_at,updated_at,completed_at FROM ai_task_runs WHERE id=? AND created_by_admin_id=? LIMIT 1").bind(taskId,admin.admin_user_id).first<Record<string,unknown>>();
    if(!task)return error("AI task was not found",404);
-   const result=await env.DB.prepare("SELECT id,event_type,batch_index,model,payload_json,created_at FROM ai_task_events WHERE task_id=? ORDER BY created_at ASC LIMIT 100").bind(taskId).all<Record<string,unknown>>().;
+   const result=await env.DB.prepare("SELECT id,event_type,batch_index,model,payload_json,created_at FROM ai_task_events WHERE task_id=? ORDER BY created_at ASC LIMIT 100").bind(taskId).all<Record<string,unknown>>();
    const events=(result.results??[]).map(row=>{let payload:unknown={};try{payload=JSON.parse(String(row.payload_json??"{}"));}catch{}return{id:row.id,event_type:row.event_type,batch_index:row.batch_index,model:row.model,payload,created_at:row.created_at};});
    return json({ok:true,task,events});
   }
