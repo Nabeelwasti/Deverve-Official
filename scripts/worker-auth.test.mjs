@@ -2777,7 +2777,8 @@ test("bulk media upload recovers an R2 object left behind by an interrupted D1 c
   const bytes=new Uint8Array([137,80,78,71,1,2,3,4]);
   const digest=await crypto.subtle.digest("SHA-256",bytes);
   const sha256=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
-  db.mediaAssets.set(id,{id,object_key:"catalogue/"+id+".png",media_type:"image",mime_type:"image/png",byte_size:bytes.length,alt_text:"Interrupted",caption:"",status:"processing",uploaded_by:"admin-1",updated_at:new Date().toISOString()});
+  const adminId=[...db.admins.keys()][0];
+  db.mediaAssets.set(id,{id,object_key:"catalogue/"+id+".png",media_type:"image",mime_type:"image/png",byte_size:bytes.length,alt_text:"Interrupted",caption:"",status:"processing",uploaded_by:adminId,updated_at:new Date().toISOString()});
   db.mediaObjects.set("catalogue/"+id+".png",{body:bytes.buffer,customMetadata:{assetId:id,sha256},httpMetadata:{contentType:"image/png"}});
   const form=new FormData();
   form.append("files",new File([bytes],"recovered.png",{type:"image/png"}),"recovered.png");
