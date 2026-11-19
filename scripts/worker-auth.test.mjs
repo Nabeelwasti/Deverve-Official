@@ -2104,8 +2104,8 @@ test("Gemini skips an unavailable stable model and reports the model that actual
   try{
     const result=await callGemini("AQ."+"A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
     assert.equal(result.ok,true);
-    assert.equal(result.model,"gemini-3.7-flash");
-    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.7-flash"]);
+    assert.equal(result.model,"gemini-3.5-flash-lite");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.5-flash-lite"]);
   }finally{globalThis.fetch=originalFetch;}
 });
 
@@ -2121,8 +2121,26 @@ test("Gemini retries transient 503 responses on the next supported model", async
   try{
     const result=await callGemini("AQ."+"A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
     assert.equal(result.ok,true);
-    assert.equal(result.model,"gemini-3.7-flash");
-    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.7-flash"]);
+    assert.equal(result.model,"gemini-3.5-flash-lite");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.5-flash-lite"]);
+  }finally{globalThis.fetch=originalFetch;}
+});
+
+test("Gemini model fallback order keeps 3.8 primary, prefers tested free-tier Flash Lite models, and excludes retired 2.5 models", async () => {
+  const originalFetch=globalThis.fetch;
+  const attempted=[];
+  globalThis.fetch=async(input)=>{
+    const model=new URL(String(input)).pathname.match(/models\\/([^:]+):generateContent$/)?.[1]||"";
+    attempted.push(model);
+    if(model==="gemini-3.8-flash"||model==="gemini-3.5-flash-lite")return new Response(JSON.stringify({error:{status:"UNAVAILABLE",message:"Temporary service unavailable"}}),{status:503,headers:{"content-type":"application/json"}});
+    return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"Lite fallback answered"}]}}]}),{status:200,headers:{"content-type":"application/json"}});
+  };
+  try{
+    const result=await callGemini("AQ."+ "A".repeat(48),[{role:"user",parts:[{text:"Hello"}]}],"Test system");
+    assert.equal(result.ok,true);
+    assert.equal(result.model,"gemini-3.1-flash-lite");
+    assert.deepEqual(attempted,["gemini-3.8-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite"]);
+    assert.equal(attempted.some(model=>model.startsWith("gemini-2.5-")),false);
   }finally{globalThis.fetch=originalFetch;}
 });
 
