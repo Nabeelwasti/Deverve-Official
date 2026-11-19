@@ -139,16 +139,34 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       if (task === "product" && results.length > 1) {
         const drafts = results.map(item => item.product_draft).filter((item): item is ProductDraft => Boolean(item));
         if (drafts.length) {
-          const first = drafts[0];
-          const variants = new Map<string, DraftVariant>();
-          for (const item of drafts.flatMap(draft => draft.variants || [])) variants.set(item.size.trim().toLowerCase() + "::" + item.color.trim().toLowerCase(), item);
-          result.product_draft = {
-            ...first,
-            sizes: [...new Set(drafts.flatMap(item => item.sizes || []))],
-            colours: [...new Set(drafts.flatMap(item => item.colours || []))],
-            variants: [...variants.values()].slice(0, 100),
-            unknowns: [...new Set(drafts.flatMap(item => item.unknowns || []))]
-          };
+          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+          const groups = new Map<string, ProductDraft[]>();
+          for (const item of drafts) {
+            const key = normalizeName(item.name);
+            const group = groups.get(key) || [];
+            group.push(item);
+            groups.set(key, group);
+          }
+          if (groups.size === 1) {
+            const sameProductDrafts = [...groups.values()][0];
+            const first = sameProductDrafts[0];
+            const variants = new Map<string, DraftVariant>();
+            for (const item of sameProductDrafts.flatMap(value => value.variants || [])) {
+              const key = item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase();
+              const previous = variants.get(key);
+              variants.set(key, previous ? { ...previous, initial_stock: previous.initial_stock + item.initial_stock } : item);
+            }
+            result.product_draft = {
+              ...first,
+              sizes: [...new Set(sameProductDrafts.flatMap(item => item.sizes || []))],
+              colours: [...new Set(sameProductDrafts.flatMap(item => item.colours || []))],
+              variants: [...variants.values()].slice(0, 100),
+              unknowns: [...new Set(sameProductDrafts.flatMap(item => item.unknowns || []))]
+            };
+          } else {
+            result.product_draft = undefined;
+            result.reply += "\\n\\nI identified " + groups.size + " differently named product candidates across the attachment batches. I have NOT combined their sizes, colours or stock into one product. Create each candidate separately after reviewing the grouping plan; this assistant currently supports one product draft at a time.";
+          }
         }
       }
       const reply = result.reply || "The assistant returned no response.";
