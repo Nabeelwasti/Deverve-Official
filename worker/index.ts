@@ -1904,7 +1904,8 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
   const fileMatch = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})\/file$/i);
   const assetMatch = path.match(/^\/api\/admin\/media\/([a-f0-9-]{36})$/i);
   const collection = path === "/api/admin/media";
-  if (!collection && !assetMatch && !fileMatch) return null;
+  const bulkCollection = path === "/api/admin/media/bulk";
+  if (!collection && !bulkCollection && !assetMatch && !fileMatch) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
   catch { return error("Media service is temporarily unavailable", 503); }
@@ -1933,6 +1934,61 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
 
   if (!canManage) return error("You do not have permission to manage media", 403);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+
+  if (bulkCollection && request.method === "POST") {
+    const length = Number(request.headers.get("content-length") || 0);
+    if (length > 22_000_000) return error("Bulk image upload is limited to 20 MB per request.", 413);
+    let form: FormData;
+    try { form = await request.formData(); } catch { return error("Upload a valid batch of image files", 400); }
+    const files = form.getAll("files").filter((item): item is File => item instanceof File);
+    let ids: unknown;
+    try { ids = JSON.parse(String(form.get("asset_ids") || "[]")); } catch { return error("The upload retry identifiers are invalid", 400); }
+    if (!Array.isArray(ids) || files.length < 1 || files.length > 4 || ids.length !== files.length || ids.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id))) {
+      return error("Choose 1–4 images and provide one valid retry identifier for each image.", 400);
+    }
+    if (new Set(ids).size !== ids.length) return error("Each image must have a different retry identifier.", 400);
+    if (files.some(file => file.size < 1 || file.size > 5_000_000) || files.reduce((sum,file)=>sum+file.size,0)>20_000_000) {
+      return error("Each image must be up to 5 MB and the complete batch up to 20 MB.", 413);
+    }
+    const results: Array<Record<string, unknown>> = [];
+    const failures: Array<{ name: string; error: string }> = [];
+    const altPrefix = cleanText(form.get("alt_text"), 180);
+    for (let index=0; index<files.length; index++) {
+      const file=files[index], id=String(ids[index]);
+      const extensions: Record<string,string>={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"};
+      const ext=extensions[file.type];
+      if(!ext){failures.push({name:file.name,error:"Only JPG, PNG and WebP images are supported."});continue;}
+      try {
+        const bytes=await file.arrayBuffer(), data=new Uint8Array(bytes);
+        const valid=(file.type==="image/jpeg"&&data[0]===255&&data[1]===216&&data[2]===255)
+          ||(file.type==="image/png"&&data[0]===137&&data[1]===80&&data[2]===78&&data[3]===71)
+          ||(file.type==="image/webp"&&String.fromCharCode(...data.slice(8,12))==="WEBP");
+        if(!valid){failures.push({name:file.name,error:"The file content does not match its declared image type."});continue;}
+        const digest=await crypto.subtle.digest("SHA-256",bytes);
+        const sha256=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
+        const existing=await env.DB.prepare("SELECT object_key,mime_type,byte_size,status,uploaded_by FROM media_assets WHERE id=? LIMIT 1").bind(id).first<{object_key:string;mime_type:string;byte_size:number;status:string;uploaded_by:string}>();
+        if(existing){
+          const head=await env.MEDIA.head(existing.object_key);
+          if(existing.uploaded_by!==admin.admin_user_id||existing.status!=="ready"||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||head?.customMetadata?.sha256!==sha256){
+            failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
+          }
+          results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
+          continue;
+        }
+        const key="catalogue/"+id+"."+ext;
+        const altText=cleanText(altPrefix+" · "+file.name,240);
+        await env.MEDIA.put(key,bytes,{httpMetadata:{contentType:file.type},customMetadata:{assetId:id,sha256}});
+        try{
+          await env.DB.batch([
+            env.DB.prepare("INSERT INTO media_assets (id,object_key,media_type,mime_type,byte_size,alt_text,caption,status,uploaded_by) VALUES (?,?,'image',?,?,?,'','ready',?)").bind(id,key,file.type,file.size,altText,admin.admin_user_id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'media.bulk_uploaded','media_asset',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length}))
+          ]);
+        }catch(writeError){try{await env.MEDIA.delete(key);}catch{/* best effort orphan cleanup */}throw writeError;}
+        results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:false});
+      }catch{failures.push({name:file.name,error:"Image could not be saved. Retry this image; completed uploads will be safely reused."});}
+    }
+    return json({uploaded:results.length,failed:failures.length,media:results,failures},failures.length?207:200);
+  }
 
   if (collection && request.method === "POST") {
     const length = Number(request.headers.get("content-length") || 0);
