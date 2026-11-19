@@ -52,6 +52,11 @@ try {
     { sql: "CREATE TABLE inventory_movements (id TEXT PRIMARY KEY, variant_id TEXT NOT NULL, movement_type TEXT NOT NULL, quantity_delta INTEGER NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL)" },
     { sql: "CREATE TABLE financial_transactions (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, direction TEXT NOT NULL, amount_paisa INTEGER NOT NULL, category TEXT NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL, note TEXT)" },
     { sql: "CREATE TABLE order_inventory_reservations (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, variant_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity>0), status TEXT NOT NULL CHECK(status IN ('reserved','released','consumed')), payment_provider TEXT NOT NULL, payment_reference TEXT, reserved_at TEXT NOT NULL, released_at TEXT, consumed_at TEXT, updated_at TEXT NOT NULL, UNIQUE(order_id,variant_id))" },
+    { sql: "CREATE TABLE pos_sales (id TEXT PRIMARY KEY, receipt_number TEXT NOT NULL, total_paisa INTEGER NOT NULL, status TEXT NOT NULL, idempotency_key TEXT NOT NULL)" },
+    { sql: "CREATE TABLE pos_sale_items (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, variant_id TEXT NOT NULL, quantity INTEGER NOT NULL, unit_price_paisa INTEGER NOT NULL)" },
+    { sql: "CREATE TABLE pos_payments (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, account_id TEXT NOT NULL, amount_paisa INTEGER NOT NULL)" },
+    { sql: "CREATE TABLE pos_receipt_outbox (id TEXT PRIMARY KEY, sale_id TEXT NOT NULL, channel TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued')" },
+    { sql: "CREATE TABLE audit_logs (id TEXT PRIMARY KEY, action TEXT NOT NULL, entity_id TEXT NOT NULL)" },
   ]);
 
   await query(databaseId, "INSERT INTO products(id,status) VALUES ('p1','published'); INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-race','p1',1,5,0,'test');");
@@ -65,6 +70,33 @@ try {
   check(racing.reduce((sum, result) => sum + changes(result), 0) === 3, "concurrent checkout allows exactly one 4-unit reservation against 5 available");
   const raceState = await query(databaseId, "SELECT (SELECT COUNT(*) FROM orders) AS orders,(SELECT reserved_quantity FROM product_variants WHERE id='v-race') AS reserved,(SELECT COALESCE(SUM(quantity),0) FROM order_items) AS items");
   check(raceState[0].results[0].orders === 1 && raceState[0].results[0].reserved === 4 && raceState[0].results[0].items === 4, "concurrent checkout leaves no orphan order, item or excess reservation");
+
+  await query(databaseId, "DELETE FROM order_items; DELETE FROM orders; UPDATE product_variants SET stock_on_hand=5,reserved_quantity=0 WHERE id='v-race';");
+  const competingCheckout = checkout("cross-channel-checkout");
+  const posSale = (id) => batch(databaseId, [
+    { sql: "INSERT INTO pos_sales(id,receipt_number,total_paisa,status,idempotency_key) SELECT ?,?,?, 'completed',? WHERE EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id='v-race' AND v.is_active=1 AND p.status='published' AND v.stock_on_hand-v.reserved_quantity>=2)", params: [id, "R-" + id, 2000, "idem-" + id] },
+    { sql: "INSERT INTO pos_sale_items(id,sale_id,variant_id,quantity,unit_price_paisa) SELECT ?,?,'v-race',1,1000 WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-line-a-" + id, id, id] },
+    { sql: "INSERT INTO pos_sale_items(id,sale_id,variant_id,quantity,unit_price_paisa) SELECT ?,?,'v-race',1,1000 WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-line-b-" + id, id, id] },
+    { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-1 WHERE id='v-race' AND is_active=1 AND stock_on_hand-reserved_quantity>=1 AND EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: [id] },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT ?, 'v-race','sold',-1,'pos_sale',? WHERE changes()=1 AND EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-move-a-" + id, id, id] },
+    { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-1 WHERE id='v-race' AND is_active=1 AND stock_on_hand-reserved_quantity>=1 AND EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: [id] },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT ?, 'v-race','sold',-1,'pos_sale',? WHERE changes()=1 AND EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-move-b-" + id, id, id] },
+    { sql: "INSERT INTO pos_payments(id,sale_id,account_id,amount_paisa) SELECT ?,?,'cash-main',2000 WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-payment-" + id, id, id] },
+    { sql: "INSERT INTO financial_transactions(id,account_id,direction,amount_paisa,category,reference_type,reference_id,note) SELECT ?, 'cash-main','in',2000,'pos_sale','pos_sale',?,'POS race test' WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-ledger-" + id, id, id] },
+    { sql: "INSERT INTO audit_logs(id,action,entity_id) SELECT ?, 'pos.sale_completed',? WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-audit-" + id, id, id] },
+    { sql: "INSERT INTO pos_receipt_outbox(id,sale_id,channel) SELECT ?,?,'email' WHERE EXISTS (SELECT 1 FROM pos_sales WHERE id=?)", params: ["pos-outbox-" + id, id, id] },
+  ]);
+  const crossRace = await Promise.all([competingCheckout, posSale("cross-channel-pos")]);
+  const checkoutWon = changes(crossRace[0], 0) === 1;
+  const posWon = changes(crossRace[1], 0) === 1;
+  check(Number(checkoutWon) + Number(posWon) === 1, "online checkout and POS sale contend on the same D1 stock balance without overselling");
+  const crossState = await query(databaseId, "SELECT (SELECT COUNT(*) FROM orders) AS orders,(SELECT COUNT(*) FROM pos_sales) AS pos_sales,(SELECT stock_on_hand FROM product_variants WHERE id='v-race') AS stock,(SELECT reserved_quantity FROM product_variants WHERE id='v-race') AS reserved,(SELECT COUNT(*) FROM pos_sale_items) AS pos_lines,(SELECT COUNT(*) FROM pos_payments) AS pos_payments,(SELECT COUNT(*) FROM financial_transactions WHERE reference_type='pos_sale') AS pos_ledger,(SELECT COUNT(*) FROM inventory_movements WHERE reference_type='pos_sale') AS pos_movements,(SELECT COUNT(*) FROM audit_logs WHERE action='pos.sale_completed') AS pos_audits,(SELECT COUNT(*) FROM pos_receipt_outbox) AS pos_outbox");
+  const cross = crossState[0].results[0];
+  if (posWon) {
+    check(cross.orders === 0 && cross.pos_sales === 1 && cross.stock === 3 && cross.reserved === 0 && cross.pos_lines === 2 && cross.pos_payments === 1 && cross.pos_ledger === 1 && cross.pos_movements === 2 && cross.pos_audits === 1 && cross.pos_outbox === 1, "successful duplicate-line POS sale commits its complete inventory, payment, ledger, audit and receipt records");
+  } else {
+    check(cross.orders === 1 && cross.pos_sales === 0 && cross.stock === 5 && cross.reserved === 4 && cross.pos_lines === 0 && cross.pos_payments === 0 && cross.pos_ledger === 0 && cross.pos_movements === 0 && cross.pos_audits === 0 && cross.pos_outbox === 0, "when online checkout wins, the blocked POS attempt leaves no orphan financial or receipt records");
+  }
 
   await query(databaseId, "DELETE FROM order_items; DELETE FROM orders; DELETE FROM product_variants; INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-dispatch','p1',1,10,5,'test'),('v-short','p1',1,4,4,'test'),('v-cancel','p1',1,8,5,'test'),('v-cancel-short','p1',1,8,4,'test'),('v-paid','p1',1,5,5,'test');");
   await query(databaseId, "INSERT INTO orders(id,order_status,payment_provider,payment_status,payment_method,delivery_fee_status,total_paisa,updated_at) VALUES ('o-dispatch','processing','manual','pending','cod','accepted',1000,'test'),('o-short','processing','manual','pending','cod','accepted',1000,'test'),('o-cancel','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-cancel-short','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-paid','pending','safepay','pending','online','accepted',12500,'test');");
