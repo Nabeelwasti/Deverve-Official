@@ -1764,6 +1764,10 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(db.variants.get(variantId).stock_on_hand, 5);
   assert.equal(db.variants.get(variantId).reserved_quantity, 2);
   assert.equal(db.orders.size, 1);
+  const checkoutOrderId = [...db.orders.keys()][0];
+  const checkoutReservation = db.orderInventoryReservations.get(checkoutOrderId + ":" + variantId);
+  assert.equal(checkoutReservation.quantity, 2);
+  assert.equal(checkoutReservation.status, "reserved");
 
   const duplicate = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(duplicate.status, 200);
@@ -1807,6 +1811,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   assert.equal(db.movements.at(-1).movement_type, "sold");
   assert.equal(db.movements.at(-1).quantity_delta, -3);
+  assert.equal(db.orderInventoryReservations.get(order.id + ":" + variantId).status, "consumed");
 });
 
 test("cancelling a COD order releases its reservation without changing physical stock", async () => {
@@ -1841,6 +1846,7 @@ test("cancelling a COD order releases its reservation without changing physical 
   assert.equal(cancelled.status, 200);
   assert.equal(db.variants.get(variantId).stock_on_hand, 4);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  assert.equal(db.orderInventoryReservations.get(orderId + ":" + variantId).status, "released");
 });
 
 test("admin cannot cancel an online-paid order or one with an active Safepay payment session", async () => {
