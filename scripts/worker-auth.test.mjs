@@ -2170,6 +2170,46 @@ test("authenticated product label scanning sends an image to Gemini and returns 
   }finally{globalThis.fetch=originalFetch;}
 });
 
+test("authenticated product research uses Gemini Google Search grounding and returns cited sources", async () => {
+  const db = new FakeD1();
+  const key = "AQ." + "R".repeat(48);
+  const configured = { ...env(db), NabeelG_Api_key1: key };
+  const bootstrapped = await bootstrap(db);
+  const cookie = bootstrapped.headers.get("set-cookie").split(";")[0];
+  const originalFetch = globalThis.fetch;
+  let receivedKey = "";
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input) === "https://generativelanguage.googleapis.com/v1beta/interactions") {
+      receivedKey = init.headers?.["x-goog-api-key"] || "";
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.equal(body.model, "gemini-3.8-flash");
+      assert.deepEqual(body.tools, [{ type: "google_search" }]);
+      assert.match(body.input, /12345678/);
+      return new Response(JSON.stringify({
+        output_text: "The exact product match is not confirmed. The official page shows a denim jacket.",
+        steps: [
+          { type: "google_search_call", arguments: { queries: ["12345678 denim jacket official"] } },
+          { type: "model_output", content: [{ type: "text", text: "The exact product match is not confirmed.", annotations: [{ type: "url_citation", title: "Official product page", url: "https://example.com/product" }] }] }
+        ]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await handleRequest(request("/api/admin/products/research", "POST", { name: "Denim jacket", barcode: "12345678" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.22" }), configured);
+    assert.equal(response.status, 200);
+    const result = await response.json();
+    assert.equal(result.ok, true);
+    assert.equal(result.model, "gemini-3.8-flash");
+    assert.match(result.summary, /exact product match is not confirmed/i);
+    assert.deepEqual(result.queries, ["12345678 denim jacket official"]);
+    assert.deepEqual(result.sources, [{ title: "Official product page", url: "https://example.com/product" }]);
+    assert.equal(receivedKey, key);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
   const db = new FakeD1();
   const vault = await handleRequest(request("/api/admin/ai/keys", "GET"), env(db));
