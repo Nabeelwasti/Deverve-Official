@@ -4104,23 +4104,31 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
 }
 type GeminiResearchSource={title:string;url:string};
 async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{ok:boolean;status:number;summary:string;message:string;model:string;sources:GeminiResearchSource[];queries:string[]}>{
- const model="gemini-3.5-flash-lite";
- try{
-  const response=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({model,input:prompt,tools:[{type:"google_search"}]}),signal:AbortSignal.timeout(14000)});
-  const payload=await response.json().catch(()=>({})) as {error?:{message?:string;status?:string};output_text?:string;steps?:Array<{type?:string;arguments?:{queries?:unknown};content?:Array<{type?:string;text?:string;annotations?:Array<{type?:string;url?:string;title?:string}>}>}>};
-  if(!response.ok)return{ok:false,status:response.status,summary:"",message:[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini web research request failed",model,sources:[],queries:[]};
-  const blocks=(payload.steps??[]).filter(step=>step.type==="model_output").flatMap(step=>step.content??[]);
-  const summary=(typeof payload.output_text==="string"?payload.output_text:blocks.filter(block=>block.type==="text").map(block=>block.text??"").join("\n")).trim();
-  const sources:GeminiResearchSource[]=[];
-  const seen=new Set<string>();
-  for(const block of blocks)for(const annotation of block.annotations??[]){
-   if(annotation.type!=="url_citation"||typeof annotation.url!=="string")continue;
-   try{const url=new URL(annotation.url);if(url.protocol!=="https:"||seen.has(url.toString()))continue;seen.add(url.toString());sources.push({title:cleanText(annotation.title||url.hostname,100)||url.hostname,url:url.toString()});}catch{}
-  }
-  const queries=(payload.steps??[]).filter(step=>step.type==="google_search_call").flatMap(step=>Array.isArray(step.arguments?.queries)?step.arguments!.queries as unknown[]:[]).filter((value):value is string=>typeof value==="string").map(value=>cleanText(value,180)).filter(Boolean).slice(0,8);
-  if(!summary)return{ok:false,status:502,summary:"",message:"Gemini returned no grounded research summary",model,sources,queries};
-  return{ok:true,status:200,summary,message:"",model,sources,queries};
- }catch(caught){return{ok:false,status:503,summary:"",message:caught instanceof Error?caught.message:"Gemini web research timed out or failed",model,sources:[],queries:[]};}
+ const models=["gemini-3.8-flash","gemini-3.6-flash"];
+ let last={ok:false,status:503,summary:"",message:"Gemini web research timed out or failed",model:models[0],sources:[] as GeminiResearchSource[],queries:[] as string[]};
+ for(const model of models){
+  try{
+   const response=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({model,input:prompt,tools:[{type:"google_search"}]}),signal:AbortSignal.timeout(12000)});
+   const payload=await response.json().catch(()=>({})) as {error?:{message?:string;status?:string};output_text?:string;steps?:Array<{type?:string;arguments?:{queries?:unknown};content?:Array<{type?:string;text?:string;annotations?:Array<{type?:string;url?:string;title?:string}>}>}>};
+   if(!response.ok){
+    last={ok:false,status:response.status,summary:"",message:[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini web research request failed",model,sources:[],queries:[]};
+    if([400,404,429,500,502,503,504].includes(response.status))continue;
+    return last;
+   }
+   const blocks=(payload.steps??[]).filter(step=>step.type==="model_output").flatMap(step=>step.content??[]);
+   const summary=(typeof payload.output_text==="string"?payload.output_text:blocks.filter(block=>block.type==="text").map(block=>block.text??"").join("\\n")).trim();
+   const sources:GeminiResearchSource[]=[];
+   const seen=new Set<string>();
+   for(const block of blocks)for(const annotation of block.annotations??[]){
+    if(annotation.type!=="url_citation"||typeof annotation.url!=="string")continue;
+    try{const url=new URL(annotation.url);if(url.protocol!=="https:"||seen.has(url.toString()))continue;seen.add(url.toString());sources.push({title:cleanText(annotation.title||url.hostname,100)||url.hostname,url:url.toString()});}catch{}
+   }
+   const queries=(payload.steps??[]).filter(step=>step.type==="google_search_call").flatMap(step=>Array.isArray(step.arguments?.queries)?step.arguments!.queries as unknown[]:[]).filter((value):value is string=>typeof value==="string").map(value=>cleanText(value,180)).filter(Boolean).slice(0,8);
+   if(!summary){last={ok:false,status:502,summary:"",message:"Gemini returned no grounded research summary",model,sources,queries};continue;}
+   return{ok:true,status:200,summary,message:"",model,sources,queries};
+  }catch(caught){last={ok:false,status:503,summary:"",message:caught instanceof Error?caught.message:"Gemini web research timed out or failed",model,sources:[],queries:[]};}
+ }
+ return last;
 }
 
 async function adminProductResearchRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
