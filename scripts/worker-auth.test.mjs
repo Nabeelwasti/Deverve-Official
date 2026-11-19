@@ -1071,8 +1071,9 @@ class FakeStatement {
     if (q.startsWith("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined'")) {
       const [updatedAt, id, tokenHash, now, orderId] = v;
       const row = this.db.orders.get(id);
-      const required = this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id).reduce((sum,item) => sum + item.quantity, 0);
-      const reserved = this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id).every(item => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) >= required);
+      const totals = new Map();
+      for (const item of this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id)) totals.set(item.variant_id, (totals.get(item.variant_id) ?? 0) + item.quantity);
+      const reserved = [...totals].every(([variantId, required]) => (this.db.variants.get(variantId)?.reserved_quantity ?? 0) >= required);
       if (!row || !reserved || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { order_status: "cancelled", delivery_fee_status: "declined", delivery_fee_token_hash: null, delivery_fee_expires_at: null, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
