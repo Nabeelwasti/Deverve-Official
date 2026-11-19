@@ -10,7 +10,7 @@ This checklist separates source-code work from account configuration and product
 ### 1. Database and storage
 
 - [ ] Take and verify a fresh production D1 backup/export before any schema change.
-- [ ] Take an independent R2 media backup and complete a restore drill. A D1 export does not contain R2 object bytes.
+- [x] Complete a same-account R2 copy/restore drill on 19 Nov 2026: 15 objects / 1,522,058 bytes copied from `deverve-media-private` to `deverve-r2-restore-drill-20261119`, restored into an isolated test bucket, and all 15 object sizes + ETags matched. Original bucket remained unchanged; temporary restore bucket was deleted. A metadata manifest records content types and custom metadata.\n- [ ] Establish an independent off-account R2 backup with separately controlled credentials and repeat the restore drill. A same-account bucket is not an independent backup; a D1 export does not contain R2 object bytes.
 - [ ] Reconcile production schema immediately before migration. The 19 Nov read-only audit found migrations 0028, 0029, 0030, 0031 and 0033 absent; migration 0032's CNIC protection triggers were present. This is a historical observation, not permission to apply migrations.
 - [ ] Apply the missing migrations in dependency order only after backup and isolated rehearsal: 0028 → 0029 → 0030 → 0031 → 0033. Verify the 0032 CNIC triggers remain present.
 - [ ] Rehearse and verify migration 0036 (`ai_task_runs`, `ai_task_events`) on an isolated D1 database before scheduling its production application.
@@ -65,7 +65,7 @@ This checklist separates source-code work from account configuration and product
 - [ ] Test alerting, provider failures, D1/R2 capacity, outbox retries, scheduled jobs and restore procedures.
 - [ ] Complete an owner acceptance review and record the exact release commit, migration evidence and rollback plan.
 
-## Read-only production configuration snapshot — 19 November 2026
+## R2 backup/restore drill evidence — 19 November 2026\n\n- Source: private bucket `deverve-media-private` (unchanged).\n- Retained drill copy: `deverve-r2-restore-drill-20261119` (private; 15 objects plus `_deverve-backup-manifest.json`).\n- Isolated restore: all 15 objects were restored and verified by matching ETag and byte size; the temporary restore bucket `deverve-r2-restore-check-20261119` was then emptied and deleted.\n- Total source payload verified: 1,522,058 bytes.\n- Scope limitation: Cloudflare's account-level R2 object API copy did not reapply per-object custom metadata to restored objects; the manifest preserves that metadata for a controlled application-level restore. This is a same-account recovery drill, not an off-account disaster-recovery copy.\n\n## Read-only production configuration snapshot — 19 November 2026
 
 These are verified release blockers, not permission to change live resources:
 
