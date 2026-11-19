@@ -34,12 +34,26 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
   if(file.size>15*1024*1024){setError("Choose an image smaller than 15 MB. Large images are compressed on this device before upload.");return;}
   setError("");setReadingFile(true);detected.current=false;
   try{
-   const bitmap=await createImageBitmap(file);
+   let bitmap:ImageBitmap|null=null;
+   let source:CanvasImageSource;
+   let sourceWidth=0,sourceHeight=0;
+   let fallbackUrl="";
    try{
-    const scale=Math.min(1,1800/Math.max(bitmap.width,bitmap.height));
-    const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    if(typeof createImageBitmap==="function"){
+     try{bitmap=await createImageBitmap(file);}catch{/* Older mobile browsers can still decode through HTMLImageElement. */}
+    }
+    if(bitmap){source=bitmap;sourceWidth=bitmap.width;sourceHeight=bitmap.height;}
+    else{
+     fallbackUrl=URL.createObjectURL(file);
+     const imageSource=new Image();imageSource.decoding="async";imageSource.src=fallbackUrl;
+     await imageSource.decode();
+     source=imageSource;sourceWidth=imageSource.naturalWidth;sourceHeight=imageSource.naturalHeight;
+    }
+    if(!sourceWidth||!sourceHeight)throw new Error("The selected image has no readable dimensions. Choose another photo.");
+    const scale=Math.min(1,1800/Math.max(sourceWidth,sourceHeight));
+    const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(sourceWidth*scale));canvas.height=Math.max(1,Math.round(sourceHeight*scale));
     const context=canvas.getContext("2d");if(!context)throw new Error("This browser could not prepare the selected image.");
-    context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    context.drawImage(source,0,0,canvas.width,canvas.height);
     let image=canvas.toDataURL("image/jpeg",0.86);
     if(image.length>6_800_000)image=canvas.toDataURL("image/jpeg",0.72);
     if(image.length>6_800_000)throw new Error("This image is still too large after compression. Choose a smaller or clearer crop.");
@@ -50,7 +64,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
       const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
       const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
       const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
-      if(formats.length){const detector=new Detector({formats});const results=await detector.detect(bitmap);code=results.find(item=>item.rawValue?.trim())?.rawValue?.trim()||"";}
+      if(formats.length){const detector=new Detector({formats});const results=await detector.detect(source);code=results.find(item=>item.rawValue?.trim())?.rawValue?.trim()||"";}
      }catch{/* The bundled ZXing decoder below is the compatibility fallback. */}
     }
     if(!code){
@@ -60,7 +74,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
     if(code){detected.current=true;if(detectedImageCallback.current)await detectedImageCallback.current(code,image);else callback.current(code);return;}
     if(imageCallback.current){await imageCallback.current(image);return;}
     setError("No barcode or QR code could be decoded from this image. Try a clearer crop or enter the code manually.");
-   }finally{bitmap.close();}
+   }finally{bitmap?.close();if(fallbackUrl)URL.revokeObjectURL(fallbackUrl);}
   }catch(caught){setError(caught instanceof Error?caught.message:"The selected image could not be read. Try another image.");}
   finally{if(mounted.current)setReadingFile(false);}
  };
@@ -95,7 +109,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    video.current.srcObject=camera;
    await video.current.play();
    if(!mounted.current)return;
-   setCameraActive(true);setStatus("Camera is active. Native camera decoding and the bundled ZXing multi-format engine are scanning together. Supported formats include EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec, MaxiCode, RSS and QR.");
+   setCameraActive(true);setStatus("Camera is active. The bundled ZXing multi-format scanner is running, with native barcode detection acceleration where your browser supports it. Supported formats include EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec, MaxiCode, RSS and QR.");
    const deliver=(value:string,stopNative?:()=>void)=>{
     if(!value||detected.current)return;
     detected.current=true;
