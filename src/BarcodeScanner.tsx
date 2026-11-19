@@ -7,7 +7,7 @@ type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSup
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
 function createZxingReader(){
  const hints=new Map<DecodeHintType,any>();
- hints.set(DecodeHintType.POSSIBLE_FORMATS,[BarcodeFormat.AZTEC,BarcodeFormat.CODABAR,BarcodeFormat.CODE_39,BarcodeFormat.CODE_93,BarcodeFormat.CODE_128,BarcodeFormat.DATA_MATRIX,BarcodeFormat.EAN_13,BarcodeFormat.EAN_8,BarcodeFormat.ITF,BarcodeFormat.PDF_417,BarcodeFormat.QR_CODE,BarcodeFormat.UPC_A,BarcodeFormat.UPC_E]);
+ hints.set(DecodeHintType.POSSIBLE_FORMATS,[BarcodeFormat.AZTEC,BarcodeFormat.CODABAR,BarcodeFormat.CODE_39,BarcodeFormat.CODE_93,BarcodeFormat.CODE_128,BarcodeFormat.DATA_MATRIX,BarcodeFormat.EAN_13,BarcodeFormat.EAN_8,BarcodeFormat.ITF,BarcodeFormat.MAXICODE,BarcodeFormat.PDF_417,BarcodeFormat.QR_CODE,BarcodeFormat.RSS_14,BarcodeFormat.RSS_EXPANDED,BarcodeFormat.UPC_A,BarcodeFormat.UPC_E,BarcodeFormat.MICRO_QR_CODE]);
  hints.set(DecodeHintType.TRY_HARDER,true);
  return new BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:250,delayBetweenScanSuccess:800,tryPlayVideoTimeout:5000});
 }
