@@ -268,17 +268,17 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             if (validGroups.length) chunkGroups.push(...validGroups);
             else for (const batch of chunk) for (const candidate of batch.candidates) chunkGroups.push({ candidate_ids: [candidate.candidate_id], product_name: candidate.name.slice(0, 36), confidence: "low" });
           }
-          const imageIndexesByName = new Map<string, number[]>();
-          files.filter(file => attachmentMime(file).startsWith("image/")).forEach((file, index) => {
-            const indexes = imageIndexesByName.get(file.name) || [];
-            indexes.push(index + 1);
-            imageIndexesByName.set(file.name, indexes);
+          const imagePositionByFile = new Map<File, number>();
+          files.filter(file => attachmentMime(file).startsWith("image/")).forEach((file, index) => imagePositionByFile.set(file, index + 1));
+          const globalCandidateMap = summaries.flatMap(batch => {
+            const batchFiles = (batchRecords[batch.batch - 1]?.files || []).filter(file => attachmentMime(file).startsWith("image/"));
+            return batch.candidates.map(candidate => {
+              const sourceNames = candidate.source_files.length ? candidate.source_files : batch.files;
+              const sourceFiles = sourceNames.length ? batchFiles.filter(file => sourceNames.includes(file.name)) : batchFiles;
+              const imageIndexes = sourceFiles.map(file => imagePositionByFile.get(file)).filter((index): index is number => typeof index === "number").slice(0, 3);
+              return [candidate.candidate_id, candidate.name.slice(0, 28), imageIndexes];
+            });
           });
-          const globalCandidateMap = summaries.flatMap(batch => batch.candidates.map(candidate => {
-            const sourceNames = candidate.source_files.length ? candidate.source_files : batch.files;
-            const imageIndexes = sourceNames.flatMap(name => imageIndexesByName.get(name) || []).slice(0, 3);
-            return [candidate.candidate_id, candidate.name.slice(0, 28), imageIndexes];
-          }));
           const preliminaryMatches = chunkGroups
             .filter(group => group.confidence === "high" && group.candidate_ids.length > 1)
             .slice(0, 20)
