@@ -1,6 +1,6 @@
 # De VERVE release and owner setup checklist
 
-Last reconciled: 19 November 2026  
+Last reconciled: 20 November 2026  
 Target: Pakistan-first storefront, garments catalogue, rentals, POS and AI-assisted operations.
 
 This checklist separates source-code work from account configuration and production operations. A passing build does not complete an external provider integration. Do not enable a provider until its test transaction and callback/delivery path have been verified.
@@ -25,10 +25,12 @@ This checklist separates source-code work from account configuration and product
 - [x] Latest audited code passed CI build, type-check, dependency audit, Pages headers, Worker tests, schema validation and 82 Playwright browser tests on the exact tested PR head.
 - [x] Automated desktop and mobile Playwright coverage selects and analyses all 100 images: 34 image-analysis batches, compact cross-batch planning and seven numbered contact sheets.
 - [ ] Run real-provider 100-image quota/fallback tests and interruption/retry acceptance on a physical Android device; browser mocks do not prove Gemini provider or camera-device behaviour.
-- [ ] Finish CSV import as a deterministic validated preview + duplicate report + atomic product/variant creation workflow.
-- [ ] Decide and implement safe DOCX/XLSX import scope, with macro/archive rejection, file-size limits and isolated parsing.
+- [x] Implement deterministic CSV product import with local validation/preview, duplicate size-colour detection, UTF-8 BOM support, permission-aware cost fields, and one atomic D1 batch for products, variants, opening-stock movements and audit events. Products are created as drafts; generated SKU/barcodes are assigned where the CSV omits them.
+- [ ] Pass the new desktop/mobile CSV import end-to-end tests on the exact final PR head.
+- [x] Implement browser-side DOCX paragraph/table and XLSX worksheet extraction with ZIP integrity checks, path traversal/encryption/ZIP64 rejection, archive expansion limits, XML DTD/entity rejection, and no formula or macro execution.
+- [ ] Pass the new desktop/mobile DOCX/XLSX extraction end-to-end tests on the exact final PR head.
 - [ ] Verify each configured Gemini project/model for image/PDF support, quota, fallback order and Google Search grounding. Multiple keys in one Google project do not create separate quota pools.
-- [x] Migration 0036 was applied to a temporary isolated D1; both tables and indexes, task/event restoration and cascading event deletion passed. The temporary database was deleted.
+- [x] Full migration rehearsal: migrations 0001–0036 were applied sequentially to an isolated temporary Cloudflare D1 on 20 Nov 2026; every migration succeeded. The temporary database was deleted. This rehearsal did not alter production.
 - [ ] Apply migration 0036 to production only after backup, approved release window and migration rehearsal; the read-only production check found `ai_task_runs` and `ai_task_events` absent.
 - [ ] Add GitHub Actions Cloudflare test credentials so the remote D1 integration step can run automatically; current CI reports this step as skipped because those secrets are absent.
 
@@ -90,7 +92,7 @@ These are verified release blockers, not permission to change live resources:
 - Working branch: `feat/ai-owner-command-execution`
 - Pull request: #5
 - Production branch: `main`
-- No merge, production migration, secret update or production deployment is authorized by this checklist.
+- The owner explicitly instructed that PR #5 be merged into `main` and Cloudflare deployed only after all remaining work and release gates are complete. That final merge/deploy has not been executed.
 - Production deployment requires the owner's separate explicit instruction: **Deploy now**.
 
 ## Required owner-provided setup (never paste secrets into chat)
