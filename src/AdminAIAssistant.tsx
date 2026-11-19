@@ -49,7 +49,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const visibleMessages = useMemo(() => [{ role: "model" as const, text: greeting }, ...history], [history]);
 
   useEffect(() => {
-    if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
+    if (initialBarcode) { setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode); setResearchQuery(current => current || initialBarcode); }
   }, [initialBarcode]);
   useEffect(() => {
     if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
