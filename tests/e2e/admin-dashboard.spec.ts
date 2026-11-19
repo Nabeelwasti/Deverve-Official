@@ -145,6 +145,9 @@ test("camera scanner keeps its video element mounted when permission is granted"
         async detect() { return []; }
       },
     });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
     HTMLMediaElement.prototype.play = () => Promise.resolve();
   });
   await page.goto("/admin?section=pos");
@@ -170,6 +173,9 @@ test("camera scanner keeps ZXing fallback available when native barcode detectio
         constructor(_options: { formats: string[] }) { throw new Error("Native barcode detector unavailable"); }
       },
     });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
     HTMLMediaElement.prototype.play = () => Promise.resolve();
   });
   await page.goto("/admin?section=pos");
@@ -423,6 +429,9 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
     const stream = document.createElement("canvas").captureStream(1);
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => stream } });
     Object.defineProperty(window, "BarcodeDetector", { configurable: true, value: class { constructor(_options: { formats: string[] }) {} async detect() { return [{ rawValue: payload }]; } } });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
     HTMLMediaElement.prototype.play = () => Promise.resolve();
   }, qrPayload);
   await page.goto("/admin?section=pos");
