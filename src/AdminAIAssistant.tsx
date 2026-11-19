@@ -39,7 +39,12 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 async function fileBatchFingerprint(files: File[], task: string, prompt: string): Promise<string> {
-  const identity = [task, prompt, ...files.map(file => file.name + "\u0000" + file.size + "\u0000" + file.lastModified).sort()].join("\n");
+  const fileDigests = await Promise.all(files.map(async file => {
+    const contentDigest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    const contentHash = Array.from(new Uint8Array(contentDigest), value => value.toString(16).padStart(2, "0")).join("");
+    return file.name + "\\u0000" + file.size + "\\u0000" + contentHash;
+  }));
+  const identity = [task, prompt, ...fileDigests.sort()].join("\\n");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
