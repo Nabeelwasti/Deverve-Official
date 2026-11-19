@@ -46,6 +46,8 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
       const body = request.postDataJSON() as { status: string; vehicle_id: string | null; admin_note: string };
       if (rental) rental = { ...rental, status: body.status, vehicle_id: body.vehicle_id, admin_note: body.admin_note, vehicle_name: body.vehicle_id ? "Toyota Corolla 2022" : null };
       payload = { updated: true, status: body.status, vehicle_id: body.vehicle_id };
+    } else if (url.pathname === "/api/admin/ai/keys") {
+      payload = { keys: [], environment_keys: [], encryption_ready: true, encryption_mode: "dedicated", model: "Gemini 3.8 Flash", models: [] };
     } else if (url.pathname === "/api/admin/product-reviews") {
       payload = { reviews: [] };
     } else if (url.pathname === "/api/admin/audit-logs") {
