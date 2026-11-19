@@ -21,13 +21,16 @@ This checklist separates source-code work from account configuration and product
 - [x] Private AI Command Centre, bounded multimodal intake and cross-batch contact-sheet comparison are implemented on the feature branch.
 - [x] Product drafts and size/colour variant matrix workflow are implemented.
 - [x] Direct owner/manager product publishing and exact-SKU stock command are implemented; stock adjustments now write inventory movement and audit records.
-- [x] Resumable four-file bulk media endpoint and AI intake integration are implemented on the feature branch; new commits still require CI verification.
-- [ ] Run CI against the exact latest PR head and fix every failure before merge.
-- [ ] Run 100-image catalogue analysis, interruption/retry and cross-batch grouping tests on physical Android and desktop browsers.
+- [x] Resumable four-image transport batches are integrated with the 100-file AI task; the four-file storage request size is not a task attachment limit.
+- [x] Latest audited code passed CI build, type-check, dependency audit, Pages headers, Worker tests, schema validation and 82 Playwright browser tests on the exact tested PR head.
+- [x] Automated desktop and mobile Playwright coverage selects and analyses all 100 images: 34 image-analysis batches, compact cross-batch planning and seven numbered contact sheets.
+- [ ] Run real-provider 100-image quota/fallback tests and interruption/retry acceptance on a physical Android device; browser mocks do not prove Gemini provider or camera-device behaviour.
 - [ ] Finish CSV import as a deterministic validated preview + duplicate report + atomic product/variant creation workflow.
 - [ ] Decide and implement safe DOCX/XLSX import scope, with macro/archive rejection, file-size limits and isolated parsing.
 - [ ] Verify each configured Gemini project/model for image/PDF support, quota, fallback order and Google Search grounding. Multiple keys in one Google project do not create separate quota pools.
-- [ ] Confirm the task ledger migration on isolated D1 and verify ownership checks, restoration, retention and failure recovery.
+- [x] Migration 0036 was applied to a temporary isolated D1; both tables and indexes, task/event restoration and cascading event deletion passed. The temporary database was deleted.
+- [ ] Apply migration 0036 to production only after backup, approved release window and migration rehearsal; the read-only production check found `ai_task_runs` and `ai_task_events` absent.
+- [ ] Add GitHub Actions Cloudflare test credentials so the remote D1 integration step can run automatically; current CI reports this step as skipped because those secrets are absent.
 
 ### 3. Payments and financial operations
 
@@ -62,6 +65,25 @@ This checklist separates source-code work from account configuration and product
 - [ ] Test alerting, provider failures, D1/R2 capacity, outbox retries, scheduled jobs and restore procedures.
 - [ ] Complete an owner acceptance review and record the exact release commit, migration evidence and rollback plan.
 
+## Read-only production configuration snapshot — 19 November 2026
+
+These are verified release blockers, not permission to change live resources:
+
+- Cloudflare Pages currently exposes only the `deverve-official.pages.dev` domain; no custom domain is connected.
+- Pages source deployments and production deployments are disabled in the current project configuration. A production rollout therefore remains a separately authorized operation.
+- The production D1 database does not yet contain the AI task-continuity tables from migration 0036.
+- No Cloudflare Queue currently exists in the connected account, so the asynchronous Safepay queue/consumer path is not activated.
+- The current Pages production configuration does not list Safepay, Resend, WhatsApp Cloud API or Turnstile provider bindings. Provider credentials and account-side verification remain owner setup gates.
+- A read-only production count check found existing catalogue and business records; do not seed, overwrite or publish catalogue data without the owner's approved source data.
+- No production deployment, D1 migration, secret change, queue creation or live data write was performed during this audit.
+
+## Latest automated verification
+
+- Tested PR head: `e78dd5d2ceaceaeaba09e9b09448888046e58fd8` (audit/test branch only).
+- GitHub Actions run: [#1333](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44587927206) — successful.
+- Worker tests: 88 passed; browser suite: 82 passed, including the 100-image desktop/mobile intake test.
+- Schema smoke check: 36 migrations, 53 tables, constraints and foreign keys verified.
+- The CI remote-D1 step was skipped because GitHub Actions does not have `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`; migration 0036 was separately tested through the connected Cloudflare account on a temporary D1 database and that database was deleted afterward.
 ## Current branch and release boundary
 
 - Repository: `Nabeelwasti/Deverve-Official`
