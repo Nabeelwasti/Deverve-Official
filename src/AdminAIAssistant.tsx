@@ -194,7 +194,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             batch: batchIndex + 1,
             files: item.files.map(file => file.name.slice(0, 80)),
             candidates: drafts.slice(0, 3).map((draft, candidateIndex) => ({
-              candidate_id: "batch-" + (batchIndex + 1) + "-candidate-" + (candidateIndex + 1),
+              candidate_id: String(batchIndex + 1) + "." + String(candidateIndex + 1),
               source_files: draft.source_files || [],
               name: draft.name, category: draft.category,
               colours: draft.colours, sizes: draft.sizes,
@@ -266,7 +266,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         const candidates = batchRecords.flatMap((record, batchIndex) => {
           const batchDrafts = record.response.ok ? (record.response.product_drafts || (record.response.product_draft ? [record.response.product_draft] : [])) : [];
           return batchDrafts.slice(0, 3).map((draft, candidateIndex) => ({
-            id: "batch-" + (batchIndex + 1) + "-candidate-" + (candidateIndex + 1),
+            id: String(batchIndex + 1) + "." + String(candidateIndex + 1),
             draft,
             files: record.files
           }));
