@@ -620,7 +620,13 @@ export default function Admin() {
     const colors = [...new Set(bulkColors.split(/[,;\n]+/).map(value => value.trim()).filter(Boolean))];
     if (!sizes.length || !colors.length) { setMessage("Enter at least one size and one colour to build the stock matrix."); return; }
     if (sizes.length * colors.length > 100) { setMessage("A single product matrix is limited to 100 size-and-colour combinations. Split larger assortments into batches."); return; }
-    const existing = new Set(variants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
+    const activeVariants = variants.filter(item => item.is_active === 1);
+    const legacyMultiOption = activeVariants.filter(item => item.size.split(/[,;|\\n]+/).map(value => value.trim()).filter(Boolean).length > 1 || item.color.split(/[,;|\\n]+/).map(value => value.trim()).filter(Boolean).length > 1);
+    if (legacyMultiOption.length) {
+      setMessage("Stock safety check: this product still has an active legacy variant containing multiple sizes or colours with one shared stock balance. Reconcile its stock into individual variants, reduce the legacy balance to zero, and deactivate that legacy row before generating the new matrix. No new variants were created.");
+      return;
+    }
+    const existing = new Set(activeVariants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
     const rows = sizes.flatMap(size => colors.map(color => ({ size, color, initial_stock: "0", reorder_level: "5", cost_price: variantForm.cost_price || "0" })))
       .filter(row => !existing.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
     setBulkRows(rows);
