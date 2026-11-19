@@ -401,10 +401,16 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal(db.orders.get(orderId).payment_status, "paid");
   assert.equal(db.financialTransactions.length, 1, "the successful transition must create exactly one gateway ledger row");
 
+  db.paymentWebhookEvents.get("evt_succeeded_1234567890").processing_status = "failed";
+  const recoveredRetry = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(recoveredRetry.status, 200);
+  assert.deepEqual(await recoveredRetry.json(), { received: true, duplicate: true, reconciled: true }, "a retry after payment/ledger commit must recover event acknowledgement without replaying the ledger");
+  assert.equal(db.financialTransactions.length, 1, "reconciliation retry must not duplicate the ledger row");
+
   const duplicate = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
-  assert.equal(db.financialTransactions.length, 1, "duplicate delivery must not duplicate the ledger row");
+  assert.equal(db.financialTransactions.length, 1, "processed event replay must not duplicate the ledger row");
 
   const conflictingReplay = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12001, currency: "PKR" });
   assert.equal(conflictingReplay.status, 409, "an event ID must never be accepted with a different payload");
@@ -759,6 +765,8 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT payment_status, financial_transaction_id, total_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, amount_paisa FROM financial_transactions WHERE id = ? AND reference_type = 'order'")) return this.db.financialTransactions.find((row) => row.id === v[0] && row.reference_id === v[1]) ?? null;
     if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, name, kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
