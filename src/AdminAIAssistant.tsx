@@ -245,8 +245,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         try {
           setStatus("Comparing every successful image batch in one catalogue plan…");
           const chunkGroups: Array<{ candidate_ids: string[]; product_name: string; confidence: "high" | "medium" | "low" }> = [];
-          for (let offset = 0; offset < summaries.length; offset += 6) {
-            const chunk = summaries.slice(offset, offset + 6);
+          for (let offset = 0; offset < summaries.length; offset += 4) {
+            const chunk = summaries.slice(offset, offset + 4);
             const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
               method: "POST",
               body: JSON.stringify({
