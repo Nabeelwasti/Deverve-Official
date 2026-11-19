@@ -69,7 +69,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
 
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    const direct = message.trim().toLowerCase().replace(/[.!?]+$/,"").replace(/\\s+/g," ").trim();
+    const direct = message.trim().toLowerCase().replace(/[.!?]+$/,"").split(" ").filter(Boolean).join(" ").trim();
     if (task === "chat" && ["owner", "manager"].includes(role) && (/^(?:please )?publish product .+$/i.test(message.trim()) || /^(?:please )?publish all draft products$/i.test(direct) || /^(?:please )?publish all eligible draft products$/i.test(direct) || /^(?:please )?publish all drafts$/i.test(direct))) {
       await executeCommand();
       return;
