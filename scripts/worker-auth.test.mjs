@@ -340,6 +340,33 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal(db.financialTransactions.length, 1);
 });
 
+test("Safepay ineligible order cannot consume a successful payment attempt", async () => {
+  const db = new FakeD1();
+  const orderId = crypto.randomUUID();
+  const tracker = "track_22345678-1234-1234-1234-123456789012";
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-SAFEPAY-STATE-GUARD", total_paisa: 12000,
+    payment_provider: "safepay", payment_status: "pending",
+    delivery_fee_status: "accepted", order_status: "cancelled",
+  });
+  db.paymentAttempts.set("attempt-state-guard", {
+    id: "attempt-state-guard", order_id: orderId, provider: "safepay",
+    provider_reference: tracker, amount_paisa: 12000, status: "pending",
+  });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const raw = JSON.stringify({ token: "evt_state_guard_123456", type: "payment.succeeded", data: { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" } });
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const response = await handleRequest(new Request(origin + "/api/webhooks/safepay", {
+    method: "POST", headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": signature }, body: raw,
+  }), { ...env(db), SAFEPAY_ENV: "sandbox", SAFEPAY_MERCHANT_API_KEY: "test-public-key", SAFEPAY_SECRET_KEY: "test-secret-key", SAFEPAY_WEBHOOK_SECRET: secret });
+  assert.equal(response.status, 503, "the provider should retry an event that cannot yet be reconciled");
+  assert.equal(db.paymentAttempts.get("attempt-state-guard").status, "pending", "an ineligible order must not consume the attempt as succeeded");
+  assert.equal(db.orders.get(orderId).payment_status, "pending");
+  assert.equal(db.financialTransactions.length, 0, "no ledger entry may be written for an ineligible order");
+});
+
 test("exchange-only policy rejects new return submissions without creating refund records", async () => {
   const db = new FakeD1();
   const registered = await handleRequest(request("/api/customer/register", "POST", {
