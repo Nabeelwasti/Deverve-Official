@@ -227,6 +227,12 @@ test("same-origin admin marker survives a forwarded Origin mismatch while cross-
   }), env(db));
   assert.equal(forwardedOrigin.status, 400, "trusted same-origin marker should pass the origin guard before payload validation");
 
+  const forwardedSalesHistory = await handleRequest(new Request(origin + "/api/admin/pos/sales?limit=50", {
+    headers: { cookie, origin: "https://forwarded-origin.example", "sec-fetch-site": "same-origin", "x-deverve-admin-request": "same-origin" },
+  }), env(db));
+  assert.equal(forwardedSalesHistory.status, 200, "same-origin admin GETs should also survive a forwarded Origin mismatch");
+  assert.deepEqual((await forwardedSalesHistory.json()).sales, []);
+
   const crossSite = await handleRequest(new Request(origin + "/api/admin/products", {
     method: "POST",
     headers: { cookie, "content-type": "application/json", origin: "https://attacker.example", "sec-fetch-site": "cross-site", "x-deverve-admin-request": "same-origin" },
