@@ -2469,7 +2469,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       const existingKeys = new Set((existing.results ?? []).map(row => row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
       const duplicate = normalized.find(row => existingKeys.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
       if (duplicate) return error("This size-and-colour combination already exists: " + duplicate.size + " / " + duplicate.color, 409);
-      const statements: D1PreparedStatement[] = [];
+      const statements: Array<ReturnType<typeof env.DB.prepare>> = [];
       for (const row of normalized) {
         statements.push(env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand, barcode, cost_price_paisa, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
           .bind(row.id, productId, row.sku, row.size, row.color, row.stock, row.barcode, row.cost, row.reorder));
