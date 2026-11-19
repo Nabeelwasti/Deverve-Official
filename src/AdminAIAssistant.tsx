@@ -222,7 +222,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               if (!value || typeof value !== "object") return [];
               const group = value as Record<string, unknown>;
               if (!Array.isArray(group.candidate_ids) || typeof group.product_name !== "string") return [];
-              const confidence = group.confidence === "high" || group.confidence === "medium" ? group.confidence : "low";
+              const confidence: "high" | "medium" | "low" = group.confidence === "high" || group.confidence === "medium" ? group.confidence : "low";
               return [{ candidate_ids: group.candidate_ids.filter((id): id is string => typeof id === "string").slice(0, 30), product_name: group.product_name.slice(0, 36), confidence }];
             });
             if (validGroups.length) chunkGroups.push(...validGroups);
