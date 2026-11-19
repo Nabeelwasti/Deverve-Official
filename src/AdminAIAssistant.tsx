@@ -38,8 +38,8 @@ async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("An image could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob!); });
 }
 
-async function fileBatchFingerprint(files: File[]): Promise<string> {
-  const identity = files.map(file => file.name + "\u0000" + file.size + "\u0000" + file.lastModified).sort().join("\n");
+async function fileBatchFingerprint(files: File[], task: string, prompt: string): Promise<string> {
+  const identity = [task, prompt, ...files.map(file => file.name + "\u0000" + file.size + "\u0000" + file.lastModified).sort()].join("\n");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
@@ -133,8 +133,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
         try {
-        const fingerprint = await fileBatchFingerprint(batch);
-        const savedEvent = savedTaskEvents.find(event => event.event_type === "batch_completed" && event.payload?.fingerprint === fingerprint);
+        const fingerprint = await fileBatchFingerprint(batch, task, text);
+        const savedEvent = batch.length ? savedTaskEvents.find(event => event.event_type === "batch_completed" && event.payload?.fingerprint === fingerprint) : undefined;
         if (savedEvent) {
           const rawDrafts = Array.isArray(savedEvent.payload?.product_draft) ? savedEvent.payload?.product_draft as ProductDraft[] : [];
           const restored: AssistantResponse = {
