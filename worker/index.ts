@@ -3698,6 +3698,8 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
         const saved = await env.DB.prepare("UPDATE payment_attempts SET provider_reference = ?, checkout_url = ?, status = 'pending', updated_at = ? WHERE id = ? AND status = 'created'")
           .bind(tracker, checkoutUrl, now, attemptId).run();
         if ((saved.meta?.changes ?? 0) !== 1) throw new Error("Payment attempt could not be saved");
+        await env.DB.prepare("UPDATE order_inventory_reservations SET payment_reference = ?, updated_at = ? WHERE order_id = ? AND status = 'reserved' AND payment_provider = 'safepay'")
+          .bind(tracker, now, order.id).run();
         return json({ checkout_url: checkoutUrl, environment: config.environment });
       } catch (caught) {
         await env.DB.prepare("UPDATE payment_attempts SET status = 'failed', failure_code = 'provider_error', updated_at = ? WHERE id = ? AND status = 'created'")
