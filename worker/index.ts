@@ -2276,20 +2276,23 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       if (applied!==subtotal) return error("Payment amounts must add up exactly to the sale total",400);
       const saleId=crypto.randomUUID();
       const receipt="DV-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+crypto.randomUUID().slice(0,6).toUpperCase();
-      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,?,?,?,?,?,?,0,?,'completed',?,?)").bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptRequested?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id)];
+      const stockGuard = buildPosStockGuard(resolved);
+      const saleExists = "EXISTS (SELECT 1 FROM pos_sales WHERE id=?)";
+      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) SELECT ?,?,?,?,?,?,?,?,?,0,?,'completed',?,? WHERE " + stockGuard.sql).bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptRequested?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id,...stockGuard.bindings)];
       for (const item of resolved) {
-        statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa));
-        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=? AND stock_on_hand-reserved_quantity>=?").bind(item.quantity,item.variant_id,item.quantity));
-        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'sold',?,'order',?,?,?)").bind(crypto.randomUUID(),item.variant_id,-item.quantity,saleId,"POS receipt "+receipt,admin.admin_user_id));
+        statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE " + saleExists).bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa,saleId));
+        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand-reserved_quantity>=? AND " + saleExists).bind(item.quantity,new Date().toISOString(),item.variant_id,item.quantity,saleId));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) SELECT ?,?, 'sold',?,'order',?,?,? WHERE " + saleExists).bind(crypto.randomUUID(),item.variant_id,-item.quantity,saleId,"POS receipt "+receipt,admin.admin_user_id,saleId));
       }
       for (const payment of resolvedPayments) {
-        statements.push(env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,?,?,?,?,?,?)").bind(crypto.randomUUID(),saleId,payment.account.id,payment.method,payment.amount,payment.tendered,payment.change,payment.reference));
-        statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,?,'in',?,'pos_sale','pos_sale',?,?,?,?)").bind(crypto.randomUUID(),payment.account.id,payment.amount,saleId,session.id,"POS "+receipt,admin.admin_user_id));
+        statements.push(env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) SELECT ?,?,?,?,?,?,?,? WHERE " + saleExists).bind(crypto.randomUUID(),saleId,payment.account.id,payment.method,payment.amount,payment.tendered,payment.change,payment.reference,saleId));
+        statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) SELECT ?,?,'in',?,'pos_sale','pos_sale',?,?,?,? WHERE " + saleExists).bind(crypto.randomUUID(),payment.account.id,payment.amount,saleId,session.id,"POS "+receipt,admin.admin_user_id,saleId));
       }
-      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.sale_completed','pos_sale',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length,email_receipt_requested:emailReceiptRequested,whatsapp_receipt_consent:whatsappReceiptConsent})));
-      if(emailReceiptRequested)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'email')").bind(crypto.randomUUID(),saleId));
-      if(whatsappReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) VALUES (?,?,'whatsapp')").bind(crypto.randomUUID(),saleId));
-      await env.DB.batch(statements);
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?, 'pos.sale_completed','pos_sale',?,? WHERE " + saleExists).bind(crypto.randomUUID(),admin.admin_user_id,saleId,JSON.stringify({receipt_number:receipt,total_paisa:subtotal,items:resolved.length,payment_count:resolvedPayments.length,email_receipt_requested:emailReceiptRequested,whatsapp_receipt_consent:whatsappReceiptConsent}),saleId));
+      if(emailReceiptRequested)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) SELECT ?,?,'email' WHERE " + saleExists).bind(crypto.randomUUID(),saleId,saleId));
+      if(whatsappReceiptConsent)statements.push(env.DB.prepare("INSERT INTO pos_receipt_outbox (id,sale_id,channel) SELECT ?,?,'whatsapp' WHERE " + saleExists).bind(crypto.randomUUID(),saleId,saleId));
+      const results = await env.DB.batch(statements);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Stock changed before the sale could be committed. Refresh inventory and try again.",409);
       return json({ sale:{id:saleId,receipt_number:receipt,customer_name:customerName,customer_phone:customerPhone,customer_email:customerEmail,email_receipt_requested:emailReceiptRequested,whatsapp_receipt_consent:whatsappReceiptConsent,receipt_delivery:{email:emailReceiptRequested?"queued":"not_requested",whatsapp:whatsappReceiptConsent?"queued":"not_requested"},subtotal_paisa:subtotal,discount_paisa:0,total_paisa:subtotal,change_paisa:change,status:"completed",items:resolved.map(item=>({product_name:item.product_name,sku:item.sku,size:item.size,color:item.color,quantity:item.quantity,unit_price_paisa:item.unit_price_paisa,line_total_paisa:item.line_total_paisa})),payments:resolvedPayments.map(p=>({method:p.method,amount_paisa:p.amount,change_paisa:p.change,account_name:p.account.name}))} },201);
     } catch { return error("Sale could not be completed. Stock and payments were not changed.",503); }
   }
@@ -4321,6 +4324,21 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
+export function buildPosStockGuard(items: ReadonlyArray<{ variant_id: string; quantity: number }>): { sql: string; bindings: Array<string | number> } {
+  const combined = new Map<string, number>();
+  for (const item of items) {
+    if (!item || typeof item.variant_id !== "string" || !item.variant_id || !Number.isSafeInteger(item.quantity) || item.quantity < 1) {
+      throw new TypeError("POS stock guard requires valid variant IDs and positive integer quantities");
+    }
+    combined.set(item.variant_id, (combined.get(item.variant_id) ?? 0) + item.quantity);
+  }
+  if (!combined.size) throw new TypeError("POS stock guard requires at least one variant");
+  return {
+    sql: [...combined.keys()].map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.id=? AND v.is_active=1 AND p.status='published' AND v.stock_on_hand-v.reserved_quantity>=?)").join(" AND "),
+    bindings: [...combined].flatMap(([variantId, quantity]) => [variantId, quantity]),
+  };
+}
+
 export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecutionContext): Promise<Response> {
   if(ctx)try{ctx.waitUntil(processEnquiryEmailQueue(env));}catch{}
   const url = new URL(request.url);
