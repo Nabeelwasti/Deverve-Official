@@ -3912,10 +3912,11 @@ export async function callGemini(apiKey:string,contents:Array<{role:"user"|"mode
   let last:{ok:boolean;status:number;text:string;message:string;model:string}={ok:false,status:503,text:"",message:"Gemini connection timed out or failed",model:GEMINI_MODEL_FALLBACKS[0]};
   const attempted:string[]=[];const startedAt=Date.now();
   for(const model of GEMINI_MODEL_FALLBACKS){
-    if(Date.now()-startedAt>15000)break;
+    if(Date.now()-startedAt>25000)break;
     attempted.push(model);
+    const timeoutMs=model==="gemini-3.8-flash"?6000:model==="gemini-3.5-flash-lite"||model==="gemini-3.1-flash-lite"?8500:5500;
     try{
-      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(4500)});
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({systemInstruction:{parts:[{text:systemInstruction}]},contents,generationConfig:{maxOutputTokens:650}}),signal:AbortSignal.timeout(timeoutMs)});
       const payload=await response.json().catch(()=>({})) as {candidates?:Array<{content?:{parts?:Array<{text?:string}>}}>;error?:{message?:string;status?:string}};
       if(!response.ok){const message=[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini request failed";last={ok:false,status:response.status,text:"",message,model};const unsupportedModel=response.status===404||(response.status===400&&/model.{0,50}(not found|not supported|unknown|unavailable)/i.test(message));const modelPermissionIssue=response.status===403&&/model.{0,60}(not available|not enabled|not allowed|permission|access|unavailable)/i.test(message);const modelQuotaIssue=response.status===429&&/model|per.model/i.test(message);if(unsupportedModel||modelPermissionIssue||modelQuotaIssue||[500,502,503,504].includes(response.status))continue;return {...last,message:message+" (model tried: "+model+")"};}
       const text=(payload.candidates?.[0]?.content?.parts??[]).map(part=>part.text??"").join("").trim();
@@ -4011,7 +4012,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       const key=await decryptGeminiKey(env,row);
       const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");
-      if(!result.ok)return json({ok:false,message:"Gemini returned HTTP "+result.status+(result.message?": "+result.message.slice(0,140):".")+" Check this key's Generative Language API access, model availability and quota."},200);
+      if(!result.ok)return json({ok:false,message:"Gemini returned HTTP "+result.status+(result.message?": "+result.message.slice(0,320):".")+" Check this key's Generative Language API access, model availability and quota."},200);
       await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),id).run();
       return json({ok:true,model:result.model,message:"Gemini connection successful using "+result.model+"."});
     }catch{return error("The key could not be decrypted or tested. Check the server encryption configuration.",503);}
