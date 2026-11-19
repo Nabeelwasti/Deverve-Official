@@ -2760,6 +2760,29 @@ test("AI owner exact-SKU stock command records a balanced inventory adjustment a
   assert.equal(db.movements.length,1);
 });
 
+test("bulk media upload recovers an R2 object left behind by an interrupted D1 completion", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const id="22345678-1234-5123-a123-123456789abc";
+  const bytes=new Uint8Array([137,80,78,71,1,2,3,4]);
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  const sha256=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
+  db.mediaAssets.set(id,{id,object_key:"catalogue/"+id+".png",media_type:"image",mime_type:"image/png",byte_size:bytes.length,alt_text:"Interrupted",caption:"",status:"processing",uploaded_by:"admin-1",updated_at:new Date().toISOString()});
+  db.mediaObjects.set("catalogue/"+id+".png",{body:bytes.buffer,customMetadata:{assetId:id,sha256},httpMetadata:{contentType:"image/png"}});
+  const form=new FormData();
+  form.append("files",new File([bytes],"recovered.png",{type:"image/png"}),"recovered.png");
+  form.append("asset_ids",JSON.stringify([id]));
+  const response=await handleRequest(new Request(origin+"/api/admin/media/bulk",{method:"POST",headers:{origin,cookie,"sec-fetch-site":"same-origin"},body:form}),env(db));
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.equal(body.uploaded,1);
+  assert.equal(body.media[0].reused,true);
+  assert.equal(db.mediaAssets.get(id).status,"ready");
+  assert.equal(db.mediaObjects.size,1);
+  assert.equal(db.audits.filter(row=>row.action==="media.bulk_uploaded").length,1);
+});
+
 test("bulk media uploads resume idempotently and reject reused identifiers with different bytes", async () => {
   const db=new FakeD1();
   const setup=await bootstrap(db);
