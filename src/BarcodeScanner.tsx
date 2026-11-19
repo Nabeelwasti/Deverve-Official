@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 type DetectedBarcode={rawValue:string};
-type DetectorLike={detect(source:HTMLVideoElement):Promise<DetectedBarcode[]>};
+type DetectorLike={detect(source:HTMLVideoElement|ImageBitmap):Promise<DetectedBarcode[]>};
 type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSupportedFormats?:()=>Promise<string[]>};
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
 function cameraErrorMessage(caught:unknown):string{
