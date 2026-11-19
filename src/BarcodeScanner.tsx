@@ -1,8 +1,16 @@
 import {useEffect,useRef,useState} from "react";
+import {BrowserMultiFormatReader} from "@zxing/browser";
+import {BarcodeFormat,DecodeHintType} from "@zxing/library";
 type DetectedBarcode={rawValue:string};
 type DetectorLike={detect(source:HTMLVideoElement|ImageBitmap):Promise<DetectedBarcode[]>};
 type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSupportedFormats?:()=>Promise<string[]>};
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
+function createZxingReader(){
+ const hints=new Map<DecodeHintType,any>();
+ hints.set(DecodeHintType.POSSIBLE_FORMATS,[BarcodeFormat.AZTEC,BarcodeFormat.CODABAR,BarcodeFormat.CODE_39,BarcodeFormat.CODE_93,BarcodeFormat.CODE_128,BarcodeFormat.DATA_MATRIX,BarcodeFormat.EAN_13,BarcodeFormat.EAN_8,BarcodeFormat.ITF,BarcodeFormat.PDF_417,BarcodeFormat.QR_CODE,BarcodeFormat.UPC_A,BarcodeFormat.UPC_E]);
+ hints.set(DecodeHintType.TRY_HARDER,true);
+ return new BrowserMultiFormatReader(hints,{delayBetweenScanAttempts:250,delayBetweenScanSuccess:800,tryPlayVideoTimeout:5000});
+}
 function cameraErrorMessage(caught:unknown):string{
  const name=caught instanceof DOMException?caught.name:caught instanceof Error?caught.name:"";
  if(name==="NotAllowedError"||name==="PermissionDeniedError")return "Camera access was blocked. If your browser asks for permission, choose Allow. If you previously blocked it, open this site's settings from the address bar, set Camera to Allow, then tap Try camera again. Also check Android app camera permission.";
@@ -14,7 +22,7 @@ function cameraErrorMessage(caught:unknown):string{
  return caught instanceof Error?caught.message:"The camera could not be started. Check site permissions and try again.";
 }
 export default function BarcodeScanner({onDetected,onClose,title="POS scanner",onDetectedWithImage,onImageCaptured}:{onDetected:(value:string)=>void;onClose:()=>void;title?:string;onDetectedWithImage?:(value:string,imageDataUrl:string)=>void|Promise<void>;onImageCaptured?:(imageDataUrl:string)=>void|Promise<void>}){
- const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),fileInput=useRef<HTMLInputElement|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
+ const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),zxingControls=useRef<{stop:()=>void}|null>(null),fileInput=useRef<HTMLInputElement|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
  const [status,setStatus]=useState("Allow camera access to scan product barcodes. Your camera is used only while this scanner is open.");
  const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false),[manualCode,setManualCode]=useState(""),[capturing,setCapturing]=useState(false),[readingFile,setReadingFile]=useState(false);
  const detectedImageCallback=useRef(onDetectedWithImage),imageCallback=useRef(onImageCaptured);
@@ -43,7 +51,10 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
       const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
       const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
       if(formats.length){const detector=new Detector({formats});const results=await detector.detect(bitmap);code=results.find(item=>item.rawValue?.trim())?.rawValue?.trim()||"";}
-     }catch{/* Continue to AI image reading when native image barcode decoding is unavailable. */}
+     }catch{/* The bundled ZXing decoder below is the compatibility fallback. */}
+    }
+    if(!code){
+     try{const imageElement=new Image();imageElement.src=image;await imageElement.decode();const result=await createZxingReader().decodeFromImageElement(imageElement);code=result.getText().trim();}catch{/* If the image has no decodable code, let Gemini inspect its printed product label. */}
     }
     stopCamera();
     if(code){detected.current=true;if(detectedImageCallback.current)await detectedImageCallback.current(code,image);else callback.current(code);return;}
@@ -55,6 +66,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
  };
  const stopCamera=()=>{
   if(frame.current!==null){cancelAnimationFrame(frame.current);frame.current=null;}
+  const controls=zxingControls.current;zxingControls.current=null;try{controls?.stop();}catch{}
   stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;
   if(video.current)video.current.srcObject=null;
   setCameraActive(false);
@@ -71,31 +83,23 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    const camera=await mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
    if(!mounted.current){camera.getTracks().forEach(track=>track.stop());return;}
    stream.current=camera;
-   const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
    if(!video.current)throw new Error("The camera preview could not be opened. Close the scanner and try again.");
    video.current.srcObject=camera;
    await video.current.play();
    if(!mounted.current)return;
-   if(!Detector){if(!imageCallback.current){stopCamera();setError("This browser does not include a barcode decoder. Update Chrome or use a USB/Bluetooth scanner.");return;}setCameraActive(true);setStatus("Barcode decoding is not supported in this browser, but you can still capture the printed tag and read it with AI.");return;}
-   const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
-   const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
-   const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
-   if(!formats.length){if(!imageCallback.current){stopCamera();setError("This browser cannot decode common retail barcodes or QR codes. Update Chrome or use a compatible USB/Bluetooth scanner.");return;}setCameraActive(true);setStatus("Barcode decoding is unavailable, but you can still capture the printed tag and read it with AI.");return;}
-   const detector=new Detector({formats});
-   setCameraActive(true);setStatus("Camera is active. Scan EAN / UPC, Code 39 / 93 / 128, ITF, Codabar, PDF417, Data Matrix, Aztec or QR codes supported by this browser.");
-   let detecting=false;
-   const tick=async()=>{
-    if(!mounted.current||detected.current||detecting||!video.current)return;
-    detecting=true;
-    try{
-     const codes=await detector.detect(video.current);
-     const value=codes.find(item=>item.rawValue?.trim())?.rawValue?.trim();
-     if(value&&!detected.current){detected.current=true;const image=captureFrame();stopCamera();if(detectedImageCallback.current&&image)void Promise.resolve(detectedImageCallback.current(value,image)).catch(()=>{});else callback.current(value);return;}
-    }catch{/* A blurred frame is normal; continue scanning the next frame. */}
-    finally{detecting=false;}
-    if(mounted.current&&!detected.current)frame.current=requestAnimationFrame(()=>void tick());
-   };
-   frame.current=requestAnimationFrame(()=>void tick());
+   setCameraActive(true);setStatus("Camera is active. ZXing is continuously decoding supported 1D and 2D formats including EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec and QR. Keep the code steady inside the camera view.");
+   const reader=createZxingReader();
+   const controls=await reader.decodeFromStream(camera,video.current,(result,_decodeError,scanControls)=>{
+    const value=result?.getText()?.trim();
+    if(!value||detected.current)return;
+    detected.current=true;
+    const image=captureFrame();
+    scanControls.stop();zxingControls.current=null;stopCamera();
+    if(detectedImageCallback.current&&image)void Promise.resolve(detectedImageCallback.current(value,image)).catch(()=>{});
+    else callback.current(value);
+   });
+   if(!mounted.current||detected.current){controls.stop();return;}
+   zxingControls.current=controls;
   }catch(caught){if(mounted.current){stopCamera();setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}else{stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;}}
   finally{if(mounted.current)setStarting(false);}
  };
