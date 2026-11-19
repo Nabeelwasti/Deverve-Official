@@ -137,6 +137,31 @@ test("camera scanner keeps its video element mounted when permission is granted"
   await expect(page.getByRole("status")).toContainText("Camera is active");
 });
 
+test("camera scanner keeps ZXing fallback available when native barcode detection is broken", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.addInitScript(() => {
+    const stream = document.createElement("canvas").captureStream(1);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(window, "BarcodeDetector", {
+      configurable: true,
+      value: class {
+        constructor(_options: { formats: string[] }) { throw new Error("Native barcode detector unavailable"); }
+      },
+    });
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+  });
+  await page.goto("/admin?section=pos");
+  await page.getByRole("button", { name: "Camera scan" }).click();
+  await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
+  await expect(page.locator(".barcode-camera-stage video.is-active")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Camera is active");
+  await page.getByRole("button", { name: "Close scanner" }).click();
+  await expect(page.getByRole("dialog", { name: "Scan product barcode" })).toHaveCount(0);
+});
+
 test("direct links load product review and audit workspace data", async ({ page }) => {
   await mockAdminApi(page);
 
