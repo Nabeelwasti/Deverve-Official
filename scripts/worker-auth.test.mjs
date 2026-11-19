@@ -1802,6 +1802,11 @@ test("cancelling a COD order releases its reservation without changing physical 
   }, customerHeaders), env(db));
   assert.equal(placed.status, 201);
   const orderId = [...db.orders.keys()][0];
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  const blocked = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
+  assert.equal(blocked.status, 409, "admin cancellation must guard the combined quantity across duplicate order lines");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 3);
+  db.variants.get(variantId).reserved_quantity = 4;
   const cancelled = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
   assert.equal(cancelled.status, 200);
   assert.equal(db.variants.get(variantId).stock_on_hand, 4);
