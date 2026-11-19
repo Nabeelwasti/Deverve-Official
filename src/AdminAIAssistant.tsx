@@ -230,13 +230,15 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const drafts = item.response.ok ? (item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : [])) : [];
           return {
             batch: batchIndex + 1,
-            files: item.files.map(file => file.name.slice(0, 80)),
+            files: item.files.map(file => file.name.slice(0, 56)),
             candidates: drafts.slice(0, 3).map((draft, candidateIndex) => ({
               candidate_id: String(batchIndex + 1) + "." + String(candidateIndex + 1),
-              source_files: draft.source_files || [],
-              name: draft.name, category: draft.category,
-              colours: draft.colours, sizes: draft.sizes,
-              description: draft.description
+              source_files: (draft.source_files || []).slice(0, 3).map(name => String(name).slice(0, 56)),
+              name: String(draft.name || "Unidentified product").slice(0, 48),
+              category: String(draft.category || "").slice(0, 28),
+              colours: (draft.colours || []).slice(0, 4).map(value => String(value).slice(0, 20)),
+              sizes: (draft.sizes || []).slice(0, 4).map(value => String(value).slice(0, 12)),
+              description: String(draft.description || "").slice(0, 180)
             }))
           };
         });
@@ -266,7 +268,21 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             if (validGroups.length) chunkGroups.push(...validGroups);
             else for (const batch of chunk) for (const candidate of batch.candidates) chunkGroups.push({ candidate_ids: [candidate.candidate_id], product_name: candidate.name.slice(0, 36), confidence: "low" });
           }
-          const compactPlans = chunkGroups.map(group => ({ candidate_ids: group.candidate_ids, product_name: group.product_name.slice(0, 36), confidence: group.confidence }));
+          const imageIndexesByName = new Map<string, number[]>();
+          files.filter(file => attachmentMime(file).startsWith("image/")).forEach((file, index) => {
+            const indexes = imageIndexesByName.get(file.name) || [];
+            indexes.push(index + 1);
+            imageIndexesByName.set(file.name, indexes);
+          });
+          const globalCandidateMap = summaries.flatMap(batch => batch.candidates.map(candidate => {
+            const sourceNames = candidate.source_files.length ? candidate.source_files : batch.files;
+            const imageIndexes = sourceNames.flatMap(name => imageIndexesByName.get(name) || []).slice(0, 3);
+            return [candidate.candidate_id, candidate.name.slice(0, 28), imageIndexes];
+          }));
+          const preliminaryMatches = chunkGroups
+            .filter(group => group.confidence === "high" && group.candidate_ids.length > 1)
+            .slice(0, 20)
+            .map(group => [group.candidate_ids.slice(0, 6), group.product_name.slice(0, 28)]);
           let visualOverview: Array<{ name: string; mime_type: string; data: string }> = [];
           try { visualOverview = await buildCatalogueContactSheets(files); }
           catch (overviewError) { setStatus("Visual overview unavailable; using individual image analyses and source filenames. " + (overviewError instanceof Error ? overviewError.message : "")); }
@@ -274,7 +290,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             method: "POST",
             body: JSON.stringify({
               task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok), images: visualOverview,
-              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. You are receiving a labelled visual contact-sheet overview of ALL selected images in this task. Compare the images visually across the entire set, not just within earlier batches. Use candidate source filenames to connect each image to its candidate. Group front/back/detail views of one item together. Group colourways only when the garment design is clearly the same. Keep similar but distinct styles separate. Only merge cross-batch candidates with high confidence; otherwise keep separate. Include every candidate ID exactly once. Keep rationale short. Candidate map: " + JSON.stringify(summaries) + " Preliminary groups: " + JSON.stringify(compactPlans) }]
+              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. You are receiving a labelled visual contact-sheet overview of ALL selected images in this task. Compare the images visually across the entire set, not just within earlier batches. Use candidate source filenames to connect each image to its candidate. Group front/back/detail views of one item together. Group colourways only when the garment design is clearly the same. Keep similar but distinct styles separate. Only merge cross-batch candidates with high confidence; otherwise keep separate. Include every candidate ID exactly once. Keep rationale short. Compact candidate map (candidate ID, product name, numbered source images): " + JSON.stringify(globalCandidateMap) + " Preliminary high-confidence matches: " + JSON.stringify(preliminaryMatches) }]
             })
           });
           globalPlan = finalPlan.reply || "";
