@@ -6,7 +6,18 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+
+test("POS stock guard binds every exact variant and rejects oversold combined quantities", () => {
+  const guard = buildPosStockGuard([
+    { variant_id: "variant-black-s", quantity: 2 },
+    { variant_id: "variant-blue-m", quantity: 1 },
+  ]);
+  assert.equal((guard.sql.match(/stock_on_hand-v\.reserved_quantity>=\?/g) ?? []).length, 2);
+  assert.deepEqual(guard.bindings, ["variant-black-s", 2, "variant-blue-m", 1]);
+  assert.throws(() => buildPosStockGuard([]), /at least one variant/);
+  assert.throws(() => buildPosStockGuard([{ variant_id: "variant", quantity: 0 }]), /positive integer quantities/);
+});
 
 test("AI support language signal distinguishes Urdu script, Roman Urdu and ordinary English", () => {
   assert.match(customerLanguageHint("مجھے اس کی قیمت بتائیں"), /Arabic-derived script/);
