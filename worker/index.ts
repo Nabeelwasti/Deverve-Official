@@ -1795,17 +1795,24 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     const lines = await env.DB.prepare("SELECT variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa FROM wholesale_quote_items WHERE quote_id = ? ORDER BY rowid").bind(quote.id).all<WholesaleQuoteItemRow>();
     const quoteLines = lines.results ?? [];
     if (!quoteLines.length || quoteLines.some((line) => !line.variant_id)) return error("Some quoted items are no longer available. Please contact De VERVE.", 409);
+    const reservationLines = aggregateOrderVariantQuantities(quoteLines.map((line) => ({ variant_id: line.variant_id, quantity: line.quantity })));
     const orderId = crypto.randomUUID();
     const orderNumber = "DV-W-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const now = new Date().toISOString();
-    const conditions = quoteLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
+    const conditions = reservationLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
     const orderValues: unknown[] = [orderId, orderNumber, quote.contact_name, quote.phone, quote.email, quote.delivery_address, quote.city, quote.quoted_total_paisa ?? 0, 0, quote.quoted_total_paisa ?? 0, "Wholesale quotation accepted: " + quote.id, quote.id, signedInCustomer.customer_id];
     const stockChecks: unknown[] = [];
-    for (const line of quoteLines) stockChecks.push(line.variant_id, line.quantity);
+    for (const reservation of reservationLines) stockChecks.push(reservation.variant_id, reservation.quantity);
     const statements = [env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, customer_note, source_quote_id, customer_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'sent' AND (valid_until IS NULL OR valid_until > ?)) AND " + conditions).bind(...orderValues, quote.id, now, ...stockChecks)];
+    for (const reservation of reservationLines) {
+      statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(reservation.quantity, now, reservation.variant_id, reservation.quantity, orderId, quote.id));
+    }
     for (const line of quoteLines) {
-      statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(line.quantity, now, line.variant_id, line.quantity, orderId, quote.id));
       statements.push(env.DB.prepare("INSERT INTO order_items (id, order_id, variant_id, product_name_snapshot, sku_snapshot, size_snapshot, color_snapshot, quantity, unit_price_paisa, unit_cost_paisa, line_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(crypto.randomUUID(), orderId, line.variant_id, line.product_name_snapshot, line.sku_snapshot, line.size_snapshot, line.color_snapshot, line.quantity, line.unit_price_paisa, line.unit_cost_paisa ?? 0, line.line_total_paisa, orderId, quote.id));
+    }
+    const reservationLedgerStart = statements.length;
+    for (const reservation of reservationLines) {
+      statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, ?, ? FROM orders WHERE id = ? AND source_quote_id = ?").bind(crypto.randomUUID(), orderId, reservation.variant_id, reservation.quantity, now, now, orderId, quote.id));
     }
     statements.push(env.DB.prepare("UPDATE wholesale_quotes SET status = 'accepted', converted_order_id = ?, updated_at = ? WHERE id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(orderId, now, quote.id, orderId, quote.id));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'wholesale_quote.accepted', 'wholesale_quote', ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'accepted')").bind(crypto.randomUUID(), quote.id, JSON.stringify({ order_id: orderId, order_number: orderNumber }), quote.id));
@@ -1814,6 +1821,11 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
       const existing = await env.DB.prepare("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ? LIMIT 1").bind(quote.id).first<{ order_number: string; total_paisa: number; order_status: string; payment_provider: string }>();
       if (existing) return json({ accepted: true, duplicate: true, order: existing });
       return error("Stock changed or this quotation is no longer open. Please contact De VERVE.", 409);
+    }
+    if (reservationLines.some((_, index) => (results[1 + index]?.meta?.changes ?? 0) !== 1)
+      || reservationLines.some((_, index) => (results[reservationLedgerStart + index]?.meta?.changes ?? 0) !== 1)) {
+      console.error("[wholesale_quote_approval] inventory reservation ledger did not match the accepted order", orderId);
+      return error("The accepted order requires staff reconciliation before fulfilment. Please contact De VERVE.", 503);
     }
     return json({ accepted: true, order: { order_number: orderNumber, total_paisa: quote.quoted_total_paisa ?? 0, order_status: "pending" } }, 201);
   } catch (caught) { console.error("[wholesale_quote_approval] failed", caught instanceof Error ? caught.message : "unknown error"); return error("Quotation approval could not be processed. Please contact De VERVE.", 503); }
