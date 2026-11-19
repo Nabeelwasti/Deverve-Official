@@ -559,3 +559,40 @@ test("keeps the car-rental section selected after a full page reload", async ({ 
   await expect(page.locator(".store-main")).toHaveAttribute("data-screen", "mobility");
   await expect(page.getByRole("heading", { name: /Make room for/ })).toBeVisible();
 });
+
+test("cart shows the image belonging to the selected product colour", async ({ page }) => {
+  const genericImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23d8d8d8'/%3E%3C/svg%3E";
+  const navyImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%23142b4d'/%3E%3C/svg%3E";
+  const blackImage = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='400'%3E%3Crect width='320' height='400' fill='%230b0b0b'/%3E%3C/svg%3E";
+  await page.route("**/api/products*", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ products: [{
+        id: "88888888-8888-4888-8888-888888888888", slug: "cart-image-test", name: "Cart Image Test Hoodie",
+        description: "Colour-specific cart image regression test", category: "Hoodies", audience: "unisex", retail_price_paisa: 350000,
+        image_key: null, seo_title: "Cart Image Test Hoodie", seo_description: "Test cart image",
+        media: [
+          { id: "99999999-9999-4999-8999-999999999999", media_type: "image", mime_type: "image/svg+xml", alt_text: "Generic hoodie", caption: "", is_primary: 1, color: "", url: genericImage },
+          { id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", media_type: "image", mime_type: "image/svg+xml", alt_text: "Navy hoodie", caption: "", is_primary: 0, color: "Navy", url: navyImage },
+          { id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", media_type: "image", mime_type: "image/svg+xml", alt_text: "Black hoodie", caption: "", is_primary: 0, color: "Black", url: blackImage },
+        ],
+        variants: [
+          { id: "11111111-1111-4111-8111-111111111111", sku: "DV-CART-NAV-M", size: "M", color: "Navy", available_quantity: 4 },
+          { id: "22222222-2222-4222-8222-222222222222", sku: "DV-CART-BLK-M", size: "M", color: "Black", available_quantity: 5 },
+        ],
+      }] }),
+    });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Fashion", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Cart Image Test Hoodie" })).toBeVisible();
+  await page.getByRole("button", { name: "Colour Black" }).click();
+  await page.getByRole("button", { name: /Add to cart/ }).click();
+  await page.locator(".header-cart").click();
+  const cartImage = page.locator(".cart-line-image img");
+  await expect(cartImage).toBeVisible();
+  await expect(cartImage).toHaveAttribute("src", blackImage);
+});
+
