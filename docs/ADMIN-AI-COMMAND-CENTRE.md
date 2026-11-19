@@ -15,9 +15,10 @@
 
 - AI chat and product analysis require an authenticated same-origin admin session and are restricted to owner, manager and catalogue roles.
 - The server reads only aggregate business counts for general context. It does not pass customer identities, customer documents, payment credentials or staff secrets to Gemini.
-- Product creation is an explicit user action after review. New products are always created with status `draft`; the assistant does not publish automatically.
+- Product intake creates an unpublished draft. Owner and manager roles also have a separate direct-command executor: `publish product <exact name, slug or ID>` publishes one matching product immediately and `publish all draft products` publishes only eligible drafts. Bulk eligibility requires a non-empty product name and category, a retail price, and at least one active size/colour variant with available stock. Ineligible drafts remain drafts and are counted as skipped.
+- Direct publishing writes an audit-log record with the actor, action, product/batch reference and command metadata. The endpoint reports success only after the database confirms the write.
 - Existing Worker permission checks still govern product, variant and media writes. Catalogue users cannot set purchase cost.
-- Chat cannot directly change settings, publish products, adjust stock, update payments, change staff permissions, send customer messages or delete records. It can explain and recommend those workflows. Those operations require separate, narrowly scoped approval tools and audit coverage before being enabled.
+- The natural-language chat endpoint remains read-only. Direct product publishing is available only through the separate owner/manager command endpoint. Settings, stock adjustments, payments, staff access, customer messaging and destructive record operations are not yet implemented as direct AI actions; do not claim otherwise.
 - Do not attach CNICs, identity documents, payment cards, bank credentials, passwords, OTPs, private customer records or confidential financial documents.
 
 ## Provider and cost
@@ -28,7 +29,7 @@
 
 ## Release validation still required
 
-- Verify authenticated chat, image analysis, malformed-image rejection, product draft creation, variant matrix and media upload in CI.
+- Verify authenticated chat, image analysis, malformed-image rejection, product draft creation, variant matrix, media upload, direct single-product publishing, bulk eligibility checks and audit-log writes in CI.
 - Test on a physical Android phone and a desktop browser, including large images, camera-originated photos and interrupted uploads.
 - Confirm the configured Gemini key/model has multimodal access and Google Search grounding enabled.
 - Verify uploaded product media and generated draft data against a non-production D1/R2 environment.
