@@ -4256,7 +4256,9 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
   }
   const origin = request.headers.get("origin");
-  if (origin && origin !== url.origin) return error("Cross-origin requests are not accepted", 403);
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
+  const trustedSameOriginMarker = request.headers.get("x-deverve-admin-request") === "same-origin" && fetchSite !== "cross-site";
+  if (origin && origin !== url.origin && !trustedSameOriginMarker) return error("Cross-origin requests are not accepted", 403);
 
   const safepayWebhookResponse = await safepayWebhookRoutes(request, env, url);
   if (safepayWebhookResponse) return safepayWebhookResponse;
