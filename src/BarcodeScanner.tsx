@@ -5,6 +5,17 @@ type DetectedBarcode={rawValue:string};
 type DetectorLike={detect(source:HTMLVideoElement|ImageBitmap|HTMLImageElement):Promise<DetectedBarcode[]>};
 type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSupportedFormats?:()=>Promise<string[]>};
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
+function waitForVideoFrame(video:HTMLVideoElement,timeoutMs=8000):Promise<void>{
+ if(video.readyState>=HTMLMediaElement.HAVE_CURRENT_DATA&&video.videoWidth>0&&video.videoHeight>0)return Promise.resolve();
+ return new Promise((resolve,reject)=>{
+  const cleanup=()=>{window.clearTimeout(timeout);video.removeEventListener("loadeddata",ready);video.removeEventListener("canplay",ready);video.removeEventListener("error",failed);};
+  const ready=()=>{if(video.videoWidth>0&&video.videoHeight>0){cleanup();resolve();}};
+  const failed=()=>{cleanup();reject(new Error("The camera opened but did not provide a usable video frame. Close other camera apps and try again."));};
+  const timeout=window.setTimeout(()=>{cleanup();reject(new Error("The camera preview did not become ready. Check camera permission, close other camera apps, and try again."));},timeoutMs);
+  video.addEventListener("loadeddata",ready);video.addEventListener("canplay",ready);video.addEventListener("error",failed);
+  ready();
+ });
+}
 function createZxingReader(){
  const hints=new Map<DecodeHintType,any>();
  hints.set(DecodeHintType.POSSIBLE_FORMATS,[BarcodeFormat.AZTEC,BarcodeFormat.CODABAR,BarcodeFormat.CODE_39,BarcodeFormat.CODE_93,BarcodeFormat.CODE_128,BarcodeFormat.DATA_MATRIX,BarcodeFormat.EAN_13,BarcodeFormat.EAN_8,BarcodeFormat.ITF,BarcodeFormat.MAXICODE,BarcodeFormat.PDF_417,BarcodeFormat.QR_CODE,BarcodeFormat.RSS_14,BarcodeFormat.RSS_EXPANDED,BarcodeFormat.UPC_A,BarcodeFormat.UPC_E,BarcodeFormat.MICRO_QR_CODE]);
@@ -108,6 +119,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    if(!video.current)throw new Error("The camera preview could not be opened. Close the scanner and try again.");
    video.current.srcObject=camera;
    await video.current.play();
+   await waitForVideoFrame(video.current);
    if(!mounted.current)return;
    setCameraActive(true);setStatus("Camera is active. The bundled ZXing multi-format scanner is running, with native barcode detection acceleration where your browser supports it. Supported formats include EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec, MaxiCode, RSS and QR.");
    const deliver=(value:string,stopNative?:()=>void)=>{
