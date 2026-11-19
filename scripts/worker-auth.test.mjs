@@ -852,6 +852,9 @@ class FakeStatement {
       const ids = new Set(v);
       return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) };
     }
+    if (q.startsWith("SELECT variant_id, quantity FROM order_items WHERE order_id = ?")) {
+      return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]).map(({variant_id,quantity}) => ({variant_id,quantity})) };
+    }
     if (q.startsWith("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?")) {
       return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]) };
     }
@@ -1060,9 +1063,11 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined'")) {
-      const [updatedAt, id, tokenHash, now] = v;
+      const [updatedAt, id, tokenHash, now, orderId] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
+      const required = this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id).reduce((sum,item) => sum + item.quantity, 0);
+      const reserved = this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id).every(item => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) >= required);
+      if (!row || !reserved || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { order_status: "cancelled", delivery_fee_status: "declined", delivery_fee_token_hash: null, delivery_fee_expires_at: null, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
@@ -1216,9 +1221,11 @@ class FakeStatement {
       const [status, updated_at, id, expected] = v;
       const order = this.db.orders.get(id);
       if (!order || order.order_status !== expected || (["processing", "dispatched"].includes(status) && order.delivery_fee_status !== "accepted") || (["processing", "dispatched"].includes(status) && order.payment_provider === "manual" && order.payment_method !== "cod" && order.payment_status !== "paid")) return { success: true, meta: { changes: 0 } };
-      const items = this.db.orderItems.filter((item) => item.order_id === id);
-      if (status === "cancelled" && items.some((item) => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) < item.quantity)) return { success: true, meta: { changes: 0 } };
-      if (status === "dispatched" && items.some((item) => { const variant = this.db.variants.get(item.variant_id); return !variant || variant.stock_on_hand < item.quantity || (variant.reserved_quantity ?? 0) < item.quantity; })) return { success: true, meta: { changes: 0 } };
+      const items = this.db.orderItems.filter((item) => item.order_id === id && item.variant_id);
+      const totals = new Map();
+      for (const item of items) totals.set(item.variant_id, (totals.get(item.variant_id) ?? 0) + item.quantity);
+      if (status === "cancelled" && [...totals].some(([variantId, quantity]) => (this.db.variants.get(variantId)?.reserved_quantity ?? 0) < quantity)) return { success: true, meta: { changes: 0 } };
+      if (status === "dispatched" && [...totals].some(([variantId, quantity]) => { const variant = this.db.variants.get(variantId); return !variant || variant.stock_on_hand < quantity || (variant.reserved_quantity ?? 0) < quantity; })) return { success: true, meta: { changes: 0 } };
       Object.assign(order, { order_status: status, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
