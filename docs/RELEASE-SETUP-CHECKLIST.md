@@ -76,15 +76,17 @@ These are verified release blockers, not permission to change live resources:
 
 - Cloudflare Pages currently exposes only the `deverve-official.pages.dev` domain; no custom domain is connected.
 - Pages source deployments and production deployments are disabled in the current project configuration. A production rollout therefore remains a separately authorized operation.
-- The production D1 database does not yet contain the AI task-continuity tables from migration 0036.
+- Read-only production D1 query on 20 Nov confirmed `ai_task_runs` and `ai_task_events` are absent; the migration-0036 task-continuity schema is not deployed.
 - No Cloudflare Queue currently exists in the connected account, so the asynchronous Safepay queue/consumer path is not activated.
 - The current Pages production configuration does not list Safepay, Resend, WhatsApp Cloud API or Turnstile provider bindings. Provider credentials and account-side verification remain owner setup gates.
 - A read-only production count check found existing catalogue and business records; do not seed, overwrite or publish catalogue data without the owner's approved source data.
+- Read-only production D1 query on 20 Nov confirmed 61 application tables, including products, product variants, inventory movements, payment webhook events and notification outbox; `ai_task_runs` and `ai_task_events` are absent. No migration ledger table was found. This confirms the new task ledger is not ready to deploy; do not infer that applying all older migrations blindly is safe.
+- A production D1 export request completed in Cloudflare and returned an export artifact, but it has not been downloaded, independently stored or restore-tested. The backup gate remains open.
 - No production deployment, D1 migration, secret change, queue creation or live data write was performed during this audit.
 
 ## Latest automated verification — 20 November 2026
 
-- Production branch `main` is exactly commit `4e11bd757a41f7f23785ffd1476aef3d56a5e176` (PR #5 merged; no divergence).
+- PR #5 implementation was merged into `main` at `4e11bd757a41f7f23785ffd1476aef3d56a5e176`; this checklist was subsequently reconciled in documentation commit `519a7ce98fd9811969b281cd467f155f6a1cc320`.
 - GitHub Actions push run [#1364](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44608321603) completed successfully on that exact main commit.
 - Build/type-check and production dependency audit passed; audit reported 0 vulnerabilities.
 - Worker authentication tests, SQL binding audit, Pages security-header checks and schema smoke passed. Schema smoke verified 36 migration files, 53 tables, constraints and foreign keys.
