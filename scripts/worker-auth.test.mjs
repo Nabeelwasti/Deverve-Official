@@ -1925,7 +1925,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
     business_name: "Test Retail Store", contact_name: "Wholesale Buyer", phone: "+923001234567",
     email: "buyer@example.com", delivery_address: "Shop 12, Main Market", city: "Jhelum",
     valid_until: new Date(Date.now() + 7 * 86400000).toISOString(),
-    items: [{ variant_id: variantId, quantity: 12, unit_price_paisa: 185000 }],
+    items: [{ variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }, { variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }],
   }, headers), env(db));
   assert.equal(created.status, 201);
   const createdBody = await created.json();
@@ -1933,7 +1933,7 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   const quote = db.wholesaleQuotes.get(quoteId);
   assert.equal(quote.quoted_total_paisa, 2220000);
   assert.equal(quote.status, "prepared");
-  assert.equal(db.wholesaleQuoteItems.length, 1);
+  assert.equal(db.wholesaleQuoteItems.length, 2, "the quote preserves duplicate source lines for customer review");
   const sent = await handleRequest(request("/api/admin/wholesale-quotes/" + quoteId, "PATCH", { status: "sent" }, headers), env(db));
   assert.equal(sent.status, 200);
   const publicUrl = "/api/wholesale-quotes/" + quote.approval_token;
@@ -1951,6 +1951,9 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(db.wholesaleQuotes.get(quoteId).status, "accepted");
   assert.equal(db.variants.get(variantId).reserved_quantity, 12);
   const order = [...db.orders.values()][0];
+  const wholesaleReservation = db.orderInventoryReservations.get(order.id + ":" + variantId);
+  assert.equal(wholesaleReservation.quantity, 12, "duplicate quote lines must create one aggregated reservation ledger row");
+  assert.equal(wholesaleReservation.status, "reserved");
   assert.equal(order.phone, "+923001234567");
   assert.equal(order.delivery_address, "Shop 12, Main Market");
   assert.equal(order.total_paisa, 2220000);
