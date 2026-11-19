@@ -69,8 +69,9 @@ try {
   const blockedDispatch = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-short' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
     { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-short' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-short' AND order_status='dispatched')" },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-short','v-short','sold',-5,'order','o-short' WHERE changes()=1 AND EXISTS (SELECT 1 FROM orders WHERE id='o-short' AND order_status='dispatched')" },
   ]);
-  check(changes(blockedDispatch, 0) === 0 && changes(blockedDispatch, 1) === 0, "insufficient combined stock blocks dispatch without changing stock");
+  check(changes(blockedDispatch, 0) === 0 && changes(blockedDispatch, 1) === 0 && changes(blockedDispatch, 2) === 0, "insufficient combined stock blocks dispatch without changing stock or writing a movement");
 
   const cancelled = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='cancelled' WHERE id='o-cancel' AND order_status='pending' AND payment_status!='paid' AND " + reserveGuard },
