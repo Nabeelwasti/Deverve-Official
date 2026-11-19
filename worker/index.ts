@@ -3418,11 +3418,15 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
   if (!/^evt_[A-Za-z0-9_-]{12,150}$/.test(eventId) || !eventType) return error("Webhook event identity is missing", 400);
 
   try {
-    const prior = await env.DB.prepare("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay' AND provider_event_id = ? LIMIT 1")
-      .bind(eventId).first<{ processing_status: string }>();
-    if (prior?.processing_status === "processed" || prior?.processing_status === "ignored") return json({ received: true, duplicate: true });
     const payloadDigest = await sha256(rawBody);
-    await env.DB.prepare("INSERT INTO payment_webhook_events (id, provider, provider_event_id, payload_sha256, processing_status) VALUES (?, 'safepay', ?, ?, 'received') ON CONFLICT(provider, provider_event_id) DO UPDATE SET payload_sha256 = excluded.payload_sha256, processing_status = 'received' WHERE payment_webhook_events.processing_status NOT IN ('processed','ignored')")
+    const prior = await env.DB.prepare("SELECT processing_status, payload_sha256 FROM payment_webhook_events WHERE provider = 'safepay' AND provider_event_id = ? LIMIT 1")
+      .bind(eventId).first<{ processing_status: string; payload_sha256: string }>();
+    if (prior && prior.payload_sha256 !== payloadDigest) {
+      console.error("[safepay-webhook] event identity reused with a different payload", eventId);
+      return error("Safepay event identity conflicts with a previously received payload", 409);
+    }
+    if (prior?.processing_status === "processed" || prior?.processing_status === "ignored") return json({ received: true, duplicate: true });
+    await env.DB.prepare("INSERT INTO payment_webhook_events (id, provider, provider_event_id, payload_sha256, processing_status) VALUES (?, 'safepay', ?, ?, 'received') ON CONFLICT(provider, provider_event_id) DO UPDATE SET processing_status = 'received' WHERE payment_webhook_events.payload_sha256 = excluded.payload_sha256 AND payment_webhook_events.processing_status NOT IN ('processed','ignored')")
       .bind(crypto.randomUUID(), eventId, payloadDigest).run();
 
     if (eventType !== "payment.succeeded" && eventType !== "payment.failed") {
@@ -3447,9 +3451,9 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
       const now = new Date().toISOString();
       const transactionId = crypto.randomUUID();
       const results = await env.DB.batch([
-        env.DB.prepare("UPDATE payment_attempts SET status = 'succeeded', updated_at = ? WHERE id = ? AND status IN ('created','pending')").bind(now, attempt.id),
-        env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND (payment_status != 'paid' OR financial_transaction_id IS NULL) AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed')").bind(transactionId,now,attempt.order_id,attempt.amount_paisa),
-        env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,'gateway-clearing','in',?,'website_order','order',?,'Safepay online payment',NULL WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?)").bind(transactionId,attempt.amount_paisa,attempt.order_id,attempt.order_id,transactionId),
+        env.DB.prepare("UPDATE payment_attempts SET status = 'succeeded', updated_at = ? WHERE id = ? AND status IN ('created','pending') AND EXISTS (SELECT 1 FROM orders WHERE id = payment_attempts.order_id AND payment_provider = 'safepay' AND (payment_status != 'paid' OR financial_transaction_id IS NULL) AND total_paisa = payment_attempts.amount_paisa AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed'))").bind(now, attempt.id),
+        env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND (payment_status != 'paid' OR financial_transaction_id IS NULL) AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed') AND EXISTS (SELECT 1 FROM payment_attempts WHERE id = ? AND order_id = orders.id AND status = 'succeeded' AND amount_paisa = orders.total_paisa)").bind(transactionId,now,attempt.order_id,attempt.amount_paisa,attempt.id),
+        env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,'gateway-clearing','in',?,'website_order','order',?,'Safepay online payment',NULL WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?) AND EXISTS (SELECT 1 FROM payment_attempts WHERE id=? AND status='succeeded')").bind(transactionId,attempt.amount_paisa,attempt.order_id,attempt.order_id,transactionId,attempt.id),
       ]);
       if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order and cashbook");
       try{await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});}catch{}
