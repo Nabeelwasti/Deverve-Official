@@ -6,7 +6,22 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+
+test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
+  assert.deepEqual(aggregateOrderVariantQuantities([
+    { variant_id: "variant-black-m", quantity: 2 },
+    { variant_id: "variant-blue-l", quantity: 1 },
+    { variant_id: "variant-black-m", quantity: 3 },
+    { variant_id: null, quantity: 1 },
+  ]), [
+    { variant_id: "variant-black-m", quantity: 5 },
+    { variant_id: "variant-blue-l", quantity: 1 },
+  ]);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 0 }]), /positive integer/);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 1.5 }]), /positive integer/);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: Number.MAX_SAFE_INTEGER }, { variant_id: "v1", quantity: 1 }]), /supported range/);
+});
 
 test("POS stock guard binds every exact variant and rejects oversold combined quantities", () => {
   const guard = buildPosStockGuard([
