@@ -51,10 +51,14 @@ function buildProducts(raw:string):CsvProduct[] {
       if(p.variants.length>100)throw new Error(name+" exceeds 100 size/colour combinations.");
     }
   }
+  if(grouped.size>20)throw new Error("Atomic import is limited to 20 products per batch.");
+  let totalVariants=0;
   for(const p of grouped.values()){
+    totalVariants+=p.variants.length;
     if(p.variants.length===0)throw new Error(p.name+" has no size/colour stock rows. Add at least one variant row.");
     const seen=new Set<string>();for(const v of p.variants){const k=v.size.trim().toLowerCase()+"::"+v.color.trim().toLowerCase();if(seen.has(k))throw new Error(p.name+" has a duplicate "+v.size+" / "+v.color+" combination.");seen.add(k);}
   }
+  if(totalVariants>250)throw new Error("Atomic import is limited to 250 total variants per batch.");
   return [...grouped.values()];
 }
 
