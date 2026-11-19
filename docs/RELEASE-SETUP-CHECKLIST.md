@@ -1,6 +1,6 @@
 # De VERVE release and owner setup checklist
 
-Last reconciled: 20 November 2026 — post-merge CI verification  
+Last reconciled: 20 November 2026 — production migration verification  
 Target: Pakistan-first storefront, garments catalogue, rentals, POS and AI-assisted operations.
 
 This checklist separates source-code work from account configuration and production operations. A passing build does not complete an external provider integration. Do not enable a provider until its test transaction and callback/delivery path have been verified.
@@ -13,9 +13,9 @@ This checklist separates source-code work from account configuration and product
 - [x] Complete a same-account R2 copy/restore drill on 19 Nov 2026: 15 objects / 1,522,058 bytes copied from `deverve-media-private` to `deverve-r2-restore-drill-20261119`, restored into an isolated test bucket, and all 15 object sizes + ETags matched. Original bucket remained unchanged; temporary restore bucket was deleted. A metadata manifest records content types and custom metadata.
 - [ ] Establish an independent off-account R2 backup with separately controlled credentials and repeat the restore drill. A same-account bucket is not an independent backup; a D1 export does not contain R2 object bytes.
 - [x] Reconcile production schema read-only on 20 Nov 2026. Exact live columns/indexes confirm migrations 0028, 0029, 0030, 0031 and 0033 are already reflected; both 0032 CNIC protection triggers are present. Migration 0034's unique active size/colour index is absent; its read-only preflight found no duplicate normalized active single-option combinations (one legacy multi-option row is intentionally excluded). Migration 0035's `order_inventory_reservations` table and migration 0036's `ai_task_runs` / `ai_task_events` tables are absent. No migration-ledger table exists, so reconcile by exact schema signatures, not a guessed migration history.
-- [ ] Apply only the verified missing migrations, in dependency order, after backup and isolated rehearsal: 0034 → 0035 → 0036. Re-check existing 0028–0033 signatures and verify both 0032 CNIC triggers remain present before and after.
+- [x] Applied production migrations 0034 → 0035 → 0036 on 20 Nov 2026 after read-only preflight. Verified the unique-index preflight returned zero duplicate groups; production had zero orders and four variants. Post-migration schema checks confirm the 0034 index, 0035 reservation table and both indexes, and 0036 AI task tables and both indexes are present. Existing order, reservation, AI-run and AI-event counts are all zero. D1 Time Travel remains available for point-in-time recovery; an independent off-account backup is still outstanding.
 - [x] Verify migration 0036 as part of the full 0001–0036 isolated rehearsal above; do not apply it to production until backup, schema reconciliation and release-window gates are complete.
-- [ ] Verify D1 constraints, indexes, foreign keys, migration effects and application smoke tests after each approved migration.
+- [x] Verify migration objects and post-migration read-only counts in production after 0034–0036. Full application and payment smoke tests remain outstanding.
 
 ### 2. AI and catalogue
 
@@ -33,7 +33,7 @@ This checklist separates source-code work from account configuration and product
 - [x] DOCX/XLSX extraction end-to-end tests passed on desktop and mobile Chromium in GitHub Actions run #1364.
 - [ ] Verify each configured Gemini project/model for image/PDF support, quota, fallback order and Google Search grounding. Multiple keys in one Google project do not create separate quota pools.
 - [x] Full migration rehearsal: migrations 0001–0036 were applied sequentially to an isolated temporary Cloudflare D1 on 20 Nov 2026; every migration succeeded. The temporary database was deleted. This rehearsal did not alter production.
-- [ ] Apply migrations 0034, 0035 and 0036 to production only after backup, approved release window and migration rehearsal. Current read-only production evidence: 0034 index absent, 0035 reservation table absent, and 0036 `ai_task_runs` / `ai_task_events` absent.
+- [x] Apply migrations 0034, 0035 and 0036 to production on 20 Nov 2026. Post-migration checks confirm all eight expected tables/indexes are present and no duplicate active normalized single-option variants exist. Production orders and reservation/AI task tables currently contain zero rows.
 - [ ] Add GitHub Actions Cloudflare test credentials so the remote D1 integration step can run automatically; current CI reports this step as skipped because those secrets are absent.
 
 ### 3. Payments and financial operations
@@ -76,13 +76,13 @@ These are verified release blockers, not permission to change live resources:
 
 - Cloudflare Pages currently exposes only the `deverve-official.pages.dev` domain; no custom domain is connected.
 - Pages source deployments and production deployments are disabled in the current project configuration. A production rollout therefore remains a separately authorized operation.
-- Read-only production D1 query on 20 Nov confirmed `ai_task_runs` and `ai_task_events` are absent; the migration-0036 task-continuity schema is not deployed.
+- Production migrations 0034–0036 were applied on 20 Nov 2026; `ai_task_runs`, `ai_task_events` and `order_inventory_reservations` are now present.
 - No Cloudflare Queue currently exists in the connected account, so the asynchronous Safepay queue/consumer path is not activated.
 - The current Pages production configuration does not list Safepay, Resend, WhatsApp Cloud API or Turnstile provider bindings. Provider credentials and account-side verification remain owner setup gates.
 - A read-only production count check found existing catalogue and business records; do not seed, overwrite or publish catalogue data without the owner's approved source data.
-- Read-only production D1 query on 20 Nov confirmed 61 application tables, including products, product variants, inventory movements, payment webhook events and notification outbox. Signature checks confirm 0028–0033 are already reflected, including permanent-CNIC triggers. The 0034 index, 0035 reservation ledger and 0036 AI task ledger are absent. One legacy multi-option variant is intentionally outside the 0034 unique index; there are no duplicate active normalized single-option combinations. No migration ledger table was found.
-- A production D1 export request completed in Cloudflare and returned an export artifact, but it has not been downloaded, independently stored or restore-tested. The backup gate remains open.
-- No production deployment, D1 migration, secret change, queue creation or live data write was performed during this audit.
+- Production schema checks confirmed the existing 0028–0033 schema and CNIC protection triggers, then applied 0034–0036. The 0034 uniqueness preflight returned zero duplicate active normalized single-option groups; one legacy multi-option row remains intentionally outside the index. Production currently has zero orders, four product variants, zero inventory reservations, zero AI task runs and zero AI task events. No migration ledger table was found.
+- A fresh D1 export job completed, but its signed artifact could not be retrieved through the available connector's outbound-host restrictions. No SQL dump has been independently stored or restore-tested. The independent-backup gate remains open. D1 Time Travel is automatically enabled for point-in-time recovery; it is not a substitute for an off-account backup.
+- Production D1 migrations 0034–0036 were applied and verified. No production deployment, secret change, queue creation or business-data write has yet been performed.
 
 ## Latest automated verification — 20 November 2026
 
@@ -92,14 +92,14 @@ These are verified release blockers, not permission to change live resources:
 - Worker authentication tests, SQL binding audit, Pages security-header checks and schema smoke passed. Schema smoke verified 36 migration files, 53 tables, constraints and foreign keys.
 - Playwright browser suite: 88 passed across desktop Chromium and mobile Chromium. Includes CSV product import and DOCX/XLSX extraction on both projects, and mobile 100-image intake, direct owner publishing and scanner regression tests.
 - Important limitation: the remote production-like D1 integration step was skipped because GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are not configured. The isolated 0001–0036 D1 migration rehearsal was separately completed against a temporary database on 20 Nov; this does not prove the production database is migration-ready.
-- A production D1 export request completed in Cloudflare, but the export has not yet been downloaded, independently stored and restored. It is not a verified backup.
+- A fresh production D1 export job completed, but the export file is not downloaded or independently restored. D1 Time Travel provides 30-day point-in-time recovery, but an off-account backup remains outstanding.
 
 ## Current branch and release boundary
 
 - Repository: `Nabeelwasti/Deverve-Official`
 - Production branch: `main`
 - PR #5 is merged; merge commit: `4e11bd757a41f7f23785ffd1476aef3d56a5e176`.
-- Cloudflare Pages source deployments and production deployments remain disabled. No deployment has been performed from this merge commit.
+- Cloudflare Pages source deployments and production deployments were disabled during the pre-release audit. Re-enable only after the production migration state and release commit are verified.
 - Production release remains blocked on independent backup/restore, production schema reconciliation and migration verification, owner/provider configuration, and live acceptance. Do not enable deployment or run production migrations until these gates are met.
 
 ## Required owner-provided setup (never paste secrets into chat)
