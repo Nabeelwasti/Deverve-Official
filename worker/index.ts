@@ -4344,15 +4344,26 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
       const clean:Record<string,string|number|null>={};
       for(const field of ["name","brand","category","description","audience","size","color","sku","barcode","material","country_of_origin"]){const value=parsed[field];clean[field]=typeof value==="string"?value.trim().slice(0,field==="description"?1500:240):null;}
       for(const field of ["retail_price","wholesale_price","purchase_cost","quantity"]){const value=parsed[field];clean[field]=typeof value==="number"&&Number.isFinite(value)&&value>=0?value:typeof value==="string"&&/^\d+(?:\.\d{1,2})?$/.test(value.trim())?Number(value):null;}
-      if(scannedCode&&!clean.barcode)clean.barcode=scannedCode;if(scannedSku&&!clean.sku)clean.sku=scannedSku;
+      if(scannedSku&&!clean.sku)clean.sku=scannedSku;
       let catalogueMatch:Record<string,unknown>|null=null;
+      let catalogueMatchAmbiguous=false;
       const exactCode=typeof clean.barcode==="string"?clean.barcode:"";
       const exactSku=typeof clean.sku==="string"?clean.sku:"";
-      if(exactCode||exactSku){
-        try{catalogueMatch=await env.DB.prepare("SELECT p.id AS product_id,p.name,p.slug,p.status,v.id AS variant_id,v.sku,v.barcode,v.size,v.color,v.stock_on_hand,v.reserved_quantity,MAX(0,v.stock_on_hand-v.reserved_quantity) AS available_quantity FROM product_variants v JOIN products p ON p.id=v.product_id WHERE (v.barcode=? AND ?<>'') OR (v.sku=? AND ?<>'') ORDER BY CASE WHEN v.barcode=? AND ?<>'' THEN 0 ELSE 1 END LIMIT 1").bind(exactCode,exactCode,exactSku,exactSku,exactCode,exactCode).first<Record<string,unknown>>();}
-        catch{/* A database lookup failure must not erase the decoded scan or OCR result. */}
+      // A decoded QR payload is not automatically a barcode. Only use a short,
+      // plain inventory token for exact SKU/barcode matching; URLs and structured
+      // QR payloads remain source data for the OCR/research step.
+      const scanToken=scannedCode&&/^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$/.test(scannedCode)?scannedCode:"";
+      const lookupCode=exactCode||scanToken;
+      const lookupSku=exactSku||scanToken;
+      if(lookupCode||lookupSku){
+        try{
+          const matches=await env.DB.prepare("SELECT p.id AS product_id,p.name,p.slug,p.status,v.id AS variant_id,v.sku,v.barcode,v.size,v.color,v.stock_on_hand,v.reserved_quantity,MAX(0,v.stock_on_hand-v.reserved_quantity) AS available_quantity FROM product_variants v JOIN products p ON p.id=v.product_id WHERE (v.barcode=? AND ?<>'') OR (v.sku=? AND ?<>'') ORDER BY CASE WHEN v.barcode=? AND ?<>'' THEN 0 ELSE 1 END LIMIT 2").bind(lookupCode,lookupCode,lookupSku,lookupSku,lookupCode,lookupCode).all<Record<string,unknown>>();
+          const rows=matches.results??[];
+          catalogueMatchAmbiguous=rows.length>1;
+          catalogueMatch=rows.length===1?rows[0]:null;
+        }catch{/* A database lookup failure must not erase the decoded scan or OCR result. */}
       }
-      return {product:clean,catalogue_match:catalogueMatch,model:result.model};
+      return {product:clean,catalogue_match:catalogueMatch,catalogue_match_ambiguous:catalogueMatchAmbiguous,model:result.model};
     }
     if(row){const cooldown=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;const label=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":result.status>=500?"provider_unavailable":"request_failed";try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+cooldown).toISOString(),label,new Date().toISOString(),row.id).run();}catch{}}
     return {error:"Gemini could not read this label (HTTP "+result.status+": "+result.message.slice(0,160)+"). Check the configured API key and try again.",status:503};
