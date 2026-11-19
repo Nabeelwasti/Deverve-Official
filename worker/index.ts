@@ -1974,14 +1974,15 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
           if(existing.uploaded_by!==admin.admin_user_id||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||existing.status==="archived"){
             failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
           }
-          const head=await env.MEDIA.get(existing.object_key);
+          const storedObject=await env.MEDIA.get(existing.object_key);
+          const storedHash=storedObject?Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await storedObject.arrayBuffer())),value=>value.toString(16).padStart(2,"0")).join(""):null;
           if(existing.status==="ready"){
-            if(head?.customMetadata?.sha256!==sha256){failures.push({name:file.name,error:"The saved media content does not match this retry. Use a new upload identifier."});continue;}
+            if(storedHash!==sha256){failures.push({name:file.name,error:"The saved media content does not match this retry. Use a new upload identifier."});continue;}
             results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
             continue;
           }
           if(existing.status!=="processing"){failures.push({name:file.name,error:"This media item is not available for retry."});continue;}
-          if(head?.customMetadata?.sha256===sha256){
+          if(storedHash===sha256){
             const recovered=await env.DB.batch([
               env.DB.prepare("UPDATE media_assets SET status='ready',updated_at=? WHERE id=? AND uploaded_by=? AND status='processing'").bind(new Date().toISOString(),id,admin.admin_user_id),
               env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'media.bulk_uploaded','media_asset',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length,recovered:true}))
