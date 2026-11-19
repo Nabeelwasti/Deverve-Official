@@ -257,11 +257,14 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             else for (const batch of chunk) for (const candidate of batch.candidates) chunkGroups.push({ candidate_ids: [candidate.candidate_id], product_name: candidate.name.slice(0, 36), confidence: "low" });
           }
           const compactPlans = chunkGroups.map(group => ({ candidate_ids: group.candidate_ids, product_name: group.product_name.slice(0, 36), confidence: group.confidence }));
+          let visualOverview: Array<{ name: string; mime_type: string; data: string }> = [];
+          try { visualOverview = await buildCatalogueContactSheets(files); }
+          catch (overviewError) { setStatus("Visual overview unavailable; using individual image analyses and source filenames. " + (overviewError instanceof Error ? overviewError.message : "")); }
           const finalPlan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
-              task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok),
-              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Reconcile these compact preliminary groups across the entire attachment task. Merge groups only when they represent the same exact underlying product, not merely similar products. Same product in different colours can be grouped; genuinely different styles stay separate. Any ambiguity means separate groups with low confidence. Include every candidate ID exactly once. Keep rationale short. Preliminary groups: " + JSON.stringify(compactPlans) }]
+              task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok), images: visualOverview,
+              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. You are receiving a labelled visual contact-sheet overview of ALL selected images in this task. Compare the images visually across the entire set, not just within earlier batches. Use candidate source filenames to connect each image to its candidate. Group front/back/detail views of one item together. Group colourways only when the garment design is clearly the same. Keep similar but distinct styles separate. Only merge cross-batch candidates with high confidence; otherwise keep separate. Include every candidate ID exactly once. Keep rationale short. Candidate map: " + JSON.stringify(summaries) + " Preliminary groups: " + JSON.stringify(compactPlans) }]
             })
           });
           globalPlan = finalPlan.reply || "";
