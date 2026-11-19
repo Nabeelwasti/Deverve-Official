@@ -219,7 +219,7 @@ export async function exportOfficeDocument(filename: string, title: string, subt
   const pageOrientation = landscape ? ' w:orient="landscape"' : "";
   const pageMargin = landscape ? 540 : 720;
   const tableWidth = pageWidth - pageMargin * 2;
-  const minimumCellWidth = Math.max(420, Math.min(900, Math.floor(tableWidth / columnCount * 0.55)));
+  const minimumCellWidth = Math.max(1, Math.min(900, Math.floor(tableWidth / columnCount * 0.55)));
   const columnWeights = Array.from({ length: columnCount }, (_, columnIndex) => {
     const longest = Math.max(8, ...rows.slice(0, 250).map(row => String(row[columnIndex] ?? "").replace(/\\s+/g, " ").length));
     return Math.min(48, longest);
