@@ -4098,11 +4098,11 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   return error("Method not allowed",405);
 }
 export function customerLanguageHint(message:string):string {
-  const arabicScriptCount=(message.match(/[\\u0600-\\u06FF]/g)??[]).length;
+  const arabicScriptCount=(message.match(/[\u0600-\u06FF]/g)??[]).length;
   const latinLetterCount=(message.match(/[A-Za-z]/g)??[]).length;
   if(arabicScriptCount>0&&arabicScriptCount>=latinLetterCount) return "The latest customer message is predominantly written in Arabic-derived script. Match its actual language and preserve that script; do not switch to Latin transliteration.";
-  const romanUrduTokens=message.match(/\\b(?:aap|ap|apko|apka|aapka|mujhe|mujhy|mujh|mujhko|mera|meri|mere|hamara|hum|hai|hain|tha|thi|kya|kyun|kaise|kitna|kitne|kitni|chahiye|chahye|nahi|nahin|han|haan|jee|ji|karna|karo|kren|krain|krna|kardo|batao|bataye|btao|milay|milega|sakta|sakti|hoga|hogi|kahan|kab|yeh|woh|kijiye|dein|bhej|mangwana)\\b/gi)??[];
-  const wordCount=message.trim().split(/\\s+/).filter(Boolean).length;
+  const romanUrduTokens=message.match(/\b(?:aap|ap|apko|apka|aapka|mujhe|mujhy|mujh|mujhko|mera|meri|mere|hamara|hum|hai|hain|tha|thi|kya|kyun|kaise|kitna|kitne|kitni|chahiye|chahye|nahi|nahin|han|haan|jee|ji|karna|karo|kren|krain|krna|kardo|batao|bataye|btao|milay|milega|sakta|sakti|hoga|hogi|kahan|kab|yeh|woh|kijiye|dein|bhej|mangwana)\b/gi)??[];
+  const wordCount=message.trim().split(/\s+/).filter(Boolean).length;
   if(romanUrduTokens.length>=2||(romanUrduTokens.length===1&&wordCount<=2)) return "The latest customer message is predominantly Roman Urdu. Reply in natural Roman Urdu using Latin letters, not Urdu script or English.";
   return "No Urdu-specific signal is dominant. Identify the latest customer's actual language and reply in that same language and writing system.";
 }
