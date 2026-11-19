@@ -4109,7 +4109,7 @@ async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{
  for(const model of models){
   try{
    const response=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{method:"POST",headers:{"content-type":"application/json","x-goog-api-key":apiKey},body:JSON.stringify({model,input:prompt,tools:[{type:"google_search"}]}),signal:AbortSignal.timeout(12000)});
-   const payload=await response.json().catch(()=>({})) as {error?:{message?:string;status?:string};output_text?:string;steps?:Array<{type?:string;arguments?:{queries?:unknown};content?:Array<{type?:string;text?:string;annotations?:Array<{type?:string;url?:string;title?:string}>}>}>};
+   const payload=await response.json().catch(()=>({})) as {error?:{message?:string;status?:string};output_text?:string;steps?:Array<{type?:string;arguments?:{queries?:unknown};content?:Array<{type?:string;text?:string;annotations?:Array<{type?:string;url?:string;uri?:string;title?:string}>}>}>};
    if(!response.ok){
     last={ok:false,status:response.status,summary:"",message:[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Gemini web research request failed",model,sources:[],queries:[]};
     if([400,404,429,500,502,503,504].includes(response.status))continue;
@@ -4120,8 +4120,9 @@ async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{
    const sources:GeminiResearchSource[]=[];
    const seen=new Set<string>();
    for(const block of blocks)for(const annotation of block.annotations??[]){
-    if(annotation.type!=="url_citation"||typeof annotation.url!=="string")continue;
-    try{const url=new URL(annotation.url);if(url.protocol!=="https:"||seen.has(url.toString()))continue;seen.add(url.toString());sources.push({title:cleanText(annotation.title||url.hostname,100)||url.hostname,url:url.toString()});}catch{}
+    const citationUrl=annotation.uri||annotation.url;
+    if(annotation.type!=="url_citation"||typeof citationUrl!=="string")continue;
+    try{const url=new URL(citationUrl);if(url.protocol!=="https:"||seen.has(url.toString()))continue;seen.add(url.toString());sources.push({title:cleanText(annotation.title||url.hostname,100)||url.hostname,url:url.toString()});}catch{}
    }
    const queries=(payload.steps??[]).filter(step=>step.type==="google_search_call").flatMap(step=>Array.isArray(step.arguments?.queries)?step.arguments!.queries as unknown[]:[]).filter((value):value is string=>typeof value==="string").map(value=>cleanText(value,180)).filter(Boolean).slice(0,8);
    if(!summary){last={ok:false,status:502,summary:"",message:"Gemini returned no grounded research summary",model,sources,queries};continue;}
