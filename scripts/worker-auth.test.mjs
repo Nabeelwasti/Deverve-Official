@@ -2130,7 +2130,7 @@ test("Gemini model fallback order keeps 3.8 primary, prefers tested free-tier Fl
   const originalFetch=globalThis.fetch;
   const attempted=[];
   globalThis.fetch=async(input)=>{
-    const model=new URL(String(input)).pathname.match(/models\\/([^:]+):generateContent$/)?.[1]||"";
+    const model=new URL(String(input)).pathname.split("/models/")[1]?.split(":")[0]||"";
     attempted.push(model);
     if(model==="gemini-3.8-flash"||model==="gemini-3.5-flash-lite")return new Response(JSON.stringify({error:{status:"UNAVAILABLE",message:"Temporary service unavailable"}}),{status:503,headers:{"content-type":"application/json"}});
     return new Response(JSON.stringify({candidates:[{content:{parts:[{text:"Lite fallback answered"}]}}]}),{status:200,headers:{"content-type":"application/json"}});
