@@ -1,9 +1,9 @@
 name: Build and type-check
 
-# Validate every main-branch push; do not silently cancel earlier validation runs.
+# Validate the newest main-branch state; cancel stale runs so a hung browser download cannot block the current build.
 concurrency:
   group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - name: Install locked dependencies
         run: npm ci
@@ -56,7 +56,9 @@ jobs:
         run: npm run test:worker
       - name: Validate D1 schema and constraints
         run: python scripts/verify_schema.py
-      - name: Install Chromium for browser tests
-        run: npx playwright install --with-deps chromium
+      - name: Install Chromium headless shell for browser tests
+        timeout-minutes: 8
+        run: npx playwright install chromium --only-shell
       - name: Run storefront browser tests
+        timeout-minutes: 12
         run: npm run test:e2e
