@@ -14,7 +14,12 @@ export default function ProductVariantPicker({variants,selectedVariantId,onChang
   const next=exact??(priority==="size"
    ?availableVariants.find(v=>split(v.size).includes(size))
    :availableVariants.find(v=>split(v.color).includes(color)));
-  if(next)onChange(next.id,split(next.size)[0]??size,split(next.color)[0]??color);
+  if(next){
+   const nextSizes=split(next.size),nextColors=split(next.color);
+   const resolvedSize=nextSizes.includes(size)?size:(nextSizes[0]??size);
+   const resolvedColor=nextColors.includes(color)?color:(nextColors[0]??color);
+   onChange(next.id,resolvedSize,resolvedColor);
+  }
  };
  // Keep each option selectable when it exists in any in-stock variant. If the
  // current pair is unavailable, choosing either dimension moves the other
