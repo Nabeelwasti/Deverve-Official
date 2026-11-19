@@ -41,6 +41,11 @@ assert "contact_type" in enquiry_columns, "Extended customer contact categories 
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
+variant_option_indexes = [row for row in db.execute("PRAGMA index_list(product_variants)") if row[1] == "idx_product_variants_unique_active_options"]
+assert variant_option_indexes and variant_option_indexes[0][2] == 1, "Active size/colour combinations must be unique per product"
+variant_option_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_product_variants_unique_active_options'").fetchone()[0]
+assert "lower(trim(size))" in variant_option_sql and "lower(trim(color))" in variant_option_sql, "Variant uniqueness must be case- and whitespace-insensitive"
+
 assert "checkout_token" in order_columns, "Checkout idempotency column is missing"
 assert "payment_provider" in order_columns, "Payment provider selection column is missing"
 return_columns = {row[1] for row in db.execute("PRAGMA table_info(return_requests)")}
