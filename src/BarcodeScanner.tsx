@@ -71,7 +71,15 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
   if(video.current)video.current.srcObject=null;
   setCameraActive(false);
  };
- useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;if(frame.current!==null)cancelAnimationFrame(frame.current);stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;};},[]);
+ useEffect(()=>{mounted.current=true;return()=>{
+  mounted.current=false;
+  if(frame.current!==null){cancelAnimationFrame(frame.current);frame.current=null;}
+  const controls=zxingControls.current;zxingControls.current=null;
+  try{controls?.stop();}catch{}
+  const activeStream=stream.current;stream.current=null;
+  activeStream?.getTracks().forEach(track=>{try{track.stop();}catch{}});
+  if(video.current)video.current.srcObject=null;
+ };},[]);
  const startCamera=async()=>{
   if(starting)return;
   setError("");setStarting(true);detected.current=false;
@@ -97,6 +105,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
     else callback.current(value);
    };
    const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
+   let nativeScannerReady=false;
    if(Detector){
     try{
      const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","maxicode","pdf417","qr_code","rss_14","rss_expanded","upc_a","upc_e"];
@@ -104,26 +113,35 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
      const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
      if(formats.length){
       const detector=new Detector({formats});
+      nativeScannerReady=true;
       let detecting=false;
       const tick=async()=>{
        if(!mounted.current||detected.current||detecting||!video.current)return;
        detecting=true;
        try{const codes=await detector.detect(video.current);const value=codes.find(item=>item.rawValue?.trim())?.rawValue?.trim();if(value){deliver(value);return;}}
-       catch{/* A blurred frame is normal; continue with the next frame and ZXing. */}
+       catch{/* Frame-level failures are expected on moving or blurred video. ZXing remains the primary fallback. */}
        finally{detecting=false;}
        if(mounted.current&&!detected.current)frame.current=requestAnimationFrame(()=>void tick());
       };
       frame.current=requestAnimationFrame(()=>void tick());
      }
-    }catch{/* The bundled ZXing decoder remains available if native decoding cannot start. */}
+    }catch{/* Continue with the bundled ZXing engine. */}
    }
-   const reader=createZxingReader();
-   const controls=await reader.decodeFromStream(camera,video.current,(result,_decodeError,scanControls)=>{
-    const value=result?.getText()?.trim();
-    if(value)deliver(value,()=>scanControls.stop());
-   });
-   if(!mounted.current||detected.current){controls.stop();return;}
-   zxingControls.current=controls;
+   // Native BarcodeDetector is optional and not supported by every browser.
+   // A failure to initialise the optional native engine must never cancel the
+   // camera stream when the ZXing compatibility engine is available.
+   try{
+    const reader=createZxingReader();
+    const controls=await reader.decodeFromStream(camera,video.current,(result,_decodeError,scanControls)=>{
+     const value=result?.getText()?.trim();
+     if(value)deliver(value,()=>scanControls.stop());
+    });
+    if(!mounted.current||detected.current){controls.stop();return;}
+    zxingControls.current=controls;
+   }catch(zxingError){
+    if(!nativeScannerReady)throw zxingError;
+    setStatus("Camera is active. Native barcode detection is running. If your code is not detected, choose a clear photo or enter it manually.");
+   }
   }catch(caught){if(mounted.current&&!detected.current){stopCamera();setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}else if(!mounted.current){stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;}}
   finally{if(mounted.current)setStarting(false);}
  };
