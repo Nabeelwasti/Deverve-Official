@@ -86,12 +86,22 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.getByRole("button", { name: "Save product" }).click();
   await expect(page.getByRole("heading", { name: "Palette test hoodie" })).toBeVisible();
   await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
+  await expect(page.getByLabel("Default purchase cost (PKR)")).toHaveCount(0);
   await expect(page.locator("#deverve-size-options option[value='10XL']")).toHaveCount(1);
   await expect(page.locator("#deverve-size-options option[value='48 EU']")).toHaveCount(1);
   await expect(page.locator("#deverve-colour-options option[value='Rebecca Purple']")).toHaveCount(1);
   await expect(page.locator("#deverve-colour-options option[value='Oxblood']")).toHaveCount(1);
   await expect(page.locator("input[list='deverve-size-options']")).toHaveCount(2);
   await expect(page.locator("input[list='deverve-colour-options']")).toHaveCount(2);
+  await page.getByLabel("Browse full size list").selectOption("10XL");
+  await page.getByRole("button", { name: "Add size" }).click();
+  await page.getByLabel("Browse full colour list").selectOption("Oxblood");
+  await page.getByRole("button", { name: "Add colour" }).click();
+  await expect(page.locator("input[list='deverve-size-options']").first()).toHaveValue("10XL");
+  await expect(page.locator("input[list='deverve-colour-options']").first()).toHaveValue("Oxblood");
+  await page.getByRole("button", { name: "Generate combinations" }).click();
+  await expect(page.getByLabel("Opening quantity 10XL Oxblood")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save all 1 variants" })).toBeVisible();
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
