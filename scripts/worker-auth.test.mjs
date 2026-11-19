@@ -1055,10 +1055,6 @@ class FakeStatement {
       this.db.audits.push({id:v[0],actor_admin_id:v[1],action:"media.bulk_uploaded",entity_type:"media_asset",entity_id:v[2],metadata_json:v[3]});
       return {success:true,meta:{changes:1}};
     }
-    if (q.startsWith("INSERT INTO audit_logs")) {
-      this.db.audits.push({id:v[0],actor_admin_id:v[1],action:v[2],entity_type:v[3],entity_id:v[4],metadata_json:v[5]});
-      return {success:true,meta:{changes:1}};
-    }
     if (q.startsWith("INSERT INTO return_requests")) {
       const [id, order_id, customer_id, return_number, reason, details, refund_amount_paisa] = v;
       if ([...this.db.returnRequests.values()].some((row) => row.order_id === order_id)) throw new Error("UNIQUE constraint failed: return_requests.order_id");
@@ -1485,7 +1481,20 @@ class FakeStatement {
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("INSERT INTO audit_logs")) {
-      this.db.audits.push(v);
+      const literalAction = q.match(/,\\s*'([a-z][a-z0-9_.-]+)'\\s*,\\s*'/i)?.[1];
+      const action = literalAction || v[2] || "";
+      const entry = {
+        id: v[0] ?? null,
+        actor_admin_id: v[1] ?? null,
+        action,
+        entity_type: v[3] ?? null,
+        entity_id: v[4] ?? v[1] ?? null,
+        metadata_json: v[5] ?? v[3] ?? null,
+        values: v,
+        2: action,
+        includes: (needle) => q.includes(String(needle)) || v.some(value => String(value ?? "").includes(String(needle))),
+      };
+      this.db.audits.push(entry);
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_users")) {
