@@ -180,7 +180,7 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   });
 
   await page.goto("/admin?section=ai");
-  await expect(page.getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
+  await expect(page.locator(".admin-ai-welcome").getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
   const image = { name: "hoodie.png", mimeType: "image/png", buffer: Buffer.from("fake-image-data") };
   await page.locator(".admin-ai-attach input").setInputFiles(image);
   await page.getByPlaceholder(/Ask about products/).fill("Please describe this hoodie.");
@@ -507,7 +507,7 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
   await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
   await expect(page.getByRole("group", { name: "Unknown scanned product" })).toContainText(qrPayload);
   await page.getByRole("button", { name: "Create product & add this code to stock" }).click();
-  await expect(page).toHaveURL(/section=products&barcode=/);
+  await expect(page).toHaveURL(/section=ai&barcode=/);
   await expect(page).toHaveURL(url => new URL(url).searchParams.get("barcode") === qrPayload);
 });
 
