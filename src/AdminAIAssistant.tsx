@@ -268,8 +268,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               const matchingDraft = batchDrafts.find(value => normalizeName(value.name) === groupKey);
               if (!matchingDraft) return [];
               const sourceNames = Array.isArray(matchingDraft.source_files) ? matchingDraft.source_files : [];
-              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : batchDrafts.length === 1 ? item.files : [];
+              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : batchDrafts.length === 1 && item.files.length === 1 ? item.files : [];
             });
+            if (!matchingFiles.length) merged.unknowns = [...merged.unknowns, "Source photos could not be confidently mapped to this product; no photos were auto-attached. Upload the correct images manually before publishing."];
             productDraftEntries.push({ draft: merged, files: matchingFiles });
           }
           result.product_draft = productDraftEntries[0]?.draft;
