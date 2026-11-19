@@ -36,7 +36,7 @@ test("AI assistant extracts DOCX paragraphs/tables and XLSX worksheets before se
   {name:"inventory.xlsx",mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",buffer:xlsx}
  ]);
  await page.locator(".admin-ai-composer textarea").fill("Read these catalogue and inventory files. Extract the product names, sizes and stock.");
- await page.getByRole("button",{name:"Ask AI"}).click();
+ await page.locator(".admin-ai-composer button[type=submit]").click();
  await expect.poll(()=>sent).not.toBeNull();
  const body=sent as {documents:Array<{name:string;mime_type:string;text:string}>};
  expect(body.documents).toHaveLength(2);
