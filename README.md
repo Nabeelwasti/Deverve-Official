@@ -12,9 +12,11 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Hosting: Cloudflare Pages (`deverve-official`)
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
-- GitHub is connected to Cloudflare Pages. Normal commits pushed to `main` now trigger production deployments automatically; preview deployments are disabled to avoid unnecessary builds.
-- Latest verified source at this audit: `591756e583cfe8c3094138dd02517ae699c9f827`. Cloudflare reports that its production build and deploy stages succeeded for this commit. The previous deployment was manually triggered; automatic GitHub production deployment was disabled at that time and has now been enabled.
-- Live D1 schema reconciliation on 18 November 2026 confirms the required objects for migrations 0028–0033 are present: `enquiries.contact_type`, `enquiry_email_queue`, `pos_receipt_outbox`, `notification_outbox`, their lease/delivery indexes, and the permanent CNIC protection triggers. There is no migration-ledger table, so verify schema objects rather than relying on a ledger. Do not rerun already-present migrations.
+- GitHub is connected to Cloudflare Pages, but source-triggered and production deployments are currently disabled intentionally. Preview deployments are also disabled. Do not describe a source merge as a production deployment.
+- Latest merged application implementation: PR #5 merge commit `4e11bd757a41f7f23785ffd1476aef3d56a5e176`. Follow-up release documentation is maintained on `main`; GitHub Actions validates every pushed `main` revision.
+- Latest production deployment remains an older build from `d3280becfc507c5b3fdba362434c14097a0ebacd`; the merged implementation has not been deployed to the public Pages site.
+- Live D1 schema reconciliation on 20 November 2026 confirms migrations 0028–0033 are already reflected in production, including the permanent CNIC protection triggers. Migration 0034's unique active variant index, migration 0035's order inventory-reservation ledger, and migration 0036's AI task continuity tables are absent. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
+- Production release is gated on an independently stored and restore-tested D1/R2 backup, the verified missing migrations, provider configuration and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md).
 
 ## Implemented
 
