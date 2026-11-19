@@ -631,39 +631,31 @@ export default function Admin() {
   };
   const saveVariantMatrix = async () => {
     if (!variantProduct || !bulkRows.length) return;
-    if (bulkRows.some(row => !Number.isSafeInteger(Number(row.initial_stock)) || Number(row.initial_stock) < 0 || Number(row.initial_stock) > 1000000 || !Number.isSafeInteger(Number(row.reorder_level)) || Number(row.reorder_level) < 0 || Number(row.reorder_level) > 1000000 || !Number.isFinite(Number(row.cost_price)) || Number(row.cost_price) < 0)) {
-      setMessage("Check every quantity, reorder level and purchase cost. Quantities must be whole numbers and costs cannot be negative."); return;
+    if (bulkRows.some(row => !Number.isSafeInteger(Number(row.initial_stock)) || Number(row.initial_stock) < 0 || Number(row.initial_stock) > 1000000 || !Number.isSafeInteger(Number(row.reorder_level)) || Number(row.reorder_level) < 0 || Number(row.reorder_level) > 1000000 || !Number.isFinite(Number(row.cost_price)) || Number(row.cost_price) < 0 || Number(row.cost_price) > 10000000000)) {
+      setMessage("Check every quantity, reorder level and purchase cost. Quantities must be whole numbers and costs must be valid non-negative amounts."); return;
     }
     setBusy(true); setMessage("");
-    let created = 0;
-    const failures: string[] = [];
     try {
-      for (const row of bulkRows) {
-        try {
-          await api(`/api/admin/products/${variantProduct.id}/variants`, {
-            method: "POST",
-            body: JSON.stringify({
-              size: row.size, color: row.color, initial_stock: Number(row.initial_stock),
-              reorder_level: Number(row.reorder_level),
-              ...(["owner", "manager"].includes(admin?.role || "") ? { cost_price_paisa: Math.round(Number(row.cost_price) * 100) } : {})
-            })
-          });
-          created++;
-        } catch (error) {
-          failures.push(row.size + " / " + row.color + ": " + (error instanceof Error ? error.message : "Could not save"));
-        }
-      }
-      const result = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
+      const payload = bulkRows.map(row => ({
+        size: row.size,
+        color: row.color,
+        initial_stock: Number(row.initial_stock),
+        reorder_level: Number(row.reorder_level),
+        ...(["owner", "manager"].includes(admin?.role || "") ? { cost_price_paisa: Math.round(Number(row.cost_price) * 100) } : {})
+      }));
+      const result = await api<{ created: number; atomic: boolean; variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants/bulk`, {
+        method: "POST",
+        body: JSON.stringify({ variants: payload })
+      });
       setVariants(result.variants);
-      await loadProducts();
-      if (!failures.length) { setBulkRows([]); setMessage("Successfully created all " + created + " variants. Total opening stock: " + bulkRows.reduce((sum, row) => sum + Number(row.initial_stock), 0) + " units."); }
-      else {
-        const savedKeys = new Set(result.variants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
-        setBulkRows(current => current.filter(row => !savedKeys.has(row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase())));
-        setMessage(created + " of " + bulkRows.length + " variants saved. Successfully saved combinations have been removed from the retry list; correct the remaining rows and retry. " + failures.slice(0, 4).join(" · ") + (failures.length > 4 ? " · +" + (failures.length - 4) + " more" : ""));
-      }
+      setBulkRows([]);
+      const openingUnits = bulkRows.reduce((sum, row) => sum + Number(row.initial_stock), 0);
+      setMessage(result.atomic
+        ? "All " + result.created + " size-and-colour variants were saved together. Opening stock: " + openingUnits + " units. Inventory history and audit records were created."
+        : "Variants saved. Refresh the product list to verify stock.");
+      await loadProducts().catch(() => undefined);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The stock matrix could not be refreshed.");
+      setMessage(error instanceof Error ? error.message : "The complete stock matrix could not be saved. No partial batch was applied; your entered quantities are preserved.");
     } finally { setBusy(false); }
   };
 
