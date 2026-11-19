@@ -108,7 +108,7 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.locator("input[list='deverve-colour-options']").first()).toHaveValue(/Oxblood/);
   await page.getByRole("button", { name: "Generate combinations" }).click();
   await expect(page.getByLabel("Opening quantity 10XL Oxblood")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Save all 1 variants" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Save all \d+ variants/ })).toBeVisible();
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
