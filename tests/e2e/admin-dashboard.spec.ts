@@ -83,10 +83,10 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.locator("#products .admin-panel-heading").getByRole("button", { name: /Add product/ }).click();
   await page.getByLabel("Product name").fill("Palette test hoodie");
   await page.getByLabel("Category").fill("Hoodies");
+  await expect(page.getByLabel("Default purchase cost (PKR)")).toBeVisible();
   await page.getByRole("button", { name: "Save product" }).click();
   await expect(page.getByRole("heading", { name: "Palette test hoodie" })).toBeVisible();
   await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
-  await expect(page.getByLabel("Default purchase cost (PKR)")).toHaveCount(0);
   await expect(page.locator("#deverve-size-options option[value='10XL']")).toHaveCount(1);
   await expect(page.locator("#deverve-size-options option[value='48 EU']")).toHaveCount(1);
   await expect(page.locator("#deverve-colour-options option[value='Rebecca Purple']")).toHaveCount(1);
