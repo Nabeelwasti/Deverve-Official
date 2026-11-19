@@ -259,7 +259,6 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           }));
         });
         if (candidates.length) {
-          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
           const assigned = new Set<string>();
           const groups: Array<{ key: string; name: string; items: typeof candidates }> = [];
           for (const plan of globalGroups) {
@@ -274,10 +273,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           }
           for (const item of candidates) {
             if (assigned.has(item.id)) continue;
-            const key = normalizeName(item.draft.name);
-            const existing = groups.find(group => group.key === "name:" + key);
-            if (existing) existing.items.push(item);
-            else groups.push({ key: "name:" + key, name: item.draft.name, items: [item] });
+            // If the global planner omitted a candidate or failed to return a
+            // trustworthy grouping, preserve it as its own product draft.
+            groups.push({ key: "unplanned:" + item.id, name: item.draft.name, items: [item] });
             assigned.add(item.id);
           }
           for (const group of groups) {
