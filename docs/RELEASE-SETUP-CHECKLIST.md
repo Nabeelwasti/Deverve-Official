@@ -10,10 +10,11 @@ This checklist separates source-code work from account configuration and product
 ### 1. Database and storage
 
 - [ ] Take and verify a fresh production D1 backup/export before any schema change.
-- [x] Complete a same-account R2 copy/restore drill on 19 Nov 2026: 15 objects / 1,522,058 bytes copied from `deverve-media-private` to `deverve-r2-restore-drill-20261119`, restored into an isolated test bucket, and all 15 object sizes + ETags matched. Original bucket remained unchanged; temporary restore bucket was deleted. A metadata manifest records content types and custom metadata.\n- [ ] Establish an independent off-account R2 backup with separately controlled credentials and repeat the restore drill. A same-account bucket is not an independent backup; a D1 export does not contain R2 object bytes.
+- [x] Complete a same-account R2 copy/restore drill on 19 Nov 2026: 15 objects / 1,522,058 bytes copied from `deverve-media-private` to `deverve-r2-restore-drill-20261119`, restored into an isolated test bucket, and all 15 object sizes + ETags matched. Original bucket remained unchanged; temporary restore bucket was deleted. A metadata manifest records content types and custom metadata.
+- [ ] Establish an independent off-account R2 backup with separately controlled credentials and repeat the restore drill. A same-account bucket is not an independent backup; a D1 export does not contain R2 object bytes.
 - [ ] Reconcile production schema immediately before migration. The 19 Nov read-only audit found migrations 0028, 0029, 0030, 0031 and 0033 absent; migration 0032's CNIC protection triggers were present. This is a historical observation, not permission to apply migrations.
 - [ ] Apply the missing migrations in dependency order only after backup and isolated rehearsal: 0028 → 0029 → 0030 → 0031 → 0033. Verify the 0032 CNIC triggers remain present.
-- [ ] Rehearse and verify migration 0036 (`ai_task_runs`, `ai_task_events`) on an isolated D1 database before scheduling its production application.
+- [x] Verify migration 0036 as part of the full 0001–0036 isolated rehearsal above; do not apply it to production until backup, schema reconciliation and release-window gates are complete.
 - [ ] Verify D1 constraints, indexes, foreign keys, migration effects and application smoke tests after each approved migration.
 
 ### 2. AI and catalogue
@@ -22,7 +23,8 @@ This checklist separates source-code work from account configuration and product
 - [x] Product drafts and size/colour variant matrix workflow are implemented.
 - [x] Direct owner/manager product publishing and exact-SKU stock command are implemented; stock adjustments now write inventory movement and audit records.
 - [x] Resumable four-image transport batches are integrated with the 100-file AI task; the four-file storage request size is not a task attachment limit.
-- [x] Latest audited code passed CI build, type-check, dependency audit, Pages headers, Worker tests, schema validation and 82 Playwright browser tests on the exact tested PR head.
+- [x] Baseline CI passed build, type-check, dependency audit, Pages headers, Worker tests, schema validation and 82 Playwright browser tests.
+- [ ] Pass the new CSV and DOCX/XLSX desktop/mobile end-to-end tests on the exact final PR head.
 - [x] Automated desktop and mobile Playwright coverage selects and analyses all 100 images: 34 image-analysis batches, compact cross-batch planning and seven numbered contact sheets.
 - [ ] Run real-provider 100-image quota/fallback tests and interruption/retry acceptance on a physical Android device; browser mocks do not prove Gemini provider or camera-device behaviour.
 - [x] Implement deterministic CSV product import with local validation/preview, duplicate size-colour detection, UTF-8 BOM support, permission-aware cost fields, and one atomic D1 batch for products, variants, opening-stock movements and audit events. Products are created as drafts; generated SKU/barcodes are assigned where the CSV omits them.
@@ -37,7 +39,8 @@ This checklist separates source-code work from account configuration and product
 ### 3. Payments and financial operations
 
 - [ ] Keep Safepay disabled until the exact merchant product's sandbox contract is confirmed and the full checkout → webhook → order → financial ledger flow is tested.
-- [ ] Before live Safepay enablement, implement durable event inbox/queue acknowledgement and asynchronous reconciliation; current webhook processing is synchronous.
+- [x] Safepay Queue producer/consumer source, signature re-verification, payload digest validation, retry and dead-letter handling are implemented.
+- [ ] Provision `deverve-payment-webhooks` and `deverve-payment-webhooks-dlq`, add the Pages producer binding, configure the consumer's matching D1 binding and server-side secrets, then test the complete sandbox callback/reconciliation path.
 - [ ] Test duplicate webhook delivery, conflicting event payload replay, amount/order mismatch, late events, retries and reconciliation on isolated D1.
 - [ ] Configure COD and owner-approved bank/wallet methods. Direct transfer remains pending until an owner verifies the receipt; do not imply automatic bank verification.
 - [ ] Configure Safepay secrets only in Cloudflare server-side secrets after sandbox sign-off. Never place provider secrets in Vite/browser variables.
