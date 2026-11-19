@@ -216,6 +216,25 @@ test("same-origin admin writes remain usable when embedded browsers omit Origin 
   assert.equal(response.status, 400, "invalid product payload should be rejected after origin verification");
 });
 
+test("same-origin admin marker survives a forwarded Origin mismatch while cross-site requests remain blocked", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const forwardedOrigin = await handleRequest(new Request(origin + "/api/admin/products", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", origin: "https://forwarded-origin.example", "sec-fetch-site": "same-origin", "x-deverve-admin-request": "same-origin" },
+    body: JSON.stringify({}),
+  }), env(db));
+  assert.equal(forwardedOrigin.status, 400, "trusted same-origin marker should pass the origin guard before payload validation");
+
+  const crossSite = await handleRequest(new Request(origin + "/api/admin/products", {
+    method: "POST",
+    headers: { cookie, "content-type": "application/json", origin: "https://attacker.example", "sec-fetch-site": "cross-site", "x-deverve-admin-request": "same-origin" },
+    body: JSON.stringify({}),
+  }), env(db));
+  assert.equal(crossSite.status, 403, "explicit cross-site fetch metadata must override the marker");
+});
+
 test("POS endpoints require an authenticated staff session", async () => {
   const response = await handleRequest(request("/api/admin/pos/bootstrap", "GET"), env(new FakeD1()));
   assert.equal(response.status, 401);
