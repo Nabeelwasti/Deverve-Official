@@ -262,7 +262,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const assigned = new Set<string>();
           const groups: Array<{ key: string; name: string; items: typeof candidates }> = [];
           for (const plan of globalGroups) {
-            const items = plan.candidate_ids.map(id => candidates.find(candidate => candidate.id === id)).filter((item): item is typeof candidates[number] => Boolean(item) && !assigned.has(item.id));
+            const items = plan.candidate_ids.map(id => candidates.find(candidate => candidate.id === id)).filter((item): item is typeof candidates[number] => item !== undefined && !assigned.has(item.id));
             if (!items.length) continue;
             items.forEach(item => assigned.add(item.id));
             if (plan.confidence === "low" && items.length > 1) {
