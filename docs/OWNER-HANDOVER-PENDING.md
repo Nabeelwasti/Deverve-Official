@@ -65,7 +65,9 @@ Only configure these after the final production hostname is confirmed. Never com
 
 ## 6. Engineering work tracked by the development team
 
-- [ ] Fix the high-severity Safepay webhook partial-commit/reconciliation issue documented in [the 19 November payment and inventory audit](PAYMENT-INVENTORY-AUDIT-2026-11-19.md). Keep Safepay disabled until guarded state-transition logic and D1-backed replay/rollback tests pass.
+- [x] Add mutually dependent SQL guards to the Safepay payment-attempt, order-paid and gateway-ledger writes; reject same event ID with a different payload digest. Add regression coverage for duplicate delivery, ledger exactly-once, conflicting payload replay and ineligible-order state preservation. See [the 19 November payment and inventory audit](PAYMENT-INVENTORY-AUDIT-2026-11-19.md).
+- [ ] Run the new regression suite successfully on the latest branch head, then add isolated Cloudflare D1 integration tests for concurrent duplicate delivery, rollback, SQL constraints and payment/ledger atomicity. The in-memory FakeD1 is not a substitute.
+- [ ] Redesign Safepay webhook ingestion for durable event storage, prompt acknowledgement and asynchronous processing using a durable queue/worker. Confirm the exact merchant product's event contract against sandbox fixtures before enabling live payments.
 
 - [ ] Add first-class reservation records with immutable identifiers, order-item/variant linkage, quantity, state transitions, timestamps, payment tracker linkage, idempotency and audit history. Design safe expiry/reconciliation around provider webhook guarantees.
 - [ ] Add real D1 integration tests for competing online and POS writes, transaction atomicity, retries and rollback.
@@ -81,6 +83,6 @@ Only configure these after the final production hostname is confirmed. Never com
 - [x] POS conditional stock guard added; its unit test validates guard construction.
 - [x] PR description and production-readiness notes identify integration and operational blockers.
 - [x] Latest CI job and every step independently inspected; all completed successfully. This is automated source validation only, not production-origin or physical-device acceptance.
-- [x] Focused checkout/payment source audit completed; a high-severity Safepay reconciliation issue was recorded in `docs/PAYMENT-INVENTORY-AUDIT-2026-11-19.md` and added as a release blocker.
+- [x] Focused checkout/payment source audit completed; the high-severity Safepay partial-commit risk has a guarded feature-branch remediation and regression tests. Real D1 integration, durable webhook processing and provider sandbox verification remain release blockers.
 - [x] No production deployment, merge, production migration, secret change, live-data mutation or R2 object change was performed as part of this work.
 - [ ] This successful CI run is not proof of production deployment, physical Android behavior, live payment/email/WhatsApp delivery or business acceptance.
