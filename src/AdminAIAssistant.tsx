@@ -266,7 +266,11 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             const items = plan.candidate_ids.map(id => candidates.find(candidate => candidate.id === id)).filter((item): item is typeof candidates[number] => Boolean(item) && !assigned.has(item.id));
             if (!items.length) continue;
             items.forEach(item => assigned.add(item.id));
-            groups.push({ key: "planned:" + items[0].id, name: plan.confidence === "high" || plan.confidence === "medium" ? plan.product_name : items[0].draft.name, items });
+            if (plan.confidence === "low" && items.length > 1) {
+              for (const item of items) groups.push({ key: "uncertain:" + item.id, name: item.draft.name, items: [item] });
+            } else {
+              groups.push({ key: "planned:" + items[0].id, name: plan.product_name, items });
+            }
           }
           for (const item of candidates) {
             if (assigned.has(item.id)) continue;
