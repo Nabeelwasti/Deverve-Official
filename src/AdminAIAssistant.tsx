@@ -166,7 +166,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           return { name: file.name, mime_type: attachmentMime(file), text: content };
         }));
         const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
-          method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, batch_fingerprint: fingerprint, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
+          method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, task_has_failures: results.some(item => !item.ok), batch_fingerprint: fingerprint, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
         });
         results.push(result);
         batchRecords.push({ response: result, files: batch });
@@ -204,7 +204,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
               method: "POST",
               body: JSON.stringify({
-                task: "chat", task_id: taskId, task_complete: false,
+                task: "chat", task_id: taskId, task_complete: false, task_has_failures: results.some(item => !item.ok),
                 messages: [{ role: "user", text: "CATALOGUE GROUPING SUBPLAN. Compare these image-batch candidates. Identify which are the same underlying garment/product, which are genuinely different products, and which are the same product shown in different colours. Do not merge merely similar styles. Use source filenames to map evidence. Keep uncertainty explicit. Return a concise list of candidate groups with product identity, included filenames, colour variants, confidence and unresolved questions. Do not create records. Candidates: " + JSON.stringify(chunk) }]
               })
             });
@@ -213,7 +213,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const finalPlan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
-              task: "chat", task_id: taskId, task_complete: true,
+              task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok),
               messages: [{ role: "user", text: "FINAL GLOBAL CATALOGUE GROUPING PLAN. Reconcile all preliminary grouping results below into one consistent plan across the entire original attachment task. Resolve duplicate groups across chunks, preserve distinct products, identify same-product colour variants only when supported, and list exact filenames for each group. Flag uncertain matches; never infer stock or product authenticity. Do not create or publish records. Preliminary plans: " + JSON.stringify(chunkPlans) }]
             })
           });
