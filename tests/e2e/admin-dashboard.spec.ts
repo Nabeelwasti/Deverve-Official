@@ -68,6 +68,32 @@ test("admin navigation menus render as independent floating popovers outside the
   await expect(menu).toHaveCount(0);
 });
 
+test("product creation stays inside the catalogue workspace and exposes broad size and colour suggestions", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.route("**/api/admin/products", async route => {
+    if (route.request().method() === "POST") {
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }) });
+      return;
+    }
+    await route.fallback();
+  });
+  await page.goto("/admin?section=products");
+  await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
+  await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
+  await page.locator(".admin-heading-row").getByRole("button", { name: /Add product/ }).click();
+  await page.getByLabel("Product name").fill("Palette test hoodie");
+  await page.getByLabel("Category").fill("Hoodies");
+  await page.getByRole("button", { name: "Save product" }).click();
+  await expect(page.getByRole("heading", { name: "Palette test hoodie" })).toBeVisible();
+  await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
+  await expect(page.locator("#deverve-size-options option[value='10XL']")).toHaveCount(1);
+  await expect(page.locator("#deverve-size-options option[value='48 EU']")).toHaveCount(1);
+  await expect(page.locator("#deverve-colour-options option[value='Rebecca Purple']")).toHaveCount(1);
+  await expect(page.locator("#deverve-colour-options option[value='Oxblood']")).toHaveCount(1);
+  await expect(page.locator("input[list='deverve-size-options']")).toHaveCount(2);
+  await expect(page.locator("input[list='deverve-colour-options']")).toHaveCount(2);
+});
+
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
   await mockAdminApi(page);
   await page.addInitScript(() => {
