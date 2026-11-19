@@ -30,7 +30,8 @@ function buildProducts(raw:string):CsvProduct[] {
   if(raw.length>5_000_000)throw new Error("CSV file exceeds the 5 MB limit.");
   const rows=parseCsv(raw);if(rows.length<2)throw new Error("CSV needs a header row and at least one product row.");
   if(rows.length>501)throw new Error("Import is limited to 500 data rows per file.");
-  const headers=rows[0].map(v=>v.trim().toLowerCase().replace(/[\s-]+/g,"_"));
+  const headers=rows[0].map((v,i)=>(i===0?v.replace(/^\uFEFF/,""):v).trim().toLowerCase().replace(/[\s-]+/g,"_"));
+  if(new Set(headers).size!==headers.length)throw new Error("CSV contains duplicate column headings.");
   const required=["name","category","audience","size","color"];
   const missing=required.filter(h=>!headers.includes(h));if(missing.length)throw new Error("Missing required columns: "+missing.join(", "));
   const at=(r:string[],key:string)=>{const i=headers.indexOf(key);return i<0?"":(r[i]??"").trim();};
