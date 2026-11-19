@@ -98,7 +98,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     const direct = message.trim().toLowerCase().replace(/[.!?]+$/,"").split(" ").filter(Boolean).join(" ").trim();
-    if (task === "chat" && ["owner", "manager"].includes(role) && (/^(?:please )?publish product .+$/i.test(message.trim()) || /^(?:please )?publish all draft products$/i.test(direct) || /^(?:please )?publish all eligible draft products$/i.test(direct) || /^(?:please )?publish all drafts$/i.test(direct))) {
+    if (task === "chat" && ["owner", "manager"].includes(role) && (/^(?:please )?publish product .+$/i.test(message.trim()) || /^(?:please )?publish all draft products$/i.test(direct) || /^(?:please )?publish all eligible draft products$/i.test(direct) || /^(?:please )?publish all drafts$/i.test(direct) || /^(?:please )?(?:set|update) stock for sku [a-z0-9._-]{2,80} to [0-9]{1,8}$/i.test(direct))) {
       await executeCommand();
       return;
     }
