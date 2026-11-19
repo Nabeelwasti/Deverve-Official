@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { adminRequest as api } from "./adminApi";
+import { extractOfficeText } from "./officeImport";
 
 type Message = { role: "user" | "model"; text: string };
 type DraftVariant = { size: string; color: string; initial_stock: number; reorder_level: number; cost_price_pkr: number | null };
@@ -19,7 +20,7 @@ const pkrToPaisa = (value: number | null | undefined) => value === null || value
 const attachmentMime = (file: File) => {
   if (file.type) return file.type;
   const extension = file.name.toLowerCase().split(".").pop();
-  return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", pdf: "application/pdf", txt: "text/plain", csv: "text/csv", json: "application/json", md: "text/markdown" } as Record<string, string>)[extension || ""] || "";
+  return ({ jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp", pdf: "application/pdf", txt: "text/plain", csv: "text/csv", json: "application/json", md: "text/markdown", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } as Record<string, string>)[extension || ""] || "";
 };
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -127,9 +128,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (!incoming.length) return;
     const next = [...files, ...incoming];
     if (next.length > 100) { setStatus("A single AI batch can contain up to 100 files. Remove some files or send another batch."); return; }
-    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "text/csv", "application/json", "text/markdown"];
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "text/csv", "application/json", "text/markdown", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
     const invalid = next.find(file => !allowed.includes(attachmentMime(file)) || file.size < 1 || file.size > 5_000_000);
-    if (invalid) { setStatus(invalid.name + " must be JPG, PNG, WebP, PDF, TXT, CSV, JSON or Markdown and no larger than 5 MB."); return; }
+    if (invalid) { setStatus(invalid.name + " must be JPG, PNG, WebP, PDF, TXT, CSV, JSON, Markdown, DOCX or XLSX and no larger than 5 MB."); return; }
     setFiles(next); setStatus("");
   };
 
@@ -204,9 +205,12 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             if (!match) throw new Error(file.name + " is not a valid PDF.");
             return { name: file.name, mime_type: attachmentMime(file), data: match[1] };
           }
-          const content = await file.text();
-          if (content.length > 120000) throw new Error(file.name + " contains too much text. Split it into smaller files.");
-          return { name: file.name, mime_type: attachmentMime(file), text: content };
+          const mime = attachmentMime(file);
+          const office = mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+          const extracted = office ? await extractOfficeText(file) : null;
+          const content = extracted?.text ?? await file.text();
+          if (content.length > 120000) throw new Error(file.name + " extracts to more than 120,000 characters. Split the document into smaller files.");
+          return { name: file.name, mime_type: mime, text: content };
         }));
         const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
           method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, task_has_failures: results.some(item => !item.ok), batch_fingerprint: fingerprint, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
