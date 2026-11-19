@@ -1979,6 +1979,12 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   const guestAccept = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(guestAccept.status, 401);
+  db.variants.get(variantId).stock_on_hand = 10;
+  const insufficientCombined = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(insufficientCombined.status, 409, "duplicate wholesale lines must be checked against their combined quantity");
+  assert.equal(db.orders.size, 0);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  db.variants.get(variantId).stock_on_hand = 30;
   const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(accepted.status, 201);
   const acceptedBody = await accepted.json();
