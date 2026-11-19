@@ -104,6 +104,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       if (!batches.length) batches.push([]);
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
+        try {
         setStatus(files.length ? "Analysing batch " + (batchIndex + 1) + " of " + totalBatches + " · " + files.length + " attachment(s) queued…" : "Working with the AI assistant…");
         const imageFiles = batch.filter(file => attachmentMime(file).startsWith("image/"));
         const images = await Promise.all(imageFiles.map(async file => {
@@ -127,11 +128,16 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           method: "POST", body: JSON.stringify({ task, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
         });
         results.push(result);
+        } catch (batchError) {
+          const names = batch.map(file => file.name).join(", ");
+          results.push({ ok: false, reply: "Batch " + (batchIndex + 1) + " failed for " + names + ": " + (batchError instanceof Error ? batchError.message : "provider error") });
+        }
       }
+      if (!results.some(item => item.ok)) throw new Error(results.map(item => item.reply).join("\n"));
       const replies = results.map((result, index) => (results.length > 1 ? "Batch " + (index + 1) + ":\\n" : "") + (result.reply || "The assistant returned no response."));
-      const combinedReply = replies.join("\\n\\n");
+      const combinedReply = replies.join("\n\n");
       const result: AssistantResponse = {
-        ok: true, reply: combinedReply,
+        ok: results.every(item => item.ok), reply: combinedReply,
         model: results.map(item => item.model).filter(Boolean).join(", "),
         sources: [...new Map(results.flatMap(item => item.sources || []).map(source => [source.url, source])).values()],
         product_draft: results.find(item => item.product_draft)?.product_draft
@@ -171,6 +177,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       }
       const reply = result.reply || "The assistant returned no response.";
       setHistory([...next, { role: "model", text: reply.slice(0, 12000) }]); setModel(result.model || "");
+      if (results.some(item => !item.ok)) setStatus("Partial analysis completed. Some batches failed; successful results are preserved. Retry the failed files only. " + results.filter(item => !item.ok).length + " batch(es) failed.");
       if (task === "product" && result.product_draft) {
         const incoming = result.product_draft;
         setResearchQuery(incoming.barcode || incoming.name || "");
