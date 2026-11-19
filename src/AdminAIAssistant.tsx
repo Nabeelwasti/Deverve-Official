@@ -195,7 +195,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       if (task === "product") {
         const drafts = results.flatMap(item => item.product_drafts || (item.product_draft ? [item.product_draft] : [])).filter((item): item is ProductDraft => Boolean(item));
         if (drafts.length) {
-          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
           const groups = new Map<string, ProductDraft[]>();
           for (const item of drafts) {
             const key = normalizeName(item.name);
