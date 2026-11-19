@@ -173,8 +173,8 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   await page.route("**/api/admin/products/*/variants/bulk", async route => {
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ created: 1, atomic: true, variants: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }] }) });
   });
-  await page.route("**/api/admin/media", async route => {
-    if (route.request().method() === "POST") await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ media: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" } }) });
+  await page.route("**/api/admin/media/bulk", async route => {
+    if (route.request().method() === "POST") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uploaded: 1, failed: 0, media: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "ready", reused: false }], failures: [] }) });
     else await route.fallback();
   });
   await page.route("**/api/admin/products/*/media", async route => {
