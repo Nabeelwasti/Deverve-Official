@@ -52,6 +52,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
   }, [initialBarcode]);
   useEffect(() => {
+    if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
+  }, [initialBarcode]);
+  useEffect(() => {
     const urls = files.map(file => URL.createObjectURL(file)); setPreviews(urls);
     return () => urls.forEach(url => URL.revokeObjectURL(url));
   }, [files]);
