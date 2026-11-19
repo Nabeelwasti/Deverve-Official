@@ -4394,11 +4394,14 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if(!Number.isSafeInteger(requested)||!Number.isSafeInteger(count)||requested<0||count<0||count>requested)return error("Could not safely determine eligible draft products",503);
    if(count===0)return json({ok:true,action:"publish_all_drafts",published:0,skipped,message:requested?"No draft products met the publishing checks. Each needs a name, category, retail price and at least one active size/colour variant with available stock.":"There are no draft products to publish."});
    const batchId=crypto.randomUUID();
-   await env.DB.batch([
+   const written=await env.DB.batch([
     env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE status='draft' AND length(trim(name))>=2 AND length(trim(category))>=2 AND retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=products.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity)").bind(now),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,JSON.stringify({command,requested_count:requested,published_count:count,skipped_count:skipped,batch_id:batchId}))
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,json_object('command',?,'requested_count',?,'published_count',changes(),'skipped_count',?,'batch_id',?) WHERE changes()>0").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,"",command,requested,Math.max(0,requested-count),batchId)
    ]);
-   return json({ok:true,action:"publish_all_drafts",published:count,skipped,batch_id:batchId,message:"Published "+count+" eligible draft product(s). "+skipped+" draft(s) were left unpublished because they need catalogue, price or available-variant information."});
+   const published=Number(written[0]?.meta?.changes??0),auditWritten=Number(written[1]?.meta?.changes??0);
+   if(!Number.isSafeInteger(published)||published<0||auditWritten!==(published>0?1:0))return error("Bulk publishing could not be verified. Refresh the catalogue and audit log before retrying.",503);
+   const actuallySkipped=Math.max(0,requested-published);
+   return json({ok:true,action:"publish_all_drafts",published,skipped:actuallySkipped,batch_id:batchId,message:"Published "+published+" eligible draft product(s). "+actuallySkipped+" draft(s) were left unpublished because they need catalogue, price or available-variant information."});
   }
   const single=/^(?:please )?publish product (.+)$/i.exec(command);
   if(single){
