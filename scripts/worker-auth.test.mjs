@@ -588,6 +588,7 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   });
   db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 2 });
   db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  db.orderInventoryReservations.set(orderId + ":" + variantId, { id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 3, status: "reserved", payment_provider: "manual", payment_reference: null, reserved_at: new Date().toISOString(), released_at: null, consumed_at: null, updated_at: new Date().toISOString() });
   const insufficient = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(insufficient.status, 409, "decline must not release stock when duplicate lines exceed the reservation");
   assert.equal(db.orders.get(orderId).order_status, "pending");
@@ -599,6 +600,7 @@ test("declining a delivery quotation cancels the COD order and releases reserved
   assert.equal(db.orders.get(orderId).delivery_fee_status, "declined");
   assert.equal(db.audits.some((entry) => entry.action === "order.delivery_fee_declined"), true);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  assert.equal(db.orderInventoryReservations.get(orderId + ":" + variantId).status, "released");
   const repeat = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(repeat.status, 410);
 });
