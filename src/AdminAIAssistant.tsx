@@ -61,9 +61,10 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     const incoming = Array.from(event.target.files ?? []); event.target.value = "";
     if (!incoming.length) return;
     const next = [...files, ...incoming];
-    if (next.length > 3) { setStatus("Attach up to three product images at a time."); return; }
-    const invalid = next.find(file => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
-    if (invalid) { setStatus(invalid.name + " must be a JPG, PNG or WebP image no larger than 5 MB."); return; }
+    if (next.length > 3) { setStatus("Attach up to three files per request."); return; }
+    const allowed = ["image/jpeg", "image/png", "image/webp", "application/pdf", "text/plain", "text/csv", "application/json", "text/markdown"];
+    const invalid = next.find(file => !allowed.includes(file.type) || file.size < 1 || file.size > 5_000_000);
+    if (invalid) { setStatus(invalid.name + " must be JPG, PNG, WebP, PDF, TXT, CSV, JSON or Markdown and no larger than 5 MB."); return; }
     setFiles(next); setStatus("");
   };
 
@@ -83,13 +84,26 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);
       while (next.length > 10 || historySize() > 9000) next.shift();
       if (next[0]?.role === "model") next.shift();
-      const images = task === "research" ? [] : await Promise.all(files.map(async file => {
+      const imageFiles = task === "research" ? [] : files.filter(file => file.type.startsWith("image/"));
+      const images = await Promise.all(imageFiles.map(async file => {
         const dataUrl = await fileToDataUrl(file); const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
         if (!match) throw new Error("An image could not be prepared for AI analysis.");
         return { mime_type: match[1], data: match[2] };
       }));
+      const documentFiles = task === "research" ? [] : files.filter(file => !file.type.startsWith("image/"));
+      const documents = await Promise.all(documentFiles.map(async file => {
+        if (file.type === "application/pdf") {
+          const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error(file.name + " could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file); });
+          const match = /^data:application\/pdf;base64,(.+)$/.exec(dataUrl);
+          if (!match) throw new Error(file.name + " is not a valid PDF.");
+          return { name: file.name, mime_type: file.type, data: match[1] };
+        }
+        const content = await file.text();
+        if (content.length > 120000) throw new Error(file.name + " contains too much text. Split it into smaller files.");
+        return { name: file.name, mime_type: file.type, text: content };
+      }));
       const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
-        method: "POST", body: JSON.stringify({ task, messages: next, images, query: task === "research" ? (researchQuery.trim() || text) : undefined })
+        method: "POST", body: JSON.stringify({ task, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
       });
       const reply = result.reply || "The assistant returned no response.";
       setHistory([...next, { role: "model", text: reply.slice(0, 2200) }]); setModel(result.model || "");
@@ -182,10 +196,10 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       <section className="admin-ai-chat-card">
         <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
-        {previews.length > 0 && <div className="admin-ai-attachments">{previews.map((url, index) => <figure key={url}><img src={url} alt={"Selected product attachment " + (index + 1)}/><button type="button" aria-label="Remove image" onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{files[index]?.name}</figcaption></figure>)}</div>}
+        {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{file.type.startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={file.type + " attachment"}>📄<strong>{file.type === "application/pdf" ? "PDF" : file.type.split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
         <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
           <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about products, your business, or write a direct command such as “publish product summer-hoodie” or “publish all draft products”…" disabled={busy}/>
-          <div><label className="admin-ai-attach">＋ Attach images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} disabled={busy || files.length >= 3}/></label><small>JPG / PNG / WebP · max 3 images</small><button type="submit" className="admin-primary" aria-label="Send message" disabled={busy || !message.trim()}>Ask AI</button>{["owner", "manager"].includes(role) && <button type="button" className="admin-primary" disabled={busy || !message.trim()} onClick={() => void executeCommand()}>Execute command</button>}</div>
+          <div><label className="admin-ai-attach">＋ Attach files<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,text/csv,application/json,text/markdown,.md" multiple onChange={chooseFiles} disabled={busy || files.length >= 3}/></label><small>Images, PDF and text files · max 3 files</small><button type="submit" className="admin-primary" aria-label="Send message" disabled={busy || !message.trim()}>Ask AI</button>{["owner", "manager"].includes(role) && <button type="button" className="admin-primary" disabled={busy || !message.trim()} onClick={() => void executeCommand()}>Execute command</button>}</div>
         </form>
         <p className="admin-ai-privacy">Do not attach CNICs, customer identity documents, payment credentials, passwords or confidential financial records. Images are sent to the configured Gemini provider for analysis.</p>
       </section>
