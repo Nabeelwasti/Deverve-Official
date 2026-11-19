@@ -51,6 +51,7 @@ try {
     { sql: "CREATE TABLE payment_attempts (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, amount_paisa INTEGER NOT NULL)" },
     { sql: "CREATE TABLE inventory_movements (id TEXT PRIMARY KEY, variant_id TEXT NOT NULL, movement_type TEXT NOT NULL, quantity_delta INTEGER NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL)" },
     { sql: "CREATE TABLE financial_transactions (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, direction TEXT NOT NULL, amount_paisa INTEGER NOT NULL, category TEXT NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL, note TEXT)" },
+    { sql: "CREATE TABLE order_inventory_reservations (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, variant_id TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity>0), status TEXT NOT NULL CHECK(status IN ('reserved','released','consumed')), payment_provider TEXT NOT NULL, payment_reference TEXT, reserved_at TEXT NOT NULL, released_at TEXT, consumed_at TEXT, updated_at TEXT NOT NULL, UNIQUE(order_id,variant_id))" },
   ]);
 
   await query(databaseId, "INSERT INTO products(id,status) VALUES ('p1','published'); INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-race','p1',1,5,0,'test');");
@@ -68,6 +69,7 @@ try {
   await query(databaseId, "DELETE FROM order_items; DELETE FROM orders; DELETE FROM product_variants; INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-dispatch','p1',1,10,5,'test'),('v-short','p1',1,4,4,'test'),('v-cancel','p1',1,8,5,'test'),('v-cancel-short','p1',1,8,4,'test'),('v-paid','p1',1,5,5,'test');");
   await query(databaseId, "INSERT INTO orders(id,order_status,payment_provider,payment_status,payment_method,delivery_fee_status,total_paisa,updated_at) VALUES ('o-dispatch','processing','manual','pending','cod','accepted',1000,'test'),('o-short','processing','manual','pending','cod','accepted',1000,'test'),('o-cancel','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-cancel-short','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-paid','pending','safepay','pending','online','accepted',12500,'test');");
   await query(databaseId, "INSERT INTO order_items(id,order_id,variant_id,quantity) VALUES ('d1','o-dispatch','v-dispatch',2),('d2','o-dispatch','v-dispatch',3),('s1','o-short','v-short',3),('s2','o-short','v-short',2),('c1','o-cancel','v-cancel',2),('c2','o-cancel','v-cancel',3),('cs1','o-cancel-short','v-cancel-short',3),('cs2','o-cancel-short','v-cancel-short',2),('p1','o-paid','v-paid',2),('p2','o-paid','v-paid',3);");
+  await query(databaseId, "INSERT INTO order_inventory_reservations(id,order_id,variant_id,quantity,status,payment_provider,reserved_at,updated_at) VALUES ('r-dispatch','o-dispatch','v-dispatch',5,'reserved','manual','test','test'),('r-short','o-short','v-short',5,'reserved','manual','test','test'),('r-cancel','o-cancel','v-cancel',5,'reserved','manual','test','test'),('r-cancel-short','o-cancel-short','v-cancel-short',5,'reserved','manual','test','test'),('r-paid','o-paid','v-paid',5,'reserved','safepay','test','test');");
 
   const stockGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id,SUM(quantity) AS required_quantity FROM order_items WHERE order_id=orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id=oi.variant_id WHERE v.id IS NULL OR v.stock_on_hand<oi.required_quantity OR v.reserved_quantity<oi.required_quantity)";
   const reserveGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id,SUM(quantity) AS required_quantity FROM order_items WHERE order_id=orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id=oi.variant_id WHERE v.id IS NULL OR v.reserved_quantity<oi.required_quantity)";
@@ -75,8 +77,9 @@ try {
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-dispatch' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
     { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-dispatch' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
     { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-dispatch','v-dispatch','sold',-5,'order','o-dispatch' WHERE changes()=1 AND EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
+    { sql: "UPDATE order_inventory_reservations SET status='consumed',consumed_at='test',updated_at='test' WHERE order_id='o-dispatch' AND variant_id='v-dispatch' AND status='reserved' AND changes()=1" },
   ]);
-  check(changes(dispatched, 0) === 1 && changes(dispatched, 1) === 1 && changes(dispatched, 2) === 1, "duplicate dispatch lines are aggregated and decrement stock/reservations once");
+  check(changes(dispatched, 0) === 1 && changes(dispatched, 1) === 1 && changes(dispatched, 2) === 1 && changes(dispatched, 3) === 1, "duplicate dispatch lines are aggregated and decrement stock/reservations once and consume the reservation ledger");
 
   const blockedDispatch = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-short' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
@@ -88,8 +91,9 @@ try {
   const cancelled = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='cancelled' WHERE id='o-cancel' AND order_status='pending' AND payment_status!='paid' AND " + reserveGuard },
     { sql: "UPDATE product_variants SET reserved_quantity=reserved_quantity-5 WHERE id='v-cancel' AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-cancel' AND order_status='cancelled')" },
+    { sql: "UPDATE order_inventory_reservations SET status='released',released_at='test',updated_at='test' WHERE order_id='o-cancel' AND variant_id='v-cancel' AND status='reserved' AND changes()=1" },
   ]);
-  check(changes(cancelled, 0) === 1 && changes(cancelled, 1) === 1, "duplicate cancellation lines release their combined reservation once");
+  check(changes(cancelled, 0) === 1 && changes(cancelled, 1) === 1 && changes(cancelled, 2) === 1, "duplicate cancellation lines release their combined reservation and ledger exactly once");
 
   const blockedCancel = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='cancelled' WHERE id='o-cancel-short' AND order_status='pending' AND payment_status!='paid' AND " + reserveGuard },
@@ -109,8 +113,9 @@ try {
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-paid' AND order_status='pending' AND payment_status='paid' AND delivery_fee_status='accepted' AND " + stockGuard },
     { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-paid' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
     { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-paid','v-paid','sold',-5,'order','o-paid' WHERE changes()=1 AND EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
+    { sql: "UPDATE order_inventory_reservations SET status='consumed',consumed_at='test',updated_at='test' WHERE order_id='o-paid' AND variant_id='v-paid' AND status='reserved' AND changes()=1" },
   ]);
-  check(fulfilPaid.every((item, index) => changes(fulfilPaid, index) === 1), "paid order can dispatch duplicate variant lines exactly once without changing its payment ledger");
+  check(fulfilPaid.every((item, index) => changes(fulfilPaid, index) === 1), "paid order can dispatch duplicate variant lines exactly once and consume its reservation without changing its payment ledger");
   const finalState = await query(databaseId, "SELECT o.order_status,o.payment_status,o.financial_transaction_id,v.stock_on_hand,v.reserved_quantity,(SELECT COUNT(*) FROM financial_transactions WHERE reference_id='o-paid') AS ledger_count,(SELECT COALESCE(SUM(quantity_delta),0) FROM inventory_movements WHERE reference_id='o-paid') AS movement_total FROM orders o JOIN product_variants v ON v.id='v-paid' WHERE o.id='o-paid'");
   const final = finalState[0].results[0];
   check(final.order_status === "dispatched" && final.payment_status === "paid" && final.financial_transaction_id === "ft-paid" && final.stock_on_hand === 0 && final.reserved_quantity === 0 && final.ledger_count === 1 && final.movement_total === -5, "paid order, one financial ledger row and exact inventory movement reconcile end-to-end");
