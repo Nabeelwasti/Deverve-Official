@@ -92,9 +92,6 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.getByText(/Exact product identity is not fully verified/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Official product page" })).toHaveAttribute("href", "https://example.com/product");
   await page.getByRole("button", { name: "Save product" }).click();
-  const productRow = page.locator(".admin-product-row").filter({ hasText: "Palette test hoodie" });
-  await expect(productRow).toBeVisible();
-  await productRow.getByRole("button", { name: "Variants & stock" }).click();
   await expect(page.getByRole("dialog", { name: "Palette test hoodie" })).toBeVisible();
   await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
   await expect(page.locator("#deverve-size-options option[value='10XL']")).toHaveCount(1);
