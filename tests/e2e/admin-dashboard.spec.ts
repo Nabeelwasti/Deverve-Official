@@ -214,7 +214,7 @@ test("owner can execute a direct AI publishing command without an approval form"
   });
   await page.goto("/admin?section=ai");
   await page.getByPlaceholder(/Ask about products/).fill("publish product everyday-hoodie");
-  await page.getByRole("button", { name: "Execute command" }).click();
+  await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByRole("status")).toContainText("Published Everyday Hoodie directly");
   expect(executed).toEqual({ command: "publish product everyday-hoodie" });
 });
