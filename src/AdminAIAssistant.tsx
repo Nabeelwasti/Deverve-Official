@@ -77,7 +77,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
     try {
-      const next = [...history, { role: "user" as const, text }];
+      let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));\n      const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);\n      while (next.length > 10 || historySize() > 9000) next.shift();\n      if (next[0]?.role === "model") next.shift();
       const images = await Promise.all(files.map(async file => {
         const dataUrl = await fileToDataUrl(file); const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
         if (!match) throw new Error("An image could not be prepared for AI analysis.");
@@ -87,7 +87,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         method: "POST", body: JSON.stringify({ task, messages: next, images, query: task === "research" ? (researchQuery.trim() || text) : undefined })
       });
       const reply = result.reply || "The assistant returned no response.";
-      setHistory([...next, { role: "model", text: reply }]); setModel(result.model || "");
+      setHistory([...next, { role: "model", text: reply.slice(0, 2200) }]); setModel(result.model || "");
       if (task === "product" && result.product_draft) {
         const incoming = result.product_draft;
         setDraft({
@@ -153,7 +153,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   return <div className="admin-ai-command">
     <section className="admin-ai-welcome">
       <div><p className="admin-eyebrow">DE VERVE · PRIVATE AI OPERATIONS</p><h2>AI Command Centre</h2><p>Chat, analyse product images, research online and prepare catalogue drafts. The assistant works within your staff permissions and asks you to review changes before saving.</p></div>
-      <div className="admin-ai-status"><span></span><strong>Gemini connected through secure server-side key vault</strong><small>{model ? "Last model: " + model : "Provider keys are managed separately below."}</small></div>
+      <div className="admin-ai-status"><span></span><strong>Requests use server-side Gemini keys</strong><small>{model ? "Last model: " + model : "Provider connectivity is checked when you send a request."}</small></div>
     </section>
     <div className="admin-ai-layout">
       <section className="admin-ai-chat-card">
