@@ -57,8 +57,8 @@ async function buildCatalogueContactSheets(files: File[]): Promise<Array<{ name:
       context.fillStyle = "#111827"; context.font = "12px sans-serif";
       context.fillText((String(offset + index + 1).padStart(3, "0") + " · " + file.name).slice(0, 38), x + 8, y + 263, 240);
     }
-    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.72));
-    if (!blob || blob.size > 850000) throw new Error("A catalogue contact sheet could not be compressed safely.");
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.65));
+    if (!blob || blob.size > 600000) throw new Error("A catalogue contact sheet could not be compressed safely.");
     const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("A catalogue contact sheet could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob); });
     const match = /^data:image\/jpeg;base64,(.+)$/.exec(dataUrl);
     if (!match) throw new Error("A catalogue contact sheet has an invalid image format.");
