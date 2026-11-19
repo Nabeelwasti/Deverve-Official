@@ -2528,8 +2528,8 @@ test("admin AI Command Centre analyses attached images through the server-side G
       assert.equal(init.headers?.["x-goog-api-key"], key);
       const body = JSON.parse(String(init.body || "{}"));
       const parts = body.contents?.[0]?.parts ?? [];
-      sawImage = parts.some(part => part.inline_data?.mime_type === "image/jpeg" && part.inline_data?.data === "aGVsbG8=");
-      assert.ok(sawImage, "the attached image must reach Gemini as inline image data");
+      sawImage = parts.some(part => part.inline_data?.mime_type === "image/png" && part.inline_data?.data === "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=");
+      assert.ok(sawImage, "the validated attached image must reach Gemini as inline image data");
       return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "I can see a clothing product." }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
     }
     return originalFetch(input, init);
@@ -2537,7 +2537,7 @@ test("admin AI Command Centre analyses attached images through the server-side G
   try {
     const response = await handleRequest(request("/api/admin/ai/assistant", "POST", {
       task: "chat", messages: [{ role: "user", text: "Describe this product photo." }],
-      images: [{ mime_type: "image/jpeg", data: "aGVsbG8=" }]
+      images: [{ mime_type: "image/png", data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=" }]
     }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.71" }), configured);
     assert.equal(response.status, 200);
     assert.equal((await response.json()).reply, "I can see a clothing product.");
