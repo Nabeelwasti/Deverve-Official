@@ -4355,6 +4355,53 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
   return error("No configured Gemini key could read the label. Check Admin → AI live chat & API keys, then try again.",503);
 }
 
+async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
+ if(url.pathname!=="/api/admin/ai/execute")return null;
+ if(request.method!=="POST")return error("Method not allowed",405);
+ const admin=await currentAdmin(request,env.DB).catch(()=>null);
+ if(!admin)return error("Authentication required",401);
+ if(!["owner","manager"].includes(admin.role))return error("Only the owner or an authorized manager can execute AI business commands",403);
+ if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+ const limited=await enforcePublicRateLimit(request,env,"admin_ai_execute",30,900);if(limited)return limited;
+ const body=await readJson(request,4000);if(!body)return error("A valid written command is required",400);
+ const command=cleanText(body.command,500).trim();
+ if(!command)return error("A written command is required",400);
+ const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\\s+/g," ").trim();
+ const now=new Date().toISOString();
+ try{
+  if(/^(?:please )?publish (?:all |every )?(?:eligible )?(?:draft )?products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
+   const before=await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE status='draft'").first<{count:number}>();
+   const count=Number(before?.count??0);
+   if(!Number.isSafeInteger(count)||count<0)return error("Could not determine the draft catalogue count",503);
+   if(count===0)return json({ok:true,action:"publish_all_drafts",published:0,message:"There are no draft products to publish."});
+   const batchId=crypto.randomUUID();
+   await env.DB.batch([
+    env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE status='draft'").bind(now),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,JSON.stringify({command,requested_count:count,batch_id:batchId}))
+   ]);
+   const after=await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE status='published'").first<{count:number}>();
+   return json({ok:true,action:"publish_all_drafts",published:count,published_total:Number(after?.count??0),batch_id:batchId,message:"Published "+count+" draft product(s) directly to the live catalogue."});
+  }
+  const single=/^(?:please )?publish product (.+)$/.exec(command);
+  if(single){
+   const identifier=single[1].trim().replace(/^["']|["']$/g,"").slice(0,160);
+   if(!identifier)return error("Specify a product name, slug or ID",400);
+   const matches=await env.DB.prepare("SELECT id,slug,name,status FROM products WHERE slug=? COLLATE NOCASE OR id=? OR name=? COLLATE NOCASE LIMIT 3").bind(identifier,identifier,identifier).all<{id:string;slug:string;name:string;status:string}>();
+   const rows=matches.results??[];
+   if(rows.length===0)return error("No product matched the supplied name, slug or ID",404);
+   if(rows.length>1)return error("More than one product matches that name. Use its exact slug or ID.",409);
+   const product=rows[0];
+   if(product.status==="archived")return error("Archived products must be restored before publishing",409);
+   if(product.status==="published")return json({ok:true,action:"publish_product",published:0,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"This product is already live."});
+   const changed=await env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id=? AND status='draft'").bind(now,product.id).run();
+   if((changed.meta?.changes??0)!==1)return error("Product status changed during execution. Refresh and retry.",409);
+   await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.product.published","product",product.id,JSON.stringify({command,slug:product.slug})).run();
+   return json({ok:true,action:"publish_product",published:1,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"Published "+product.name+" directly to the live catalogue."});
+  }
+  return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>' and 'publish all draft products'. No changes were made.",422);
+ }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
+}
+
 async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
  if(url.pathname!=="/api/admin/ai/assistant")return null;
  if(request.method!=="POST")return error("Method not allowed",405);
@@ -4400,6 +4447,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
 }
 
 async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
+  const executeResponse=await adminAIExecuteRoute(request,env,url);if(executeResponse)return executeResponse;
   const adminAssistant=await adminAIAssistantRoute(request,env,url);if(adminAssistant)return adminAssistant;
   const publicResponse=await publicAIChatRoute(request,env);if(publicResponse)return publicResponse;
   return adminAIKeyRoutes(request,env,url);
