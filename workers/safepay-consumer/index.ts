@@ -33,7 +33,7 @@ export default {
       }
       const payload = message.body;
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.rawBody));
-      const actualDigest = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+      const actualDigest = btoa(String.fromCharCode(...new Uint8Array(digest))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
       let eventToken = "";
       try { eventToken = String((JSON.parse(payload.rawBody) as Record<string, unknown>).token ?? ""); } catch { /* handler returns a retryable invalid-payload response */ }
       if (actualDigest !== payload.payloadDigest || eventToken !== payload.eventId) {
