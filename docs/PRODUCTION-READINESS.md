@@ -422,3 +422,15 @@ The current POS sale handler always inserts `customer_email`, `email_receipt_req
 - **POS concurrency boundary:** the guarded POS insert and its unit test reduce oversell risk, but the test validates SQL guard construction. A real D1 integration test must still prove that competing POS/online writes cannot oversell and that every dependent sale, payment, ledger and outbox row rolls back together.
 - **Release blockers still open:** production migrations 0028–0031 and 0033 require fresh schema reconciliation and an approved, backed-up release sequence (0032 CNIC protection must remain intact); no migration was run by this branch work. Real Android camera tests, real Gemini language/provider tests, Safepay sandbox transaction verification, Resend/WhatsApp delivery tests, owner-approved catalogue/pricing/policies, custom domain/Google Business Profile verification, independent D1+R2 backup and restore drill, and production-origin transaction smoke tests remain outstanding.
 - **Safety:** no deployment, merge, production migration, secret change, live-data mutation or R2 object change was performed for this update. Continue to require the owner's explicit **“deploy now”** authorization before any Cloudflare deployment.
+
+
+## 19 November 2026 — Safepay reconciliation remediation
+
+- Added mutually dependent SQL predicates to the success webhook: the attempt can only become `succeeded` when its matching order is eligible; the order can only become `paid` when that exact attempt is succeeded and amount/order match; the gateway ledger insert requires both the paid order transaction reference and succeeded attempt.
+- Bound each provider event ID to its first payload SHA-256 digest. Reusing an event ID with a different payload is rejected rather than silently replacing the digest.
+- Expanded Worker regression tests for duplicate delivery, exactly-once ledger behavior, conflicting payload replay, and an ineligible order not consuming the attempt.
+- **Validation in progress:** the first CI attempts exposed a stale FakeD1 query fixture; this was corrected. Do not report the remediation as passed until the latest branch-head CI completes successfully.
+- The FakeD1 test double is sequential and in-memory. It does not prove D1 transaction rollback/isolation or real concurrent delivery. A real isolated D1 integration suite remains mandatory.
+- Safepay handler still performs reconciliation synchronously before returning success. A durable event-inbox + prompt acknowledgement + asynchronous worker/queue design remains required before live enablement.
+- Provider contract must be confirmed against the merchant's actual Safepay product and sandbox. Current Safepay checkout docs use raw-body HMAC-SHA512 and `token/type/data.tracker`; the newer Raast delivery guide describes a distinct timestamped HMAC-SHA256 envelope. Do not mix contracts.
+- Safepay remains disabled until all above release gates and owner/provider acceptance are complete.
