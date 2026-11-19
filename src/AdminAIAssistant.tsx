@@ -90,7 +90,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         if (!match) throw new Error("An image could not be prepared for AI analysis.");
         return { mime_type: match[1], data: match[2] };
       }));
-      const documentFiles = task === "research" ? [] : files.filter(file => !file.type.startsWith("image/"));
+      const documentFiles = files.filter(file => !file.type.startsWith("image/"));
       const documents = await Promise.all(documentFiles.map(async file => {
         if (file.type === "application/pdf") {
           const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error(file.name + " could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file); });
@@ -173,7 +173,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         await api("/api/admin/products/" + createdId + "/variants", { method: "POST", body: JSON.stringify({ size: "One Size", color: "Standard", barcode: draft.barcode || "", sku: draft.sku || "", initial_stock: 0, reorder_level: 5 }) });
       }
       let uploaded = 0;
-      for (const file of files) {
+      for (const file of files.filter(item => item.type.startsWith("image/"))) {
         const data = new FormData(); data.append("file", file); data.append("alt_text", (draft.name + " · " + file.name).slice(0, 240));
         const result = await api<{ media?: { id: string } }>("/api/admin/media", { method: "POST", body: data });
         if (!result.media?.id) throw new Error("Image upload returned no media record.");
