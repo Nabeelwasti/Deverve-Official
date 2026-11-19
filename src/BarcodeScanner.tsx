@@ -124,7 +124,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    });
    if(!mounted.current||detected.current){controls.stop();return;}
    zxingControls.current=controls;
-  }catch(caught){if(mounted.current){stopCamera();setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}else{stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;}}
+  }catch(caught){if(mounted.current&&!detected.current){stopCamera();setError(cameraErrorMessage(caught));setStatus("Camera could not be started.");}else if(!mounted.current){stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;}}
   finally{if(mounted.current)setStarting(false);}
  };
  return <div className="barcode-camera-backdrop" role="presentation" onMouseDown={event=>{if(event.target===event.currentTarget)onClose();}}>
