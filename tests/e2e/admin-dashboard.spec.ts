@@ -96,7 +96,9 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
   await expect(page.locator(".admin-topbar .admin-brand-logo")).toHaveAttribute("src", "/brand/de-verve-logo.svg");
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
-  await page.locator("#products .admin-panel-heading").getByRole("button", { name: /Add product/ }).click();
+  await page.getByRole("button", { name: "Create with AI" }).click();
+  await expect(page.getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
+  await page.getByRole("button", { name: "Manual product form" }).click();
   await page.getByLabel("Product name").fill("Palette test hoodie");
   await page.getByLabel("Category").fill("Hoodies");
   await expect(page.getByLabel("Default purchase cost (PKR)")).toBeVisible();
@@ -128,6 +130,72 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   expect(bulkPayload?.variants).toEqual(expect.arrayContaining([expect.objectContaining({size:"10XL",color:"Oxblood",initial_stock:7})]));
   await expect(page.getByRole("status")).toContainText("All");
   await expect(page.getByRole("status")).toContainText("variants were saved together");
+});
+
+
+test("AI Command Centre analyses chat images and creates a reviewed unpublished product draft", async ({ page }) => {
+  await mockAdminApi(page);
+  let chatPayload: Record<string, unknown> | null = null;
+  let productPayload: Record<string, unknown> | null = null;
+  let createdProduct: Record<string, unknown> | null = null;
+  let attachedMedia = false;
+  await page.route("**/api/admin/ai/assistant", async route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.task === "product") {
+      productPayload = body;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+        ok: true, reply: "I prepared a draft from the visible product details.",
+        model: "gemini-3.8-flash",
+        product_draft: {
+          name: "Everyday Hoodie", category: "Hoodies", audience: "unisex",
+          description: "A casual hoodie with a front pocket and ribbed cuffs.",
+          retail_price_pkr: null, wholesale_price_pkr: null, seo_title: "Everyday Hoodie",
+          seo_description: "Casual hoodie", brand: null, material: null, barcode: null, sku: null,
+          sizes: ["M"], colours: ["Black"],
+          variants: [{ size: "M", color: "Black", initial_stock: 0, reorder_level: 5, cost_price_pkr: null }],
+          unknowns: ["Confirm fabric composition and actual stock."]
+        }
+      }) });
+    } else {
+      chatPayload = body;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: "I can analyse the attached product image.", model: "gemini-3.8-flash" }) });
+    }
+  });
+  await page.route("**/api/admin/products", async route => {
+    if (route.request().method() === "POST") {
+      createdProduct = route.request().postDataJSON();
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }) });
+    } else await route.fallback();
+  });
+  await page.route("**/api/admin/products/*/variants/bulk", async route => {
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ created: 1, atomic: true, variants: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }] }) });
+  });
+  await page.route("**/api/admin/media", async route => {
+    if (route.request().method() === "POST") await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ media: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" } }) });
+    else await route.fallback();
+  });
+  await page.route("**/api/admin/products/*/media", async route => {
+    if (route.request().method() === "POST") { attachedMedia = true; await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ attached: true }) }); }
+    else await route.fallback();
+  });
+
+  await page.goto("/admin?section=ai");
+  await expect(page.getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
+  const image = { name: "hoodie.png", mimeType: "image/png", buffer: Buffer.from("fake-image-data") };
+  await page.locator(".admin-ai-attach input").setInputFiles(image);
+  await page.getByPlaceholder(/Ask about products/).fill("Please describe this hoodie.");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("I can analyse the attached product image.")).toBeVisible();
+  expect((chatPayload?.images as unknown[])?.length).toBe(1);
+
+  await page.locator(".admin-ai-attach input").setInputFiles(image);
+  await page.getByRole("button", { name: "Analyse images & prepare draft" }).click();
+  await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible();
+  expect((productPayload?.images as unknown[])?.length).toBe(1);
+  await page.getByRole("button", { name: "Create product draft & upload images" }).click();
+  await expect(page.getByRole("status")).toContainText("Draft created successfully");
+  expect(createdProduct?.status).toBe("draft");
+  expect(attachedMedia).toBe(true);
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
