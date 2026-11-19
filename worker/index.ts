@@ -4396,7 +4396,7 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    const batchId=crypto.randomUUID();
    const written=await env.DB.batch([
     env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE status='draft' AND length(trim(name))>=2 AND length(trim(category))>=2 AND retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=products.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity)").bind(now),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,json_object('command',?,'requested_count',?,'published_count',changes(),'skipped_count',?,'batch_id',?) WHERE changes()>0").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,"",command,requested,Math.max(0,requested-count),batchId)
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,json_object('command',?,'requested_count',?,'published_count',changes(),'skipped_count',?,'batch_id',?) WHERE changes()>0").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,command,requested,Math.max(0,requested-count),batchId)
    ]);
    const published=Number(written[0]?.meta?.changes??0),auditWritten=Number(written[1]?.meta?.changes??0);
    if(!Number.isSafeInteger(published)||published<0||auditWritten!==(published>0?1:0))return error("Bulk publishing could not be verified. Refresh the catalogue and audit log before retrying.",503);
