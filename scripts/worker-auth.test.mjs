@@ -767,6 +767,10 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT payment_status, financial_transaction_id, total_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, amount_paisa FROM financial_transactions WHERE id = ? AND reference_type = 'order'")) return this.db.financialTransactions.find((row) => row.id === v[0] && row.reference_id === v[1]) ?? null;
+    if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ?")) {
+      const row = [...this.db.orders.values()].find((order) => order.source_quote_id === v[0]);
+      return row ? { order_number: row.order_number, total_paisa: row.total_paisa, order_status: row.order_status } : null;
+    }
     if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, name, kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
