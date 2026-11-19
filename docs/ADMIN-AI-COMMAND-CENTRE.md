@@ -40,6 +40,7 @@
 
 - Added the authenticated same-origin `POST /api/admin/media/bulk` endpoint for batches of up to four JPG/PNG/WebP images and 20 MB total.
 - Every file has a stable client-generated UUID derived from its filename and SHA-256 content. The server validates MIME signatures, computes SHA-256 itself, and records the digest in R2 object custom metadata.
+- D1 `processing` rows act as per-asset upload leases. Concurrent retries cannot both reserve the same ID; an interrupted upload can be recovered from a matching R2 object, or reclaimed after a 15-minute stale lease if the object is absent or incomplete.
 - A retry with the same ID, owner, bytes and media metadata reuses the existing media record rather than creating a duplicate. Reusing an ID with different bytes or another uploader is rejected.
 - Each file is processed independently and the response reports successful/reused assets and per-file failures. Successfully completed files remain available when another file fails.
 - AI product intake now uploads images in bounded four-file batches and attaches confirmed media records to the draft product. It uses the same stable IDs on retries.
