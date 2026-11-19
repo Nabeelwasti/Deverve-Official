@@ -55,8 +55,8 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
     const context=canvas.getContext("2d");if(!context)throw new Error("This browser could not prepare the selected image.");
     context.drawImage(source,0,0,canvas.width,canvas.height);
     let image=canvas.toDataURL("image/jpeg",0.86);
-    if(image.length>6_800_000)image=canvas.toDataURL("image/jpeg",0.72);
-    if(image.length>6_800_000)throw new Error("This image is still too large after compression. Choose a smaller or clearer crop.");
+    if(image.length>6_400_000)image=canvas.toDataURL("image/jpeg",0.72);
+    if(image.length>6_400_000)throw new Error("This image is still too large after compression. Choose a smaller or clearer crop.");
     let code="";
     const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
     if(Detector){
