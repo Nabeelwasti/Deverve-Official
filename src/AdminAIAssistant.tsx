@@ -259,9 +259,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       taskIdRef.current = task.id;
       const recovered = (result.events || []).map((event, index) => {
         const payload = event.payload || {};
-        return (index + 1) + ". " + (payload.step || event.event_type) + " · " + (event.model || "model unknown") + "\\nFiles: " + (payload.attachments || []).join(", ") + "\\n" + (payload.reply || "Saved task event");
-      }).join("\\n\\n");
-      setHistory(current => [...current, { role: "model", text: "Recovered durable task memory (" + task.status + "). Previous analysis and decisions:\\n\\n" + recovered + "\\n\\nI will include this saved context in the next request. Reattach any files that still need processing." }]);
+        return (index + 1) + ". " + (payload.step || event.event_type) + " · " + (event.model || "model unknown") + "\nFiles: " + (payload.attachments || []).join(", ") + "\n" + (payload.reply || "Saved task event");
+      }).join("\n\n");
+      setHistory(current => [...current, { role: "model", text: "Recovered durable task memory (" + task.status + "). Previous analysis and decisions:\n\n" + recovered + "\n\nI will include this saved context in the next request. Reattach any files that still need processing." }]);
       setStatus("Previous task context restored. The same task ID will be reused so Gemini model/key fallback can continue with its saved memory.");
     } catch (error) { setStatus(error instanceof Error ? error.message : "Saved task memory could not be restored."); }
     finally { setBusy(false); }
