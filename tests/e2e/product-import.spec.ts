@@ -33,6 +33,6 @@ test("CSV importer rejects duplicate size/colour combinations before making an A
  await page.goto("/admin?section=products");
  const csv="name,category,audience,size,color\nPremium Hoodie,Hoodies,unisex,M,Black\nPremium Hoodie,Hoodies,unisex,M,black";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"duplicate.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
- await expect(page.getByText(/duplicate M \\/ black combination/i)).toBeVisible();
+ await expect(page.getByText(/duplicate M \/ black combination/i)).toBeVisible();
  expect(requested).toBe(false);
 });
