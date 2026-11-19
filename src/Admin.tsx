@@ -1306,7 +1306,7 @@ export default function Admin() {
               {["owner","manager"].includes(admin.role) && <label>Purchase cost (PKR)<input type="number" min="0" step="0.01" value={variantForm.cost_price} onChange={(e) => setVariantForm({ ...variantForm, cost_price: e.target.value })} /></label>}
             </div><button className="admin-primary" disabled={busy}>Add variant</button>
           </form>}
-          {barcodeScanTarget === "variant" && <BarcodeScanner onDetected={code => { setVariantForm(current => ({ ...current, barcode: code.slice(0,2048) })); setBarcodeScanTarget(null); }} onClose={() => setBarcodeScanTarget(null)} />}
+          {barcodeScanTarget === "variant" && <BarcodeScanner title="Product variant scanner" onDetected={code => { setVariantForm(current => ({ ...current, barcode: code.slice(0,2048) })); setBarcodeScanTarget(null); }} onDetectedWithImage={(code,image) => { setVariantForm(current => ({ ...current, barcode: code.slice(0,2048) })); void readProductLabel(image,code,""); }} onImageCaptured={image => { void readProductLabel(image,variantForm.barcode,variantForm.sku); }} onClose={() => setBarcodeScanTarget(null)} />}
           {stockTarget && <form className="admin-form admin-stock-form" onSubmit={recordStock}>
             <h3>Stock movement · {stockTarget.sku || [stockTarget.size, stockTarget.color].filter(Boolean).join(" / ")}</h3>
             <label>Movement type<select value={stockForm.movement_type} onChange={(e) => setStockForm({ ...stockForm, movement_type: e.target.value })}><option value="received">Stock received</option><option value="customer_return">Customer return</option><option value="adjustment">Stock adjustment</option></select></label>
