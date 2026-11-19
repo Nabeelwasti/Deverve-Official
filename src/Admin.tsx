@@ -623,7 +623,7 @@ export default function Admin() {
     const activeVariants = variants.filter(item => item.is_active === 1);
     const legacyMultiOption = activeVariants.filter(item => item.size.split(/[,;|\\n]+/).map(value => value.trim()).filter(Boolean).length > 1 || item.color.split(/[,;|\\n]+/).map(value => value.trim()).filter(Boolean).length > 1);
     if (legacyMultiOption.length) {
-      setMessage("Stock safety check: this product still has an active legacy variant containing multiple sizes or colours with one shared stock balance. Reconcile its stock into individual variants, reduce the legacy balance to zero, and deactivate that legacy row before generating the new matrix. No new variants were created.");
+      setMessage("Stock safety check: this product still has an active legacy variant with one shared balance for multiple sizes or colours. First count the physical units by size and colour. Then record the reclassification in the stock history, reduce the old shared balance to zero, and deactivate that legacy row. Only then generate the matrix and enter the counted quantity for each combination. Do not copy the old aggregate quantity into every row. No new variants were created.");
       return;
     }
     const existing = new Set(activeVariants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
