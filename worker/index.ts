@@ -762,6 +762,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     }
     statements.push(env.DB.prepare("UPDATE orders SET payment_method = ?, payment_provider = 'manual', payment_status = 'pending' WHERE id = ? AND payment_provider = 'manual'").bind(selectedPaymentMethod.id,id));
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
+    const reservationStatementStart = statements.length;
     for (const reservation of reservationLines) {
       statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, ?, ? FROM orders WHERE id = ? AND order_status = 'pending'").bind(crypto.randomUUID(), id, reservation.variant.id, reservation.quantity, now, now, id));
     }
@@ -772,6 +773,10 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || reservationLines.some((_, index) => (results[index + 1]?.meta?.changes ?? 0) !== 1)) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
+    if (reservationLines.some((_, index) => (results[reservationStatementStart + index]?.meta?.changes ?? 0) !== 1)) {
+      console.error("[checkout] reservation ledger did not match the reserved inventory", id);
+      return error("Your order requires staff reconciliation before payment. Contact De VERVE with reference " + orderNumber + ".", 503);
+    }
     if ((results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
     return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
