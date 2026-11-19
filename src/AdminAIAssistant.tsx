@@ -186,18 +186,19 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       const replies = results.map((result, index) => (results.length > 1 ? "Batch " + (index + 1) + ":\n" : "") + (result.reply || "The assistant returned no response."));
       const combinedReply = replies.join("\n\n");
       let globalPlan = "";
+      let globalGroups: Array<{ candidate_ids: string[]; product_name: string; confidence: "high" | "medium" | "low"; rationale: string }> = [];
       if (task === "product" && batchRecords.length > 1) {
-        const summaries = batchRecords.filter(item => item.response.ok).map((item, index) => {
-          const drafts = item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : []);
+        const summaries = batchRecords.map((item, batchIndex) => {
+          const drafts = item.response.ok ? (item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : [])) : [];
           return {
-            batch: index + 1,
-            files: item.files.map(file => file.name.slice(0, 24)),
-            candidates: drafts.slice(0, 3).map(draft => ({
-              source_files: (draft.source_files || []).map(name => name.slice(0, 24)),
-              name: draft.name.slice(0, 32), category: draft.category.slice(0, 16),
-              colours: draft.colours.slice(0, 2).map(value => value.slice(0, 8)),
-              sizes: draft.sizes.slice(0, 3),
-              description: draft.description.slice(0, 50)
+            batch: batchIndex + 1,
+            files: item.files.map(file => file.name.slice(0, 80)),
+            candidates: drafts.slice(0, 3).map((draft, candidateIndex) => ({
+              candidate_id: "batch-" + (batchIndex + 1) + "-candidate-" + (candidateIndex + 1),
+              source_files: draft.source_files || [],
+              name: draft.name, category: draft.category,
+              colours: draft.colours, sizes: draft.sizes,
+              description: draft.description
             }))
           };
         });
@@ -210,21 +211,35 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               method: "POST",
               body: JSON.stringify({
                 task: "chat", task_id: taskId, task_complete: false, task_has_failures: results.some(item => !item.ok),
-                messages: [{ role: "user", text: "CATALOGUE GROUPING SUBPLAN. Compare these image-batch candidates. Identify which are the same underlying garment/product, which are genuinely different products, and which are the same product shown in different colours. Do not merge merely similar styles. Use source filenames to map evidence. Keep uncertainty explicit. Return a concise list of candidate groups with product identity, included filenames, colour variants, confidence and unresolved questions. Do not create records. Candidates: " + JSON.stringify(chunk) }]
+                messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Compare all candidates. Put multiple candidate IDs in one group ONLY when they show the same underlying product, including that exact product in different colours. Similar-looking but distinct styles must remain separate. Use high confidence only with clear visual/source evidence. Never combine uncertain candidates. Every candidate ID must appear in exactly one group, including single-candidate groups. Do not create records. Candidates: " + JSON.stringify(chunk) }]
               })
             });
-            chunkPlans.push(plan.reply.slice(0, 900));
+            chunkPlans.push(plan.reply.slice(0, 3500));
           }
           const finalPlan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
               task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok),
-              messages: [{ role: "user", text: "FINAL GLOBAL CATALOGUE GROUPING PLAN. Reconcile all preliminary grouping results below into one consistent plan across the entire original attachment task. Resolve duplicate groups across chunks, preserve distinct products, identify same-product colour variants only when supported, and list exact filenames for each group. Flag uncertain matches; never infer stock or product authenticity. Do not create or publish records. Preliminary plans: " + JSON.stringify(chunkPlans) }]
+              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Reconcile all candidate IDs from these preliminary plans. Group multiple IDs only when they represent the same exact underlying product, not merely similar products. Same product in different colours can be grouped; genuinely different styles stay separate. Any ambiguity means separate groups with low confidence. Include every candidate ID exactly once. Plans: " + JSON.stringify(chunkPlans) }]
             })
           });
-          globalPlan = finalPlan.reply || chunkPlans.join("\n\n");
+          globalPlan = finalPlan.reply || "";
+          const jsonMatch = globalPlan.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const parsedPlan = JSON.parse(jsonMatch[0]) as { groups?: unknown[] };
+            if (Array.isArray(parsedPlan.groups)) {
+              globalGroups = parsedPlan.groups.flatMap(value => {
+                if (!value || typeof value !== "object") return [];
+                const group = value as Record<string, unknown>;
+                if (!Array.isArray(group.candidate_ids) || typeof group.product_name !== "string") return [];
+                const confidence = group.confidence === "high" || group.confidence === "medium" ? group.confidence : "low";
+                return [{ candidate_ids: group.candidate_ids.filter((id): id is string => typeof id === "string").slice(0, 30), product_name: group.product_name.slice(0, 100), confidence, rationale: typeof group.rationale === "string" ? group.rationale.slice(0, 500) : "" }];
+              });
+            }
+          }
         } catch (planningError) {
           globalPlan = "Global grouping pass could not complete: " + (planningError instanceof Error ? planningError.message : "provider unavailable") + ". Individual batch analyses and product drafts are preserved; no uncertain cross-batch merge has been made.";
+          globalGroups = [];
         }
       }
       const result: AssistantResponse = {
@@ -235,54 +250,62 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       };
       let productDraftEntries: Array<{ draft: ProductDraft; files: File[] }> = [];
       if (task === "product") {
-        const drafts = results.flatMap(item => item.product_drafts || (item.product_draft ? [item.product_draft] : [])).filter((item): item is ProductDraft => Boolean(item));
-        if (drafts.length) {
+        const candidates = batchRecords.flatMap((record, batchIndex) => {
+          const batchDrafts = record.response.ok ? (record.response.product_drafts || (record.response.product_draft ? [record.response.product_draft] : [])) : [];
+          return batchDrafts.slice(0, 3).map((draft, candidateIndex) => ({
+            id: "batch-" + (batchIndex + 1) + "-candidate-" + (candidateIndex + 1),
+            draft,
+            files: record.files
+          }));
+        });
+        if (candidates.length) {
           const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-          const groups = new Map<string, ProductDraft[]>();
-          for (const item of drafts) {
-            const key = normalizeName(item.name);
-            const group = groups.get(key) || [];
-            group.push(item);
-            groups.set(key, group);
+          const assigned = new Set<string>();
+          const groups: Array<{ key: string; name: string; items: typeof candidates }> = [];
+          for (const plan of globalGroups) {
+            const items = plan.candidate_ids.map(id => candidates.find(candidate => candidate.id === id)).filter((item): item is typeof candidates[number] => Boolean(item) && !assigned.has(item.id));
+            if (!items.length) continue;
+            items.forEach(item => assigned.add(item.id));
+            groups.push({ key: "planned:" + items[0].id, name: plan.confidence === "high" || plan.confidence === "medium" ? plan.product_name : items[0].draft.name, items });
           }
-          for (const [groupKey, groupDrafts] of groups) {
-            const first = groupDrafts[0];
+          for (const item of candidates) {
+            if (assigned.has(item.id)) continue;
+            const key = normalizeName(item.draft.name);
+            const existing = groups.find(group => group.key === "name:" + key);
+            if (existing) existing.items.push(item);
+            else groups.push({ key: "name:" + key, name: item.draft.name, items: [item] });
+            assigned.add(item.id);
+          }
+          for (const group of groups) {
+            const first = group.items[0].draft;
             const variants = new Map<string, DraftVariant>();
             const duplicateStockKeys = new Set<string>();
-            for (const item of groupDrafts.flatMap(value => value.variants || [])) {
+            for (const item of group.items.flatMap(value => value.draft.variants || [])) {
               const key = item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase();
               const previous = variants.get(key);
               if (previous) {
                 if (previous.initial_stock !== item.initial_stock) duplicateStockKeys.add(key);
-                variants.set(key, {
-                  ...previous,
-                  initial_stock: Math.max(previous.initial_stock, item.initial_stock),
-                  cost_price_pkr: previous.cost_price_pkr ?? item.cost_price_pkr
-                });
+                variants.set(key, { ...previous, initial_stock: Math.max(previous.initial_stock, item.initial_stock), cost_price_pkr: previous.cost_price_pkr ?? item.cost_price_pkr });
               } else variants.set(key, item);
             }
             const merged: ProductDraft = {
               ...first,
-              sizes: [...new Set(groupDrafts.flatMap(item => item.sizes || []))],
-              colours: [...new Set(groupDrafts.flatMap(item => item.colours || []))],
+              name: group.name,
+              sizes: [...new Set(group.items.flatMap(item => item.draft.sizes || []))],
+              colours: [...new Set(group.items.flatMap(item => item.draft.colours || []))],
               variants: [...variants.values()].slice(0, 100),
-              unknowns: [...new Set([...groupDrafts.flatMap(item => item.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : [])])]
+              unknowns: [...new Set([...group.items.flatMap(item => item.draft.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : []), ...(globalGroups.some(plan => plan.confidence === "low" && plan.candidate_ids.some(id => group.items.some(item => item.id === id))) ? ["AI grouping confidence is low; verify that these images show the same product before saving."] : [])])]
             };
-            const matchingFiles = batchRecords.flatMap(item => {
-              const batchDrafts = item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : []);
-              const matchingDraft = batchDrafts.find(value => normalizeName(value.name) === groupKey);
-              if (!matchingDraft) return [];
-              const sourceNames = Array.isArray(matchingDraft.source_files) ? matchingDraft.source_files : [];
-              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : batchDrafts.length === 1 && item.files.length === 1 ? item.files : [];
-            });
+            const matchingFiles = [...new Map(group.items.flatMap(item => {
+              const sourceNames = Array.isArray(item.draft.source_files) ? item.draft.source_files : [];
+              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : group.items.length === 1 && item.files.length === 1 ? item.files : [];
+            }).map(file => [file.name + "::" + file.size, file])).values()];
             if (!matchingFiles.length) merged.unknowns = [...merged.unknowns, "Source photos could not be confidently mapped to this product; no photos were auto-attached. Upload the correct images manually before publishing."];
             productDraftEntries.push({ draft: merged, files: matchingFiles });
           }
           result.product_draft = productDraftEntries[0]?.draft;
           result.product_drafts = productDraftEntries.map(item => item.draft);
-          if (productDraftEntries.length > 1) {
-            result.reply += "\n\nI identified " + productDraftEntries.length + " separate product candidates. Their size/colour matrices have been kept separate. Review and create each unpublished draft one at a time; photos will only be attached to the matching candidate batch.";
-          }
+          if (productDraftEntries.length > 1) result.reply += "\n\nI identified " + productDraftEntries.length + " separate product candidates. Their size/colour matrices have been kept separate. Review and create each unpublished draft one at a time.";
         }
       }
       const planFailed = globalPlan.startsWith("Global grouping pass could not complete:");
