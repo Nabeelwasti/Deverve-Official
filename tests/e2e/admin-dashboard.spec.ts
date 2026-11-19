@@ -243,7 +243,7 @@ test("AI catalogue intake analyses all 100 selected images across resumable batc
 
   await page.goto("/admin?section=ai");
   await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen", "ai");
-  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64");
   const files = Array.from({ length: 100 }, (_, index) => ({
     name: "catalogue-" + String(index + 1).padStart(3, "0") + ".png",
     mimeType: "image/png",
