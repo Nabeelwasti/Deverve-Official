@@ -2465,8 +2465,11 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       normalized.push({id:crypto.randomUUID(),sku:"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,barcode:generateInternalBarcode(),stock:Number(stock),cost:Number(cost),reorder:Number(reorder)});
     }
     try {
-      const existing = await env.DB.prepare("SELECT size, color FROM product_variants WHERE product_id = ?").bind(productId).all<{size:string;color:string}>();
-      const existingKeys = new Set((existing.results ?? []).map(row => row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
+      const existing = await env.DB.prepare("SELECT size, color, is_active FROM product_variants WHERE product_id = ?").bind(productId).all<{size:string;color:string;is_active:number}>();
+      const activeExisting = (existing.results ?? []).filter(row => row.is_active === 1);
+      const legacyMultiOption = activeExisting.find(row => splitOptionValues(row.size).length > 1 || splitOptionValues(row.color).length > 1);
+      if (legacyMultiOption) return error("This product has an active legacy variant with shared stock across multiple sizes or colours. Reconcile its stock to individual variants, set its remaining stock to zero, and deactivate it before creating a per-option matrix.", 409);
+      const existingKeys = new Set(activeExisting.map(row => row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
       const duplicate = normalized.find(row => existingKeys.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
       if (duplicate) return error("This size-and-colour combination already exists: " + duplicate.size + " / " + duplicate.color, 409);
       const statements: Array<ReturnType<typeof env.DB.prepare>> = [];
@@ -2522,6 +2525,10 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       const product = await env.DB.prepare("SELECT id, status FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string; status: string }>();
       if (!product) return error("Product not found", 404);
       if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
+      const existingVariants = await env.DB.prepare("SELECT id, size, color, is_active FROM product_variants WHERE product_id = ?").bind(productId).all<{id:string;size:string;color:string;is_active:number}>();
+      const activeExisting = existingVariants.results ?? [];
+      if (activeExisting.some(row => row.is_active === 1 && (splitOptionValues(row.size).length > 1 || splitOptionValues(row.color).length > 1))) return error("This product still has a legacy variant with shared stock across multiple sizes or colours. Reconcile and deactivate it before adding individual variants.", 409);
+      if (activeExisting.some(row => row.is_active === 1 && row.size.trim().toLocaleLowerCase() === size.toLocaleLowerCase() && row.color.trim().toLocaleLowerCase() === color.toLocaleLowerCase())) return error("This size-and-colour combination already exists for this product", 409);
       const id = crypto.randomUUID();
       const statements = [
         env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand, barcode, cost_price_paisa, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
