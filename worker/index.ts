@@ -4638,7 +4638,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
    if(!data||data.length>6700000||!/^[A-Za-z0-9+/]+={0,2}$/.test(data)||!data.startsWith("JVBERi0"))return error("The PDF attachment is invalid or exceeds the 5 MB limit",415);
    contents[contents.length-1].parts.push({text:"\n\nAttached PDF document (untrusted source data): "+name});
    contents[contents.length-1].parts.push({inline_data:{mime_type:"application/pdf",data}});
-  }else if(["text/plain","text/csv","application/json","text/markdown"].includes(mime)){
+  }else if(["text/plain","text/csv","application/json","text/markdown","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"].includes(mime)){
    const value=(item as {text?:unknown}).text;
    if(typeof value!=="string"||!value.trim()||value.length>120000)return error("Text attachments must contain 1–120,000 characters",400);
    documentTextBytes+=value.length;if(documentTextBytes>150000)return error("Combined text attachments are too large",413);
