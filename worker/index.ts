@@ -4404,12 +4404,13 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
   if(single){
    const identifier=single[1].trim().replace(/^["']|["']$/g,"").slice(0,160);
    if(!identifier)return error("Specify a product name, slug or ID",400);
-   const matches=await env.DB.prepare("SELECT id,slug,name,status FROM products WHERE slug=? COLLATE NOCASE OR id=? OR name=? COLLATE NOCASE LIMIT 3").bind(identifier,identifier,identifier).all<{id:string;slug:string;name:string;status:string}>();
+   const matches=await env.DB.prepare("SELECT id,slug,name,status,category,retail_price_paisa,EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=products.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity) AS has_available_variant FROM products WHERE slug=? COLLATE NOCASE OR id=? OR name=? COLLATE NOCASE LIMIT 3").bind(identifier,identifier,identifier).all<{id:string;slug:string;name:string;status:string;category:string;retail_price_paisa:number|null;has_available_variant:number}>();
    const rows=matches.results??[];
    if(rows.length===0)return error("No product matched the supplied name, slug or ID",404);
    if(rows.length>1)return error("More than one product matches that name. Use its exact slug or ID.",409);
    const product=rows[0];
    if(product.status==="archived")return error("Archived products must be restored before publishing",409);
+   if(product.status==="draft"&&(!product.name?.trim()||!product.category?.trim()||product.retail_price_paisa===null||!product.has_available_variant))return error("This draft is not publish-ready. It needs a name, category, retail price and at least one active size/colour variant with available stock.",409);
    if(product.status==="published")return json({ok:true,action:"publish_product",published:0,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"This product is already live."});
    const written=await env.DB.batch([
     env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id=? AND status='draft'").bind(now,product.id),
@@ -4418,7 +4419,7 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if((written[0]?.meta?.changes??0)!==1)return error("Product status changed during execution. Refresh and retry.",409);
    return json({ok:true,action:"publish_product",published:1,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"Published "+product.name+" directly to the live catalogue."});
   }
-  const stockCommand=/^(?:please )?(?:set|update) stock for sku ([A-Za-z0-9._-]{2,80}) to ([0-9]{1,8})$/i.exec(command.trim());
+  const stockCommand=/^(?:please )?(?:set|update) stock for sku ([A-Za-z0-9._-]{2,80}) to ([0-9]{1,8})$/i.exec(normalized);
   if(stockCommand){
    const sku=stockCommand[1].trim(),quantity=Number(stockCommand[2]);
    if(!Number.isSafeInteger(quantity)||quantity<0||quantity>10_000_000)return error("Enter a valid whole-number stock quantity",400);
