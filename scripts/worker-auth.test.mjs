@@ -328,10 +328,16 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal(succeeded.status, 200);
   assert.equal(db.paymentAttempts.get("attempt-retry").status, "succeeded");
   assert.equal(db.orders.get(orderId).payment_status, "paid");
+  assert.equal(db.financialTransactions.length, 1, "the successful transition must create exactly one gateway ledger row");
 
   const duplicate = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
+  assert.equal(db.financialTransactions.length, 1, "duplicate delivery must not duplicate the ledger row");
+
+  const conflictingReplay = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12001, currency: "PKR" });
+  assert.equal(conflictingReplay.status, 409, "an event ID must never be accepted with a different payload");
+  assert.equal(db.financialTransactions.length, 1);
 });
 
 test("exchange-only policy rejects new return submissions without creating refund records", async () => {
@@ -955,12 +961,12 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO financial_transactions")) {
-      const [id, account_id, direction, amount_paisa, category, reference_type, reference_id] = v;
+      const [id, amount_paisa, reference_id] = v;
       const order = this.db.orders.get(reference_id);
-      const attempt = this.db.paymentAttempts.get(v[5] === undefined ? "" : v[5]);
-      const shouldInsert = order?.payment_status === "paid" && order.financial_transaction_id === id;
+      const attempt = this.db.paymentAttempts.get(v[5]);
+      const shouldInsert = order?.payment_status === "paid" && order.financial_transaction_id === id && attempt?.status === "succeeded";
       if (!shouldInsert) return { success: true, meta: { changes: 0 } };
-      this.db.financialTransactions.push({ id, account_id, direction, amount_paisa, category, reference_type, reference_id });
+      this.db.financialTransactions.push({ id, account_id: "gateway-clearing", direction: "in", amount_paisa, category: "website_order", reference_type: "order", reference_id });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'processed'")) {
