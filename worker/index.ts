@@ -3927,6 +3927,15 @@ export async function callGemini(apiKey:string,contents:Array<{role:"user"|"mode
   return {...last,message:last.message+"; models tried: "+(attempted.join(", ")||"none")};
 }
 
+function geminiTestGuidance(status:number,detail:string,model:string):string{
+ const safeDetail=detail.trim().slice(0,220);
+ if([500,502,503,504].includes(status))return "Gemini's service or selected model is temporarily overloaded/unavailable (HTTP "+status+"). This does not by itself mean the API key is invalid. Model attempted: "+model+". Automatic model fallback was attempted. Wait briefly and retry. "+safeDetail;
+ if(status===429)return "Gemini returned a quota or rate-limit response (HTTP 429). Check the model and Google Cloud project quota; API keys from the same project share that quota. "+safeDetail;
+ if(status===401||status===403)return "Google rejected this API key or its Generative Language API permissions (HTTP "+status+"). Check the key restriction and API access in Google AI Studio/Google Cloud. "+safeDetail;
+ if(status===404)return "The requested Gemini model or endpoint is unavailable for this API key/project (HTTP 404). Check model availability and API version. "+safeDetail;
+ return "Gemini connection test failed (HTTP "+status+"). "+safeDetail;
+}
+
 type GeminiEnvironmentKeyStatus = {
   label:string;
   configured:boolean;
@@ -3999,7 +4008,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     const configured:[string,string][]=[["NabeelG_Api_key1",env.NabeelG_Api_key1||""],["NabeelG_Api_key2",env.NabeelG_Api_key2||""]].filter(entry=>Boolean(entry[1].trim())).map(([label,key])=>[label,key.trim()]);
     if(!configured.length)return json({ok:false,message:"No Gemini environment keys are configured on the server. Add NabeelG_Api_key1 or NabeelG_Api_key2 in deployment secrets."},200);
     const failures:string[]=[];
-    for(const [label,key] of configured){if(!/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)){failures.push(label+": invalid key format");continue;}const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");if(result.ok){const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+key);try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE key_fingerprint=?").bind(new Date().toISOString(),new Date().toISOString(),fingerprint).run();}catch{}return json({ok:true,label,model:result.model,message:label+" is working with "+result.model+"."});}failures.push(label+": HTTP "+result.status+" · "+result.message.slice(0,150));}
+    for(const [label,key] of configured){if(!/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)){failures.push(label+": invalid key format");continue;}const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");if(result.ok){const fingerprint=await sha256("deverve-gemini-fingerprint:v1:"+key);try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE key_fingerprint=?").bind(new Date().toISOString(),new Date().toISOString(),fingerprint).run();}catch{}return json({ok:true,label,model:result.model,message:label+" is working with "+result.model+"."});}failures.push(label+": "+geminiTestGuidance(result.status,result.message,result.model));}
     return json({ok:false,message:failures.join(" | ")},200);
   }
   const match=path.match(/^\/api\/admin\/ai\/keys\/([a-f0-9-]{36})(?:\/(test))?$/i);
@@ -4012,7 +4021,7 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
     try{
       const key=await decryptGeminiKey(env,row);
       const result=await callGemini(key,[{role:"user",parts:[{text:"Reply with the single word OK."}]}],"You are a connection test. Reply briefly.");
-      if(!result.ok)return json({ok:false,message:"Gemini returned HTTP "+result.status+(result.message?": "+result.message.slice(0,320):".")+" Check this key's Generative Language API access, model availability and quota."},200);
+      if(!result.ok)return json({ok:false,message:geminiTestGuidance(result.status,result.message,result.model)},200);
       await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),id).run();
       return json({ok:true,model:result.model,message:"Gemini connection successful using "+result.model+"."});
     }catch{return error("The key could not be decrypted or tested. Check the server encryption configuration.",503);}
