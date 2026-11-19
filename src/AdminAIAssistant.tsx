@@ -67,7 +67,11 @@ async function buildCatalogueContactSheets(files: File[]): Promise<Array<{ name:
   return sheets;
 }
 async function stableMediaAssetId(file: File): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const content = new Uint8Array(await file.arrayBuffer());
+  const identity = new Uint8Array(new TextEncoder().encode(file.name + "\\u0000").length + content.length);
+  const prefix = new TextEncoder().encode(file.name + "\\u0000");
+  identity.set(prefix, 0); identity.set(content, prefix.length);
+  const digest = await crypto.subtle.digest("SHA-256", identity);
   const hex = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
   return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-5" + hex.slice(13, 16) + "-a" + hex.slice(17, 20) + "-" + hex.slice(20, 32);
 }
