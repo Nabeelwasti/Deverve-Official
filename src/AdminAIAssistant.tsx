@@ -7,11 +7,11 @@ type ProductDraft = {
   name: string; category: string; audience: "men" | "women" | "kids" | "unisex"; description: string;
   retail_price_pkr: number | null; wholesale_price_pkr: number | null; seo_title: string; seo_description: string;
   brand: string | null; material: string | null; barcode: string | null; sku: string | null;
-  sizes: string[]; colours: string[]; variants: DraftVariant[]; unknowns: string[];
+  sizes: string[]; colours: string[]; variants: DraftVariant[]; unknowns: string[]; source_files?: string[];
 };
 type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void };
 type Source = { title: string; url: string };
-type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; sources?: Source[]; queries?: string[]; error?: string };
+type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; product_drafts?: ProductDraft[]; sources?: Source[]; queries?: string[]; error?: string };
 type AITaskSummary = { id: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
 
 const greeting = "Assalamu Alaikum! I’m your De VERVE AI assistant. I can help with product analysis, research and supported direct business commands. Owner and manager publishing commands can execute without a separate approval form. What would you like me to do?";
@@ -156,16 +156,17 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       let globalPlan = "";
       if (task === "product" && batchRecords.length > 1) {
         const summaries = batchRecords.filter(item => item.response.ok).map((item, index) => {
-          const draft = item.response.product_draft;
+          const drafts = item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : []);
           return {
             batch: index + 1,
             files: item.files.map(file => file.name.slice(0, 32)),
-            product: draft ? {
+            candidates: drafts.slice(0, 3).map(draft => ({
+              source_files: draft.source_files || [],
               name: draft.name.slice(0, 48), category: draft.category.slice(0, 24),
               colours: draft.colours.slice(0, 4).map(value => value.slice(0, 12)),
               sizes: draft.sizes.slice(0, 4),
               description: draft.description.slice(0, 80)
-            } : null,
+            })),
             summary: item.response.reply.slice(0, 100)
           };
         });
@@ -188,11 +189,11 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         ok: results.every(item => item.ok), reply: combinedReply + (globalPlan ? "\n\nGLOBAL PRODUCT GROUPING PLAN\n" + globalPlan : ""),
         model: results.map(item => item.model).filter(Boolean).join(", "),
         sources: [...new Map(results.flatMap(item => item.sources || []).map(source => [source.url, source])).values()],
-        product_draft: results.find(item => item.product_draft)?.product_draft
+        product_draft: results.flatMap(item => item.product_drafts || (item.product_draft ? [item.product_draft] : []))[0]
       };
       let productDraftEntries: Array<{ draft: ProductDraft; files: File[] }> = [];
       if (task === "product") {
-        const drafts = results.map(item => item.product_draft).filter((item): item is ProductDraft => Boolean(item));
+        const drafts = results.flatMap(item => item.product_drafts || (item.product_draft ? [item.product_draft] : [])).filter((item): item is ProductDraft => Boolean(item));
         if (drafts.length) {
           const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
           const groups = new Map<string, ProductDraft[]>();
@@ -225,10 +226,17 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               variants: [...variants.values()].slice(0, 100),
               unknowns: [...new Set([...groupDrafts.flatMap(item => item.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : [])])]
             };
-            const matchingFiles = batchRecords.filter(item => item.response.product_draft && normalizeName(item.response.product_draft.name) === groupKey).flatMap(item => item.files);
+            const matchingFiles = batchRecords.flatMap(item => {
+              const batchDrafts = item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : []);
+              const matchingDraft = batchDrafts.find(value => normalizeName(value.name) === groupKey);
+              if (!matchingDraft) return [];
+              const sourceNames = Array.isArray(matchingDraft.source_files) ? matchingDraft.source_files : [];
+              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : item.files;
+            });
             productDraftEntries.push({ draft: merged, files: matchingFiles });
           }
           result.product_draft = productDraftEntries[0]?.draft;
+          result.product_drafts = productDraftEntries.map(item => item.draft);
           if (productDraftEntries.length > 1) {
             result.reply += "\n\nI identified " + productDraftEntries.length + " separate product candidates. Their size/colour matrices have been kept separate. Review and create each unpublished draft one at a time; photos will only be attached to the matching candidate batch.";
           }
