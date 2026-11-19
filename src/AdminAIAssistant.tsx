@@ -66,6 +66,12 @@ async function buildCatalogueContactSheets(files: File[]): Promise<Array<{ name:
   }
   return sheets;
 }
+async function stableMediaAssetId(file: File): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const hex = Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+  return hex.slice(0, 8) + "-" + hex.slice(8, 12) + "-5" + hex.slice(13, 16) + "-a" + hex.slice(17, 20) + "-" + hex.slice(20, 32);
+}
+
 async function fileBatchFingerprint(files: File[], task: string, prompt: string): Promise<string> {
   const fileDigests = await Promise.all(files.map(async file => {
     const contentDigest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
@@ -446,12 +452,21 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       }
       let uploaded = 0;
       const productImages = draftSourceFiles.filter(item => attachmentMime(item).startsWith("image/"));
-      for (const file of productImages) {
-        const data = new FormData(); data.append("file", file); data.append("alt_text", (draft.name + " · " + file.name).slice(0, 240));
-        const result = await api<{ media?: { id: string } }>("/api/admin/media", { method: "POST", body: data });
-        if (!result.media?.id) throw new Error("Image upload returned no media record.");
-        await api("/api/admin/products/" + createdId + "/media", { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: "", is_primary: uploaded === 0, position: uploaded }) });
-        uploaded++;
+      for (let offset = 0; offset < productImages.length; offset += 4) {
+        const batch = productImages.slice(offset, offset + 4);
+        const data = new FormData();
+        const assetIds = await Promise.all(batch.map(stableMediaAssetId));
+        batch.forEach(file => data.append("files", file, file.name));
+        data.append("asset_ids", JSON.stringify(assetIds));
+        data.append("alt_text", draft.name);
+        const result = await api<{ media?: Array<{ id: string }>; failures?: Array<{ name: string; error: string }> }>("/api/admin/media/bulk", { method: "POST", body: data });
+        for (const media of result.media || []) {
+          if (!media.id) continue;
+          await api("/api/admin/products/" + createdId + "/media", { method: "POST", body: JSON.stringify({ media_id: media.id, color: "", is_primary: uploaded === 0, position: uploaded }) });
+          uploaded++;
+        }
+        if (result.failures?.length) throw new Error(result.failures.map(item => item.name + ": " + item.error).join(" · "));
+        if ((result.media || []).length !== batch.length) throw new Error("Some product images were not confirmed by the media service. Retry the remaining images from the product workspace.");
       }
       if (draftQueue.length) {
         const next = draftQueue[0];
