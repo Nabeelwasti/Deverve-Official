@@ -143,8 +143,8 @@ function downloadOfficeFile(filename: string, mime: string, bytes: Uint8Array): 
 }
 
 function officeHeaderIndex(rows: OfficeRow[]): number {
-  const labels = new Set(["description","product","item","date","receipt","order","sku","category","expense","reference","vehicle","service","name"]);
-  const index = rows.findIndex(row => labels.has(String(row[0] ?? "").trim().toLowerCase()));
+  const labels = new Set(["description","product","item","date","receipt","order","sku","category","expense","reference","vehicle","service","name","field","metric","account","customer","quantity","amount","status"]);
+  const index = rows.findIndex(row => row.length > 1 && row.some(cell => labels.has(String(cell ?? "").trim().toLowerCase())) && row.every(cell => String(cell ?? "").trim().length > 0));
   return index >= 0 ? index : 0;
 }
 
@@ -217,10 +217,17 @@ export async function exportOfficeDocument(filename: string, title: string, subt
   const pageWidth = landscape ? 16838 : 11906;
   const pageHeight = landscape ? 11906 : 16838;
   const pageOrientation = landscape ? ' w:orient="landscape"' : "";
-  const pageMargin = landscape ? 720 : 900;
+  const pageMargin = landscape ? 540 : 720;
   const tableWidth = pageWidth - pageMargin * 2;
-  const cellWidth = Math.floor(tableWidth / columnCount);
-  const columnWidths = Array.from({ length: columnCount }, (_, index) => index === columnCount - 1 ? tableWidth - cellWidth * (columnCount - 1) : cellWidth);
+  const minimumCellWidth = Math.max(420, Math.min(900, Math.floor(tableWidth / columnCount * 0.55)));
+  const columnWeights = Array.from({ length: columnCount }, (_, columnIndex) => {
+    const longest = Math.max(8, ...rows.slice(0, 250).map(row => String(row[columnIndex] ?? "").replace(/\\s+/g, " ").length));
+    return Math.min(48, longest);
+  });
+  const distributableWidth = Math.max(0, tableWidth - minimumCellWidth * columnCount);
+  const totalWeight = columnWeights.reduce((sum, weight) => sum + weight, 0) || columnCount;
+  const columnWidths = columnWeights.map(weight => minimumCellWidth + Math.floor(distributableWidth * weight / totalWeight));
+  columnWidths[columnWidths.length - 1] += tableWidth - columnWidths.reduce((sum, width) => sum + width, 0);
   const grid = columnWidths.map(width => '<w:gridCol w:w="' + width + '"/>').join("");
   const tableRows = rows.map((row, rowIndex) => {
     const cells = Array.from({ length: columnCount }, (_, columnIndex) => {
