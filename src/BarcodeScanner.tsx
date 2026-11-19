@@ -87,16 +87,40 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    video.current.srcObject=camera;
    await video.current.play();
    if(!mounted.current)return;
-   setCameraActive(true);setStatus("Camera is active. ZXing is continuously decoding supported 1D and 2D formats including EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec and QR. Keep the code steady inside the camera view.");
-   const reader=createZxingReader();
-   const controls=await reader.decodeFromStream(camera,video.current,(result,_decodeError,scanControls)=>{
-    const value=result?.getText()?.trim();
+   setCameraActive(true);setStatus("Camera is active. Native camera decoding and the bundled ZXing multi-format engine are scanning together. Supported formats include EAN, UPC, Code 39/93/128, ITF, Codabar, PDF417, Data Matrix, Aztec, MaxiCode, RSS and QR.");
+   const deliver=(value:string,stopNative?:()=>void)=>{
     if(!value||detected.current)return;
     detected.current=true;
     const image=captureFrame();
-    scanControls.stop();zxingControls.current=null;stopCamera();
+    stopNative?.();stopCamera();
     if(detectedImageCallback.current&&image)void Promise.resolve(detectedImageCallback.current(value,image)).catch(()=>{});
     else callback.current(value);
+   };
+   const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
+   if(Detector){
+    try{
+     const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","maxicode","pdf417","qr_code","rss_14","rss_expanded","upc_a","upc_e"];
+     const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
+     const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
+     if(formats.length){
+      const detector=new Detector({formats});
+      let detecting=false;
+      const tick=async()=>{
+       if(!mounted.current||detected.current||detecting||!video.current)return;
+       detecting=true;
+       try{const codes=await detector.detect(video.current);const value=codes.find(item=>item.rawValue?.trim())?.rawValue?.trim();if(value){deliver(value);return;}}
+       catch{/* A blurred frame is normal; continue with the next frame and ZXing. */}
+       finally{detecting=false;}
+       if(mounted.current&&!detected.current)frame.current=requestAnimationFrame(()=>void tick());
+      };
+      frame.current=requestAnimationFrame(()=>void tick());
+     }
+    }catch{/* The bundled ZXing decoder remains available if native decoding cannot start. */}
+   }
+   const reader=createZxingReader();
+   const controls=await reader.decodeFromStream(camera,video.current,(result,_decodeError,scanControls)=>{
+    const value=result?.getText()?.trim();
+    if(value)deliver(value,()=>scanControls.stop());
    });
    if(!mounted.current||detected.current){controls.stop();return;}
    zxingControls.current=controls;
