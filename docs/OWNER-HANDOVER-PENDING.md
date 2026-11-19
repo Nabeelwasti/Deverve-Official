@@ -88,3 +88,15 @@ Only configure these after the final production hostname is confirmed. Never com
 - [x] Focused checkout/payment source audit completed; the high-severity Safepay partial-commit risk has a guarded feature-branch remediation and regression tests. Real D1 integration, durable webhook processing and provider sandbox verification remain release blockers.
 - [x] No production deployment, merge, production migration, secret change, live-data mutation or R2 object change was performed as part of this work.
 - [ ] This successful CI run is not proof of production deployment, physical Android behavior, live payment/email/WhatsApp delivery or business acceptance.
+
+
+## Variant inventory lifecycle — 19 November 2026
+
+- [x] Aggregate duplicate order-item quantities by variant before admin dispatch/cancellation and customer delivery-quotation decline.
+- [x] Add grouped SQL guards so combined quantities cannot exceed physical stock or reserved stock.
+- [x] Add regression tests for duplicate checkout lines, duplicate order-item dispatch and insufficient combined reservations.
+- [x] Run isolated remote Cloudflare D1 checks for concurrent checkout contention, duplicate-line dispatch/cancellation, insufficient stock/reservation, Safepay reconciliation and paid-order inventory fulfilment. The test database was temporary and separate from `deverve-production`.
+- [x] Add a repeatable `npm run test:d1:integration` suite. It requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (D1 read/write only) and automatically creates/deletes a uniquely named test database.
+- [ ] Run the committed integration script from the owner's authorized environment and retain its output as a release artifact.
+- [ ] Expand the isolated integration suite against the complete current migration set and add SQL constraint-failure/rollback and concurrent duplicate webhook replay tests.
+- [ ] Keep first-class reservation records, durable async Safepay webhook ingestion, provider sandbox acceptance, backups/restore and production schema release sequencing as separate release gates.
