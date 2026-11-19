@@ -4526,11 +4526,13 @@ async function adminAITaskHistoryRoute(request:Request,env:Env,url:URL):Promise<
  if(!["owner","manager","catalogue"].includes(admin.role))return error("Your role cannot access AI task history",403);
  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
  try{
-  const match=/^\\/api\\/admin\\/ai\\/tasks\\/([0-9a-f-]{36})$/i.exec(url.pathname);
+  const taskPrefix="/api/admin/ai/tasks/";
+  const taskId=url.pathname.startsWith(taskPrefix)?url.pathname.slice(taskPrefix.length):"";
+  const match=/^[0-9a-f-]{36}$/i.exec(taskId);
   if(match){
-   const task=await env.DB.prepare("SELECT id,task_type,status,current_step,completed_batches,failed_batches,last_error,created_at,updated_at,completed_at FROM ai_task_runs WHERE id=? AND created_by_admin_id=? LIMIT 1").bind(match[1],admin.admin_user_id).first<Record<string,unknown>>();
+   const task=await env.DB.prepare("SELECT id,task_type,status,current_step,completed_batches,failed_batches,last_error,created_at,updated_at,completed_at FROM ai_task_runs WHERE id=? AND created_by_admin_id=? LIMIT 1").bind(taskId,admin.admin_user_id).first<Record<string,unknown>>();
    if(!task)return error("AI task was not found",404);
-   const result=await env.DB.prepare("SELECT id,event_type,batch_index,model,payload_json,created_at FROM ai_task_events WHERE task_id=? ORDER BY created_at ASC LIMIT 100").bind(match[1]).all<Record<string,unknown>>();
+   const result=await env.DB.prepare("SELECT id,event_type,batch_index,model,payload_json,created_at FROM ai_task_events WHERE task_id=? ORDER BY created_at ASC LIMIT 100").bind(taskId).all<Record<string,unknown>>().;
    const events=(result.results??[]).map(row=>{let payload:unknown={};try{payload=JSON.parse(String(row.payload_json??"{}"));}catch{}return{id:row.id,event_type:row.event_type,batch_index:row.batch_index,model:row.model,payload,created_at:row.created_at};});
    return json({ok:true,task,events});
   }
