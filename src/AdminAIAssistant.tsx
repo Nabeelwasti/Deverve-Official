@@ -84,6 +84,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (!text || busy) { if (!text) setStatus("Write a message or attach product images with an instruction."); return; }
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
+    const taskId = crypto.randomUUID();
     try {
       let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));
       const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);
@@ -126,7 +127,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           return { name: file.name, mime_type: attachmentMime(file), text: content };
         }));
         const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
-          method: "POST", body: JSON.stringify({ task, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
+          method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
         });
         results.push(result);
         batchRecords.push({ response: result, files: batch });
@@ -163,7 +164,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
-              task: "chat",
+              task: "chat", task_id: taskId, task_complete: true,
               messages: [{ role: "user", text: "GLOBAL CATALOGUE GROUPING PLAN. You have summaries from every attachment batch in this task. Analyse them together. Group images that show the same underlying product/style, and distinguish different products from the same product in different colours. Use filenames as clues only, not proof. Never merge merely similar garments. Flag uncertainty and missing evidence. Do not invent stock or sizes. Return a concise numbered plan with group name, included batch/file names, evidence, confidence (high/medium/low), and unresolved questions. Do not create or publish records. Batch summaries: " + planningInput }]
             })
           });
