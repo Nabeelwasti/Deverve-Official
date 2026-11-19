@@ -68,13 +68,17 @@ function productGalleryImages(product: StoreProduct, selectedVariantId?: string,
     || product.variants.find((variant) => variant.id === selectedVariantId);
   const colour = (selectedColor || splitProductOptions(selected?.color || "")[0] || "").trim().toLowerCase();
   const imageMedia = product.media.filter((item) => item.media_type === "image");
-  const relevant = imageMedia.filter((item) => !item.color?.trim() || !colour || item.color.trim().toLowerCase() === colour);
-  if (relevant.length) return relevant.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
-  const uncoloured = imageMedia.filter((item) => !item.color?.trim());
-  if (uncoloured.length) return uncoloured.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
-  const primary = imageMedia.filter((item) => item.is_primary === 1);
-  if (primary.length) return primary.map((item) => ({ id: item.id, url: item.url, alt_text: (item.alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }));
-  if (imageMedia.length) return [{ id: imageMedia[0].id, url: imageMedia[0].url, alt_text: (imageMedia[0].alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }];
+  const toImages = (items: StoreProductMedia[]) => items.map((item) => ({ id: item.id, url: item.url, alt_text: item.alt_text || product.name }));
+  if (colour) {
+    const colourSpecific = imageMedia.filter((item) => item.color?.trim().toLowerCase() === colour);
+    if (colourSpecific.length) return toImages(colourSpecific);
+    const uncoloured = imageMedia.filter((item) => !item.color?.trim());
+    if (uncoloured.length) return toImages(uncoloured);
+    const primary = imageMedia.filter((item) => item.is_primary === 1);
+    if (primary.length) return primary.map((item) => ({ id: item.id, url: item.url, alt_text: (item.alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }));
+    if (imageMedia.length) return [{ id: imageMedia[0].id, url: imageMedia[0].url, alt_text: (imageMedia[0].alt_text || product.name) + " — representative image; photos for the selected colour are not available yet" }];
+  }
+  if (imageMedia.length) return toImages(imageMedia);
   return product.image_key ? [{ id: "cover", url: "/media/" + product.image_key, alt_text: product.name }] : [];
 }
 
