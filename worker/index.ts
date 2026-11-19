@@ -4433,6 +4433,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
  const task=body.task==="product"?"product":body.task==="research"?"research":"chat";
  const taskId=typeof body.task_id==="string"&&/^[0-9a-f-]{36}$/i.test(body.task_id)?body.task_id:crypto.randomUUID();
  const taskComplete=body.task_complete===true;
+ const taskHasFailures=body.task_has_failures===true;
  const batchFingerprint=typeof body.batch_fingerprint==="string"&&/^[a-f0-9]{64}$/i.test(body.batch_fingerprint)?body.batch_fingerprint.toLowerCase():null;
  let taskMemoryEvents:Array<Record<string,unknown>>=[];
  let taskMemory="";
@@ -4494,7 +4495,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
    try{
     const events=[...taskMemoryEvents,compact].slice(-40);
     await env.DB.batch([
-     env.DB.prepare("UPDATE ai_task_runs SET status=?,current_step='research_completed',completed_batches=completed_batches+1,context_json=?,last_error=NULL,updated_at=?,completed_at=? WHERE id=? AND created_by_admin_id=?").bind(taskComplete?"completed":"running",JSON.stringify({events}),now,taskComplete?now:null,taskId,admin.admin_user_id),
+     env.DB.prepare("UPDATE ai_task_runs SET status=?,current_step='research_completed',completed_batches=completed_batches+1,failed_batches=CASE WHEN ?=1 THEN MAX(failed_batches,1) ELSE 0 END,context_json=?,last_error=NULL,updated_at=?,completed_at=? WHERE id=? AND created_by_admin_id=?").bind(taskComplete?(taskHasFailures?"partial":"completed"):"running",taskHasFailures?1:0,JSON.stringify({events}),now,taskComplete?now:null,taskId,admin.admin_user_id),
      env.DB.prepare("INSERT INTO ai_task_events (id,task_id,event_type,batch_index,model,payload_json,created_at) VALUES (?,?, 'research_completed',NULL,?,?,?)").bind(crypto.randomUUID(),taskId,result.model,JSON.stringify(compact),now)
     ]);
    }catch{}
@@ -4516,7 +4517,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
    const events=[...taskMemoryEvents,compact].slice(-40);
    const contextJson=JSON.stringify({events});
    await env.DB.batch([
-    env.DB.prepare("UPDATE ai_task_runs SET status=?,current_step=?,completed_batches=completed_batches+1,failed_batches=failed_batches+?,context_json=?,last_error=NULL,updated_at=?,completed_at=? WHERE id=? AND created_by_admin_id=?").bind(taskComplete?(success?"completed":"partial"):"running",payload.step,success?0:1,contextJson,now,taskComplete?now:null,taskId,admin.admin_user_id),
+    env.DB.prepare("UPDATE ai_task_runs SET status=?,current_step=?,completed_batches=completed_batches+1,failed_batches=CASE WHEN ?=1 THEN MAX(failed_batches,1) ELSE 0 END,context_json=?,last_error=NULL,updated_at=?,completed_at=? WHERE id=? AND created_by_admin_id=?").bind(taskComplete?(taskHasFailures?"partial":"completed"):"running",payload.step,taskHasFailures?1:0,contextJson,now,taskComplete?now:null,taskId,admin.admin_user_id),
     env.DB.prepare("INSERT INTO ai_task_events (id,task_id,event_type,batch_index,model,payload_json,created_at) VALUES (?,?,?,?,?,?,?)").bind(eventId,taskId,success?"batch_completed":"batch_failed",null,payload.model,JSON.stringify(compact),now)
    ]);
    taskMemoryEvents=events;
