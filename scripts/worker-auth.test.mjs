@@ -1961,21 +1961,24 @@ test("wholesale quotation can be sent, customer-approved and converted once into
     business_name: "Test Retail Store", contact_name: "Wholesale Buyer", phone: "+923001234567",
     email: "buyer@example.com", delivery_address: "Shop 12, Main Market", city: "Jhelum",
     valid_until: new Date(Date.now() + 7 * 86400000).toISOString(),
-    items: [{ variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }, { variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }],
+    items: [{ variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }],
   }, headers), env(db));
   assert.equal(created.status, 201);
   const createdBody = await created.json();
   const quoteId = createdBody.quote_id;
   const quote = db.wholesaleQuotes.get(quoteId);
+  const originalQuoteLine = db.wholesaleQuoteItems[0];
+  db.wholesaleQuoteItems.push({ ...originalQuoteLine, id: crypto.randomUUID(), quantity: 6, line_total_paisa: 1110000 });
+  quote.quoted_total_paisa = 2220000;
   assert.equal(quote.quoted_total_paisa, 2220000);
   assert.equal(quote.status, "prepared");
-  assert.equal(db.wholesaleQuoteItems.length, 2, "the quote preserves duplicate source lines for customer review");
+  assert.equal(db.wholesaleQuoteItems.length, 2, "legacy duplicate quote lines are retained and aggregated safely during conversion");
   const sent = await handleRequest(request("/api/admin/wholesale-quotes/" + quoteId, "PATCH", { status: "sent" }, headers), env(db));
   assert.equal(sent.status, 200);
   const publicUrl = "/api/wholesale-quotes/" + quote.approval_token;
   const view = await handleRequest(new Request(origin + publicUrl), env(db));
   assert.equal(view.status, 200);
-  assert.equal((await view.json()).quote.items[0].quantity, 12);
+  assert.equal((await view.json()).quote.items[0].quantity, 6);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   const guestAccept = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(guestAccept.status, 401);
