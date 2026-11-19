@@ -116,9 +116,9 @@ try {
     { sql: "UPDATE order_inventory_reservations SET status='consumed',consumed_at='test',updated_at='test' WHERE order_id='o-paid' AND variant_id='v-paid' AND status='reserved' AND changes()=1" },
   ]);
   check(fulfilPaid.every((item, index) => changes(fulfilPaid, index) === 1), "paid order can dispatch duplicate variant lines exactly once and consume its reservation without changing its payment ledger");
-  const finalState = await query(databaseId, "SELECT o.order_status,o.payment_status,o.financial_transaction_id,v.stock_on_hand,v.reserved_quantity,(SELECT COUNT(*) FROM financial_transactions WHERE reference_id='o-paid') AS ledger_count,(SELECT COALESCE(SUM(quantity_delta),0) FROM inventory_movements WHERE reference_id='o-paid') AS movement_total FROM orders o JOIN product_variants v ON v.id='v-paid' WHERE o.id='o-paid'");
+  const finalState = await query(databaseId, "SELECT o.order_status,o.payment_status,o.financial_transaction_id,v.stock_on_hand,v.reserved_quantity,(SELECT COUNT(*) FROM financial_transactions WHERE reference_id='o-paid') AS ledger_count,(SELECT COALESCE(SUM(quantity_delta),0) FROM inventory_movements WHERE reference_id='o-paid') AS movement_total,(SELECT status FROM order_inventory_reservations WHERE order_id='o-paid' AND variant_id='v-paid') AS reservation_status FROM orders o JOIN product_variants v ON v.id='v-paid' WHERE o.id='o-paid'");
   const final = finalState[0].results[0];
-  check(final.order_status === "dispatched" && final.payment_status === "paid" && final.financial_transaction_id === "ft-paid" && final.stock_on_hand === 0 && final.reserved_quantity === 0 && final.ledger_count === 1 && final.movement_total === -5, "paid order, one financial ledger row and exact inventory movement reconcile end-to-end");
+  check(final.order_status === "dispatched" && final.payment_status === "paid" && final.financial_transaction_id === "ft-paid" && final.stock_on_hand === 0 && final.reserved_quantity === 0 && final.ledger_count === 1 && final.movement_total === -5 && final.reservation_status === "consumed", "paid order, one financial ledger row, exact inventory movement and consumed reservation reconcile end-to-end");
 
   console.log("Remote D1 integration checks passed:", passed);
 } finally {
