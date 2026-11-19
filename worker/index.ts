@@ -1974,7 +1974,7 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
           if(existing.uploaded_by!==admin.admin_user_id||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||existing.status==="archived"){
             failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
           }
-          const head=await env.MEDIA.head(existing.object_key);
+          const head=await env.MEDIA.get(existing.object_key);
           if(existing.status==="ready"){
             if(head?.customMetadata?.sha256!==sha256){failures.push({name:file.name,error:"The saved media content does not match this retry. Use a new upload identifier."});continue;}
             results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
