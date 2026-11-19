@@ -303,6 +303,36 @@ test("Safepay webhook HMAC-SHA512 verification accepts the exact raw payload and
   assert.equal(await verifySafepaySignature(raw, "invalid", secret), false);
 });
 
+test("Safepay webhook is durably queued after signature verification when the Pages Queue binding exists", async () => {
+  const db = new FakeD1();
+  const raw = JSON.stringify({ token: "evt_queue_123456789012", type: "payment.succeeded", data: { tracker: "track_queue_123456789012", state: "TRACKER_ENDED", amount: 12000, currency: "PKR" } });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const signature = Array.from(new Uint8Array(signed), byte => byte.toString(16).padStart(2, "0")).join("");
+  const sent = [];
+  const configured = {
+    ...env(db),
+    SAFEPAY_ENV: "sandbox",
+    SAFEPAY_MERCHANT_API_KEY: "test-public-key",
+    SAFEPAY_SECRET_KEY: "test-secret-key",
+    SAFEPAY_WEBHOOK_SECRET: secret,
+    PAYMENT_WEBHOOK_QUEUE: { async send(message) { sent.push(message); } },
+  };
+  const response = await handleRequest(new Request(origin + "/api/webhooks/safepay", {
+    method: "POST", headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": signature }, body: raw,
+  }), configured);
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { received: true, queued: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].rawBody, raw);
+  assert.equal(sent[0].signature, signature);
+  assert.equal(sent[0].eventId, "evt_queue_123456789012");
+  assert.equal(sent[0].payloadDigest.length, 64);
+  assert.equal(db.paymentWebhookEvents.get("evt_queue_123456789012").processing_status, "received");
+  assert.equal(db.paymentAttempts.size, 0, "the Pages request must acknowledge only after durable queue publication, not process payment inline");
+});
+
 test("Safepay checkout stays unavailable unless all sandbox credentials are configured", async () => {
   const response = await handleRequest(request("/api/storefront/payment-options", "GET"), env(new FakeD1()));
   assert.equal(response.status, 200);
