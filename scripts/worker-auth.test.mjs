@@ -12,6 +12,7 @@ test("AI support language signal distinguishes Urdu script, Roman Urdu and ordin
   assert.match(customerLanguageHint("مجھے اس کی قیمت بتائیں"), /Arabic-derived script/);
   assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
   assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
+  assert.match(customerLanguageHint("Please check stock, aap have black?"), /No Urdu-specific signal is dominant/);
 });
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
