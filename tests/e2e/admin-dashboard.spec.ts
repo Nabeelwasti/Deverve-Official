@@ -232,7 +232,8 @@ test("AI catalogue intake analyses all 100 selected images across resumable batc
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: "Analysed this image batch.", model: "gemini-test", product_drafts: drafts }) });
       return;
     }
-    if (images.length) {
+    const messages = Array.isArray(body.messages) ? body.messages as Array<{ text?: string }> : [];
+    if (messages.some(message => String(message.text || "").includes("labelled visual contact-sheet overview"))) {
       finalSheetCount = images.length;
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: JSON.stringify({ groups: [] }), model: "gemini-test" }) });
       return;
@@ -254,9 +255,9 @@ test("AI catalogue intake analyses all 100 selected images across resumable batc
   await page.getByRole("button", { name: "Analyse images & prepare draft" }).click();
   await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible({ timeout: 60000 });
   expect(productBatches).toBe(34);
+  expect(finalSheetCount).toBe(7);
   expect(chunkPlans).toBe(9);
   expect(maximumImagesPerBatch).toBe(3);
-  expect(finalSheetCount).toBe(7);
 });
 
 test("owner can execute a direct AI publishing command without an approval form", async ({ page }) => {
