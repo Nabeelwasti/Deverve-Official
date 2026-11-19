@@ -4369,20 +4369,20 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
  const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\\s+/g," ").trim();
  const now=new Date().toISOString();
  try{
-  if(/^(?:please )?publish (?:all |every )?(?:eligible )?(?:draft )?products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
+  if(/^(?:please )?publish all draft products$/.test(normalized)||/^(?:please )?publish all eligible draft products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
    const before=await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE status='draft'").first<{count:number}>();
-   const count=Number(before?.count??0);
-   if(!Number.isSafeInteger(count)||count<0)return error("Could not determine the draft catalogue count",503);
-   if(count===0)return json({ok:true,action:"publish_all_drafts",published:0,message:"There are no draft products to publish."});
+   const eligible=await env.DB.prepare("SELECT COUNT(*) AS count FROM products p WHERE p.status='draft' AND length(trim(p.name))>=2 AND length(trim(p.category))>=2 AND p.retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=p.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity)").first<{count:number}>();
+   const requested=Number(before?.count??0),count=Number(eligible?.count??0),skipped=Math.max(0,requested-count);
+   if(!Number.isSafeInteger(requested)||!Number.isSafeInteger(count)||requested<0||count<0||count>requested)return error("Could not safely determine eligible draft products",503);
+   if(count===0)return json({ok:true,action:"publish_all_drafts",published:0,skipped,message:requested?"No draft products met the publishing checks. Each needs a name, category, retail price and at least one active size/colour variant with available stock.":"There are no draft products to publish."});
    const batchId=crypto.randomUUID();
    await env.DB.batch([
-    env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE status='draft'").bind(now),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,JSON.stringify({command,requested_count:count,batch_id:batchId}))
+    env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE status='draft' AND length(trim(name))>=2 AND length(trim(category))>=2 AND retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=products.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity)").bind(now),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.products.bulk_published","product",null,JSON.stringify({command,requested_count:requested,published_count:count,skipped_count:skipped,batch_id:batchId}))
    ]);
-   const after=await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE status='published'").first<{count:number}>();
-   return json({ok:true,action:"publish_all_drafts",published:count,published_total:Number(after?.count??0),batch_id:batchId,message:"Published "+count+" draft product(s) directly to the live catalogue."});
+   return json({ok:true,action:"publish_all_drafts",published:count,skipped,batch_id:batchId,message:"Published "+count+" eligible draft product(s). "+skipped+" draft(s) were left unpublished because they need catalogue, price or available-variant information."});
   }
-  const single=/^(?:please )?publish product (.+)$/.exec(command);
+  const single=/^(?:please )?publish product (.+)$/i.exec(command);
   if(single){
    const identifier=single[1].trim().replace(/^["']|["']$/g,"").slice(0,160);
    if(!identifier)return error("Specify a product name, slug or ID",400);
@@ -4401,7 +4401,6 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
   return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>' and 'publish all draft products'. No changes were made.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
 }
-
 async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
  if(url.pathname!=="/api/admin/ai/assistant")return null;
  if(request.method!=="POST")return error("Method not allowed",405);
