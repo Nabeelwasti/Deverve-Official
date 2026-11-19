@@ -394,15 +394,15 @@ async function constantTimeTextEqual(left: string, right: string): Promise<boole
 }
 
 function requireSameOrigin(request: Request, url: URL): boolean {
-  const fetchSite = request.headers.get("sec-fetch-site");
+  const fetchSite = request.headers.get("sec-fetch-site")?.toLowerCase();
   if (fetchSite === "cross-site") return false;
+  // A same-origin browser fetch may traverse a proxy whose forwarded Origin differs
+  // from the Worker URL. Trust the non-simple marker only when no explicit cross-site
+  // signal exists; cross-origin callers still need a successful CORS preflight.
+  if (request.headers.get("x-deverve-admin-request") === "same-origin") return true;
   const origin = request.headers.get("origin");
   if (origin) return origin === url.origin;
   if (fetchSite === "same-origin") return true;
-  // Same-origin admin clients in embedded browsers may omit Origin and Referer.
-  // This non-simple header is only accepted when no explicit cross-site signal exists;
-  // cross-origin callers cannot send it without a successful CORS preflight.
-  if (request.headers.get("x-deverve-admin-request") === "same-origin") return true;
   const referer = request.headers.get("referer");
   if (!referer) return false;
   try { return new URL(referer).origin === url.origin; } catch { return false; }
