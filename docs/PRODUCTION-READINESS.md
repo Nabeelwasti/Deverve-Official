@@ -434,3 +434,15 @@ The current POS sale handler always inserts `customer_email`, `email_receipt_req
 - Safepay handler still performs reconciliation synchronously before returning success. A durable event-inbox + prompt acknowledgement + asynchronous worker/queue design remains required before live enablement.
 - Provider contract must be confirmed against the merchant's actual Safepay product and sandbox. Current Safepay checkout docs use raw-body HMAC-SHA512 and `token/type/data.tracker`; the newer Raast delivery guide describes a distinct timestamped HMAC-SHA256 envelope. Do not mix contracts.
 - Safepay remains disabled until all above release gates and owner/provider acceptance are complete.
+
+
+## 19 November 2026 — order inventory aggregation and isolated D1 evidence
+
+- Duplicate order-item rows are aggregated by variant before admin dispatch/cancellation and customer delivery-fee decline. SQL guards use grouped `SUM(quantity)` checks, so individually valid rows cannot bypass combined stock/reservation limits.
+- Checkout cart duplicates are consolidated by variant/selected options, and reservations are aggregated by variant ID.
+- Added regression tests for duplicate cart lines, duplicate order-item dispatch and insufficient combined reservation.
+- Added a reproducible remote D1 integration script (`npm run test:d1:integration`) that creates and removes a temporary D1 database. It is not part of ordinary CI because it requires explicit Cloudflare account/token environment variables.
+- A focused temporary Cloudflare D1 database was manually exercised: concurrent checkout contention, duplicate-line dispatch/cancellation, insufficient combined stock/reservation, Safepay attempt/order/ledger transition, and fulfilment of the paid order. No production database was queried or modified for these tests.
+- The focused test schema is not a full production migration clone. The repeatable integration script still needs an authorized run and the full migration/rollback suite still needs expansion.
+- Latest observed CI run `44516695093`: TypeScript/build, dependency audit, Worker regression tests, D1 schema validation and Chromium install passed; storefront browser tests were still running when recorded.
+- No deployment, merge, production migration or production data mutation was performed.
