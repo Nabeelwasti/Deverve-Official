@@ -77,6 +77,9 @@ test("product creation stays inside the catalogue workspace and exposes broad si
     }
     await route.fallback();
   });
+  await page.route("**/api/admin/products/research", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, summary: "Exact product identity is not fully verified. The official brand page shows a cotton-blend hoodie with a regular fit.", sources: [{ title: "Official product page", url: "https://example.com/product" }], queries: ["Palette test hoodie official"], model: "gemini-3.5-flash-lite" }) });
+  });
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
@@ -84,6 +87,9 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.getByLabel("Product name").fill("Palette test hoodie");
   await page.getByLabel("Category").fill("Hoodies");
   await expect(page.getByLabel("Default purchase cost (PKR)")).toBeVisible();
+  await page.getByRole("button", { name: "Research product online" }).click();
+  await expect(page.getByText(/Exact product identity is not fully verified/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Official product page" })).toHaveAttribute("href", "https://example.com/product");
   await page.getByRole("button", { name: "Save product" }).click();
   await expect(page.getByRole("heading", { name: "Palette test hoodie" })).toBeVisible();
   await expect(page.getByText("Bulk size & colour stock matrix")).toBeVisible();
