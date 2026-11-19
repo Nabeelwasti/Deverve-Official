@@ -10,7 +10,8 @@
     "check:worker": "tsc -p tsconfig.worker.json",
     "check": "npm run build && npm run check:worker",
     "test:worker": "tsc -p tsconfig.worker.test.json && node scripts/verify_sql_bindings.mjs && node --test scripts/worker-auth.test.mjs scripts/cnic-retention.test.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:d1:integration": "node scripts/d1-inventory.integration.test.mjs"
   },
   "dependencies": {
     "react": "^19.1.0",

@@ -1,0 +1,25 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "deverve-safepay-webhook-consumer",
+  "main": "./index.ts",
+  "compatibility_date": "2026-11-19",
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "deverve-production",
+      "database_id": "REPLACE_WITH_THE_EXISTING_D1_DATABASE_ID"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "deverve-payment-webhooks",
+        "max_batch_size": 10,
+        "max_batch_timeout": 5,
+        "max_retries": 10,
+        "dead_letter_queue": "deverve-payment-webhooks-dlq"
+      }
+    ]
+  }
+}

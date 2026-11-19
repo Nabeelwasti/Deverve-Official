@@ -8,14 +8,28 @@ export default function ProductVariantPicker({variants,selectedVariantId,onChang
  const colors=useMemo(()=>[...new Set(variants.flatMap(v=>split(v.color)))],[variants]);
  const activeSize=selectedSize&&sizes.includes(selectedSize)?selectedSize:(selected?split(selected.size)[0]??"":"");
  const activeColor=selectedColor&&colors.includes(selectedColor)?selectedColor:(selected?split(selected.color)[0]??"":"");
- const matching=(size:string,color:string)=>variants.find(v=>v.available_quantity>0&&split(v.size).includes(size)&&split(v.color).includes(color))??variants.find(v=>v.available_quantity>0&&split(v.size).includes(size)&&(!color||!split(v.color).length))??variants.find(v=>v.available_quantity>0&&split(v.color).includes(color)&&(!size||!split(v.size).length));
- const choose=(size:string,color:string)=>{const next=matching(size,color);if(next)onChange(next.id,size,color);};
- const colorAvailable=(color:string)=>variants.some(v=>v.available_quantity>0&&split(v.color).includes(color)&&(!activeSize||split(v.size).includes(activeSize)));
- const sizeAvailable=(size:string)=>variants.some(v=>v.available_quantity>0&&split(v.size).includes(size)&&(!activeColor||split(v.color).includes(activeColor)));
+ const availableVariants=variants.filter(v=>v.available_quantity>0);
+ const choose=(size:string,color:string,priority:"size"|"color")=>{
+  const exact=availableVariants.find(v=>split(v.size).includes(size)&&split(v.color).includes(color));
+  const next=exact??(priority==="size"
+   ?availableVariants.find(v=>split(v.size).includes(size))
+   :availableVariants.find(v=>split(v.color).includes(color)));
+  if(next){
+   const nextSizes=split(next.size),nextColors=split(next.color);
+   const resolvedSize=nextSizes.includes(size)?size:(nextSizes[0]??size);
+   const resolvedColor=nextColors.includes(color)?color:(nextColors[0]??color);
+   onChange(next.id,resolvedSize,resolvedColor);
+  }
+ };
+ // Keep each option selectable when it exists in any in-stock variant. If the
+ // current pair is unavailable, choosing either dimension moves the other
+ // dimension to the first valid in-stock combination.
+ const colorAvailable=(color:string)=>availableVariants.some(v=>split(v.color).includes(color));
+ const sizeAvailable=(size:string)=>availableVariants.some(v=>split(v.size).includes(size));
  if(!variants.length)return null;
  return <div className={compact?"dv-variant-picker is-compact":"dv-variant-picker"}>
- {showColors&&colors.length>0&&<div className="dv-variant-group"><div className="dv-variant-label"><span>Colour</span><span className="dv-variant-current">{activeColor||"Choose a colour"}</span></div><div className="dv-variant-swatches">{colors.map(color=><button key={color} type="button" className="dv-color-choice" title={color} aria-label={"Colour "+color} aria-pressed={activeColor===color} disabled={!colorAvailable(color)} onClick={()=>choose(activeSize,color)}><span className="dv-color-dot" style={{backgroundColor:swatches[color.toLowerCase()]??"#d6deea"}}/>{!compact&&<span>{color}</span>}</button>)}</div></div>}
- {sizes.length>0&&<div className="dv-variant-group"><div className="dv-variant-label"><span>Size</span><span className="dv-variant-current">{activeSize||"Choose a size"}</span></div><div className="dv-variant-sizes">{sizes.map(size=><button key={size} type="button" className="dv-size-choice" aria-label={"Size "+size} aria-pressed={activeSize===size} disabled={!sizeAvailable(size)} onClick={()=>choose(size,activeColor)}>{size}</button>)}</div></div>}
+ {showColors&&colors.length>0&&<div className="dv-variant-group"><div className="dv-variant-label"><span>Colour</span><span className="dv-variant-current">{activeColor||"Choose a colour"}</span></div><div className="dv-variant-swatches">{colors.map(color=><button key={color} type="button" className="dv-color-choice" title={color} aria-label={"Colour "+color} aria-pressed={activeColor===color} disabled={!colorAvailable(color)} onClick={()=>choose(activeSize,color,"color")}><span className="dv-color-dot" style={{backgroundColor:swatches[color.toLowerCase()]??"#d6deea"}}/>{!compact&&<span>{color}</span>}</button>)}</div></div>}
+ {sizes.length>0&&<div className="dv-variant-group"><div className="dv-variant-label"><span>Size</span><span className="dv-variant-current">{activeSize||"Choose a size"}</span></div><div className="dv-variant-sizes">{sizes.map(size=><button key={size} type="button" className="dv-size-choice" aria-label={"Size "+size} aria-pressed={activeSize===size} disabled={!sizeAvailable(size)} onClick={()=>choose(size,activeColor,"size")}>{size}</button>)}</div></div>}
  {!colors.length&&!sizes.length&&<div className="dv-variant-group"><div className="dv-variant-label">Available options</div><div className="dv-variant-sizes">{variants.map(v=><button key={v.id} type="button" className="dv-size-choice" aria-pressed={selected?.id===v.id} disabled={v.available_quantity<1} onClick={()=>onChange(v.id,v.size,v.color)}>{v.sku||"Standard"} · {v.available_quantity} left</button>)}</div></div>}
  <small className="product-stock-note">{selected?((split(selected.size).length>1||split(selected.color).length>1)?selected.available_quantity+" total stock across the listed size and colour options":selected.available_quantity>0?selected.available_quantity+" in stock for the selected option":"Selected option is out of stock"):"Choose an available option"}</small></div>;
 }

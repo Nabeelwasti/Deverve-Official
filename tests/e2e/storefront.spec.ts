@@ -404,6 +404,46 @@ test("published product detail page supports gallery zoom, size and colour selec
 });
 
 
+test("product variants let shoppers choose colour or size first and hide unavailable combinations", async ({ page }) => {
+  await page.route("**/api/products?slug=variant-choice-test", async route => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ products: [{
+      id: "88888888-8888-4888-8888-888888888888", slug: "variant-choice-test", name: "Variant Choice Test",
+      description: "Variant selection regression fixture", category: "Hoodies", audience: "unisex",
+      retail_price_paisa: 250000, image_key: null, seo_title: "Variant Choice Test", seo_description: "Test",
+      variants: [
+        { id: "11111111-1111-4111-8111-111111111111", sku: "DV-TEST-S-BLK", size: "S", color: "Black", available_quantity: 2 },
+        { id: "22222222-2222-4222-8222-222222222222", sku: "DV-TEST-L-RED", size: "L", color: "Red", available_quantity: 3 },
+        { id: "33333333-3333-4333-8333-333333333333", sku: "DV-TEST-M-RED", size: "M", color: "Red", available_quantity: 4 },
+        { id: "44444444-4444-4444-8444-444444444444", sku: "DV-TEST-XL-BLU", size: "XL", color: "Blue", available_quantity: 0 }
+      ],
+      media: []
+    }] }) });
+  });
+  await page.goto("/product/variant-choice-test");
+  await expect(page.getByRole("heading", { name: "Variant Choice Test" })).toBeVisible();
+  await page.getByRole("button", { name: "Colour Red" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("L");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
+  await page.getByRole("button", { name: "Size M" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
+  await expect(page.getByRole("button", { name: "Size XL" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Colour Blue" })).toBeDisabled();
+
+  // Reload to verify the reverse interaction order independently.
+  await page.goto("/product/variant-choice-test");
+  await page.getByRole("button", { name: "Size M" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
+  await page.getByRole("button", { name: "Colour Red" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
+  await page.getByRole("button", { name: /Add to cart/ }).click();
+  const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));
+  expect(cart[0]).toMatchObject({ variant_id: "33333333-3333-4333-8333-333333333333", size: "M", color: "Red", quantity: 1 });
+});
+
+
 test("cart opens as a review step and merges repeated identical lines", async ({ page }) => {
   await page.addInitScript(() => {
     const line = { variant_id: "11111111-1111-4111-8111-111111111111", product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "De VERVE Hoodie", sku: "DV-HOOD-NAV-M", size: "M", color: "Navy", quantity: 1, unit_price_paisa: 350000, available_quantity: 5 };

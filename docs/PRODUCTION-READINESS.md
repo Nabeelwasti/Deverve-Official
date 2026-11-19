@@ -1,5 +1,19 @@
 # Current source and production data-protection review — 18 November 2026
 
+## Active hardening work — 19 November 2026
+
+- **Work branch:** `fix/variants-camera-multilingual`; draft PR [#3](https://github.com/Nabeelwasti/Deverve-Official/pull/3), based on main commit `0bfd7141de2ec69e56a7245748cd4ec0cefeab0c`. Keep unmerged until the latest CI passes and acceptance checks are complete.
+- **Variant inventory:** each purchasable size/colour combination is a separate variant with its own SKU, barcode and stock ledger. The storefront supports choosing either dimension first and moves to an available matching combination. Out-of-stock options are disabled. Legacy variants containing multiple sizes/colours under one shared stock balance must be reconciled and deactivated before a new per-combination matrix can be generated; this avoids silently duplicating aggregate stock.
+- **Bulk matrix:** one authenticated, same-origin endpoint validates up to 100 combinations and saves variant rows, opening stock movements and audit entries in a single D1 transaction. A failed transaction rolls back the batch; the admin retains the entered matrix for correction/retry.
+- **POS stock concurrency:** POS sale creation now guards the initial sale insert with one D1 statement requiring every selected, published, active variant to have sufficient unreserved stock. Dependent sale lines, stock decrements, inventory movements, payments, ledger entries, audit records and receipt-outbox rows are conditional on that guarded sale existing. A failed stock guard returns a conflict without creating a sale or financial records. The guard has a Worker unit test, and stock decrements update the variant timestamp. This still needs a full integration test against a real D1 database before release.
+- **Concurrent duplicate protection:** a read-only production D1 query found no duplicate active single-option size/colour combinations. Migration `0034_unique_active_variant_options.sql` adds a case/whitespace-insensitive partial unique index for active single-option variants while excluding legacy multi-option rows. The migration is in this branch only and has **not** been applied to production.
+- **Camera scanner:** bundled ZXing is the cross-browser fallback; native BarcodeDetector is optional acceleration. Scanner unmount stops decoding controls, animation frames and camera tracks. Product-photo decoding falls back to HTMLImageElement where createImageBitmap is unavailable. Browser simulation is not proof of physical-device camera permission, focus, lighting or QR/barcode detection.
+- **AI language:** the support prompt follows the latest customer message and writing system. A deterministic signal strengthens Urdu-script and Roman Urdu handling. AI responses still require real-provider acceptance tests in Urdu script, Roman Urdu and English; the prompt cannot guarantee perfect model compliance.
+- **CI status:** check the latest PR-head run before merge. Earlier runs against intermediate commits are not evidence that the current PR head passed. A successful build and browser suite do not replace a real-origin smoke test or device testing.
+- **Deployment restriction:** no Cloudflare API, Wrangler, Pages deployment, production migration or live-data mutation was performed for this work. Keep the PR unmerged and do not deploy until the owner explicitly says **“deploy now”**.
+- **Remaining owner/operations acceptance:** verify live product and vehicle details, approved prices and policies; configure and test approved payment, email, Meta and WhatsApp providers; verify Google Business Profile and domain; complete independent encrypted backup/restore drills; test real customer checkout, stock reservation/release, refunds/returns and rental document handling on the production origin after an explicitly approved release.
+
+
 ## Latest production reconciliation — 18 November 2026
 
 **This section is the authoritative current status and supersedes conflicting migration, deployment, and dependency notes in the historical audit snapshots below.**
@@ -397,3 +411,38 @@ A second read-only D1 check confirmed `enquiries.contact_type` is absent in prod
 ### POS sale impact of migration 0030 — 18 November 2026
 
 The current POS sale handler always inserts `customer_email`, `email_receipt_requested`, and `whatsapp_receipt_consent` into `pos_sales`, even when no receipt is requested, and conditionally inserts rows into `pos_receipt_outbox`. The inspected production schema has none of these columns/table. Therefore deploying the current POS Worker before migration 0030 would cause POS sale creation to fail at the D1 batch. Migration 0030 is a critical compatibility gate, not an optional email/WhatsApp enhancement.
+
+
+## Feature-branch verification update — 19 November 2026
+
+- **Exact PR head:** `2b3d61a1cbeda6ff1b7f1bf050d110deeb195f2b`.
+- **Latest complete CI:** GitHub Actions run [44492745810](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44492745810) completed with conclusion **success** on that exact PR head. The build job passed locked dependency installation, dependency audit artifact capture, TypeScript/build, production dependency audit, Pages security-header output validation, Worker authentication/regression tests, D1 schema/constraint validation, Chromium installation and storefront browser tests. This is source/CI evidence only; it is not a production deployment or live-provider acceptance.
+- **PR state:** PR #3 remains open and draft, based on `main` at `0bfd7141de2ec69e56a7245748cd4ec0cefeab0c`. It has not been merged.
+- **Reservation model boundary:** online checkout currently relies on the order/order-item records plus the variant-level aggregate `reserved_quantity` counter and inventory movement ledger. There is no verified first-class per-reservation record with its own ID, expiry, owner, payment linkage and lifecycle state. Do not describe individual reservation traceability or automated expiry/reconciliation as complete. Do not automatically release stock based only on elapsed time: a delayed or retried payment-success webhook could otherwise leave a paid order without stock.
+- **POS concurrency boundary:** the guarded POS insert and its unit test reduce oversell risk, but the test validates SQL guard construction. A real D1 integration test must still prove that competing POS/online writes cannot oversell and that every dependent sale, payment, ledger and outbox row rolls back together.
+- **Release blockers still open:** production migrations 0028–0031 and 0033 require fresh schema reconciliation and an approved, backed-up release sequence (0032 CNIC protection must remain intact); no migration was run by this branch work. Real Android camera tests, real Gemini language/provider tests, Safepay sandbox transaction verification, Resend/WhatsApp delivery tests, owner-approved catalogue/pricing/policies, custom domain/Google Business Profile verification, independent D1+R2 backup and restore drill, and production-origin transaction smoke tests remain outstanding.
+- **Safety:** no deployment, merge, production migration, secret change, live-data mutation or R2 object change was performed for this update. Continue to require the owner's explicit **“deploy now”** authorization before any Cloudflare deployment.
+
+
+## 19 November 2026 — Safepay reconciliation remediation
+
+- Added mutually dependent SQL predicates to the success webhook: the attempt can only become `succeeded` when its matching order is eligible; the order can only become `paid` when that exact attempt is succeeded and amount/order match; the gateway ledger insert requires both the paid order transaction reference and succeeded attempt.
+- Bound each provider event ID to its first payload SHA-256 digest. Reusing an event ID with a different payload is rejected rather than silently replacing the digest.
+- Expanded Worker regression tests for duplicate delivery, exactly-once ledger behavior, conflicting payload replay, and an ineligible order not consuming the attempt.
+- **Validation in progress:** the first CI attempts exposed a stale FakeD1 query fixture; this was corrected. Do not report the remediation as passed until the latest branch-head CI completes successfully.
+- The FakeD1 test double is sequential and in-memory. It does not prove D1 transaction rollback/isolation or real concurrent delivery. A real isolated D1 integration suite remains mandatory.
+- Safepay handler still performs reconciliation synchronously before returning success. A durable event-inbox + prompt acknowledgement + asynchronous worker/queue design remains required before live enablement.
+- Provider contract must be confirmed against the merchant's actual Safepay product and sandbox. Current Safepay checkout docs use raw-body HMAC-SHA512 and `token/type/data.tracker`; the newer Raast delivery guide describes a distinct timestamped HMAC-SHA256 envelope. Do not mix contracts.
+- Safepay remains disabled until all above release gates and owner/provider acceptance are complete.
+
+
+## 19 November 2026 — order inventory aggregation and isolated D1 evidence
+
+- Duplicate order-item rows are aggregated by variant before admin dispatch/cancellation and customer delivery-fee decline. SQL guards use grouped `SUM(quantity)` checks, so individually valid rows cannot bypass combined stock/reservation limits.
+- Checkout cart duplicates are consolidated by variant/selected options, and reservations are aggregated by variant ID.
+- Added regression tests for duplicate cart lines, duplicate order-item dispatch and insufficient combined reservation.
+- Added a reproducible remote D1 integration script (`npm run test:d1:integration`) that creates and removes a temporary D1 database. It is not part of ordinary CI because it requires explicit Cloudflare account/token environment variables.
+- A focused temporary Cloudflare D1 database was manually exercised: concurrent checkout contention, duplicate-line dispatch/cancellation, insufficient combined stock/reservation, Safepay attempt/order/ledger transition, and fulfilment of the paid order. No production database was queried or modified for these tests.
+- The focused test schema is not a full production migration clone. The repeatable integration script still needs an authorized run and the full migration/rollback suite still needs expansion.
+- Latest observed CI run `44516695093`: TypeScript/build, dependency audit, Worker regression tests, D1 schema validation and Chromium install passed; storefront browser tests were still running when recorded.
+- No deployment, merge, production migration or production data mutation was performed.

@@ -193,3 +193,8 @@ See [Secure backup and recovery operations](docs/SECURE-BACKUP-OPERATIONS.md) fo
 ## Owner setup and external integrations
 
 Use [`docs/OWNER-SETUP-AND-HANDOVER-TRACKER.md`](docs/OWNER-SETUP-AND-HANDOVER-TRACKER.md) as the single checklist for owner-supplied details and approvals, including Meta/Facebook/Instagram, WhatsApp, Resend email, payment-provider choice, Google Drive backups, Google/Microsoft sign-in, AI provider decisions, business data, legal approvals and release acceptance. It distinguishes verified repository implementation from owner actions and unfinished developer work. Never place secrets in the tracker, GitHub, or chat.
+
+
+## Production handover and pending owner actions
+
+The current engineering and owner-side release checklist is maintained in [docs/OWNER-HANDOVER-PENDING.md](docs/OWNER-HANDOVER-PENDING.md). It records business data/policy decisions, provider account setup, physical device and live-provider acceptance, backup/restore drills, migration release gates and remaining engineering tests. Keep credentials and personal/customer evidence out of GitHub; use provider secret settings. A green CI run is not production acceptance.

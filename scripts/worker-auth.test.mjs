@@ -6,7 +6,41 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
+
+test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
+  assert.deepEqual(aggregateOrderVariantQuantities([
+    { variant_id: "variant-black-m", quantity: 2 },
+    { variant_id: "variant-blue-l", quantity: 1 },
+    { variant_id: "variant-black-m", quantity: 3 },
+    { variant_id: null, quantity: 1 },
+  ]), [
+    { variant_id: "variant-black-m", quantity: 5 },
+    { variant_id: "variant-blue-l", quantity: 1 },
+  ]);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 0 }]), /positive integer/);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 1.5 }]), /positive integer/);
+  assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: Number.MAX_SAFE_INTEGER }, { variant_id: "v1", quantity: 1 }]), /supported range/);
+});
+
+test("POS stock guard binds every exact variant and rejects oversold combined quantities", () => {
+  const guard = buildPosStockGuard([
+    { variant_id: "variant-black-s", quantity: 2 },
+    { variant_id: "variant-blue-m", quantity: 1 },
+  ]);
+  assert.equal((guard.sql.match(/stock_on_hand-v\.reserved_quantity>=\?/g) ?? []).length, 2);
+  assert.deepEqual(guard.bindings, ["variant-black-s", 2, "variant-blue-m", 1]);
+  assert.throws(() => buildPosStockGuard([]), /at least one variant/);
+  assert.throws(() => buildPosStockGuard([{ variant_id: "variant", quantity: 0 }]), /positive integer quantities/);
+});
+
+test("AI support language signal distinguishes Urdu script, Roman Urdu and ordinary English", () => {
+  assert.match(customerLanguageHint("مجھے اس کی قیمت بتائیں"), /Arabic-derived script/);
+  assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
+  assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
+  assert.match(customerLanguageHint("Please check stock, aap have black?"), /No Urdu-specific signal is dominant/);
+});
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
@@ -270,6 +304,61 @@ test("Safepay webhook HMAC-SHA512 verification accepts the exact raw payload and
   assert.equal(await verifySafepaySignature(raw, "invalid", secret), false);
 });
 
+test("Safepay webhook is durably queued after signature verification when the Pages Queue binding exists", async () => {
+  const db = new FakeD1();
+  const raw = JSON.stringify({ token: "evt_queue_123456789012", type: "payment.succeeded", data: { tracker: "track_queue_123456789012", state: "TRACKER_ENDED", amount: 12000, currency: "PKR" } });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const signed = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const signature = Array.from(new Uint8Array(signed), byte => byte.toString(16).padStart(2, "0")).join("");
+  const sent = [];
+  const configured = {
+    ...env(db),
+    SAFEPAY_ENV: "sandbox",
+    SAFEPAY_MERCHANT_API_KEY: "test-public-key",
+    SAFEPAY_SECRET_KEY: "test-secret-key",
+    SAFEPAY_WEBHOOK_SECRET: secret,
+    PAYMENT_WEBHOOK_QUEUE: { async send(message) { sent.push(message); } },
+  };
+  const response = await handleRequest(new Request(origin + "/api/webhooks/safepay", {
+    method: "POST", headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": signature }, body: raw,
+  }), configured);
+  assert.equal(response.status, 202);
+  assert.deepEqual(await response.json(), { received: true, queued: true });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].rawBody, raw);
+  assert.equal(sent[0].signature, signature);
+  assert.equal(sent[0].eventId, "evt_queue_123456789012");
+  assert.equal(sent[0].payloadDigest.length, 43, "event digest uses the existing base64url SHA-256 representation");
+  assert.equal(db.paymentWebhookEvents.get("evt_queue_123456789012").processing_status, "received");
+  assert.equal(db.paymentAttempts.size, 0, "the Pages request must acknowledge only after durable queue publication, not process payment inline");
+});
+
+test("Safepay Queue consumer re-verifies and reconciles a durable queued event exactly once", async () => {
+  const db = new FakeD1();
+  const orderId = crypto.randomUUID();
+  const tracker = "track_consumer_123456789012";
+  const eventId = "evt_consumer_123456789012";
+  const rawBody = JSON.stringify({ token: eventId, type: "payment.succeeded", data: { tracker, state: "TRACKER_ENDED", amount: 12500, currency: "PKR" } });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const signatureBytes = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const signature = Array.from(new Uint8Array(signatureBytes), byte => byte.toString(16).padStart(2, "0")).join("");
+  const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawBody));
+  const payloadDigest = btoa(String.fromCharCode(...new Uint8Array(digestBytes))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+  db.paymentWebhookEvents.set(eventId, { provider_event_id: eventId, payload_sha256: payloadDigest, processing_status: "received" });
+  db.orders.set(orderId, { id: orderId, order_number: "DV-QUEUE-CONSUMER", total_paisa: 12500, payment_provider: "safepay", payment_status: "pending", delivery_fee_status: "accepted", order_status: "pending" });
+  db.paymentAttempts.set("attempt-queue-consumer", { id: "attempt-queue-consumer", order_id: orderId, provider: "safepay", provider_reference: tracker, amount_paisa: 12500, status: "pending" });
+  const consumerEnv = { ...env(db), SAFEPAY_ENV: "sandbox", SAFEPAY_MERCHANT_API_KEY: "test-public-key", SAFEPAY_SECRET_KEY: "test-secret-key", SAFEPAY_WEBHOOK_SECRET: secret };
+  await safepayQueueConsumer.queue({ messages: [{ body: { rawBody, signature, eventId, payloadDigest } }] }, consumerEnv);
+  assert.equal(db.paymentAttempts.get("attempt-queue-consumer").status, "succeeded");
+  assert.equal(db.orders.get(orderId).payment_status, "paid");
+  assert.equal(db.financialTransactions.length, 1);
+  assert.equal(db.paymentWebhookEvents.get(eventId).processing_status, "processed");
+  await assert.rejects(() => safepayQueueConsumer.queue({ messages: [{ body: { rawBody, signature, eventId, payloadDigest: "A".repeat(43) } }] }, consumerEnv), /payload integrity check failed/);
+  assert.equal(db.financialTransactions.length, 1, "invalid queued payloads must not mutate the payment ledger");
+});
+
 test("Safepay checkout stays unavailable unless all sandbox credentials are configured", async () => {
   const response = await handleRequest(request("/api/storefront/payment-options", "GET"), env(new FakeD1()));
   assert.equal(response.status, 200);
@@ -310,10 +399,59 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.equal(succeeded.status, 200);
   assert.equal(db.paymentAttempts.get("attempt-retry").status, "succeeded");
   assert.equal(db.orders.get(orderId).payment_status, "paid");
+  assert.equal(db.financialTransactions.length, 1, "the successful transition must create exactly one gateway ledger row");
+
+  db.paymentWebhookEvents.get("evt_succeeded_1234567890").processing_status = "failed";
+  const recoveredRetry = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(recoveredRetry.status, 200);
+  assert.deepEqual(await recoveredRetry.json(), { received: true, duplicate: true, reconciled: true }, "a retry after payment/ledger commit must recover event acknowledgement without replaying the ledger");
+  assert.equal(db.financialTransactions.length, 1, "reconciliation retry must not duplicate the ledger row");
+
+  const originalLedgerId = db.orders.get(orderId).financial_transaction_id;
+  db.financialTransactions = [];
+  db.paymentWebhookEvents.get("evt_succeeded_1234567890").processing_status = "failed";
+  const ledgerRecovery = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(ledgerRecovery.status, 200, "a paid order with a missing cashbook row must be repairable on a verified provider retry");
+  assert.deepEqual(await ledgerRecovery.json(), { received: true, processed: true });
+  assert.equal(db.orders.get(orderId).financial_transaction_id, originalLedgerId, "ledger recovery must reuse the already-committed transaction identity");
+  assert.equal(db.financialTransactions.length, 1);
+  assert.equal(db.financialTransactions[0].id, originalLedgerId);
 
   const duplicate = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
+  assert.equal(db.financialTransactions.length, 1, "processed event replay must not duplicate the ledger row");
+
+  const conflictingReplay = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12001, currency: "PKR" });
+  assert.equal(conflictingReplay.status, 409, "an event ID must never be accepted with a different payload");
+  assert.equal(db.financialTransactions.length, 1);
+});
+
+test("Safepay ineligible order cannot consume a successful payment attempt", async () => {
+  const db = new FakeD1();
+  const orderId = crypto.randomUUID();
+  const tracker = "track_22345678-1234-1234-1234-123456789012";
+  db.orders.set(orderId, {
+    id: orderId, order_number: "DV-SAFEPAY-STATE-GUARD", total_paisa: 12000,
+    payment_provider: "safepay", payment_status: "pending",
+    delivery_fee_status: "accepted", order_status: "cancelled",
+  });
+  db.paymentAttempts.set("attempt-state-guard", {
+    id: "attempt-state-guard", order_id: orderId, provider: "safepay",
+    provider_reference: tracker, amount_paisa: 12000, status: "pending",
+  });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const raw = JSON.stringify({ token: "evt_state_guard_123456", type: "payment.succeeded", data: { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" } });
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const digest = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
+  const signature = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const response = await handleRequest(new Request(origin + "/api/webhooks/safepay", {
+    method: "POST", headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": signature }, body: raw,
+  }), { ...env(db), SAFEPAY_ENV: "sandbox", SAFEPAY_MERCHANT_API_KEY: "test-public-key", SAFEPAY_SECRET_KEY: "test-secret-key", SAFEPAY_WEBHOOK_SECRET: secret });
+  assert.equal(response.status, 503, "the provider should retry an event that cannot yet be reconciled");
+  assert.equal(db.paymentAttempts.get("attempt-state-guard").status, "pending", "an ineligible order must not consume the attempt as succeeded");
+  assert.equal(db.orders.get(orderId).payment_status, "pending");
+  assert.equal(db.financialTransactions.length, 0, "no ledger entry may be written for an ineligible order");
 });
 
 test("exchange-only policy rejects new return submissions without creating refund records", async () => {
@@ -491,12 +629,20 @@ test("declining a delivery quotation cancels the COD order and releases reserved
     created_at: new Date().toISOString(),
   });
   db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 2 });
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  db.orderInventoryReservations.set(orderId + ":" + variantId, { id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 3, status: "reserved", payment_provider: "manual", payment_reference: null, reserved_at: new Date().toISOString(), released_at: null, consumed_at: null, updated_at: new Date().toISOString() });
+  const insufficient = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
+  assert.equal(insufficient.status, 409, "decline must not release stock when duplicate lines exceed the reservation");
+  assert.equal(db.orders.get(orderId).order_status, "pending");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 2);
+  db.variants.get(variantId).reserved_quantity = 3;
   const declined = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(declined.status, 200);
   assert.equal(db.orders.get(orderId).order_status, "cancelled");
   assert.equal(db.orders.get(orderId).delivery_fee_status, "declined");
   assert.equal(db.audits.some((entry) => entry.action === "order.delivery_fee_declined"), true);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  assert.equal(db.orderInventoryReservations.get(orderId + ":" + variantId).status, "released");
   const repeat = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(repeat.status, 410);
 });
@@ -629,6 +775,12 @@ class FakeStatement {
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT payment_status, financial_transaction_id, total_paisa FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id, amount_paisa FROM financial_transactions WHERE id = ? AND reference_type = 'order'")) return this.db.financialTransactions.find((row) => row.id === v[0] && row.reference_id === v[1]) ?? null;
+    if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ?")) {
+      const row = [...this.db.orders.values()].find((order) => order.source_quote_id === v[0]);
+      return row ? { order_number: row.order_number, total_paisa: row.total_paisa, order_status: row.order_status } : null;
+    }
     if (q.startsWith("SELECT id,order_number,payment_method,payment_provider,payment_status,order_status,total_paisa,financial_transaction_id FROM orders WHERE id=?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id,name,kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, name, kind FROM financial_accounts WHERE id=? AND is_active=1")) return this.db.financialAccounts.get(v[0]) ?? null;
@@ -640,7 +792,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, admin_note FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, admin_note FROM exchange_requests WHERE id = ?")) return this.db.exchangeRequests.get(v[0]) ?? null;
-    if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
+    if (q.startsWith("SELECT processing_status, payload_sha256 FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.provider_reference === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
       const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
@@ -678,6 +830,10 @@ class FakeStatement {
       const variant = this.db.variants.get(v[0]);
       const product = variant && this.db.products.get(variant.product_id);
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, retail_price_paisa: product.retail_price_paisa } : null;
+    }
+    if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE source_quote_id = ?")) {
+      const row = [...this.db.orders.values()].find((item) => item.source_quote_id === v[0]);
+      return row ? { order_number: row.order_number, total_paisa: row.total_paisa, order_status: row.order_status } : null;
     }
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ?")) { const row = [...this.db.orders.values()].find((item) => item.id === v[0]); return row ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
@@ -786,6 +942,9 @@ class FakeStatement {
       const ids = new Set(v);
       return { success: true, results: this.db.orderItems.filter((row) => ids.has(row.order_id)) };
     }
+    if (q.startsWith("SELECT variant_id, quantity FROM order_items WHERE order_id = ?")) {
+      return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]).map(({variant_id,quantity}) => ({variant_id,quantity})) };
+    }
     if (q.startsWith("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?")) {
       return { success: true, results: this.db.orderItems.filter((row) => row.order_id === v[0]) };
     }
@@ -811,6 +970,12 @@ class FakeStatement {
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
       const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
       return { success: true, results: rows };
+    }
+    if (q.startsWith("SELECT size, color, is_active FROM product_variants WHERE product_id = ?")) {
+      return { success: true, results: [...this.db.variants.values()].filter(row => row.product_id === v[0]).map(row => ({ size: row.size ?? "", color: row.color ?? "", is_active: row.is_active ?? 1 })) };
+    }
+    if (q.startsWith("SELECT id, size, color, is_active FROM product_variants WHERE product_id = ?")) {
+      return { success: true, results: [...this.db.variants.values()].filter(row => row.product_id === v[0]).map(row => ({ id: row.id, size: row.size ?? "", color: row.color ?? "", is_active: row.is_active ?? 1 })) };
     }
     throw new Error("Unexpected all query: " + q);
   }
@@ -905,7 +1070,7 @@ class FakeStatement {
       const [id, eventId, digest] = v;
       const previous = this.db.paymentWebhookEvents.get(eventId);
       if (!previous) this.db.paymentWebhookEvents.set(eventId, { id, provider_event_id: eventId, payload_sha256: digest, processing_status: "received" });
-      else if (!["processed", "ignored"].includes(previous.processing_status)) Object.assign(previous, { payload_sha256: digest, processing_status: "received" });
+      else if (previous.payload_sha256 === digest && !["processed", "ignored"].includes(previous.processing_status)) Object.assign(previous, { processing_status: "received" });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_attempts SET status = 'pending', failure_code")) {
@@ -916,15 +1081,27 @@ class FakeStatement {
     }
     if (q.startsWith("UPDATE payment_attempts SET status = 'succeeded'")) {
       const row = this.db.paymentAttempts.get(v[1]);
-      if (!row || !["created", "pending"].includes(row.status)) return { success: true, meta: { changes: 0 } };
+      const order = row && this.db.orders.get(row.order_id);
+      const eligible = order && order.payment_provider === "safepay" && (order.payment_status !== "paid" || !order.financial_transaction_id) && order.total_paisa === row.amount_paisa && order.delivery_fee_status === "accepted" && ["pending", "confirmed"].includes(order.order_status);
+      if (!row || !["created", "pending"].includes(row.status) || (q.includes("AND EXISTS (SELECT 1 FROM orders") && !eligible)) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { status: "succeeded", updated_at: v[0] });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET payment_status = 'paid', financial_account_id")) {
-      const [transactionId, updatedAt, id, amount] = v;
+      const [transactionId, updatedAt, id, amount, attemptId] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.payment_provider !== "safepay" || (row.payment_status === "paid" && row.financial_transaction_id) || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
+      const attempt = this.db.paymentAttempts.get(attemptId);
+      if (!row || !attempt || attempt.order_id !== id || attempt.status !== "succeeded" || attempt.amount_paisa !== amount || row.payment_provider !== "safepay" || (row.payment_status === "paid" && row.financial_transaction_id) || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { payment_status: "paid", financial_account_id:"gateway-clearing", financial_transaction_id:transactionId, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO financial_transactions")) {
+      const [id, amount_paisa, reference_id] = v;
+      const order = this.db.orders.get(reference_id);
+      const attempt = this.db.paymentAttempts.get(v[5]);
+      const shouldInsert = order?.payment_status === "paid" && order.financial_transaction_id === id && attempt?.status === "succeeded";
+      if (!shouldInsert) return { success: true, meta: { changes: 0 } };
+      this.db.financialTransactions.push({ id, account_id: "gateway-clearing", direction: "in", amount_paisa, category: "website_order", reference_type: "order", reference_id });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'processed'")) {
@@ -936,6 +1113,35 @@ class FakeStatement {
       const row = this.db.paymentWebhookEvents.get(v[0]);
       if (row) row.processing_status = "failed";
       return { success: true, meta: { changes: row ? 1 : 0 } };
+    }
+    if (q.startsWith("INSERT INTO order_inventory_reservations")) {
+      const [id, order_id, variant_id, quantity, reserved_at, updated_at] = v;
+      const order = this.db.orders.get(order_id);
+      if (!order) return { success: true, meta: { changes: 0 } };
+      const key = order_id + ":" + variant_id;
+      if (this.db.orderInventoryReservations.has(key)) return { success: true, meta: { changes: 0 } };
+      this.db.orderInventoryReservations.set(key, { id, order_id, variant_id, quantity, status: "reserved", payment_provider: order.payment_provider ?? "manual", payment_reference: null, reserved_at, released_at: null, consumed_at: null, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET payment_reference")) {
+      const [payment_reference, updated_at, order_id] = v;
+      let changes = 0;
+      for (const row of this.db.orderInventoryReservations.values()) if (row.order_id === order_id && row.status === "reserved" && row.payment_provider === "safepay") { row.payment_reference = payment_reference; row.updated_at = updated_at; changes += 1; }
+      return { success: true, meta: { changes } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET status = 'released'")) {
+      const [released_at, updated_at, order_id, variant_id] = v;
+      const row = this.db.orderInventoryReservations.get(order_id + ":" + variant_id);
+      if (!row || row.status !== "reserved") return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "released", released_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET status = 'consumed'")) {
+      const [consumed_at, updated_at, order_id, variant_id] = v;
+      const row = this.db.orderInventoryReservations.get(order_id + ":" + variant_id);
+      if (!row || row.status !== "reserved") return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "consumed", consumed_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET payment_provider = 'safepay'")) { const row = this.db.orders.get(v[0]); if (!row || row.payment_provider === "safepay") return { success: true, meta: { changes: 0 } }; row.payment_provider = "safepay"; return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO order_status_events")) { const id = v[0], order_id = v[1], from_status = v[2], to_status = v[3]; const actor_type = q.includes("'admin'") ? "admin" : "system"; const actor_id = actor_type === "admin" ? v[4] : null; const note = actor_type === "admin" ? v[5] : "Order received"; this.db.orderStatusEvents.push({ id, order_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() }); return { success: true, meta: { changes: 1 } }; }
@@ -976,9 +1182,12 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined'")) {
-      const [updatedAt, id, tokenHash, now] = v;
+      const [updatedAt, id, tokenHash, now, orderId] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
+      const totals = new Map();
+      for (const item of this.db.orderItems.filter(item => item.order_id === orderId && item.variant_id)) totals.set(item.variant_id, (totals.get(item.variant_id) ?? 0) + item.quantity);
+      const reserved = [...totals].every(([variantId, required]) => (this.db.variants.get(variantId)?.reserved_quantity ?? 0) >= required);
+      if (!row || !reserved || row.delivery_fee_token_hash !== tokenHash || row.delivery_fee_status !== "awaiting_customer" || row.delivery_fee_expires_at <= now) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { order_status: "cancelled", delivery_fee_status: "declined", delivery_fee_token_hash: null, delivery_fee_expires_at: null, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
@@ -1132,9 +1341,11 @@ class FakeStatement {
       const [status, updated_at, id, expected] = v;
       const order = this.db.orders.get(id);
       if (!order || order.order_status !== expected || (["processing", "dispatched"].includes(status) && order.delivery_fee_status !== "accepted") || (["processing", "dispatched"].includes(status) && order.payment_provider === "manual" && order.payment_method !== "cod" && order.payment_status !== "paid")) return { success: true, meta: { changes: 0 } };
-      const items = this.db.orderItems.filter((item) => item.order_id === id);
-      if (status === "cancelled" && items.some((item) => (this.db.variants.get(item.variant_id)?.reserved_quantity ?? 0) < item.quantity)) return { success: true, meta: { changes: 0 } };
-      if (status === "dispatched" && items.some((item) => { const variant = this.db.variants.get(item.variant_id); return !variant || variant.stock_on_hand < item.quantity || (variant.reserved_quantity ?? 0) < item.quantity; })) return { success: true, meta: { changes: 0 } };
+      const items = this.db.orderItems.filter((item) => item.order_id === id && item.variant_id);
+      const totals = new Map();
+      for (const item of items) totals.set(item.variant_id, (totals.get(item.variant_id) ?? 0) + item.quantity);
+      if (status === "cancelled" && [...totals].some(([variantId, quantity]) => (this.db.variants.get(variantId)?.reserved_quantity ?? 0) < quantity)) return { success: true, meta: { changes: 0 } };
+      if (status === "dispatched" && [...totals].some(([variantId, quantity]) => { const variant = this.db.variants.get(variantId); return !variant || variant.stock_on_hand < quantity || (variant.reserved_quantity ?? 0) < quantity; })) return { success: true, meta: { changes: 0 } };
       Object.assign(order, { order_status: status, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
@@ -1296,6 +1507,7 @@ class FakeD1 {
   enquiries = new Map();
   orders = new Map();
   orderItems = [];
+  orderInventoryReservations = new Map();
   wholesaleQuotes = new Map();
   wholesaleQuoteItems = [];
   vehicles = new Map();
@@ -1546,6 +1758,40 @@ test("owner can create variants and record stock movements without allowing nega
   assert.equal((await history.json()).movements.length, 3);
 });
 
+test("bulk size-colour variant creation is atomic, records opening stock and blocks duplicates or unsafe legacy stock", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const productResponse = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Matrix Hoodie", category: "hoodies", audience: "unisex",
+  }, headers), env(db));
+  const productId = (await productResponse.json()).id;
+  const payload = { variants: [
+    { size: "M", color: "Black", initial_stock: 4, reorder_level: 2 },
+    { size: "L", color: "Black", initial_stock: 3, reorder_level: 2 },
+  ] };
+  const created = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", payload, headers), env(db));
+  assert.equal(created.status, 201);
+  const result = await created.json();
+  assert.equal(result.created, 2);
+  assert.equal(result.atomic, true);
+  assert.equal(db.variants.size, 2);
+  assert.equal(db.movements.length, 2);
+  assert.deepEqual([...db.variants.values()].map(row => row.stock_on_hand).sort(), [3,4]);
+
+  const duplicate = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", payload, headers), env(db));
+  assert.equal(duplicate.status, 409);
+  assert.equal(db.variants.size, 2);
+
+  db.variants.set("legacy-variant", { id:"legacy-variant", product_id:productId, sku:"LEGACY-MULTI", size:"S, M", color:"Black, White", stock_on_hand:12, reserved_quantity:0, is_active:1 });
+  const blocked = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", {
+    variants:[{size:"S",color:"Black",initial_stock:6,reorder_level:2}]
+  }, headers), env(db));
+  assert.equal(blocked.status, 409);
+  assert.equal(db.variants.size, 3);
+});
+
 test("catalogue staff cannot change stock quantities", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
@@ -1592,7 +1838,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
     customer_name: "Test Buyer", phone: "+923001234567", email: "buyer@example.com",
     delivery_address: "House 10, Street 2, Model Town", city: "Jhelum", customer_note: "",
-    items: [{ variant_id: variantId, quantity: 2 }],
+    items: [{ variant_id: variantId, quantity: 1 }, { variant_id: variantId, quantity: 1 }],
   };
   const placed = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(placed.status, 201);
@@ -1602,6 +1848,10 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(db.variants.get(variantId).stock_on_hand, 5);
   assert.equal(db.variants.get(variantId).reserved_quantity, 2);
   assert.equal(db.orders.size, 1);
+  const checkoutOrderId = [...db.orders.keys()][0];
+  const checkoutReservation = db.orderInventoryReservations.get(checkoutOrderId + ":" + variantId);
+  assert.equal(checkoutReservation.quantity, 2);
+  assert.equal(checkoutReservation.status, "reserved");
 
   const duplicate = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(duplicate.status, 200);
@@ -1628,14 +1878,24 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   const deliveryAccepted = await handleRequest(request("/api/delivery-fee/" + deliveryToken, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.57" }), env(db));
   assert.equal(deliveryAccepted.status, 200);
 
-  for (const status of ["confirmed", "processing", "dispatched", "delivered"]) {
+  for (const status of ["confirmed", "processing"]) {
     const updated = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: status }, headers), env(db));
     assert.equal(updated.status, 200);
   }
-  assert.equal(db.variants.get(variantId).stock_on_hand, 3);
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: order.id, variant_id: variantId, quantity: 1 });
+  const blockedDispatch = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "dispatched" }, headers), env(db));
+  assert.equal(blockedDispatch.status, 409, "duplicate order lines must be checked as one combined reservation");
+  assert.equal(db.variants.get(variantId).stock_on_hand, 5);
+  db.variants.get(variantId).reserved_quantity = 3;
+  const dispatched = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "dispatched" }, headers), env(db));
+  assert.equal(dispatched.status, 200);
+  const delivered = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "delivered" }, headers), env(db));
+  assert.equal(delivered.status, 200);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 2);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   assert.equal(db.movements.at(-1).movement_type, "sold");
-  assert.equal(db.movements.at(-1).quantity_delta, -2);
+  assert.equal(db.movements.at(-1).quantity_delta, -3);
+  assert.equal(db.orderInventoryReservations.get(order.id + ":" + variantId).status, "consumed");
 });
 
 test("cancelling a COD order releases its reservation without changing physical stock", async () => {
@@ -1661,10 +1921,16 @@ test("cancelling a COD order releases its reservation without changing physical 
   }, customerHeaders), env(db));
   assert.equal(placed.status, 201);
   const orderId = [...db.orders.keys()][0];
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  const blocked = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
+  assert.equal(blocked.status, 409, "admin cancellation must guard the combined quantity across duplicate order lines");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 3);
+  db.variants.get(variantId).reserved_quantity = 4;
   const cancelled = await handleRequest(request("/api/admin/orders/" + orderId, "PATCH", { order_status: "cancelled" }, headers), env(db));
   assert.equal(cancelled.status, 200);
   assert.equal(db.variants.get(variantId).stock_on_hand, 4);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  assert.equal(db.orderInventoryReservations.get(orderId + ":" + variantId).status, "released");
 });
 
 test("admin cannot cancel an online-paid order or one with an active Safepay payment session", async () => {
@@ -1713,24 +1979,33 @@ test("wholesale quotation can be sent, customer-approved and converted once into
     business_name: "Test Retail Store", contact_name: "Wholesale Buyer", phone: "+923001234567",
     email: "buyer@example.com", delivery_address: "Shop 12, Main Market", city: "Jhelum",
     valid_until: new Date(Date.now() + 7 * 86400000).toISOString(),
-    items: [{ variant_id: variantId, quantity: 12, unit_price_paisa: 185000 }],
+    items: [{ variant_id: variantId, quantity: 6, unit_price_paisa: 185000 }],
   }, headers), env(db));
   assert.equal(created.status, 201);
   const createdBody = await created.json();
   const quoteId = createdBody.quote_id;
   const quote = db.wholesaleQuotes.get(quoteId);
+  const originalQuoteLine = db.wholesaleQuoteItems[0];
+  db.wholesaleQuoteItems.push({ ...originalQuoteLine, id: crypto.randomUUID(), quantity: 6, line_total_paisa: 1110000 });
+  quote.quoted_total_paisa = 2220000;
   assert.equal(quote.quoted_total_paisa, 2220000);
   assert.equal(quote.status, "prepared");
-  assert.equal(db.wholesaleQuoteItems.length, 1);
+  assert.equal(db.wholesaleQuoteItems.length, 2, "legacy duplicate quote lines are retained and aggregated safely during conversion");
   const sent = await handleRequest(request("/api/admin/wholesale-quotes/" + quoteId, "PATCH", { status: "sent" }, headers), env(db));
   assert.equal(sent.status, 200);
   const publicUrl = "/api/wholesale-quotes/" + quote.approval_token;
   const view = await handleRequest(new Request(origin + publicUrl), env(db));
   assert.equal(view.status, 200);
-  assert.equal((await view.json()).quote.items[0].quantity, 12);
+  assert.equal((await view.json()).quote.items[0].quantity, 6);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   const guestAccept = await handleRequest(request(publicUrl + "/accept", "POST", {}, { "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(guestAccept.status, 401);
+  db.variants.get(variantId).stock_on_hand = 10;
+  const insufficientCombined = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
+  assert.equal(insufficientCombined.status, 409, "duplicate wholesale lines must be checked against their combined quantity");
+  assert.equal(db.orders.size, 0);
+  assert.equal(db.variants.get(variantId).reserved_quantity, 0);
+  db.variants.get(variantId).stock_on_hand = 30;
   const accepted = await handleRequest(request(publicUrl + "/accept", "POST", {}, { cookie: buyerCookie, "sec-fetch-site": "same-origin" }), env(db));
   assert.equal(accepted.status, 201);
   const acceptedBody = await accepted.json();
@@ -1739,6 +2014,9 @@ test("wholesale quotation can be sent, customer-approved and converted once into
   assert.equal(db.wholesaleQuotes.get(quoteId).status, "accepted");
   assert.equal(db.variants.get(variantId).reserved_quantity, 12);
   const order = [...db.orders.values()][0];
+  const wholesaleReservation = db.orderInventoryReservations.get(order.id + ":" + variantId);
+  assert.equal(wholesaleReservation.quantity, 12, "duplicate quote lines must create one aggregated reservation ledger row");
+  assert.equal(wholesaleReservation.status, "reserved");
   assert.equal(order.phone, "+923001234567");
   assert.equal(order.delivery_address, "Shop 12, Main Market");
   assert.equal(order.total_paisa, 2220000);

@@ -80,6 +80,18 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.route("**/api/admin/products/research", async (route) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, summary: "Exact product identity is not fully verified. The official brand page shows a cotton-blend hoodie with a regular fit.", sources: [{ title: "Official product page", url: "https://example.com/product" }], queries: ["Palette test hoodie official"], model: "gemini-3.8-flash" }) });
   });
+  let bulkPayload: { variants: Array<{size:string;color:string;initial_stock:number;reorder_level:number}> } | null = null;
+  await page.route("**/api/admin/products/*/variants/bulk", async route => {
+    bulkPayload = route.request().postDataJSON();
+    const variants = (bulkPayload?.variants ?? []).map((item,index) => ({
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-" + String(index).padStart(12,"0"),
+      product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sku: "DV-MATRIX-" + index,
+      size: item.size, color: item.color, stock_on_hand: item.initial_stock,
+      reserved_quantity: 0, available_quantity: item.initial_stock, barcode: "2000000000000",
+      reorder_level: item.reorder_level, is_active: 1
+    }));
+    await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ created: variants.length, atomic: true, variants }) });
+  });
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
   await expect(page.locator(".admin-topbar .admin-brand-logo")).toHaveAttribute("src", "/brand/de-verve-logo.svg");
@@ -109,6 +121,13 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.getByRole("button", { name: "Generate combinations" }).click();
   await expect(page.getByLabel("Opening quantity 10XL Oxblood")).toBeVisible();
   await expect(page.getByRole("button", { name: /Save all \d+ variants/ })).toBeVisible();
+  await page.getByLabel("Opening quantity 10XL Oxblood").fill("7");
+  const bulkRequest = page.waitForRequest(request => new URL(request.url()).pathname.endsWith("/variants/bulk") && request.method() === "POST");
+  await page.getByRole("button", { name: /Save all \d+ variants/ }).click();
+  await bulkRequest;
+  expect(bulkPayload?.variants).toEqual(expect.arrayContaining([expect.objectContaining({size:"10XL",color:"Oxblood",initial_stock:7})]));
+  await expect(page.getByRole("status")).toContainText("All");
+  await expect(page.getByRole("status")).toContainText("variants were saved together");
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
@@ -126,6 +145,9 @@ test("camera scanner keeps its video element mounted when permission is granted"
         async detect() { return []; }
       },
     });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
     HTMLMediaElement.prototype.play = () => Promise.resolve();
   });
   await page.goto("/admin?section=pos");
@@ -135,6 +157,34 @@ test("camera scanner keeps its video element mounted when permission is granted"
   await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
   await expect(page.locator(".barcode-camera-stage video.is-active")).toBeVisible();
   await expect(page.getByRole("status")).toContainText("Camera is active");
+});
+
+test("camera scanner keeps ZXing fallback available when native barcode detection is broken", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.addInitScript(() => {
+    const stream = document.createElement("canvas").captureStream(1);
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: { getUserMedia: async () => stream },
+    });
+    Object.defineProperty(window, "BarcodeDetector", {
+      configurable: true,
+      value: class {
+        constructor(_options: { formats: string[] }) { throw new Error("Native barcode detector unavailable"); }
+      },
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
+    HTMLMediaElement.prototype.play = () => Promise.resolve();
+  });
+  await page.goto("/admin?section=pos");
+  await page.getByRole("button", { name: "Camera scan" }).click();
+  await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
+  await expect(page.locator(".barcode-camera-stage video.is-active")).toBeVisible();
+  await expect(page.getByRole("status")).toContainText("Camera is active");
+  await page.getByRole("button", { name: "Close scanner" }).click();
+  await expect(page.getByRole("dialog", { name: "Scan product barcode" })).toHaveCount(0);
 });
 
 test("direct links load product review and audit workspace data", async ({ page }) => {
@@ -379,6 +429,9 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
     const stream = document.createElement("canvas").captureStream(1);
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia: async () => stream } });
     Object.defineProperty(window, "BarcodeDetector", { configurable: true, value: class { constructor(_options: { formats: string[] }) {} async detect() { return [{ rawValue: payload }]; } } });
+    Object.defineProperty(HTMLVideoElement.prototype, "readyState", { configurable: true, get: () => 2 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", { configurable: true, get: () => 1280 });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", { configurable: true, get: () => 720 });
     HTMLMediaElement.prototype.play = () => Promise.resolve();
   }, qrPayload);
   await page.goto("/admin?section=pos");

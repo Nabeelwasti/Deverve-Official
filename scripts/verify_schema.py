@@ -19,6 +19,7 @@ required_tables = {
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
+    "order_inventory_reservations",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -27,6 +28,11 @@ actual_tables = {
 }
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
+
+reservation_columns = {row[1] for row in db.execute("PRAGMA table_info(order_inventory_reservations)")}
+assert {"order_id", "variant_id", "quantity", "status", "payment_provider", "payment_reference", "reserved_at", "released_at", "consumed_at"} <= reservation_columns, "First-class order reservation lifecycle fields are missing"
+assert any(row[1] == "idx_order_inventory_reservations_order_status" for row in db.execute("PRAGMA index_list(order_inventory_reservations)")), "Order reservation lifecycle index is missing"
+assert any(row[1] == "idx_order_inventory_reservations_variant_status" for row in db.execute("PRAGMA index_list(order_inventory_reservations)")), "Variant reservation lifecycle index is missing"
 
 notification_outbox_columns = {row[1] for row in db.execute("PRAGMA table_info(notification_outbox)")}
 assert "processing_started_at" in notification_outbox_columns, "Owner notification lease timestamp is missing"
@@ -41,6 +47,11 @@ assert "contact_type" in enquiry_columns, "Extended customer contact categories 
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
+variant_option_indexes = [row for row in db.execute("PRAGMA index_list(product_variants)") if row[1] == "idx_product_variants_unique_active_options"]
+assert variant_option_indexes and variant_option_indexes[0][2] == 1, "Active size/colour combinations must be unique per product"
+variant_option_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='index' AND name='idx_product_variants_unique_active_options'").fetchone()[0]
+assert "lower(trim(size))" in variant_option_sql and "lower(trim(color))" in variant_option_sql, "Variant uniqueness must be case- and whitespace-insensitive"
+
 assert "checkout_token" in order_columns, "Checkout idempotency column is missing"
 assert "payment_provider" in order_columns, "Payment provider selection column is missing"
 return_columns = {row[1] for row in db.execute("PRAGMA table_info(return_requests)")}
