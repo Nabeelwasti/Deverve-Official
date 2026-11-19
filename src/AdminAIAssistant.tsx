@@ -9,7 +9,7 @@ type ProductDraft = {
   brand: string | null; material: string | null; barcode: string | null; sku: string | null;
   sizes: string[]; colours: string[]; variants: DraftVariant[]; unknowns: string[];
 };
-type Props = { role: string; onProductCreated: () => void };
+type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void };
 type Source = { title: string; url: string };
 type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; sources?: Source[]; queries?: string[]; error?: string };
 
@@ -32,7 +32,7 @@ async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("An image could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob!); });
 }
 
-export default function AdminAIAssistant({ role, onProductCreated }: Props) {
+export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -67,7 +67,7 @@ export default function AdminAIAssistant({ role, onProductCreated }: Props) {
 
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    const text = message.trim() || (task === "product" ? "Analyse these product images and prepare a reviewable catalogue draft. Do not invent missing facts." : "");
+    const text = message.trim() || (task === "product" ? "Analyse these product images and prepare a reviewable catalogue draft. Do not invent missing facts." : task === "research" ? researchQuery.trim() : "");
     if (!text || busy) { if (!text) setStatus("Write a message or attach product images with an instruction."); return; }
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
@@ -99,7 +99,7 @@ export default function AdminAIAssistant({ role, onProductCreated }: Props) {
       } else if (task === "research") {
         setSources(result.sources || []); setStatus("Research completed. Review the citations and verify facts before using them.");
       }
-      setMessage(""); if (task === "product") setFiles([]);
+      setMessage("");
     } catch (error) { setStatus(error instanceof Error ? error.message : "The assistant could not complete this request."); }
     finally { setBusy(false); }
   };
@@ -151,7 +151,7 @@ export default function AdminAIAssistant({ role, onProductCreated }: Props) {
     </section>
     <div className="admin-ai-layout">
       <section className="admin-ai-chat-card">
-        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); }}>New chat</button></header>
+        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
         {previews.length > 0 && <div className="admin-ai-attachments">{previews.map((url, index) => <figure key={url}><img src={url} alt={"Selected product attachment " + (index + 1)}/><button type="button" aria-label="Remove image" onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{files[index]?.name}</figcaption></figure>)}</div>}
         <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
@@ -162,7 +162,7 @@ export default function AdminAIAssistant({ role, onProductCreated }: Props) {
       </section>
       <aside className="admin-ai-tools">
         <section><p className="admin-eyebrow">FAST CATALOGUE</p><h3>AI product intake</h3><p>Attach front, back, tag or label photos. AI extracts visible details and prepares a draft with size/colour combinations. You confirm prices and opening stock.</p><button type="button" className="admin-primary" disabled={busy || files.length === 0} onClick={() => void submit("product")}>Analyse images & prepare draft</button><small>New products are always saved as drafts. AI never publishes them automatically.</small></section>
-        <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim()} onClick={() => { setMessage(researchQuery); void submit("research"); }}>Research online</button>{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
+        <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim()} onClick={() => void submit("research")}>Research online</button>{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
         <section><p className="admin-eyebrow">ACTION SAFETY</p><h3>Human approval stays in control</h3><ul><li>Product drafts require review before creation.</li><li>Publishing, stock changes, payments, staff permissions and sensitive settings are not changed by chat.</li><li>Existing admin permissions and audit records remain authoritative.</li></ul></section>
       </aside>
     </div>
