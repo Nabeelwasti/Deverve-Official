@@ -4164,7 +4164,7 @@ async function adminProductResearchRoute(request:Request,env:Env,url:URL):Promis
   const result=await callGeminiGroundedResearch(apiKey,prompt);
   if(result.ok)return json({ok:true,summary:result.summary,sources:result.sources,queries:result.queries,model:result.model});
  }
- return error("Online product research is temporarily unavailable. Check Gemini Search grounding access, project billing and model availability, then retry. This is separate from normal AI chat.",503,{"retry-after":"60"});
+ return error("Online product research is temporarily unavailable. Check Gemini Search grounding access, project billing and model availability, then retry. This is separate from normal AI chat.",503);
 }
 
 async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
