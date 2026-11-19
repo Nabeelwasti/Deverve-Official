@@ -38,6 +38,34 @@ async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("An image could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob!); });
 }
 
+async function buildCatalogueContactSheets(files: File[]): Promise<Array<{ name: string; mime_type: string; data: string }>> {
+  const imageFiles = files.filter(file => attachmentMime(file).startsWith("image/"));
+  const sheets: Array<{ name: string; mime_type: string; data: string }> = [];
+  for (let offset = 0; offset < imageFiles.length; offset += 16) {
+    const page = imageFiles.slice(offset, offset + 16);
+    const canvas = document.createElement("canvas"); canvas.width = 1024; canvas.height = 1120;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("This browser cannot create the catalogue visual overview.");
+    context.fillStyle = "#ffffff"; context.fillRect(0, 0, canvas.width, canvas.height);
+    for (let index = 0; index < page.length; index++) {
+      const file = page[index]; const bitmap = await createImageBitmap(file);
+      const x = (index % 4) * 256, y = Math.floor(index / 4) * 280;
+      const scale = Math.min(232 / bitmap.width, 232 / bitmap.height);
+      const width = Math.max(1, Math.round(bitmap.width * scale)), height = Math.max(1, Math.round(bitmap.height * scale));
+      context.fillStyle = "#f1f3f5"; context.fillRect(x + 8, y + 6, 240, 240);
+      context.drawImage(bitmap, x + 8 + (240 - width) / 2, y + 6 + (240 - height) / 2, width, height); bitmap.close();
+      context.fillStyle = "#111827"; context.font = "12px sans-serif";
+      context.fillText((String(offset + index + 1).padStart(3, "0") + " · " + file.name).slice(0, 38), x + 8, y + 263, 240);
+    }
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.72));
+    if (!blob || blob.size > 850000) throw new Error("A catalogue contact sheet could not be compressed safely.");
+    const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("A catalogue contact sheet could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob); });
+    const match = /^data:image\\/jpeg;base64,(.+)$/.exec(dataUrl);
+    if (!match) throw new Error("A catalogue contact sheet has an invalid image format.");
+    sheets.push({ name: "catalogue-overview-" + (sheets.length + 1) + ".jpg", mime_type: "image/jpeg", data: match[1] });
+  }
+  return sheets;
+}
 async function fileBatchFingerprint(files: File[], task: string, prompt: string): Promise<string> {
   const fileDigests = await Promise.all(files.map(async file => {
     const contentDigest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
