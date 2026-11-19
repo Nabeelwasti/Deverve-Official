@@ -7,6 +7,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 import test from "node:test";
 import assert from "node:assert/strict";
 import { aggregateOrderVariantQuantities, buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 
 test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
   assert.deepEqual(aggregateOrderVariantQuantities([
@@ -331,6 +332,31 @@ test("Safepay webhook is durably queued after signature verification when the Pa
   assert.equal(sent[0].payloadDigest.length, 43, "event digest uses the existing base64url SHA-256 representation");
   assert.equal(db.paymentWebhookEvents.get("evt_queue_123456789012").processing_status, "received");
   assert.equal(db.paymentAttempts.size, 0, "the Pages request must acknowledge only after durable queue publication, not process payment inline");
+});
+
+test("Safepay Queue consumer re-verifies and reconciles a durable queued event exactly once", async () => {
+  const db = new FakeD1();
+  const orderId = crypto.randomUUID();
+  const tracker = "track_consumer_123456789012";
+  const eventId = "evt_consumer_123456789012";
+  const rawBody = JSON.stringify({ token: eventId, type: "payment.succeeded", data: { tracker, state: "TRACKER_ENDED", amount: 12500, currency: "PKR" } });
+  const secret = "sandbox-webhook-secret-for-test-only";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-512" }, false, ["sign"]);
+  const signatureBytes = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(rawBody));
+  const signature = Array.from(new Uint8Array(signatureBytes), byte => byte.toString(16).padStart(2, "0")).join("");
+  const digestBytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(rawBody));
+  const payloadDigest = btoa(String.fromCharCode(...new Uint8Array(digestBytes))).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/g, "");
+  db.paymentWebhookEvents.set(eventId, { provider_event_id: eventId, payload_sha256: payloadDigest, processing_status: "received" });
+  db.orders.set(orderId, { id: orderId, order_number: "DV-QUEUE-CONSUMER", total_paisa: 12500, payment_provider: "safepay", payment_status: "pending", delivery_fee_status: "accepted", order_status: "pending" });
+  db.paymentAttempts.set("attempt-queue-consumer", { id: "attempt-queue-consumer", order_id: orderId, provider: "safepay", provider_reference: tracker, amount_paisa: 12500, status: "pending" });
+  const consumerEnv = { ...env(db), SAFEPAY_ENV: "sandbox", SAFEPAY_MERCHANT_API_KEY: "test-public-key", SAFEPAY_SECRET_KEY: "test-secret-key", SAFEPAY_WEBHOOK_SECRET: secret };
+  await safepayQueueConsumer.queue({ messages: [{ body: { rawBody, signature, eventId, payloadDigest } }] }, consumerEnv);
+  assert.equal(db.paymentAttempts.get("attempt-queue-consumer").status, "succeeded");
+  assert.equal(db.orders.get(orderId).payment_status, "paid");
+  assert.equal(db.financialTransactions.length, 1);
+  assert.equal(db.paymentWebhookEvents.get(eventId).processing_status, "processed");
+  await assert.rejects(() => safepayQueueConsumer.queue({ messages: [{ body: { rawBody, signature, eventId, payloadDigest: "A".repeat(43) } }] }, consumerEnv), /payload integrity check failed/);
+  assert.equal(db.financialTransactions.length, 1, "invalid queued payloads must not mutate the payment ledger");
 });
 
 test("Safepay checkout stays unavailable unless all sandbox credentials are configured", async () => {
