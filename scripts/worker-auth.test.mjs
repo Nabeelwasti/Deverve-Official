@@ -557,6 +557,12 @@ test("declining a delivery quotation cancels the COD order and releases reserved
     created_at: new Date().toISOString(),
   });
   db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 2 });
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: orderId, variant_id: variantId, quantity: 1 });
+  const insufficient = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
+  assert.equal(insufficient.status, 409, "decline must not release stock when duplicate lines exceed the reservation");
+  assert.equal(db.orders.get(orderId).order_status, "pending");
+  assert.equal(db.variants.get(variantId).reserved_quantity, 2);
+  db.variants.get(variantId).reserved_quantity = 3;
   const declined = await handleRequest(request("/api/delivery-fee/" + token, "POST", { decision: "decline" }, { "cf-connecting-ip": "203.0.113.56" }), env(db));
   assert.equal(declined.status, 200);
   assert.equal(db.orders.get(orderId).order_status, "cancelled");
@@ -1717,7 +1723,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
     customer_name: "Test Buyer", phone: "+923001234567", email: "buyer@example.com",
     delivery_address: "House 10, Street 2, Model Town", city: "Jhelum", customer_note: "",
-    items: [{ variant_id: variantId, quantity: 2 }],
+    items: [{ variant_id: variantId, quantity: 1 }, { variant_id: variantId, quantity: 1 }],
   };
   const placed = await handleRequest(request("/api/orders", "POST", payload, customerHeaders), env(db));
   assert.equal(placed.status, 201);
@@ -1753,14 +1759,23 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   const deliveryAccepted = await handleRequest(request("/api/delivery-fee/" + deliveryToken, "POST", { decision: "accept" }, { "cf-connecting-ip": "203.0.113.57" }), env(db));
   assert.equal(deliveryAccepted.status, 200);
 
-  for (const status of ["confirmed", "processing", "dispatched", "delivered"]) {
+  for (const status of ["confirmed", "processing"]) {
     const updated = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: status }, headers), env(db));
     assert.equal(updated.status, 200);
   }
-  assert.equal(db.variants.get(variantId).stock_on_hand, 3);
+  db.orderItems.push({ id: crypto.randomUUID(), order_id: order.id, variant_id: variantId, quantity: 1 });
+  const blockedDispatch = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "dispatched" }, headers), env(db));
+  assert.equal(blockedDispatch.status, 409, "duplicate order lines must be checked as one combined reservation");
+  assert.equal(db.variants.get(variantId).stock_on_hand, 5);
+  db.variants.get(variantId).reserved_quantity = 3;
+  const dispatched = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "dispatched" }, headers), env(db));
+  assert.equal(dispatched.status, 200);
+  const delivered = await handleRequest(request("/api/admin/orders/" + order.id, "PATCH", { order_status: "delivered" }, headers), env(db));
+  assert.equal(delivered.status, 200);
+  assert.equal(db.variants.get(variantId).stock_on_hand, 2);
   assert.equal(db.variants.get(variantId).reserved_quantity, 0);
   assert.equal(db.movements.at(-1).movement_type, "sold");
-  assert.equal(db.movements.at(-1).quantity_delta, -2);
+  assert.equal(db.movements.at(-1).quantity_delta, -3);
 });
 
 test("cancelling a COD order releases its reservation without changing physical stock", async () => {
