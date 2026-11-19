@@ -4384,7 +4384,7 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
  const body=await readJson(request,4000);if(!body)return error("A valid written command is required",400);
  const command=cleanText(body.command,500).trim();
  if(!command)return error("A written command is required",400);
- const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\\s+/g," ").trim();
+ const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\s+/g," ").trim();
  const now=new Date().toISOString();
  try{
   if(/^(?:please )?publish all draft products$/.test(normalized)||/^(?:please )?publish all eligible draft products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
@@ -4418,7 +4418,25 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if((written[0]?.meta?.changes??0)!==1)return error("Product status changed during execution. Refresh and retry.",409);
    return json({ok:true,action:"publish_product",published:1,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"Published "+product.name+" directly to the live catalogue."});
   }
-  return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>' and 'publish all draft products'. No changes were made.",422);
+  const stockCommand=/^(?:please )?(?:set|update) stock for sku ([A-Za-z0-9._-]{2,80}) to ([0-9]{1,8})$/i.exec(command.trim());
+  if(stockCommand){
+   const sku=stockCommand[1].trim(),quantity=Number(stockCommand[2]);
+   if(!Number.isSafeInteger(quantity)||quantity<0||quantity>10_000_000)return error("Enter a valid whole-number stock quantity",400);
+   const matches=await env.DB.prepare("SELECT v.id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,p.id AS product_id,p.name,p.status FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.sku=? COLLATE NOCASE LIMIT 2").bind(sku).all<{id:string;sku:string;size:string;color:string;stock_on_hand:number;reserved_quantity:number;product_id:string;name:string;status:string}>();
+   const rows=matches.results??[];
+   if(!rows.length)return error("No inventory variant matched that exact SKU",404);
+   if(rows.length>1)return error("That SKU is not unique. Use a unique SKU before changing stock.",409);
+   const variant=rows[0],reserved=Number(variant.reserved_quantity??0),current=Number(variant.stock_on_hand??0);
+   if(quantity<reserved)return error("Stock cannot be set below the "+reserved+" units already reserved for orders.",409);
+   const auditId=crypto.randomUUID();
+   const written=await env.DB.batch([
+    env.DB.prepare("UPDATE product_variants SET stock_on_hand=?,updated_at=? WHERE id=? AND stock_on_hand=? AND reserved_quantity<=?").bind(quantity,now,variant.id,current,quantity),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,? WHERE changes()=1").bind(auditId,admin.admin_user_id,"ai.inventory.stock_adjusted","product_variant",variant.id,JSON.stringify({command,sku:variant.sku,previous_stock:current,new_stock:quantity,reserved_quantity:reserved,product_id:variant.product_id}))
+   ]);
+   if((written[0]?.meta?.changes??0)!==1)return error("Stock changed during execution. Refresh inventory and retry.",409);
+   return json({ok:true,action:"set_variant_stock",sku:variant.sku,previous_stock:current,stock_on_hand:quantity,reserved_quantity:reserved,available_quantity:Math.max(0,quantity-reserved),product:{id:variant.product_id,name:variant.name},variant:{size:variant.size,color:variant.color},message:"Updated stock for "+variant.name+" · "+variant.color+" · "+variant.size+" (SKU "+variant.sku+") from "+current+" to "+quantity+". Reserved units were protected and the change was audited."});
+  }
+  return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>', 'publish all draft products', and 'set stock for SKU <SKU> to <quantity>'. No changes were made.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
 }
 async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
