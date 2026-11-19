@@ -12,8 +12,8 @@ This checklist separates source-code work from account configuration and product
 - [ ] Take and verify a fresh production D1 backup/export before any schema change.
 - [x] Complete a same-account R2 copy/restore drill on 19 Nov 2026: 15 objects / 1,522,058 bytes copied from `deverve-media-private` to `deverve-r2-restore-drill-20261119`, restored into an isolated test bucket, and all 15 object sizes + ETags matched. Original bucket remained unchanged; temporary restore bucket was deleted. A metadata manifest records content types and custom metadata.
 - [ ] Establish an independent off-account R2 backup with separately controlled credentials and repeat the restore drill. A same-account bucket is not an independent backup; a D1 export does not contain R2 object bytes.
-- [ ] Reconcile production schema immediately before migration. The 19 Nov read-only audit found migrations 0028, 0029, 0030, 0031 and 0033 absent; migration 0032's CNIC protection triggers were present. This is a historical observation, not permission to apply migrations.
-- [ ] Apply the missing migrations in dependency order only after backup and isolated rehearsal: 0028 → 0029 → 0030 → 0031 → 0033. Verify the 0032 CNIC triggers remain present.
+- [x] Reconcile production schema read-only on 20 Nov 2026. Exact live columns/indexes confirm migrations 0028, 0029, 0030, 0031 and 0033 are already reflected; both 0032 CNIC protection triggers are present. Migration 0034's unique active size/colour index is absent; its read-only preflight found no duplicate normalized active single-option combinations (one legacy multi-option row is intentionally excluded). Migration 0035's `order_inventory_reservations` table and migration 0036's `ai_task_runs` / `ai_task_events` tables are absent. No migration-ledger table exists, so reconcile by exact schema signatures, not a guessed migration history.
+- [ ] Apply only the verified missing migrations, in dependency order, after backup and isolated rehearsal: 0034 → 0035 → 0036. Re-check existing 0028–0033 signatures and verify both 0032 CNIC triggers remain present before and after.
 - [x] Verify migration 0036 as part of the full 0001–0036 isolated rehearsal above; do not apply it to production until backup, schema reconciliation and release-window gates are complete.
 - [ ] Verify D1 constraints, indexes, foreign keys, migration effects and application smoke tests after each approved migration.
 
@@ -33,7 +33,7 @@ This checklist separates source-code work from account configuration and product
 - [x] DOCX/XLSX extraction end-to-end tests passed on desktop and mobile Chromium in GitHub Actions run #1364.
 - [ ] Verify each configured Gemini project/model for image/PDF support, quota, fallback order and Google Search grounding. Multiple keys in one Google project do not create separate quota pools.
 - [x] Full migration rehearsal: migrations 0001–0036 were applied sequentially to an isolated temporary Cloudflare D1 on 20 Nov 2026; every migration succeeded. The temporary database was deleted. This rehearsal did not alter production.
-- [ ] Apply migration 0036 to production only after backup, approved release window and migration rehearsal; the read-only production check found `ai_task_runs` and `ai_task_events` absent.
+- [ ] Apply migrations 0034, 0035 and 0036 to production only after backup, approved release window and migration rehearsal. Current read-only production evidence: 0034 index absent, 0035 reservation table absent, and 0036 `ai_task_runs` / `ai_task_events` absent.
 - [ ] Add GitHub Actions Cloudflare test credentials so the remote D1 integration step can run automatically; current CI reports this step as skipped because those secrets are absent.
 
 ### 3. Payments and financial operations
@@ -80,7 +80,7 @@ These are verified release blockers, not permission to change live resources:
 - No Cloudflare Queue currently exists in the connected account, so the asynchronous Safepay queue/consumer path is not activated.
 - The current Pages production configuration does not list Safepay, Resend, WhatsApp Cloud API or Turnstile provider bindings. Provider credentials and account-side verification remain owner setup gates.
 - A read-only production count check found existing catalogue and business records; do not seed, overwrite or publish catalogue data without the owner's approved source data.
-- Read-only production D1 query on 20 Nov confirmed 61 application tables, including products, product variants, inventory movements, payment webhook events and notification outbox; `ai_task_runs` and `ai_task_events` are absent. No migration ledger table was found. This confirms the new task ledger is not ready to deploy; do not infer that applying all older migrations blindly is safe.
+- Read-only production D1 query on 20 Nov confirmed 61 application tables, including products, product variants, inventory movements, payment webhook events and notification outbox. Signature checks confirm 0028–0033 are already reflected, including permanent-CNIC triggers. The 0034 index, 0035 reservation ledger and 0036 AI task ledger are absent. One legacy multi-option variant is intentionally outside the 0034 unique index; there are no duplicate active normalized single-option combinations. No migration ledger table was found.
 - A production D1 export request completed in Cloudflare and returned an export artifact, but it has not been downloaded, independently stored or restore-tested. The backup gate remains open.
 - No production deployment, D1 migration, secret change, queue creation or live data write was performed during this audit.
 
