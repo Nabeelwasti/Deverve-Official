@@ -105,7 +105,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       } else if (task === "research") {
         setSources(result.sources || []); setStatus("Research completed. Review the citations and verify facts before using them.");
       }
-      setMessage(""); if (task !== "product") setFiles([]);
+      setMessage(""); if (task === "chat") setFiles([]);
     } catch (error) { setStatus(error instanceof Error ? error.message : "The assistant could not complete this request."); }
     finally { setBusy(false); }
   };
