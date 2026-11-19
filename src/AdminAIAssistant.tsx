@@ -60,9 +60,9 @@ async function buildCatalogueContactSheets(files: File[]): Promise<Array<{ name:
     const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", 0.65));
     if (!blob || blob.size > 600000) throw new Error("A catalogue contact sheet could not be compressed safely.");
     const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("A catalogue contact sheet could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob); });
-    const match = /^data:image\/jpeg;base64,(.+)$/.exec(dataUrl);
-    if (!match) throw new Error("A catalogue contact sheet has an invalid image format.");
-    sheets.push({ name: "catalogue-overview-" + (sheets.length + 1) + ".jpg", mime_type: "image/jpeg", data: match[1] });
+    const prefix = "data:image/jpeg;base64,";
+    if (!dataUrl.startsWith(prefix)) throw new Error("A catalogue contact sheet has an invalid image format.");
+    sheets.push({ name: "catalogue-overview-" + (sheets.length + 1) + ".jpg", mime_type: "image/jpeg", data: dataUrl.slice(prefix.length) });
   }
   return sheets;
 }
