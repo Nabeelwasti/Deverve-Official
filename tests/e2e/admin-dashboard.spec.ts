@@ -506,7 +506,7 @@ test("POS routes a decoded unknown QR payload into product creation with the ful
   await page.getByRole("button", { name: "Camera scan" }).click();
   await page.getByRole("button", { name: "Allow camera access & start scanning" }).click();
   await expect(page.getByRole("group", { name: "Unknown scanned product" })).toContainText(qrPayload);
-  await page.getByRole("button", { name: "Create product & add this code to stock" }).click();
+  await page.getByRole("button", { name: "Identify with AI & add product" }).click();
   await expect(page).toHaveURL(/section=ai&barcode=/);
   await expect(page).toHaveURL(url => new URL(url).searchParams.get("barcode") === qrPayload);
 });
