@@ -204,23 +204,36 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         });
         try {
           setStatus("Comparing every successful image batch in one catalogue plan…");
-          const chunkPlans: string[] = [];
+          const chunkGroups: Array<{ candidate_ids: string[]; product_name: string; confidence: "high" | "medium" | "low" }> = [];
           for (let offset = 0; offset < summaries.length; offset += 6) {
             const chunk = summaries.slice(offset, offset + 6);
             const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
               method: "POST",
               body: JSON.stringify({
                 task: "chat", task_id: taskId, task_complete: false, task_has_failures: results.some(item => !item.ok),
-                messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Compare all candidates. Put multiple candidate IDs in one group ONLY when they show the same underlying product, including that exact product in different colours. Similar-looking but distinct styles must remain separate. Use high confidence only with clear visual/source evidence. Never combine uncertain candidates. Every candidate ID must appear in exactly one group, including single-candidate groups. Do not create records. Candidates: " + JSON.stringify(chunk) }]
+                messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low'}]}. Compare all candidates. Put multiple candidate IDs in one group ONLY when they show the same underlying product, including that exact product in different colours. Similar-looking but distinct styles must remain separate. Use high confidence only with clear visual/source evidence. Never combine uncertain candidates. Every candidate ID must appear in exactly one group. Keep product_name under 36 characters. Do not create records. Candidates: " + JSON.stringify(chunk) }]
               })
             });
-            chunkPlans.push(plan.reply.slice(0, 3500));
+            const chunkMatch = plan.reply.match(/\\{[\\s\\S]*\\}/);
+            let parsedChunk: { groups?: unknown[] } | null = null;
+            if (chunkMatch) try { parsedChunk = JSON.parse(chunkMatch[0]) as { groups?: unknown[] }; } catch { parsedChunk = null; }
+            const parsedGroups = Array.isArray(parsedChunk?.groups) ? parsedChunk!.groups! : [];
+            const validGroups = parsedGroups.flatMap(value => {
+              if (!value || typeof value !== "object") return [];
+              const group = value as Record<string, unknown>;
+              if (!Array.isArray(group.candidate_ids) || typeof group.product_name !== "string") return [];
+              const confidence = group.confidence === "high" || group.confidence === "medium" ? group.confidence : "low";
+              return [{ candidate_ids: group.candidate_ids.filter((id): id is string => typeof id === "string").slice(0, 30), product_name: group.product_name.slice(0, 36), confidence }];
+            });
+            if (validGroups.length) chunkGroups.push(...validGroups);
+            else for (const batch of chunk) for (const candidate of batch.candidates) chunkGroups.push({ candidate_ids: [candidate.candidate_id], product_name: candidate.name.slice(0, 36), confidence: "low" });
           }
+          const compactPlans = chunkGroups.map(group => ({ candidate_ids: group.candidate_ids, product_name: group.product_name.slice(0, 36), confidence: group.confidence }));
           const finalPlan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
               task: "chat", task_id: taskId, task_complete: true, task_has_failures: results.some(item => !item.ok),
-              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Reconcile all candidate IDs from these preliminary plans. Group multiple IDs only when they represent the same exact underlying product, not merely similar products. Same product in different colours can be grouped; genuinely different styles stay separate. Any ambiguity means separate groups with low confidence. Include every candidate ID exactly once. Plans: " + JSON.stringify(chunkPlans) }]
+              messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low',rationale:string}]}. Reconcile these compact preliminary groups across the entire attachment task. Merge groups only when they represent the same exact underlying product, not merely similar products. Same product in different colours can be grouped; genuinely different styles stay separate. Any ambiguity means separate groups with low confidence. Include every candidate ID exactly once. Keep rationale short. Preliminary groups: " + JSON.stringify(compactPlans) }]
             })
           });
           globalPlan = finalPlan.reply || "";
