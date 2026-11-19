@@ -268,7 +268,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               const matchingDraft = batchDrafts.find(value => normalizeName(value.name) === groupKey);
               if (!matchingDraft) return [];
               const sourceNames = Array.isArray(matchingDraft.source_files) ? matchingDraft.source_files : [];
-              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : item.files;
+              return sourceNames.length ? item.files.filter(file => sourceNames.includes(file.name)) : batchDrafts.length === 1 ? item.files : [];
             });
             productDraftEntries.push({ draft: merged, files: matchingFiles });
           }
