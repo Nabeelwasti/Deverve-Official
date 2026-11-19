@@ -44,11 +44,13 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const [sources, setSources] = useState<Source[]>([]);
   const [researchQuery, setResearchQuery] = useState("");
   const [publishing, setPublishing] = useState(false);
-  const [showResearch, setShowResearch] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const canSetCost = role === "owner" || role === "manager";
   const visibleMessages = useMemo(() => [{ role: "model" as const, text: greeting }, ...history], [history]);
 
+  useEffect(() => {
+    if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
+  }, [initialBarcode]);
   useEffect(() => {
     const urls = files.map(file => URL.createObjectURL(file)); setPreviews(urls);
     return () => urls.forEach(url => URL.revokeObjectURL(url));
@@ -115,7 +117,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     let createdId = "";
     try {
       const created = await api<{ id: string }>("/api/admin/products", { method: "POST", body: JSON.stringify({
-        name: draft.name.trim(), slug: draft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120),
+        name: draft.name.trim(), slug: draft.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 120) || "product-" + Date.now().toString(36),
         description: draft.description.trim(), category: draft.category.trim(), audience: draft.audience || "unisex", status: "draft",
         retail_price_paisa: pkrToPaisa(draft.retail_price_pkr), wholesale_price_paisa: pkrToPaisa(draft.wholesale_price_pkr),
         seo_title: draft.seo_title || draft.name, seo_description: draft.seo_description || draft.description.slice(0, 160)
@@ -140,6 +142,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       }
       setDraft(null); setFiles([]); setStatus("Draft created successfully. " + draft.variants.length + " variant combinations and " + uploaded + " product images saved. It is NOT published."); onProductCreated();
     } catch (error) {
+      if (createdId) { setDraft(null); setFiles([]); onProductCreated(); }
       setStatus((createdId ? "Product draft " + createdId.slice(0, 8) + " was created, but a later variant or image step needs attention. Open Products & variants to finish it. " : "") + (error instanceof Error ? error.message : "The product draft could not be completed."));
     } finally { setPublishing(false); }
   };
