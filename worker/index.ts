@@ -830,6 +830,7 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
     ];
     for (const item of lines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(item.quantity, now, item.variant_id, item.quantity, order.id));
+      statements.push(env.DB.prepare("UPDATE order_inventory_reservations SET status = 'released', released_at = ?, updated_at = ? WHERE order_id = ? AND variant_id = ? AND status = 'reserved' AND changes() = 1").bind(now, now, order.id, item.variant_id));
     }
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'order.delivery_fee_declined', 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(crypto.randomUUID(), order.id, JSON.stringify({ decision: "declined_by_customer" }), order.id));
     const results = await env.DB.batch(statements);
@@ -1108,12 +1109,16 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
     const now = new Date().toISOString();
     const statements = [env.DB.prepare("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ? AND order_status = ? AND " + guard).bind(nextStatus, now, id, current.order_status)];
     if (nextStatus === "cancelled") {
-      for (const item of lines) statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled')").bind(item.quantity, now, item.variant_id, item.quantity, id));
+      for (const item of lines) {
+        statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled')").bind(item.quantity, now, item.variant_id, item.quantity, id));
+        statements.push(env.DB.prepare("UPDATE order_inventory_reservations SET status = 'released', released_at = ?, updated_at = ? WHERE order_id = ? AND variant_id = ? AND status = 'reserved' AND changes() = 1").bind(now, now, id, item.variant_id));
+      }
     }
     if (nextStatus === "dispatched") {
       for (const item of lines) {
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand - ?, reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')").bind(item.quantity, item.quantity, now, item.variant_id, item.quantity, item.quantity, id));
         statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, 'sold', ?, 'order', ?, 'COD order dispatched', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched') AND changes() = 1 AND EXISTS (SELECT 1 FROM product_variants WHERE id = ? AND stock_on_hand >= 0 AND reserved_quantity >= 0)").bind(crypto.randomUUID(), item.variant_id, -item.quantity, id, admin.admin_user_id, id, item.variant_id));
+        statements.push(env.DB.prepare("UPDATE order_inventory_reservations SET status = 'consumed', consumed_at = ?, updated_at = ? WHERE order_id = ? AND variant_id = ? AND status = 'reserved' AND changes() = 1").bind(now, now, id, item.variant_id));
       }
     }
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, ?, ?, 'admin', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = ?)").bind(crypto.randomUUID(), id, current.order_status, nextStatus, admin.admin_user_id, statusNote, id, nextStatus));
