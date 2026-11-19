@@ -661,7 +661,24 @@ export default function Admin() {
         : "Variants saved. Refresh the product list to verify stock.");
       await loadProducts().catch(() => undefined);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "The complete stock matrix could not be saved. No partial batch was applied; your entered quantities are preserved.");
+      const failureMessage = error instanceof Error ? error.message : "The complete stock matrix could not be saved.";
+      // A network interruption can happen after D1 commits but before the
+      // browser receives the response. Reconcile from the server before
+      // offering a retry, so already-created variants are never submitted twice.
+      try {
+        const refreshed = await api<{ variants: Variant[] }>(`/api/admin/products/${variantProduct.id}/variants`);
+        setVariants(refreshed.variants);
+        const savedKeys = new Set(refreshed.variants.filter(item => item.is_active === 1).map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
+        const remaining = bulkRows.filter(row => !savedKeys.has(row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
+        if (remaining.length !== bulkRows.length) {
+          setBulkRows(remaining);
+          setMessage("The connection was interrupted, so inventory was refreshed from the server. " + (bulkRows.length - remaining.length) + " already-saved combinations were removed from the retry list. Review the remaining rows before saving again.");
+        } else {
+          setMessage(failureMessage + " No new combinations were found on the server; your entered quantities are preserved for correction and retry.");
+        }
+      } catch {
+        setMessage(failureMessage + " The server could not be checked, so your entered quantities are preserved. Refresh this product's variants before retrying.");
+      }
     } finally { setBusy(false); }
   };
 
