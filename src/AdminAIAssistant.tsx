@@ -73,11 +73,11 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     setBusy(true); setStatus(""); setSources([]);
     try {
       const next = [...history, { role: "user" as const, text }];
-      const images = task === "product" ? await Promise.all(files.map(async file => {
+      const images = await Promise.all(files.map(async file => {
         const dataUrl = await fileToDataUrl(file); const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
         if (!match) throw new Error("An image could not be prepared for AI analysis.");
         return { mime_type: match[1], data: match[2] };
-      })) : [];
+      }));
       const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
         method: "POST", body: JSON.stringify({ task, messages: next, images, query: task === "research" ? (researchQuery.trim() || text) : undefined })
       });
@@ -162,7 +162,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       </section>
       <aside className="admin-ai-tools">
         <section><p className="admin-eyebrow">FAST CATALOGUE</p><h3>AI product intake</h3><p>Attach front, back, tag or label photos. AI extracts visible details and prepares a draft with size/colour combinations. You confirm prices and opening stock.</p><button type="button" className="admin-primary" disabled={busy || files.length === 0} onClick={() => void submit("product")}>Analyse images & prepare draft</button><small>New products are always saved as drafts. AI never publishes them automatically.</small></section>
-        <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim()} onClick={() => void submit("research")}>Research online</button>{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
+        <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim() || files.length > 0} onClick={() => void submit("research")}>Research online</button>{files.length > 0 && <small>Remove image attachments before running web research.</small>}{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
         <section><p className="admin-eyebrow">ACTION SAFETY</p><h3>Human approval stays in control</h3><ul><li>Product drafts require review before creation.</li><li>Publishing, stock changes, payments, staff permissions and sensitive settings are not changed by chat.</li><li>Existing admin permissions and audit records remain authoritative.</li></ul></section>
       </aside>
     </div>
