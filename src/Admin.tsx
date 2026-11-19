@@ -261,6 +261,8 @@ export default function Admin() {
   const [paletteColor, setPaletteColor] = useState("");
 
   const [defaultCostPrice, setDefaultCostPrice] = useState("0");
+  const [researchBusy,setResearchBusy]=useState(false);
+  const [productResearch,setProductResearch]=useState<{summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}|null>(null);
   const [variantEditTarget, setVariantEditTarget] = useState<Variant | null>(null);
   const [variantEditForm, setVariantEditForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5" });
   const [stockTarget, setStockTarget] = useState<Variant | null>(null);
@@ -469,7 +471,16 @@ export default function Admin() {
       setMessage(imported?"AI extracted the readable label details. Review prices, sizes, colour, quantity and every field before saving.":"The label was scanned, but no reliable product fields were readable. Enter the missing details manually.");
     }catch(error){setMessage(error instanceof Error?error.message:"The product label could not be read. Try a clearer, closer photo.");}
   };
-  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setVariantForm({sku:"",size:"",color:"",barcode:pendingInventoryBarcode,cost_price:"0",reorder_level:"5",initial_stock:"0"}); setForm({ ...emptyProduct }); setShowEditor(true); };
+  const researchProductOnline = async () => {
+    if(!form.name.trim()&&!pendingInventoryBarcode.trim()&&!variantForm.barcode.trim()){setMessage("Enter a product name or scan its barcode before researching online.");return;}
+    setResearchBusy(true);setProductResearch(null);setMessage("Researching this product with Gemini and Google Search…");
+    try{
+      const result=await api<{ok:boolean;summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}>("/api/admin/products/research",{method:"POST",body:JSON.stringify({name:form.name,barcode:pendingInventoryBarcode||variantForm.barcode,sku:variantForm.sku,category:form.category,description:form.description})});
+      setProductResearch(result);setMessage("Online research completed. Review every fact and source before using it.");
+    }catch(error){setMessage(error instanceof Error?error.message:"Online product research could not be completed.");}
+    finally{setResearchBusy(false);}
+  };
+  const startNew = () => { clearAdminFormDraft("admin-product-editor"); setEditingId(null); setDefaultCostPrice("0"); setProductResearch(null); setVariantForm({sku:"",size:"",color:"",barcode:pendingInventoryBarcode,cost_price:"0",reorder_level:"5",initial_stock:"0"}); setForm({ ...emptyProduct }); setShowEditor(true); };
   const startEdit = (product: Product) => {
     clearAdminFormDraft("admin-product-editor");
     setEditingId(product.id);
@@ -1325,6 +1336,12 @@ export default function Admin() {
         {showEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="product-editor-title"><div className="admin-panel-heading"><div><p className="admin-eyebrow">CATALOGUE MANAGEMENT</p><h2 id="product-editor-title">{editingId ? "Edit product" : "Add a product"}</h2></div><button type="button" className="admin-close" onClick={() => setShowEditor(false)} aria-label="Close">×</button></div>
           <form className="admin-form admin-product-form" data-draft-key="admin-product-editor" onSubmit={saveProduct}>
             {!editingId && <div className="admin-full admin-scan-import"><div><strong>Scan a product tag or supplier label</strong><p className="admin-muted">Scan a barcode or QR code to import readable product details. Plain barcodes are saved for the first variant after the product is created.</p></div><button type="button" className="admin-secondary admin-barcode-scan" onClick={() => setBarcodeScanTarget("product")}>Scan tag / QR</button>{pendingInventoryBarcode && <p className="admin-message" role="status">Scanned code ready for the first product variant: {pendingInventoryBarcode}</p>}</div>}
+            <section className="admin-full admin-product-research">
+              <div><strong>Optional online product research</strong><p className="admin-muted">Gemini can search for an exact barcode, brand or product name, then return sourced product facts and official pages to inspect for visual references. Results are suggestions, not proof of authenticity.</p></div>
+              <button type="button" className="admin-secondary" disabled={researchBusy||(!form.name.trim()&&!pendingInventoryBarcode.trim()&&!variantForm.barcode.trim())} onClick={()=>void researchProductOnline()}>{researchBusy?"Researching…":"Research product online"}</button>
+              <small>Google Search grounding may incur charges per search query. It will not automatically copy or download third-party images; only upload visuals you own or have permission to use.</small>
+              {productResearch&&<div className="admin-product-research-result"><h3>Research results · {productResearch.model}</h3><p>{productResearch.summary}</p>{productResearch.queries.length>0&&<small>Search queries: {productResearch.queries.join(" · ")}</small>}{productResearch.sources.length>0&&<div><strong>Sources and visual reference pages</strong><ul>{productResearch.sources.map(source=><li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title}</a></li>)}</ul></div>}</div>}
+            </section>
             <label>Product name<input required minLength={2} maxLength={120} value={form.name} onChange={(e) => updateProductForm({ ...form, name: e.target.value, slug: editingId ? form.slug : e.target.value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") })} /></label>
             <label>URL slug<input required value={form.slug} onChange={(e) => updateProductForm({ ...form, slug: e.target.value })} /></label>
             <label>Category<input required minLength={2} maxLength={60} placeholder="e.g. Hoodies" value={form.category} onChange={(e) => updateProductForm({ ...form, category: e.target.value })} /></label>
