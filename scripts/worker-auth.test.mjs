@@ -691,7 +691,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id, order_id, status, refund_amount_paisa FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, admin_note FROM return_requests WHERE id = ?")) return this.db.returnRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, admin_note FROM exchange_requests WHERE id = ?")) return this.db.exchangeRequests.get(v[0]) ?? null;
-    if (q.startsWith("SELECT processing_status FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
+    if (q.startsWith("SELECT processing_status, payload_sha256 FROM payment_webhook_events WHERE provider = 'safepay'")) return this.db.paymentWebhookEvents.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_id, amount_paisa, status FROM payment_attempts WHERE provider = 'safepay'")) return [...this.db.paymentAttempts.values()].find((item) => item.provider_reference === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, customer_name, subtotal_paisa, delivery_fee_paisa, total_paisa, delivery_fee_expires_at FROM orders WHERE delivery_fee_token_hash")) {
       const row = [...this.db.orders.values()].find((item) => item.delivery_fee_token_hash === v[0] && item.delivery_fee_status === "awaiting_customer" && item.delivery_fee_expires_at > v[1] && ["pending", "confirmed"].includes(item.order_status));
