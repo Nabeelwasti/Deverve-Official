@@ -3472,6 +3472,20 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
       .bind(tracker).first<{ id: string; order_id: string; amount_paisa: number; status: string }>();
     if (!attempt) throw new Error("Payment attempt for webhook tracker was not found");
 
+    if (eventType === "payment.succeeded" && attempt.status === "succeeded") {
+      const reconciledOrder = await env.DB.prepare("SELECT payment_status, financial_transaction_id, total_paisa FROM orders WHERE id = ? LIMIT 1")
+        .bind(attempt.order_id).first<{ payment_status: string; financial_transaction_id: string | null; total_paisa: number }>();
+      if (reconciledOrder?.payment_status === "paid" && reconciledOrder.financial_transaction_id && reconciledOrder.total_paisa === attempt.amount_paisa) {
+        const existingLedger = await env.DB.prepare("SELECT id, amount_paisa FROM financial_transactions WHERE id = ? AND reference_type = 'order' AND reference_id = ? AND category = 'website_order' LIMIT 1")
+          .bind(reconciledOrder.financial_transaction_id, attempt.order_id).first<{ id: string; amount_paisa: number }>();
+        if (existingLedger?.amount_paisa === attempt.amount_paisa) {
+          await env.DB.prepare("UPDATE payment_webhook_events SET processing_status = 'processed', processed_at = ? WHERE provider = 'safepay' AND provider_event_id = ?")
+            .bind(new Date().toISOString(), eventId).run();
+          return json({ received: true, duplicate: true, reconciled: true });
+        }
+      }
+    }
+
     if (eventType === "payment.succeeded") {
       const amount = data.amount;
       const currency = cleanText(data.currency, 3);
@@ -3486,7 +3500,7 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
         env.DB.prepare("UPDATE orders SET payment_status = 'paid', financial_account_id = 'gateway-clearing', financial_transaction_id = ?, updated_at = ? WHERE id = ? AND payment_provider = 'safepay' AND (payment_status != 'paid' OR financial_transaction_id IS NULL) AND total_paisa = ? AND delivery_fee_status = 'accepted' AND order_status IN ('pending','confirmed') AND EXISTS (SELECT 1 FROM payment_attempts WHERE id = ? AND order_id = orders.id AND status = 'succeeded' AND amount_paisa = orders.total_paisa)").bind(transactionId,now,attempt.order_id,attempt.amount_paisa,attempt.id),
         env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,note,actor_admin_id) SELECT ?,'gateway-clearing','in',?,'website_order','order',?,'Safepay online payment',NULL WHERE EXISTS (SELECT 1 FROM orders WHERE id=? AND payment_status='paid' AND financial_transaction_id=?) AND EXISTS (SELECT 1 FROM payment_attempts WHERE id=? AND status='succeeded')").bind(transactionId,attempt.amount_paisa,attempt.order_id,attempt.order_id,transactionId,attempt.id),
       ]);
-      if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order and cashbook");
+      if ((!((attempt.status === "succeeded")) && (results[0]?.meta?.changes ?? 0) !== 1) || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) throw new Error("Payment reconciliation did not update the matching order and cashbook");
       try{await recordOwnerNotification(env.DB,{event_type:"payment.succeeded",title:"Online payment confirmed",body:"A Safepay payment was confirmed. Review the order and reconciliation record.",entity_type:"order",entity_id:attempt.order_id});}catch{}
       try{await env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?, ?, 'email', 'owner_payment_succeeded')").bind(crypto.randomUUID(),attempt.order_id).run();}catch{}
     } else {
