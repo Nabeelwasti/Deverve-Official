@@ -19,6 +19,7 @@ required_tables = {
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
+    "order_inventory_reservations",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -27,6 +28,11 @@ actual_tables = {
 }
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
+
+reservation_columns = {row[1] for row in db.execute("PRAGMA table_info(order_inventory_reservations)")}
+assert {"order_id", "variant_id", "quantity", "status", "payment_provider", "payment_reference", "reserved_at", "released_at", "consumed_at"} <= reservation_columns, "First-class order reservation lifecycle fields are missing"
+assert any(row[1] == "idx_order_inventory_reservations_order_status" for row in db.execute("PRAGMA index_list(order_inventory_reservations)")), "Order reservation lifecycle index is missing"
+assert any(row[1] == "idx_order_inventory_reservations_variant_status" for row in db.execute("PRAGMA index_list(order_inventory_reservations)")), "Variant reservation lifecycle index is missing"
 
 notification_outbox_columns = {row[1] for row in db.execute("PRAGMA table_info(notification_outbox)")}
 assert "processing_started_at" in notification_outbox_columns, "Owner notification lease timestamp is missing"
