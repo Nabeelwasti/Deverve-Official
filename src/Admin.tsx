@@ -657,7 +657,11 @@ export default function Admin() {
       setVariants(result.variants);
       await loadProducts();
       if (!failures.length) { setBulkRows([]); setMessage("Successfully created all " + created + " variants. Total opening stock: " + bulkRows.reduce((sum, row) => sum + Number(row.initial_stock), 0) + " units."); }
-      else setMessage(created + " of " + bulkRows.length + " variants saved. " + failures.slice(0, 4).join(" · ") + (failures.length > 4 ? " · +" + (failures.length - 4) + " more" : ""));
+      else {
+        const savedKeys = new Set(result.variants.map(item => item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase()));
+        setBulkRows(current => current.filter(row => !savedKeys.has(row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase())));
+        setMessage(created + " of " + bulkRows.length + " variants saved. Successfully saved combinations have been removed from the retry list; correct the remaining rows and retry. " + failures.slice(0, 4).join(" · ") + (failures.length > 4 ? " · +" + (failures.length - 4) + " more" : ""));
+      }
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The stock matrix could not be refreshed.");
     } finally { setBusy(false); }
