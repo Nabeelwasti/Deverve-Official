@@ -31,6 +31,18 @@ try {
   databaseId = created.uuid;
   console.log("Created isolated D1 test database:", name, databaseId);
 
+  await query(databaseId, "CREATE TABLE batch_rollback_probe (id TEXT PRIMARY KEY, unique_code TEXT UNIQUE)");
+  let constraintFailed = false;
+  try {
+    await batch(databaseId, [
+      { sql: "INSERT INTO batch_rollback_probe(id,unique_code) VALUES ('rollback-a','duplicate')" },
+      { sql: "INSERT INTO batch_rollback_probe(id,unique_code) VALUES ('rollback-b','duplicate')" },
+    ]);
+  } catch { constraintFailed = true; }
+  check(constraintFailed, "D1 rejects a batch containing a unique-constraint violation");
+  const rollbackRows = await query(databaseId, "SELECT COUNT(*) AS rows FROM batch_rollback_probe");
+  check(rollbackRows[0].results[0].rows === 0, "D1 batch constraint failure rolls back earlier statements");
+
   await batch(databaseId, [
     { sql: "CREATE TABLE products (id TEXT PRIMARY KEY, status TEXT NOT NULL)" },
     { sql: "CREATE TABLE product_variants (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, stock_on_hand INTEGER NOT NULL, reserved_quantity INTEGER NOT NULL, updated_at TEXT)" },
