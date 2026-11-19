@@ -27,7 +27,7 @@ function buildProducts(raw:string):CsvProduct[] {
   const rows=parseCsv(raw);if(rows.length<2)throw new Error("CSV needs a header row and at least one product row.");
   if(rows.length>501)throw new Error("Import is limited to 500 data rows per file.");
   const headers=rows[0].map(v=>v.trim().toLowerCase().replace(/[\s-]+/g,"_"));
-  const required=["name","category","audience"];
+  const required=["name","category","audience","size","color"];
   const missing=required.filter(h=>!headers.includes(h));if(missing.length)throw new Error("Missing required columns: "+missing.join(", "));
   const at=(r:string[],key:string)=>{const i=headers.indexOf(key);return i<0?"":(r[i]??"").trim();};
   const grouped=new Map<string,CsvProduct>();
@@ -41,7 +41,7 @@ function buildProducts(raw:string):CsvProduct[] {
     let p=grouped.get(key);
     const retail=money(at(r,"retail_price_pkr")),wholesale=money(at(r,"wholesale_price_pkr"));
     if(!p){p={name,slug,description:at(r,"description").slice(0,4000),category,audience:audience as CsvProduct["audience"],retail,wholesale,variants:[],line:i+1};grouped.set(key,p);}
-    else if(p.name!==name||p.category!==category||p.audience!==audience||p.retail!==retail||p.wholesale!==wholesale)throw new Error("Rows for "+name+" must repeat identical product-level fields.");
+    else if(p.name!==name||p.description!==at(r,"description").slice(0,4000)||p.category!==category||p.audience!==audience||p.retail!==retail||p.wholesale!==wholesale)throw new Error("Rows for "+name+" must repeat identical product-level fields.");
     const size=at(r,"size"),color=at(r,"color");
     const hasVariant=Boolean(size||color||at(r,"stock")||at(r,"reorder_level")||at(r,"cost_price_pkr"));
     if(hasVariant){
