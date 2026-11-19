@@ -4423,19 +4423,22 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
   if(stockCommand){
    const sku=stockCommand[1].trim(),quantity=Number(stockCommand[2]);
    if(!Number.isSafeInteger(quantity)||quantity<0||quantity>10_000_000)return error("Enter a valid whole-number stock quantity",400);
-   const matches=await env.DB.prepare("SELECT v.id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,p.id AS product_id,p.name,p.status FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.sku=? COLLATE NOCASE LIMIT 2").bind(sku).all<{id:string;sku:string;size:string;color:string;stock_on_hand:number;reserved_quantity:number;product_id:string;name:string;status:string}>();
+   const matches=await env.DB.prepare("SELECT v.id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,v.is_active,p.id AS product_id,p.name,p.status FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.sku=? COLLATE NOCASE LIMIT 2").bind(sku).all<{id:string;sku:string;size:string;color:string;stock_on_hand:number;reserved_quantity:number;is_active:number;product_id:string;name:string;status:string}>();
    const rows=matches.results??[];
    if(!rows.length)return error("No inventory variant matched that exact SKU",404);
    if(rows.length>1)return error("That SKU is not unique. Use a unique SKU before changing stock.",409);
    const variant=rows[0],reserved=Number(variant.reserved_quantity??0),current=Number(variant.stock_on_hand??0);
+   if(variant.is_active!==1)return error("Inactive variants cannot receive stock changes",409);
    if(quantity<reserved)return error("Stock cannot be set below the "+reserved+" units already reserved for orders.",409);
-   const auditId=crypto.randomUUID();
+   if(quantity===current)return json({ok:true,action:"set_variant_stock",sku:variant.sku,previous_stock:current,stock_on_hand:current,reserved_quantity:reserved,available_quantity:Math.max(0,current-reserved),product:{id:variant.product_id,name:variant.name},variant:{size:variant.size,color:variant.color},message:"Stock is already "+current+" for "+variant.name+" · "+variant.color+" · "+variant.size+" (SKU "+variant.sku+"). No movement was needed."});
+   const delta=quantity-current,movementId=crypto.randomUUID();
    const written=await env.DB.batch([
-    env.DB.prepare("UPDATE product_variants SET stock_on_hand=?,updated_at=? WHERE id=? AND stock_on_hand=? AND reserved_quantity<=?").bind(quantity,now,variant.id,current,quantity),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,? WHERE changes()=1").bind(auditId,admin.admin_user_id,"ai.inventory.stock_adjusted","product_variant",variant.id,JSON.stringify({command,sku:variant.sku,previous_stock:current,new_stock:quantity,reserved_quantity:reserved,product_id:variant.product_id}))
+    env.DB.prepare("UPDATE product_variants SET stock_on_hand=?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand=? AND reserved_quantity<=?").bind(quantity,now,variant.id,current,quantity),
+    env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) SELECT ?,?,'adjustment',?,'count',NULL,?,? WHERE changes()=1").bind(movementId,variant.id,delta,"AI owner command: "+command.slice(0,450),admin.admin_user_id),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM inventory_movements WHERE id=?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.inventory.stock_adjusted","product_variant",variant.id,JSON.stringify({command,sku:variant.sku,previous_stock:current,new_stock:quantity,quantity_delta:delta,reserved_quantity:reserved,product_id:variant.product_id,movement_id:movementId}),movementId)
    ]);
-   if((written[0]?.meta?.changes??0)!==1)return error("Stock changed during execution. Refresh inventory and retry.",409);
-   return json({ok:true,action:"set_variant_stock",sku:variant.sku,previous_stock:current,stock_on_hand:quantity,reserved_quantity:reserved,available_quantity:Math.max(0,quantity-reserved),product:{id:variant.product_id,name:variant.name},variant:{size:variant.size,color:variant.color},message:"Updated stock for "+variant.name+" · "+variant.color+" · "+variant.size+" (SKU "+variant.sku+") from "+current+" to "+quantity+". Reserved units were protected and the change was audited."});
+   if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("Stock changed during execution. Refresh inventory and retry.",409);
+   return json({ok:true,action:"set_variant_stock",sku:variant.sku,previous_stock:current,stock_on_hand:quantity,quantity_delta:delta,movement_id:movementId,reserved_quantity:reserved,available_quantity:Math.max(0,quantity-reserved),product:{id:variant.product_id,name:variant.name},variant:{size:variant.size,color:variant.color},message:"Updated stock for "+variant.name+" · "+variant.color+" · "+variant.size+" (SKU "+variant.sku+") from "+current+" to "+quantity+". The inventory movement and audit record were saved; reserved units were protected."});
   }
   return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>', 'publish all draft products', and 'set stock for SKU <SKU> to <quantity>'. No changes were made.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
