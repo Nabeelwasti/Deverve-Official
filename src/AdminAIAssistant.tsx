@@ -107,7 +107,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         setStatus(files.length ? "Analysing batch " + (batchIndex + 1) + " of " + totalBatches + " · " + files.length + " attachment(s) queued…" : "Working with the AI assistant…");
         const imageFiles = batch.filter(file => attachmentMime(file).startsWith("image/"));
         const images = await Promise.all(imageFiles.map(async file => {
-          const dataUrl = await fileToDataUrl(file); const match = /^data:(image\\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
+          const dataUrl = await fileToDataUrl(file); const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
           if (!match) throw new Error(file.name + " could not be prepared for AI analysis.");
           return { name: file.name, mime_type: match[1], data: match[2] };
         }));
@@ -115,7 +115,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         const documents = await Promise.all(documentFiles.map(async file => {
           if (attachmentMime(file) === "application/pdf") {
             const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error(file.name + " could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(file); });
-            const match = /^data:application\\/pdf;base64,(.+)$/.exec(dataUrl);
+            const match = /^data:application\/pdf;base64,(.+)$/.exec(dataUrl);
             if (!match) throw new Error(file.name + " is not a valid PDF.");
             return { name: file.name, mime_type: attachmentMime(file), data: match[1] };
           }
