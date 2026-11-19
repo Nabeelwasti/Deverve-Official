@@ -2424,19 +2424,71 @@ async function adminInventoryOverviewRoutes(request: Request, env: Env, url: URL
 
 async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
+  const productVariantsBulk = path.match(/^\/api\/admin\/products\/([a-f0-9-]{36})\/variants\/bulk$/i);
   const productVariants = path.match(/^\/api\/admin\/products\/([a-f0-9-]{36})\/variants$/i);
   const variantResource = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})$/i);
   const variantStock = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})\/stock$/i);
   const variantMovements = path.match(/^\/api\/admin\/variants\/([a-f0-9-]{36})\/movements$/i);
-  if (!productVariants && !variantResource && !variantStock && !variantMovements) return null;
+  if (!productVariants && !productVariantsBulk && !variantResource && !variantStock && !variantMovements) return null;
 
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
   catch { return error("Inventory service is temporarily unavailable", 503); }
   if (!admin) return error("Authentication required", 401);
 
-  const productId = productVariants?.[1] ?? null;
+  const productId = productVariants?.[1] ?? productVariantsBulk?.[1] ?? null;
   const variantId = variantResource?.[1] ?? variantStock?.[1] ?? variantMovements?.[1] ?? null;
+
+  if (productVariantsBulk && request.method === "POST") {
+    if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to create product variants", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request);
+    const items = body && Array.isArray(body.variants) ? body.variants : null;
+    if (!items || items.length < 1 || items.length > 100) return error("Submit between 1 and 100 size-and-colour combinations", 400);
+    const product = await env.DB.prepare("SELECT id, status FROM products WHERE id = ? LIMIT 1").bind(productId).first<{ id: string; status: string }>();
+    if (!product) return error("Product not found", 404);
+    if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
+    const normalized: Array<{id:string;sku:string;size:string;color:string;barcode:string;stock:number;cost:number;reorder:number}> = [];
+    const seen = new Set<string>();
+    for (const raw of items) {
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) return error("Each variant must be a valid object", 400);
+      const size = cleanText(raw.size, 32);
+      const color = cleanText(raw.color, 32);
+      const stock = raw.initial_stock === undefined ? 0 : raw.initial_stock;
+      const cost = raw.cost_price_paisa === undefined ? 0 : raw.cost_price_paisa;
+      const reorder = raw.reorder_level === undefined ? 5 : raw.reorder_level;
+      if (!size || !color || size.includes(",") || color.includes(",") || !Number.isSafeInteger(stock) || Number(stock)<0 || Number(stock)>1_000_000 || !Number.isSafeInteger(cost) || Number(cost)<0 || Number(cost)>1_000_000_000_000 || !Number.isSafeInteger(reorder) || Number(reorder)<0 || Number(reorder)>1_000_000) return error("Every row needs one size, one colour, whole-number stock and reorder quantities, and a valid purchase cost", 400);
+      if (raw.cost_price_paisa !== undefined && !["owner","manager"].includes(admin.role)) return error("Only an owner or manager can set purchase cost", 403);
+      const key = size.toLocaleLowerCase() + "::" + color.toLocaleLowerCase();
+      if (seen.has(key)) return error("The submitted matrix contains a duplicate size-and-colour combination: " + size + " / " + color, 409);
+      seen.add(key);
+      normalized.push({id:crypto.randomUUID(),sku:"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,barcode:generateInternalBarcode(),stock:Number(stock),cost:Number(cost),reorder:Number(reorder)});
+    }
+    try {
+      const existing = await env.DB.prepare("SELECT size, color FROM product_variants WHERE product_id = ?").bind(productId).all<{size:string;color:string}>();
+      const existingKeys = new Set((existing.results ?? []).map(row => row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
+      const duplicate = normalized.find(row => existingKeys.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
+      if (duplicate) return error("This size-and-colour combination already exists: " + duplicate.size + " / " + duplicate.color, 409);
+      const statements: D1PreparedStatement[] = [];
+      for (const row of normalized) {
+        statements.push(env.DB.prepare("INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand, barcode, cost_price_paisa, reorder_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(row.id, productId, row.sku, row.size, row.color, row.stock, row.barcode, row.cost, row.reorder));
+        if (row.stock > 0) statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, note, actor_admin_id) VALUES (?, ?, 'opening', ?, 'manual', ?, ?)")
+          .bind(crypto.randomUUID(), row.id, row.stock, "Opening stock", admin.admin_user_id));
+        statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) VALUES (?, ?, 'variant.created', 'product_variant', ?, ?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, row.id, JSON.stringify({product_id:productId,sku:row.sku,size:row.size,color:row.color,initial_stock:row.stock,bulk:true})));
+      }
+      await env.DB.batch(statements);
+      const rows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE product_id = ? ORDER BY size, color, sku")
+        .bind(productId).all<AdminVariantRow>();
+      return json({created:normalized.length, atomic:true, variants:(rows.results ?? []).map(row=>({...row,cost_price_paisa:["owner","manager"].includes(admin.role)?Number(row.cost_price_paisa??0):undefined,available_quantity:Math.max(0,row.stock_on_hand-row.reserved_quantity)}))},201);
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "";
+      console.error("[variant-bulk-create] failed", message || "unknown error");
+      if (/unique|constraint/i.test(message)) return error("A generated SKU or barcode conflicted with an existing record. No variants were saved; retry the matrix.", 409);
+      return error("The variant matrix could not be saved. No variants were saved; check the details and retry.", 503);
+    }
+  }
 
   if (productVariants && request.method === "GET") {
     try {
