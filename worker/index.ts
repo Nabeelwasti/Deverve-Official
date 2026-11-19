@@ -36,6 +36,7 @@ export interface Env {
   WHATSAPP_RECEIPT_TEMPLATE?: string;
   WHATSAPP_RECEIPT_LANGUAGE?: string;
   WHATSAPP_API_VERSION?: string;
+  PAYMENT_WEBHOOK_QUEUE?: { send(message: { rawBody: string; signature: string; eventId: string; payloadDigest: string }): Promise<void> };
 }
 
 export async function processNotificationOutbox(env:Env):Promise<void>{
@@ -3439,6 +3440,13 @@ async function safepayWebhookRoutes(request: Request, env: Env, url: URL): Promi
     if (prior?.processing_status === "processed" || prior?.processing_status === "ignored") return json({ received: true, duplicate: true });
     await env.DB.prepare("INSERT INTO payment_webhook_events (id, provider, provider_event_id, payload_sha256, processing_status) VALUES (?, 'safepay', ?, ?, 'received') ON CONFLICT(provider, provider_event_id) DO UPDATE SET processing_status = 'received' WHERE payment_webhook_events.payload_sha256 = excluded.payload_sha256 AND payment_webhook_events.processing_status NOT IN ('processed','ignored')")
       .bind(crypto.randomUUID(), eventId, payloadDigest).run();
+
+    // Pages Functions can publish Queue messages but cannot consume them.
+    // The separate consumer Worker re-enters this same verified handler.
+    if (env.PAYMENT_WEBHOOK_QUEUE) {
+      await env.PAYMENT_WEBHOOK_QUEUE.send({ rawBody, signature, eventId, payloadDigest });
+      return json({ received: true, queued: true }, 202);
+    }
 
     if (eventType !== "payment.succeeded" && eventType !== "payment.failed") {
       await env.DB.prepare("UPDATE payment_webhook_events SET processing_status = 'ignored', processed_at = ? WHERE provider = 'safepay' AND provider_event_id = ?")
