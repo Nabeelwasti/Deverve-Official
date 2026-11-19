@@ -3,7 +3,7 @@
 ## What is implemented
 
 - A private AI Command Centre is available to owner, manager and catalogue roles from the Operations menu.
-- Text chat accepts up to three JPG, PNG or WebP attachments. Images are compressed in the browser for Gemini analysis and are not exposed through a browser-side API key.
+- Text chat accepts up to three JPG, PNG, WebP, PDF, TXT, CSV, JSON or Markdown attachments. Images are compressed in the browser; PDFs are passed as PDF data and text formats are extracted as text. Files are not exposed through a browser-side API key.
 - Product intake asks Gemini to extract only visible or user-supplied facts, then presents a reviewable catalogue draft.
 - The draft editor supports product name, category, audience, description, retail/wholesale prices, SEO fields and size/colour stock combinations.
 - The assistant can create an unpublished product draft, save its variant matrix through the existing atomic inventory endpoint, and upload/attach the selected product photos through the existing media endpoints.
@@ -25,11 +25,11 @@
 
 - Gemini keys remain in the existing encrypted D1 vault / Cloudflare server secrets. No key is placed in a `VITE_*` variable or browser bundle.
 - Text and image requests are sent to the configured Gemini provider. Google Search grounding is used only for the explicit Deep research action and may incur provider charges.
-- Image analysis supports up to three JPG, PNG or WebP images per request. Each image is limited to 5 MB for upload and compressed to approximately 1.4 MB or less for AI analysis.
+- Attachment analysis supports up to three files per request. Images are limited to 5 MB each and compressed to approximately 1.4 MB for AI analysis. PDFs are limited to 5 MB each. TXT/CSV/JSON/Markdown files are limited to 120,000 characters each and 150,000 combined. DOCX/XLSX and arbitrary archives are not supported yet.
 
 ## Release validation still required
 
-- Verify authenticated chat, image analysis, malformed-image rejection, product draft creation, variant matrix, media upload, direct single-product publishing, bulk eligibility checks and audit-log writes in CI.
+- Verify authenticated chat, image and document analysis, malformed attachment rejection, product draft creation, variant matrix, media upload, direct single-product publishing, bulk eligibility checks and audit-log writes in CI.
 - Test on a physical Android phone and a desktop browser, including large images, camera-originated photos and interrupted uploads.
 - Confirm the configured Gemini key/model has multimodal access and Google Search grounding enabled.
 - Verify uploaded product media and generated draft data against a non-production D1/R2 environment.
