@@ -1030,6 +1030,35 @@ class FakeStatement {
       if (row) row.processing_status = "failed";
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
+    if (q.startsWith("INSERT INTO order_inventory_reservations")) {
+      const [id, order_id, variant_id, quantity, reserved_at, updated_at] = v;
+      const order = this.db.orders.get(order_id);
+      if (!order) return { success: true, meta: { changes: 0 } };
+      const key = order_id + ":" + variant_id;
+      if (this.db.orderInventoryReservations.has(key)) return { success: true, meta: { changes: 0 } };
+      this.db.orderInventoryReservations.set(key, { id, order_id, variant_id, quantity, status: "reserved", payment_provider: order.payment_provider ?? "manual", payment_reference: null, reserved_at, released_at: null, consumed_at: null, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET payment_reference")) {
+      const [payment_reference, updated_at, order_id] = v;
+      let changes = 0;
+      for (const row of this.db.orderInventoryReservations.values()) if (row.order_id === order_id && row.status === "reserved" && row.payment_provider === "safepay") { row.payment_reference = payment_reference; row.updated_at = updated_at; changes += 1; }
+      return { success: true, meta: { changes } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET status = 'released'")) {
+      const [released_at, updated_at, order_id, variant_id] = v;
+      const row = this.db.orderInventoryReservations.get(order_id + ":" + variant_id);
+      if (!row || row.status !== "reserved") return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "released", released_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE order_inventory_reservations SET status = 'consumed'")) {
+      const [consumed_at, updated_at, order_id, variant_id] = v;
+      const row = this.db.orderInventoryReservations.get(order_id + ":" + variant_id);
+      if (!row || row.status !== "reserved") return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status: "consumed", consumed_at, updated_at });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("UPDATE orders SET payment_provider = 'safepay'")) { const row = this.db.orders.get(v[0]); if (!row || row.payment_provider === "safepay") return { success: true, meta: { changes: 0 } }; row.payment_provider = "safepay"; return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO order_status_events")) { const id = v[0], order_id = v[1], from_status = v[2], to_status = v[3]; const actor_type = q.includes("'admin'") ? "admin" : "system"; const actor_id = actor_type === "admin" ? v[4] : null; const note = actor_type === "admin" ? v[5] : "Order received"; this.db.orderStatusEvents.push({ id, order_id, from_status, to_status, actor_type, actor_id, note, created_at: new Date().toISOString() }); return { success: true, meta: { changes: 1 } }; }
     if (q.startsWith("INSERT INTO customers")) {
@@ -1394,6 +1423,7 @@ class FakeD1 {
   enquiries = new Map();
   orders = new Map();
   orderItems = [];
+  orderInventoryReservations = new Map();
   wholesaleQuotes = new Map();
   wholesaleQuoteItems = [];
   vehicles = new Map();
