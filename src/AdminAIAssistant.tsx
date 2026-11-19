@@ -134,7 +134,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         }
       }
       if (!results.some(item => item.ok)) throw new Error(results.map(item => item.reply).join("\n"));
-      const replies = results.map((result, index) => (results.length > 1 ? "Batch " + (index + 1) + ":\\n" : "") + (result.reply || "The assistant returned no response."));
+      const replies = results.map((result, index) => (results.length > 1 ? "Batch " + (index + 1) + ":\n" : "") + (result.reply || "The assistant returned no response."));
       const combinedReply = replies.join("\n\n");
       const result: AssistantResponse = {
         ok: results.every(item => item.ok), reply: combinedReply,
@@ -145,7 +145,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       if (task === "product" && results.length > 1) {
         const drafts = results.map(item => item.product_draft).filter((item): item is ProductDraft => Boolean(item));
         if (drafts.length) {
-          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
+          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
           const groups = new Map<string, ProductDraft[]>();
           for (const item of drafts) {
             const key = normalizeName(item.name);
@@ -171,7 +171,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             };
           } else {
             result.product_draft = undefined;
-            result.reply += "\\n\\nI identified " + groups.size + " differently named product candidates across the attachment batches. I have NOT combined their sizes, colours or stock into one product. Create each candidate separately after reviewing the grouping plan; this assistant currently supports one product draft at a time.";
+            result.reply += "\n\nI identified " + groups.size + " differently named product candidates across the attachment batches. I have NOT combined their sizes, colours or stock into one product. Create each candidate separately after reviewing the grouping plan; this assistant currently supports one product draft at a time.";
           }
         }
       }
