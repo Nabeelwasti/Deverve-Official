@@ -2514,6 +2514,52 @@ test("authenticated product research uses Gemini Google Search grounding and ret
   }
 });
 
+
+test("admin AI Command Centre analyses attached images through the server-side Gemini key", async () => {
+  const db = new FakeD1();
+  const key = "AQ." + "M".repeat(48);
+  const configured = { ...env(db), NabeelG_Api_key1: key };
+  const bootstrapped = await bootstrap(db);
+  const cookie = bootstrapped.headers.get("set-cookie").split(";")[0];
+  const originalFetch = globalThis.fetch;
+  let sawImage = false;
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      assert.equal(init.headers?.["x-goog-api-key"], key);
+      const body = JSON.parse(String(init.body || "{}"));
+      const parts = body.contents?.[0]?.parts ?? [];
+      sawImage = parts.some(part => part.inline_data?.mime_type === "image/jpeg" && part.inline_data?.data === "aGVsbG8=");
+      assert.ok(sawImage, "the attached image must reach Gemini as inline image data");
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "I can see a clothing product." }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await handleRequest(request("/api/admin/ai/assistant", "POST", {
+      task: "chat", messages: [{ role: "user", text: "Describe this product photo." }],
+      images: [{ mime_type: "image/jpeg", data: "aGVsbG8=" }]
+    }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.71" }), configured);
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).reply, "I can see a clothing product.");
+    assert.equal(sawImage, true);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("admin AI Command Centre rejects unauthenticated and unsafe image requests", async () => {
+  const db = new FakeD1();
+  const unauthenticated = await handleRequest(request("/api/admin/ai/assistant", "POST", {
+    task: "chat", messages: [{ role: "user", text: "Hello" }]
+  }), env(db));
+  assert.equal(unauthenticated.status, 401);
+  const bootstrapped = await bootstrap(db);
+  const cookie = bootstrapped.headers.get("set-cookie").split(";")[0];
+  const malformed = await handleRequest(request("/api/admin/ai/assistant", "POST", {
+    task: "chat", messages: [{ role: "user", text: "Analyse this file" }],
+    images: [{ mime_type: "image/svg+xml", data: "PHN2Zz4=" }]
+  }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.72" }), env(db));
+  assert.equal(malformed.status, 400);
+});
+
 test("Gemini key management is owner-authenticated and public AI chat fails closed without a key", async () => {
   const db = new FakeD1();
   const vault = await handleRequest(request("/api/admin/ai/keys", "GET"), env(db));
