@@ -482,7 +482,8 @@ test("product card opens from its content and product cart merges by size and co
   });
 
   await page.goto("/");
-  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  const navToggle = page.getByRole("button", { name: "Toggle navigation" });
+  if (await navToggle.isVisible()) await navToggle.click();
   await page.getByRole("button", { name: "Fashion", exact: true }).click();
   await page.locator(".product-card h4").getByText("Trouser").click();
   await expect(page).toHaveURL(/\/product\/trouser$/);
@@ -569,7 +570,7 @@ test("cart shows the image belonging to the selected product colour", async ({ p
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({ products: [{
-        id: "88888888-8888-4888-8888-888888888888", slug: "cart-image-test", name: "Cart Image Test Hoodie",
+        id: "88888888-8888-4888-8888-888888888888", slug: "cart-image-test", name: "Cart Image Test Hoodie", status: "published", is_active: 1,
         description: "Colour-specific cart image regression test", category: "Hoodies", audience: "unisex", retail_price_paisa: 350000,
         image_key: null, seo_title: "Cart Image Test Hoodie", seo_description: "Test cart image",
         media: [
