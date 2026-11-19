@@ -1,4 +1,4 @@
-import { handleRequest, type Env } from "../../worker/index";
+import { handleRequest, type Env } from "../../worker/index.js";
 
 type SafepayQueueMessage = {
   rawBody: string;
