@@ -39,7 +39,7 @@ async function fileToDataUrl(file: File): Promise<string> {
 }
 
 async function fileBatchFingerprint(files: File[]): Promise<string> {
-  const identity = files.map(file => file.name + "\\u0000" + file.size + "\\u0000" + file.lastModified).sort().join("\\n");
+  const identity = files.map(file => file.name + "\u0000" + file.size + "\u0000" + file.lastModified).sort().join("\n");
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
@@ -370,7 +370,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         await api("/api/admin/products/" + createdId + "/variants", { method: "POST", body: JSON.stringify({ size: "One Size", color: "Standard", barcode: draft.barcode || "", sku: draft.sku || "", initial_stock: 0, reorder_level: 5 }) });
       }
       let uploaded = 0;
-      const productImages = (draftSourceFiles.length ? draftSourceFiles : files).filter(item => attachmentMime(item).startsWith("image/"));
+      const productImages = draftSourceFiles.filter(item => attachmentMime(item).startsWith("image/"));
       for (const file of productImages) {
         const data = new FormData(); data.append("file", file); data.append("alt_text", (draft.name + " · " + file.name).slice(0, 240));
         const result = await api<{ media?: { id: string } }>("/api/admin/media", { method: "POST", body: data });
