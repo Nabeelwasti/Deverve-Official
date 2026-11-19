@@ -31,7 +31,7 @@ test("AI assistant extracts DOCX paragraphs/tables and XLSX worksheets before se
  await page.route("**/api/admin/ai/assistant",async route=>{sent=route.request().postDataJSON();await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,reply:"Read both office documents."})});});
  await page.goto("/admin?section=products");await page.getByRole("button",{name:"Create with AI"}).click();
  await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen","ai");
- await page.locator('input[type="file"]').setInputFiles([
+ await page.locator('input[type="file"][accept*=".docx"]').setInputFiles([
   {name:"catalogue.docx",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",buffer:docx},
   {name:"inventory.xlsx",mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",buffer:xlsx}
  ]);
