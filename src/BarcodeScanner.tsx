@@ -41,7 +41,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
  const captureFrame=()=>{const current=video.current;if(!current||!current.videoWidth||!current.videoHeight)return "";const canvas=document.createElement("canvas");canvas.width=current.videoWidth;canvas.height=current.videoHeight;const context=canvas.getContext("2d");if(!context)return "";context.drawImage(current,0,0,canvas.width,canvas.height);return canvas.toDataURL("image/jpeg",0.84);};
  callback.current=onDetected;
  const processImageFile=async(file:File)=>{
-  if(!file.type.startsWith("image/")){setError("Choose a JPG, PNG, WebP or another supported image file.");return;}
+  const imageExtension=/\\.(?:jpe?g|png|webp|gif|bmp)$/i.test(file.name);\n  if(!file.type.startsWith("image/")&&!imageExtension){setError("Choose a JPG, PNG, WebP or another supported image file.");return;}
   if(file.size>15*1024*1024){setError("Choose an image smaller than 15 MB. Large images are compressed on this device before upload.");return;}
   setError("");setReadingFile(true);detected.current=false;
   try{
