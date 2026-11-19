@@ -218,7 +218,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             let parsedChunk: { groups?: unknown[] } | null = null;
             if (chunkMatch) try { parsedChunk = JSON.parse(chunkMatch[0]) as { groups?: unknown[] }; } catch { parsedChunk = null; }
             const parsedGroups = Array.isArray(parsedChunk?.groups) ? parsedChunk!.groups! : [];
-            const validGroups = parsedGroups.flatMap(value => {
+            const validGroups: Array<{ candidate_ids: string[]; product_name: string; confidence: "high" | "medium" | "low" }> = parsedGroups.flatMap(value => {
               if (!value || typeof value !== "object") return [];
               const group = value as Record<string, unknown>;
               if (!Array.isArray(group.candidate_ids) || typeof group.product_name !== "string") return [];
