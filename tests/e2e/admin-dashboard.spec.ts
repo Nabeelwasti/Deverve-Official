@@ -78,7 +78,7 @@ test("product creation stays inside the catalogue workspace and exposes broad si
     await route.fallback();
   });
   await page.route("**/api/admin/products/research", async (route) => {
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, summary: "Exact product identity is not fully verified. The official brand page shows a cotton-blend hoodie with a regular fit.", sources: [{ title: "Official product page", url: "https://example.com/product" }], queries: ["Palette test hoodie official"], model: "gemini-3.5-flash-lite" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, summary: "Exact product identity is not fully verified. The official brand page shows a cotton-blend hoodie with a regular fit.", sources: [{ title: "Official product page", url: "https://example.com/product" }], queries: ["Palette test hoodie official"], model: "gemini-3.8-flash" }) });
   });
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
