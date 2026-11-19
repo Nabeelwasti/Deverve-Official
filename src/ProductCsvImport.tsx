@@ -6,18 +6,22 @@ type CsvProduct = { name: string; slug: string; description: string; category: s
 type Props = { role: string; onImported: () => void };
 
 function parseCsv(text: string): string[][] {
-  const rows: string[][] = []; let row: string[] = []; let cell = ""; let quoted = false;
-  for (let i=0;i<text.length;i++) {
+  const rows: string[][] = []; let row: string[] = []; let cell = ""; let quoted = false; let afterQuote = false;
+  const pushCell=()=>{if(cell.length>10000)throw new Error("A CSV cell exceeds 10,000 characters.");row.push(cell);if(row.length>32)throw new Error("CSV is limited to 32 columns.");cell="";afterQuote=false;};
+  const pushRow=()=>{pushCell();if(row.some(v=>v.trim()))rows.push(row);row=[];};
+  for(let i=0;i<text.length;i++){
     const ch=text[i];
-    if (quoted) { if(ch === '"' && text[i+1] === '"'){cell+='"';i++;} else if(ch === '"') quoted=false; else cell+=ch; }
-    else if(ch === '"' && cell.length===0) quoted=true;
-    else if(ch === ","){row.push(cell);cell="";}
-    else if(ch === "\n" || ch === "\r"){ if(ch==="\r"&&text[i+1]==="\n")i++;row.push(cell);cell="";if(row.some(v=>v.trim()))rows.push(row);row=[]; }
+    if(ch==="\u0000")throw new Error("CSV contains a null character.");
+    if(quoted){if(ch==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(ch==='"'){quoted=false;afterQuote=true;}else cell+=ch;continue;}
+    if(afterQuote){if(ch===" "||ch==="\t")continue;if(ch===","){pushCell();continue;}if(ch==="\n"||ch==="\r"){if(ch==="\r"&&text[i+1]==="\n")i++;pushRow();continue;}throw new Error("CSV contains unexpected text after a quoted field.");}
+    if(ch==='"'){if(cell.length!==0)throw new Error("CSV contains a quote inside an unquoted field.");quoted=true;}
+    else if(ch===",")pushCell();
+    else if(ch==="\n"||ch==="\r"){if(ch==="\r"&&text[i+1]==="\n")i++;pushRow();}
     else cell+=ch;
+    if(cell.length>10000)throw new Error("A CSV cell exceeds 10,000 characters.");
   }
-  if(quoted) throw new Error("CSV contains an unclosed quoted field.");
-  row.push(cell);if(row.some(v=>v.trim()))rows.push(row);
-  return rows;
+  if(quoted)throw new Error("CSV contains an unclosed quoted field.");
+  pushRow();return rows;
 }
 const slugify=(v:string)=>v.toLowerCase().normalize("NFKD").replace(/[^\w\s-]/g,"").trim().replace(/[\s_-]+/g,"-").replace(/^-|-$/g,"").slice(0,120);
 const money=(v:string):number|null=>{if(!v.trim())return null;if(!/^\d+(?:\.\d{1,2})?$/.test(v.trim()))throw new Error("Prices must be PKR amounts with up to two decimals.");const n=Number(v);if(!Number.isFinite(n)||n>1_000_000_000)throw new Error("Price is outside the supported range.");return Math.round(n*100);};
@@ -66,7 +70,7 @@ export default function ProductCsvImport({role,onImported}:Props){
  const [products,setProducts]=useState<CsvProduct[]>([]),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[report,setReport]=useState<string[]>([]);
  const canSetCost=["owner","manager"].includes(role);
  const template="name,slug,description,category,audience,retail_price_pkr,wholesale_price_pkr,size,color,stock,reorder_level,cost_price_pkr\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Black,12,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,M,Black,18,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Navy,7,2,1100";
- const load=async(f:File|null)=>{setProducts([]);setReport([]);setMessage("");if(!f)return;if(!f.name.toLowerCase().endsWith(".csv")||f.size>5_000_000){setMessage("Choose a CSV file no larger than 5 MB.");return;}try{const parsed=buildProducts(await f.text());setProducts(parsed);setMessage("Validated "+parsed.length+" products and "+parsed.reduce((n,p)=>n+p.variants.length,0)+" unique size/colour combinations. All imports will be created as drafts.");}catch(e){setMessage(e instanceof Error?e.message:"CSV validation failed.");}};
+ const load=async(f:File|null)=>{setProducts([]);setReport([]);setMessage("");if(!f)return;if(!f.name.toLowerCase().endsWith(".csv")||f.size>5_000_000){setMessage("Choose a CSV file no larger than 5 MB.");return;}try{const parsed=buildProducts(await f.text());if(!canSetCost&&parsed.some(p=>p.variants.some(v=>v.costPaisa>0)))throw new Error("Only owners and managers can import purchase costs. Remove the cost_price_pkr values or ask an owner to import this file.");setProducts(parsed);setMessage("Validated "+parsed.length+" products and "+parsed.reduce((n,p)=>n+p.variants.length,0)+" unique size/colour combinations. All imports will be created as drafts.");}catch(e){setMessage(e instanceof Error?e.message:"CSV validation failed.");}};
  const commit=async()=>{if(!products.length||busy)return;setBusy(true);setReport([]);try{const payload={products:products.map(p=>({name:p.name,slug:p.slug,description:p.description,category:p.category,audience:p.audience,status:"draft",retail_price_paisa:p.retail,wholesale_price_paisa:p.wholesale,variants:p.variants.map(v=>({size:v.size,color:v.color,initial_stock:v.stock,reorder_level:v.reorder,...(canSetCost?{cost_price_paisa:v.costPaisa}:{})}))}))};const result=await api<{imported:number;variants:number;atomic:boolean;products:Array<{name:string;variants:number}>}>("/api/admin/products/import",{method:"POST",body:JSON.stringify(payload)});if(result.atomic!==true||result.imported!==products.length)throw new Error("Server did not confirm a complete atomic import.");setReport(result.products.map(p=>"Imported draft: "+p.name+" · "+p.variants+" variants"));setMessage("Atomic import completed: "+result.imported+" products and "+result.variants+" variants. All products remain unpublished drafts.");onImported();}catch(e){setMessage(e instanceof Error?e.message:"Atomic CSV import failed. No partial batch was accepted.");}finally{setBusy(false);}};
  return <section className="admin-panel" aria-labelledby="csv-import-title"><div className="admin-panel-heading"><div><h2 id="csv-import-title">Bulk product import (CSV)</h2><p className="admin-muted">One row per size/colour combination. Repeated product details are grouped automatically.</p></div><button type="button" className="admin-secondary" onClick={()=>{const blob=new Blob([template],{type:"text/csv;charset=utf-8"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="deverve-product-import-template.csv";a.click();URL.revokeObjectURL(url);}}>Download template</button></div><label>Choose CSV file<input type="file" accept=".csv,text/csv" disabled={busy} onChange={e=>void load(e.target.files?.[0]??null)}/></label>{message&&<p className="admin-message" role="status">{message}</p>}{products.length>0&&<><p>{products.length} products · {products.reduce((n,p)=>n+p.variants.length,0)} variants · Draft only</p><div className="admin-table-wrap"><table><thead><tr><th>Product</th><th>Category</th><th>Audience</th><th>Price (PKR)</th><th>Variants</th><th>Opening stock</th></tr></thead><tbody>{products.map(p=><tr key={p.slug}><td>{p.name}</td><td>{p.category}</td><td>{p.audience}</td><td>{p.retail===null?"—":(p.retail/100).toFixed(2)}</td><td>{p.variants.length}</td><td>{p.variants.reduce((n,v)=>n+v.stock,0)}</td></tr>)}</tbody></table></div><button type="button" className="admin-primary" disabled={busy} onClick={()=>void commit()}>{busy?"Importing…":"Import validated drafts"}</button></>}{report.length>0&&<ul>{report.map((line,i)=><li key={i}>{line}</li>)}</ul>}<p className="admin-muted">Required columns: name, category, audience, size, color. Optional: slug, description, retail_price_pkr, wholesale_price_pkr, stock, reorder_level, cost_price_pkr. SKU/barcode identifiers are generated by the system; assign supplier codes after import. The complete import batch is committed atomically: either every product, variant, opening-stock movement and audit event is saved, or none are. Products are always drafts.</p></section>;
 }
