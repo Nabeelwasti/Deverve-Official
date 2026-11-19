@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
 const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
@@ -30,6 +31,20 @@ try {
   const created = await api("POST", "/accounts/" + accountId + "/d1/database", { name, primary_location_hint: "apac" });
   databaseId = created.uuid;
   console.log("Created isolated D1 test database:", name, databaseId);
+
+  const aiTaskMigration = await readFile(new URL("../migrations/0036_ai_task_continuity.sql", import.meta.url), "utf8");
+  await sql(databaseId, { sql: aiTaskMigration });
+  const aiSchema = await query(databaseId, "SELECT name FROM sqlite_master WHERE type IN ('table','index') AND name IN ('ai_task_runs','ai_task_events','idx_ai_task_runs_owner_updated','idx_ai_task_events_task_created') ORDER BY name");
+  check(aiSchema[0].results.length === 4, "migration 0036 creates both durable AI task tables and their owner/event indexes");
+  await batch(databaseId, [
+    { sql: "INSERT INTO ai_task_runs (id,created_by_admin_id,task_type,status,current_step,completed_batches,failed_batches,context_json,created_at,updated_at) VALUES ('task-owner-a','admin-a','product','partial','batch-2',1,1,'{}','test','test')" },
+    { sql: "INSERT INTO ai_task_events (id,task_id,event_type,batch_index,model,payload_json,created_at) VALUES ('event-owner-a','task-owner-a','batch_completed',0,'gemini-test','{\\"fingerprint\\":\\"batch-a\\"}','test')" }
+  ]);
+  const savedTask = await query(databaseId, "SELECT r.created_by_admin_id,r.status,r.completed_batches,e.event_type,e.payload_json FROM ai_task_runs r JOIN ai_task_events e ON e.task_id=r.id WHERE r.id='task-owner-a'");
+  check(savedTask[0].results.length === 1 && savedTask[0].results[0].created_by_admin_id === "admin-a" && savedTask[0].results[0].status === "partial" && savedTask[0].results[0].completed_batches === 1 && savedTask[0].results[0].event_type === "batch_completed" && savedTask[0].results[0].payload_json.includes("batch-a"), "AI task checkpoints and completed-batch event payloads persist and can be restored");
+  await query(databaseId, "DELETE FROM ai_task_runs WHERE id='task-owner-a'");
+  const orphanEvents = await query(databaseId, "SELECT COUNT(*) AS count FROM ai_task_events WHERE task_id='task-owner-a'");
+  check(orphanEvents[0].results[0].count === 0, "deleting an AI task cascades its events without leaving orphaned task history");
 
   await query(databaseId, "CREATE TABLE batch_rollback_probe (id TEXT PRIMARY KEY, unique_code TEXT UNIQUE)");
   let constraintFailed = false;
