@@ -838,7 +838,7 @@ class FakeStatement {
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ?")) { const row = [...this.db.orders.values()].find((item) => item.id === v[0]); return row ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
-    if (q.startsWith("SELECT object_key,mime_type,byte_size,status,uploaded_by FROM media_assets WHERE id=?")) return this.db.mediaAssets.get(v[0]) ?? null;
+    if (q.startsWith("SELECT object_key,mime_type,byte_size,status,uploaded_by,updated_at FROM media_assets WHERE id=?")) return this.db.mediaAssets.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, role, is_active, password_hash FROM admin_users")) {
       return [...this.db.admins.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     }
@@ -1032,8 +1032,24 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO media_assets")) {
       const [id,object_key,mime_type,byte_size,alt_text,uploaded_by]=v;
       if(this.db.mediaAssets.has(id))throw new Error("UNIQUE constraint failed: media_assets.id");
-      this.db.mediaAssets.set(id,{id,object_key,media_type:"image",mime_type,byte_size,alt_text,caption:"",status:"ready",uploaded_by});
+      this.db.mediaAssets.set(id,{id,object_key,media_type:"image",mime_type,byte_size,alt_text,caption:"",status:q.includes("'processing'")?"processing":"ready",uploaded_by,updated_at:new Date().toISOString()});
       return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("UPDATE media_assets SET status='ready'")) {
+      const [updated_at,id,uploaded_by]=v;const row=this.db.mediaAssets.get(id);
+      if(!row||row.uploaded_by!==uploaded_by||row.status!=="processing")return {success:true,meta:{changes:0}};
+      Object.assign(row,{status:"ready",updated_at});
+      return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("UPDATE media_assets SET updated_at=? WHERE id=? AND status='processing'")) {
+      const [updated_at,id,uploaded_by,expected]=v;const row=this.db.mediaAssets.get(id);
+      if(!row||row.uploaded_by!==uploaded_by||row.status!=="processing"||row.updated_at!==expected)return {success:true,meta:{changes:0}};
+      row.updated_at=updated_at;return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("DELETE FROM media_assets WHERE id=?")) {
+      const [id,uploaded_by]=v;const row=this.db.mediaAssets.get(id);
+      if(row&&row.uploaded_by===uploaded_by&&row.status==="processing"){this.db.mediaAssets.delete(id);return {success:true,meta:{changes:1}};}
+      return {success:true,meta:{changes:0}};
     }
     if (q.startsWith("INSERT INTO audit_logs") && q.includes("'media.bulk_uploaded'")) {
       this.db.audits.push({id:v[0],actor_admin_id:v[1],action:"media.bulk_uploaded",entity_type:"media_asset",entity_id:v[2],metadata_json:v[3]});
