@@ -1,6 +1,6 @@
 # De VERVE release and owner setup checklist
 
-Last reconciled: 20 November 2026 — production migration verification  
+Last reconciled: 20 November 2026 — production migration verification and deployment activation  
 Target: Pakistan-first storefront, garments catalogue, rentals, POS and AI-assisted operations.
 
 This checklist separates source-code work from account configuration and production operations. A passing build does not complete an external provider integration. Do not enable a provider until its test transaction and callback/delivery path have been verified.
@@ -92,14 +92,14 @@ These are verified release blockers, not permission to change live resources:
 - Worker authentication tests, SQL binding audit, Pages security-header checks and schema smoke passed. Schema smoke verified 36 migration files, 53 tables, constraints and foreign keys.
 - Playwright browser suite: 88 passed across desktop Chromium and mobile Chromium. Includes CSV product import and DOCX/XLSX extraction on both projects, and mobile 100-image intake, direct owner publishing and scanner regression tests.
 - Important limitation: the remote production-like D1 integration step was skipped because GitHub Actions secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are not configured. The isolated 0001–0036 D1 migration rehearsal was separately completed against a temporary database on 20 Nov; this does not prove the production database is migration-ready.
-- A fresh production D1 export job completed, but the export file is not downloaded or independently restored. D1 Time Travel provides 30-day point-in-time recovery, but an off-account backup remains outstanding.
+- A fresh production D1 export job completed, but the export file is not downloaded or independently restored because the available connector cannot retrieve the signed export host. D1 Time Travel provides 30-day point-in-time recovery, but an off-account backup remains outstanding. An empty private R2 bucket `deverve-db-backups` was created as a destination; no SQL dump has been uploaded to it yet.
 
 ## Current branch and release boundary
 
 - Repository: `Nabeelwasti/Deverve-Official`
 - Production branch: `main`
 - PR #5 is merged; merge commit: `4e11bd757a41f7f23785ffd1476aef3d56a5e176`.
-- Cloudflare Pages source deployments and production deployments were disabled during the pre-release audit. Re-enable only after the production migration state and release commit are verified.
+- Cloudflare Pages Git production deployments were enabled on 20 Nov 2026 for the `main` branch only; preview deployments remain disabled. The next `main` push is the controlled production deployment trigger. The current latest deployment remains the older release until that deployment completes.
 - Production release remains blocked on independent backup/restore, production schema reconciliation and migration verification, owner/provider configuration, and live acceptance. Do not enable deployment or run production migrations until these gates are met.
 
 ## Required owner-provided setup (never paste secrets into chat)
@@ -114,3 +114,16 @@ Provide/configure through the appropriate provider dashboard or Cloudflare secre
 - Owner's preferred Google Business Profile and social account destinations.
 
 Keep secrets in the provider dashboard or Cloudflare encrypted secrets. Share only non-secret IDs/configuration labels when coordination is needed.
+
+
+## Production migration and deployment activation — 20 November 2026
+
+- D1 database: `deverve-production` (`355da876-17c4-4762-a59d-bb85f2e4551b`).
+- Migration 0034: `idx_product_variants_unique_active_options` created successfully after a zero-duplicate preflight.
+- Migration 0035: `order_inventory_reservations` and both order/status + variant/status indexes created successfully.
+- Migration 0036: `ai_task_runs`, `ai_task_events` and both supporting indexes created successfully.
+- Post-migration checks: all eight expected schema objects present; orders=0, reservations=0, AI task runs=0, AI task events=0; active normalized single-option duplicate groups=0.
+- Cloudflare D1 Time Travel is enabled automatically by Cloudflare and provides point-in-time recovery for the previous 30 days. This is not independent off-account backup.
+- Created private R2 bucket `deverve-db-backups` in APAC. It is currently empty. The completed D1 export artifact could not be downloaded through the available connector's outbound-host restrictions; no independent SQL backup/restore test is claimed.
+- Cloudflare Pages Git production deployments are enabled for `main` only. Preview deployments remain disabled. The next main-branch push triggers the production build/deployment.
+- Physical Android device acceptance remains intentionally scheduled after deployment, as requested.
