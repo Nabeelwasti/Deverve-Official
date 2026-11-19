@@ -12,6 +12,7 @@ type ProductDraft = {
 type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void };
 type Source = { title: string; url: string };
 type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; sources?: Source[]; queries?: string[]; error?: string };
+type AITaskSummary = { id: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
 
 const greeting = "Assalamu Alaikum! I’m your De VERVE AI assistant. I can help with product analysis, research and supported direct business commands. Owner and manager publishing commands can execute without a separate approval form. What would you like me to do?";
 const pkrToPaisa = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? null : Math.round(value * 100);
@@ -47,11 +48,19 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState<ProductDraft | null>(null);
   const [sources, setSources] = useState<Source[]>([]);
+  const [recentTasks, setRecentTasks] = useState<AITaskSummary[]>([]);
+  const taskIdRef = useRef<string | null>(null);
   const [researchQuery, setResearchQuery] = useState("");
   const [publishing, setPublishing] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const canSetCost = role === "owner" || role === "manager";
   const visibleMessages = useMemo(() => [{ role: "model" as const, text: greeting }, ...history], [history]);
+
+  useEffect(() => {
+    let active = true;
+    api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(result => { if (active) setRecentTasks(Array.isArray(result.tasks) ? result.tasks : []); }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (initialBarcode) { setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode); setResearchQuery(current => current || initialBarcode); }
@@ -84,7 +93,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (!text || busy) { if (!text) setStatus("Write a message or attach product images with an instruction."); return; }
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
-    const taskId = crypto.randomUUID();
+    const taskId = taskIdRef.current || crypto.randomUUID();
+    taskIdRef.current = taskId;
     try {
       let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));
       const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);
@@ -212,6 +222,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           }
         }
       }
+      const planFailed = globalPlan.startsWith("Global grouping pass could not complete:");
+      if (results.every(item => item.ok) && !planFailed) taskIdRef.current = null;
       const reply = result.reply || "The assistant returned no response.";
       setHistory([...next, { role: "model", text: reply.slice(0, 12000) }]); setModel(result.model || "");
       if (results.some(item => !item.ok)) setStatus("Partial analysis completed. Some batches failed; successful results are preserved. Retry the failed files only. " + results.filter(item => !item.ok).length + " batch(es) failed.");
@@ -235,7 +247,23 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         setStatus("Analysis completed across " + files.length + " attachment(s) in " + totalBatches + " batches.");
       }
       setMessage(""); if (task === "chat") setFiles([]);
+      void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
     } catch (error) { setStatus(error instanceof Error ? error.message : "The assistant could not complete this request."); }
+    finally { setBusy(false); }
+  };
+
+  const resumeTaskMemory = async (task: AITaskSummary) => {
+    setBusy(true); setStatus("Restoring saved task decisions and completed work…");
+    try {
+      const result = await api<{ task: AITaskSummary; events?: Array<{ event_type: string; model?: string; payload?: { reply?: string; attachments?: string[]; step?: string } }> }>("/api/admin/ai/tasks/" + task.id);
+      taskIdRef.current = task.id;
+      const recovered = (result.events || []).map((event, index) => {
+        const payload = event.payload || {};
+        return (index + 1) + ". " + (payload.step || event.event_type) + " · " + (event.model || "model unknown") + "\\nFiles: " + (payload.attachments || []).join(", ") + "\\n" + (payload.reply || "Saved task event");
+      }).join("\\n\\n");
+      setHistory(current => [...current, { role: "model", text: "Recovered durable task memory (" + task.status + "). Previous analysis and decisions:\\n\\n" + recovered + "\\n\\nI will include this saved context in the next request. Reattach any files that still need processing." }]);
+      setStatus("Previous task context restored. The same task ID will be reused so Gemini model/key fallback can continue with its saved memory.");
+    } catch (error) { setStatus(error instanceof Error ? error.message : "Saved task memory could not be restored."); }
     finally { setBusy(false); }
   };
 
@@ -304,7 +332,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     </section>
     <div className="admin-ai-layout">
       <section className="admin-ai-chat-card">
-        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
+        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); taskIdRef.current = null; }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
+        {recentTasks.length > 0 && <div className="admin-ai-task-history"><strong>Saved AI task memory</strong><small>Continue previous work without repeating completed analysis</small><div>{recentTasks.slice(0, 5).map(task => <button key={task.id} type="button" className="admin-secondary" disabled={busy} onClick={() => void resumeTaskMemory(task)}>{task.task_type} · {task.status} · {task.completed_batches} completed / {task.failed_batches} failed</button>)}</div></div>}
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
         {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{attachmentMime(file).startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={file.type + " attachment"}>📄<strong>{attachmentMime(file) === "application/pdf" ? "PDF" : attachmentMime(file).split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
         <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
