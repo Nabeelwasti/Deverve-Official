@@ -35,7 +35,7 @@ test("AI assistant extracts DOCX paragraphs/tables and XLSX worksheets before se
   {name:"catalogue.docx",mimeType:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",buffer:docx},
   {name:"inventory.xlsx",mimeType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",buffer:xlsx}
  ]);
- await page.locator("textarea").fill("Read these catalogue and inventory files. Extract the product names, sizes and stock.");
+ await page.locator(".admin-ai-composer textarea").fill("Read these catalogue and inventory files. Extract the product names, sizes and stock.");
  await page.getByRole("button",{name:"Ask AI"}).click();
  await expect.poll(()=>sent).not.toBeNull();
  const body=sent as {documents:Array<{name:string;mime_type:string;text:string}>};
