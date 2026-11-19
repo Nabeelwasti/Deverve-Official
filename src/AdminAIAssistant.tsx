@@ -278,7 +278,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             const items = plan.candidate_ids.map(id => candidates.find(candidate => candidate.id === id)).filter((item): item is typeof candidates[number] => item !== undefined && !assigned.has(item.id));
             if (!items.length) continue;
             items.forEach(item => assigned.add(item.id));
-            if (plan.confidence === "low" && items.length > 1) {
+            if (plan.confidence !== "high" && items.length > 1) {
               for (const item of items) groups.push({ key: "uncertain:" + item.id, name: item.draft.name, items: [item] });
             } else {
               groups.push({ key: "planned:" + items[0].id, name: plan.product_name, items });
@@ -309,7 +309,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               sizes: [...new Set(group.items.flatMap(item => item.draft.sizes || []))],
               colours: [...new Set(group.items.flatMap(item => item.draft.colours || []))],
               variants: [...variants.values()].slice(0, 100),
-              unknowns: [...new Set([...group.items.flatMap(item => item.draft.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : []), ...(globalGroups.some(plan => plan.confidence === "low" && plan.candidate_ids.some(id => group.items.some(item => item.id === id))) ? ["AI grouping confidence is low; verify that these images show the same product before saving."] : [])])]
+              unknowns: [...new Set([...group.items.flatMap(item => item.draft.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : []), ...(globalGroups.some(plan => plan.confidence !== "high" && plan.candidate_ids.some(id => group.items.some(item => item.id === id))) ? ["Cross-batch match was not high-confidence; candidates were kept separate. Verify product identity before manually combining them."] : [])])]
             };
             const matchingFiles = [...new Map(group.items.flatMap(item => {
               const sourceNames = Array.isArray(item.draft.source_files) ? item.draft.source_files : [];
