@@ -1966,24 +1966,52 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
         if(!valid){failures.push({name:file.name,error:"The file content does not match its declared image type."});continue;}
         const digest=await crypto.subtle.digest("SHA-256",bytes);
         const sha256=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
-        const existing=await env.DB.prepare("SELECT object_key,mime_type,byte_size,status,uploaded_by FROM media_assets WHERE id=? LIMIT 1").bind(id).first<{object_key:string;mime_type:string;byte_size:number;status:string;uploaded_by:string}>();
-        if(existing){
-          const head=await env.MEDIA.head(existing.object_key);
-          if(existing.uploaded_by!==admin.admin_user_id||existing.status!=="ready"||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||head?.customMetadata?.sha256!==sha256){
-            failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
-          }
-          results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
-          continue;
-        }
+        const existing=await env.DB.prepare("SELECT object_key,mime_type,byte_size,status,uploaded_by,updated_at FROM media_assets WHERE id=? LIMIT 1").bind(id).first<{object_key:string;mime_type:string;byte_size:number;status:string;uploaded_by:string;updated_at:string}>();
         const key="catalogue/"+id+"."+ext;
         const altText=cleanText(altPrefix+" · "+file.name,240);
-        await env.MEDIA.put(key,bytes,{httpMetadata:{contentType:file.type},customMetadata:{assetId:id,sha256}});
+        let ownsProcessingLease=false;
+        if(existing){
+          if(existing.uploaded_by!==admin.admin_user_id||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||existing.status==="archived"){
+            failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
+          }
+          const head=await env.MEDIA.head(existing.object_key);
+          if(existing.status==="ready"){
+            if(head?.customMetadata?.sha256!==sha256){failures.push({name:file.name,error:"The saved media content does not match this retry. Use a new upload identifier."});continue;}
+            results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
+            continue;
+          }
+          if(existing.status!=="processing"){failures.push({name:file.name,error:"This media item is not available for retry."});continue;}
+          if(head?.customMetadata?.sha256===sha256){
+            const recovered=await env.DB.batch([
+              env.DB.prepare("UPDATE media_assets SET status='ready',updated_at=? WHERE id=? AND uploaded_by=? AND status='processing'").bind(new Date().toISOString(),id,admin.admin_user_id),
+              env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'media.bulk_uploaded','media_asset',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length,recovered:true}))
+            ]);
+            if((recovered[0]?.meta?.changes??0)!==1){failures.push({name:file.name,error:"Another upload retry is already completing this image. Retry shortly."});continue;}
+            results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
+            continue;
+          }
+          const updatedAt=Date.parse(existing.updated_at||"");
+          if(!Number.isFinite(updatedAt)||Date.now()-updatedAt<15*60_000){failures.push({name:file.name,error:"This image upload is already in progress. Retry after the current upload finishes."});continue;}
+          const claimed=await env.DB.prepare("UPDATE media_assets SET updated_at=? WHERE id=? AND status='processing' AND uploaded_by=? AND updated_at=?").bind(new Date().toISOString(),id,admin.admin_user_id,existing.updated_at).run();
+          if((claimed.meta?.changes??0)!==1){failures.push({name:file.name,error:"Another upload retry claimed this image. Retry shortly."});continue;}
+          ownsProcessingLease=true;
+        }else{
+          const reserved=await env.DB.prepare("INSERT INTO media_assets (id,object_key,media_type,mime_type,byte_size,alt_text,caption,status,uploaded_by) VALUES (?,?,'image',?,?,?,'','processing',?)").bind(id,key,file.type,file.size,altText,admin.admin_user_id).run();
+          if((reserved.meta?.changes??0)!==1){failures.push({name:file.name,error:"The upload identifier could not be reserved. Retry this image."});continue;}
+          ownsProcessingLease=true;
+        }
         try{
-          await env.DB.batch([
-            env.DB.prepare("INSERT INTO media_assets (id,object_key,media_type,mime_type,byte_size,alt_text,caption,status,uploaded_by) VALUES (?,?,'image',?,?,?,'','ready',?)").bind(id,key,file.type,file.size,altText,admin.admin_user_id),
-            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'media.bulk_uploaded','media_asset',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length}))
+          await env.MEDIA.put(key,bytes,{httpMetadata:{contentType:file.type},customMetadata:{assetId:id,sha256}});
+          const completed=await env.DB.batch([
+            env.DB.prepare("UPDATE media_assets SET status='ready',updated_at=? WHERE id=? AND uploaded_by=? AND status='processing'").bind(new Date().toISOString(),id,admin.admin_user_id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'media.bulk_uploaded','media_asset',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length}))
           ]);
-        }catch(writeError){try{await env.MEDIA.delete(key);}catch{/* best effort orphan cleanup */}throw writeError;}
+          if((completed[0]?.meta?.changes??0)!==1)throw new Error("Media upload lease was lost before completion.");
+        }catch(writeError){
+          try{await env.MEDIA.delete(key);}catch{/* best effort orphan cleanup */}
+          if(ownsProcessingLease){try{await env.DB.prepare("DELETE FROM media_assets WHERE id=? AND uploaded_by=? AND status='processing'").bind(id,admin.admin_user_id).run();}catch{/* best effort lease cleanup */}}
+          throw writeError;
+        }
         results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:false});
       }catch{failures.push({name:file.name,error:"Image could not be saved. Retry this image; completed uploads will be safely reused."});}
     }
