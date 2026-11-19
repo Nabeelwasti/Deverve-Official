@@ -2208,7 +2208,7 @@ test("authenticated product research uses Gemini Google Search grounding and ret
         output_text: "The exact product match is not confirmed. The official page shows a denim jacket.",
         steps: [
           { type: "google_search_call", arguments: { queries: ["12345678 denim jacket official"] } },
-          { type: "model_output", content: [{ type: "text", text: "The exact product match is not confirmed.", annotations: [{ type: "url_citation", title: "Official product page", url: "https://example.com/product" }] }] }
+          { type: "model_output", content: [{ type: "text", text: "The exact product match is not confirmed.", annotations: [{ type: "url_citation", title: "Official product page", uri: "https://example.com/product" }] }] }
         ]
       }), { status: 200, headers: { "content-type": "application/json" } });
     }
