@@ -38,7 +38,7 @@ try {
   check(aiSchema[0].results.length === 4, "migration 0036 creates both durable AI task tables and their owner/event indexes");
   await batch(databaseId, [
     { sql: "INSERT INTO ai_task_runs (id,created_by_admin_id,task_type,status,current_step,completed_batches,failed_batches,context_json,created_at,updated_at) VALUES ('task-owner-a','admin-a','product','partial','batch-2',1,1,'{}','test','test')" },
-    { sql: "INSERT INTO ai_task_events (id,task_id,event_type,batch_index,model,payload_json,created_at) VALUES ('event-owner-a','task-owner-a','batch_completed',0,'gemini-test','{\\"fingerprint\\":\\"batch-a\\"}','test')" }
+    { sql: "INSERT INTO ai_task_events (id,task_id,event_type,batch_index,model,payload_json,created_at) VALUES (?,?,?,?,?,?,?)", params: ["event-owner-a","task-owner-a","batch_completed","0","gemini-test",'{"fingerprint":"batch-a"}',"test"] }
   ]);
   const savedTask = await query(databaseId, "SELECT r.created_by_admin_id,r.status,r.completed_batches,e.event_type,e.payload_json FROM ai_task_runs r JOIN ai_task_events e ON e.task_id=r.id WHERE r.id='task-owner-a'");
   check(savedTask[0].results.length === 1 && savedTask[0].results[0].created_by_admin_id === "admin-a" && savedTask[0].results[0].status === "partial" && savedTask[0].results[0].completed_batches === 1 && savedTask[0].results[0].event_type === "batch_completed" && savedTask[0].results[0].payload_json.includes("batch-a"), "AI task checkpoints and completed-batch event payloads persist and can be restored");
