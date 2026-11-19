@@ -159,18 +159,17 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const draft = item.response.product_draft;
           return {
             batch: index + 1,
-            files: item.files.map(file => file.name).slice(0, 3),
-            candidate: draft ? {
-              name: draft.name, category: draft.category, audience: draft.audience,
-              visible_description: draft.description.slice(0, 180),
-              colours: draft.colours.slice(0, 8), sizes: draft.sizes.slice(0, 8),
-              variants: draft.variants.slice(0, 8).map(variant => ({ size: variant.size, colour: variant.color })),
-              unknowns: draft.unknowns.slice(0, 4)
+            files: item.files.map(file => file.name.slice(0, 32)),
+            product: draft ? {
+              name: draft.name.slice(0, 48), category: draft.category.slice(0, 24),
+              colours: draft.colours.slice(0, 4).map(value => value.slice(0, 12)),
+              sizes: draft.sizes.slice(0, 4),
+              description: draft.description.slice(0, 80)
             } : null,
-            visual_summary: item.response.reply.slice(0, 180)
+            summary: item.response.reply.slice(0, 100)
           };
         });
-        const planningInput = JSON.stringify(summaries).slice(0, 8200);
+        const planningInput = JSON.stringify(summaries);
         try {
           setStatus("Comparing all successful batches and planning product groups…");
           const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
@@ -346,7 +345,13 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       }
       onProductCreated();
     } catch (error) {
-      if (createdId) { setDraft(null); setFiles([]); onProductCreated(); }
+      if (createdId) {
+        if (draftQueue.length) {
+          const next = draftQueue[0];
+          setDraftQueue(draftQueue.slice(1)); setDraftSourceFiles(next.files); setDraft(next.draft);
+        } else { setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setFiles([]); }
+        onProductCreated();
+      }
       setStatus((createdId ? "Product draft " + createdId.slice(0, 8) + " was created, but a later variant or image step needs attention. Open Products & variants to finish it. " : "") + (error instanceof Error ? error.message : "The product draft could not be completed."));
     } finally { setPublishing(false); }
   };
