@@ -77,7 +77,10 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
     try {
-      let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));\n      const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);\n      while (next.length > 10 || historySize() > 9000) next.shift();\n      if (next[0]?.role === "model") next.shift();
+      let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));
+      const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);
+      while (next.length > 10 || historySize() > 9000) next.shift();
+      if (next[0]?.role === "model") next.shift();
       const images = task === "research" ? [] : await Promise.all(files.map(async file => {
         const dataUrl = await fileToDataUrl(file); const match = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
         if (!match) throw new Error("An image could not be prepared for AI analysis.");
