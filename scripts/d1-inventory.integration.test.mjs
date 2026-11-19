@@ -68,7 +68,7 @@ try {
     { sql: "INSERT INTO order_inventory_reservations(id,order_id,variant_id,quantity,status,payment_provider,reserved_at,updated_at) SELECT ?,?,'v-race',4,'reserved','manual','test','test' WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)", params: ["reservation-" + id, id, id] },
   ]);
   const racing = await Promise.all([checkout("checkout-a"), checkout("checkout-b")]);
-  check(racing.reduce((sum, result) => sum + changes(result), 0) === 4, "concurrent checkout allows exactly one 4-unit reservation and durable ledger row against 5 available");
+  check(racing.filter(result => changes(result, 0) === 1).length === 1, "concurrent checkout allows exactly one order insert against 5 available units");
   const raceState = await query(databaseId, "SELECT (SELECT COUNT(*) FROM orders) AS orders,(SELECT reserved_quantity FROM product_variants WHERE id='v-race') AS reserved,(SELECT COALESCE(SUM(quantity),0) FROM order_items) AS items,(SELECT COUNT(*) FROM order_inventory_reservations WHERE status='reserved') AS reservation_rows,(SELECT COALESCE(SUM(quantity),0) FROM order_inventory_reservations WHERE status='reserved') AS reservation_quantity");
   check(raceState[0].results[0].orders === 1 && raceState[0].results[0].reserved === 4 && raceState[0].results[0].items === 4 && raceState[0].results[0].reservation_rows === 1 && raceState[0].results[0].reservation_quantity === 4, "concurrent checkout leaves one durable reservation row matching the order item and stock counter");
 
