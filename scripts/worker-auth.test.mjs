@@ -407,6 +407,16 @@ test("Safepay failed-payment retry can later succeed on the same tracker", async
   assert.deepEqual(await recoveredRetry.json(), { received: true, duplicate: true, reconciled: true }, "a retry after payment/ledger commit must recover event acknowledgement without replaying the ledger");
   assert.equal(db.financialTransactions.length, 1, "reconciliation retry must not duplicate the ledger row");
 
+  const originalLedgerId = db.orders.get(orderId).financial_transaction_id;
+  db.financialTransactions = [];
+  db.paymentWebhookEvents.get("evt_succeeded_1234567890").processing_status = "failed";
+  const ledgerRecovery = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
+  assert.equal(ledgerRecovery.status, 200, "a paid order with a missing cashbook row must be repairable on a verified provider retry");
+  assert.deepEqual(await ledgerRecovery.json(), { received: true, processed: true });
+  assert.equal(db.orders.get(orderId).financial_transaction_id, originalLedgerId, "ledger recovery must reuse the already-committed transaction identity");
+  assert.equal(db.financialTransactions.length, 1);
+  assert.equal(db.financialTransactions[0].id, originalLedgerId);
+
   const duplicate = await send("evt_succeeded_1234567890", "payment.succeeded", { tracker, state: "TRACKER_ENDED", amount: 12000, currency: "PKR" });
   assert.equal(duplicate.status, 200);
   assert.equal((await duplicate.json()).duplicate, true);
