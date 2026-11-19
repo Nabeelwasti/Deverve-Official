@@ -2006,7 +2006,10 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
             env.DB.prepare("UPDATE media_assets SET status='ready',updated_at=? WHERE id=? AND uploaded_by=? AND status='processing'").bind(new Date().toISOString(),id,admin.admin_user_id),
             env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'media.bulk_uploaded','media_asset',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({mime_type:file.type,byte_size:file.size,sha256,batch_size:files.length}))
           ]);
-          if((completed[0]?.meta?.changes??0)!==1)throw new Error("Media upload lease was lost before completion.");
+          if((completed[0]?.meta?.changes??0)!==1){
+            failures.push({name:file.name,error:"Another retry completed or claimed this image. The saved object was retained for safe recovery; retry shortly."});
+            continue;
+          }
         }catch(writeError){
           try{await env.MEDIA.delete(key);}catch{/* best effort orphan cleanup */}
           if(ownsProcessingLease){try{await env.DB.prepare("DELETE FROM media_assets WHERE id=? AND uploaded_by=? AND status='processing'").bind(id,admin.admin_user_id).run();}catch{/* best effort lease cleanup */}}
