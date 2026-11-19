@@ -1035,6 +1035,10 @@ class FakeStatement {
       this.db.mediaAssets.set(id,{id,object_key,media_type:"image",mime_type,byte_size,alt_text,caption:"",status:"ready",uploaded_by});
       return {success:true,meta:{changes:1}};
     }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'media.bulk_uploaded'")) {
+      this.db.audits.push({id:v[0],actor_admin_id:v[1],action:"media.bulk_uploaded",entity_type:"media_asset",entity_id:v[2],metadata_json:v[3]});
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("INSERT INTO audit_logs")) {
       this.db.audits.push({id:v[0],actor_admin_id:v[1],action:v[2],entity_type:v[3],entity_id:v[4],metadata_json:v[5]});
       return {success:true,meta:{changes:1}};
