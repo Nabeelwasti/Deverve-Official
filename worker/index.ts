@@ -2468,7 +2468,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       const existing = await env.DB.prepare("SELECT size, color, is_active FROM product_variants WHERE product_id = ?").bind(productId).all<{size:string;color:string;is_active:number}>();
       const activeExisting = (existing.results ?? []).filter(row => row.is_active === 1);
       const legacyMultiOption = activeExisting.find(row => splitOptionValues(row.size).length > 1 || splitOptionValues(row.color).length > 1);
-      if (legacyMultiOption) return error("This product has an active legacy variant with shared stock across multiple sizes or colours. Reconcile its stock to individual variants, set its remaining stock to zero, and deactivate it before creating a per-option matrix.", 409);
+      if (legacyMultiOption) return error("This product has an active legacy variant with one shared balance for multiple sizes or colours. Count the physical stock by size and colour, record the reclassification, reduce the shared balance to zero and deactivate the legacy row before creating the per-option matrix. Do not duplicate the aggregate quantity.", 409);
       const existingKeys = new Set(activeExisting.map(row => row.size.trim().toLocaleLowerCase() + "::" + row.color.trim().toLocaleLowerCase()));
       const duplicate = normalized.find(row => existingKeys.has(row.size.toLocaleLowerCase() + "::" + row.color.toLocaleLowerCase()));
       if (duplicate) return error("This size-and-colour combination already exists: " + duplicate.size + " / " + duplicate.color, 409);
@@ -2527,7 +2527,7 @@ async function adminInventoryRoutes(request: Request, env: Env, url: URL): Promi
       if (product.status === "archived") return error("Archived products cannot receive new variants", 409);
       const existingVariants = await env.DB.prepare("SELECT id, size, color, is_active FROM product_variants WHERE product_id = ?").bind(productId).all<{id:string;size:string;color:string;is_active:number}>();
       const activeExisting = existingVariants.results ?? [];
-      if (activeExisting.some(row => row.is_active === 1 && (splitOptionValues(row.size).length > 1 || splitOptionValues(row.color).length > 1))) return error("This product still has a legacy variant with shared stock across multiple sizes or colours. Reconcile and deactivate it before adding individual variants.", 409);
+      if (activeExisting.some(row => row.is_active === 1 && (splitOptionValues(row.size).length > 1 || splitOptionValues(row.color).length > 1))) return error("This product still has a legacy variant with one shared balance for multiple sizes or colours. Count stock by size and colour, record the reclassification, reduce the shared balance to zero and deactivate the legacy row before adding individual variants.", 409);
       if (activeExisting.some(row => row.is_active === 1 && row.size.trim().toLocaleLowerCase() === size.toLocaleLowerCase() && row.color.trim().toLocaleLowerCase() === color.toLocaleLowerCase())) return error("This size-and-colour combination already exists for this product", 409);
       const id = crypto.randomUUID();
       const statements = [
