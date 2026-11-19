@@ -14,13 +14,45 @@ function cameraErrorMessage(caught:unknown):string{
  return caught instanceof Error?caught.message:"The camera could not be started. Check site permissions and try again.";
 }
 export default function BarcodeScanner({onDetected,onClose,title="POS scanner",onDetectedWithImage,onImageCaptured}:{onDetected:(value:string)=>void;onClose:()=>void;title?:string;onDetectedWithImage?:(value:string,imageDataUrl:string)=>void|Promise<void>;onImageCaptured?:(imageDataUrl:string)=>void|Promise<void>}){
- const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
+ const video=useRef<HTMLVideoElement|null>(null),stream=useRef<MediaStream|null>(null),fileInput=useRef<HTMLInputElement|null>(null),callback=useRef(onDetected),frame=useRef<number|null>(null),mounted=useRef(false),detected=useRef(false);
  const [status,setStatus]=useState("Allow camera access to scan product barcodes. Your camera is used only while this scanner is open.");
- const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false),[manualCode,setManualCode]=useState(""),[capturing,setCapturing]=useState(false);
+ const [error,setError]=useState(""),[starting,setStarting]=useState(false),[cameraActive,setCameraActive]=useState(false),[manualCode,setManualCode]=useState(""),[capturing,setCapturing]=useState(false),[readingFile,setReadingFile]=useState(false);
  const detectedImageCallback=useRef(onDetectedWithImage),imageCallback=useRef(onImageCaptured);
  detectedImageCallback.current=onDetectedWithImage;imageCallback.current=onImageCaptured;
  const captureFrame=()=>{const current=video.current;if(!current||!current.videoWidth||!current.videoHeight)return "";const canvas=document.createElement("canvas");canvas.width=current.videoWidth;canvas.height=current.videoHeight;const context=canvas.getContext("2d");if(!context)return "";context.drawImage(current,0,0,canvas.width,canvas.height);return canvas.toDataURL("image/jpeg",0.84);};
  callback.current=onDetected;
+ const processImageFile=async(file:File)=>{
+  if(!file.type.startsWith("image/")){setError("Choose a JPG, PNG, WebP or another supported image file.");return;}
+  if(file.size>15*1024*1024){setError("Choose an image smaller than 15 MB. Large images are compressed on this device before upload.");return;}
+  setError("");setReadingFile(true);detected.current=false;
+  try{
+   const bitmap=await createImageBitmap(file);
+   try{
+    const scale=Math.min(1,1800/Math.max(bitmap.width,bitmap.height));
+    const canvas=document.createElement("canvas");canvas.width=Math.max(1,Math.round(bitmap.width*scale));canvas.height=Math.max(1,Math.round(bitmap.height*scale));
+    const context=canvas.getContext("2d");if(!context)throw new Error("This browser could not prepare the selected image.");
+    context.drawImage(bitmap,0,0,canvas.width,canvas.height);
+    let image=canvas.toDataURL("image/jpeg",0.86);
+    if(image.length>6_800_000)image=canvas.toDataURL("image/jpeg",0.72);
+    if(image.length>6_800_000)throw new Error("This image is still too large after compression. Choose a smaller or clearer crop.");
+    let code="";
+    const Detector=(window as BrowserWithBarcodeDetector).BarcodeDetector;
+    if(Detector){
+     try{
+      const commonFormats=["aztec","codabar","code_39","code_93","code_128","data_matrix","ean_13","ean_8","itf","pdf417","qr_code","upc_a","upc_e"];
+      const supported=await Detector.getSupportedFormats?.().catch(()=>commonFormats);
+      const formats=(supported?.length?supported:commonFormats).filter(format=>commonFormats.includes(format));
+      if(formats.length){const detector=new Detector({formats});const results=await detector.detect(bitmap);code=results.find(item=>item.rawValue?.trim())?.rawValue?.trim()||"";}
+     }catch{/* Continue to AI image reading when native image barcode decoding is unavailable. */}
+    }
+    stopCamera();
+    if(code){detected.current=true;if(detectedImageCallback.current)await detectedImageCallback.current(code,image);else callback.current(code);return;}
+    if(imageCallback.current){await imageCallback.current(image);return;}
+    setError("No barcode or QR code could be decoded from this image. Try a clearer crop or enter the code manually.");
+   }finally{bitmap.close();}
+  }catch(caught){setError(caught instanceof Error?caught.message:"The selected image could not be read. Try another image.");}
+  finally{if(mounted.current)setReadingFile(false);}
+ };
  const stopCamera=()=>{
   if(frame.current!==null){cancelAnimationFrame(frame.current);frame.current=null;}
   stream.current?.getTracks().forEach(track=>track.stop());stream.current=null;
@@ -73,7 +105,7 @@ export default function BarcodeScanner({onDetected,onClose,title="POS scanner",o
    <div className="barcode-camera-stage"><video ref={video} autoPlay muted playsInline className={cameraActive?"is-active":"is-idle"} aria-hidden={!cameraActive}/>{!cameraActive&&<p>{error||status}</p>}{cameraActive&&<span className="barcode-camera-reticle" aria-hidden="true"/>}</div>
    {error&&<p className="admin-error" role="alert">{error}</p>}
    <p className="admin-muted" role="status">{cameraActive?status:"Camera access is requested only when you press the start button."}</p>
-   {!cameraActive&&<button type="button" className="admin-primary" disabled={starting} onClick={()=>void startCamera()}>{starting?"Requesting camera…":error?"Try camera again":"Allow camera access & start scanning"}</button>}
+   {!cameraActive&&<button type="button" className="admin-primary" disabled={starting||readingFile} onClick={()=>void startCamera()}>{starting?"Requesting camera…":error?"Try camera again":"Allow camera access & start scanning"}</button>}<input ref={fileInput} type="file" accept="image/*" hidden onChange={event=>{const file=event.currentTarget.files?.[0];event.currentTarget.value="";if(file)void processImageFile(file);}}/><button type="button" className="admin-secondary" disabled={readingFile||capturing} onClick={()=>{stopCamera();fileInput.current?.click();}}>{readingFile?"Preparing image…":"Choose product / QR / barcode photo"}</button>
    {cameraActive&&imageCallback.current&&<button type="button" className="admin-primary" disabled={capturing} onClick={()=>{const image=captureFrame();if(!image){setError("The camera image is not ready. Wait a moment and try again.");return;}stopCamera();setCapturing(true);void Promise.resolve(imageCallback.current?.(image)).catch(()=>{}).finally(()=>setCapturing(false));}}>{capturing?"Reading product label…":"Read printed label with AI"}</button>}<div className="barcode-manual-entry"><label htmlFor="barcode-manual-value">Or enter barcode / SKU manually</label><div><input id="barcode-manual-value" value={manualCode} onChange={event=>setManualCode(event.target.value)} maxLength={2048} autoComplete="off" placeholder="Scan or type product code"/><button type="button" className="admin-primary" disabled={!manualCode.trim()} onClick={()=>{const value=manualCode.trim();stopCamera();callback.current(value);onClose();}}>Use code</button></div></div><button type="button" className="admin-secondary" onClick={()=>{stopCamera();onClose();}}>Close scanner</button>
   </section>
  </div>;
