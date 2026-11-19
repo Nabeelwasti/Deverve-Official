@@ -951,6 +951,10 @@ class FakeStatement {
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
     }
+    if (q.startsWith("SELECT v.id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,v.is_active,p.id AS product_id,p.name,p.status FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.sku=")) {
+      const rows=[...this.db.variants.values()].filter(row=>String(row.sku).toLowerCase()===String(v[0]).toLowerCase()).slice(0,2);
+      return {success:true,results:rows.map(row=>({...row,product_id:row.product_id,name:this.db.products.get(row.product_id)?.name??"Test product",status:this.db.products.get(row.product_id)?.status??"published"}))};
+    }
     if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
       return { success: true, results: this.db.movements.filter((row) => row.variant_id === v[0]).slice(0, 100) };
     }
@@ -1383,6 +1387,21 @@ class FakeStatement {
       this.db.variants.set(id, { id, product_id, sku, size, color, stock_on_hand, reserved_quantity: 0, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
+    if (q.startsWith("UPDATE product_variants SET stock_on_hand=?")) {
+      const [quantity,updatedAt,id,current,reservedLimit]=v;
+      const row=this.db.variants.get(id);
+      const changed=Boolean(row&&row.is_active===1&&row.stock_on_hand===current&&(row.reserved_quantity??0)<=reservedLimit);
+      if(changed){row.stock_on_hand=quantity;row.updated_at=updatedAt;}
+      this.db.lastChanges=changed?1:0;
+      return {success:true,meta:{changes:changed?1:0}};
+    }
+    if (q.startsWith("INSERT INTO inventory_movements") && q.includes("WHERE changes()=1")) {
+      const [id,variant_id,quantity_delta,note,actor_admin_id]=v;
+      if(this.db.lastChanges!==1)return {success:true,meta:{changes:0}};
+      this.db.movements.push({id,variant_id,movement_type:"adjustment",quantity_delta,reference_type:"count",reference_id:null,note,actor_admin_id,created_at:new Date().toISOString()});
+      this.db.lastChanges=1;
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?")) {
       const row = this.db.variants.get(v[2]);
       if (!row || row.is_active !== 1 || row.stock_on_hand !== v[3] || row.stock_on_hand + v[0] < 0) return { success: true, meta: { changes: 0 } };
@@ -1504,6 +1523,7 @@ class FakeD1 {
   products = new Map();
   variants = new Map();
   movements = [];
+  lastChanges = 0;
   enquiries = new Map();
   orders = new Map();
   orderItems = [];
@@ -2674,4 +2694,30 @@ test("legacy hard-coded recipient is blocked until the owner sets a business inb
   assert.equal(isSafeNotificationRecipient("deverve61@gmail.com"), false);
   assert.equal(isSafeNotificationRecipient("accounts@deverve.example"), true);
   assert.equal(isSafeNotificationRecipient("not-an-email"), false);
+});
+
+test("AI owner exact-SKU stock command records a balanced inventory adjustment and audit", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  db.products.set("product-stock-1", { id:"product-stock-1", name:"Test Hoodie", status:"published" });
+  db.variants.set("variant-stock-1", { id:"variant-stock-1", product_id:"product-stock-1", sku:"DV-TEST-M-BLK", size:"M", color:"Black", stock_on_hand:5, reserved_quantity:2, is_active:1 });
+  const response = await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 8"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.77"}),env(db));
+  assert.equal(response.status,200);
+  const payload=await response.json();
+  assert.equal(payload.previous_stock,5);
+  assert.equal(payload.stock_on_hand,8);
+  assert.equal(payload.quantity_delta,3);
+  assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
+  assert.equal(db.movements.length,1);
+  assert.equal(db.movements[0].movement_type,"adjustment");
+  assert.equal(db.movements[0].quantity_delta,3);
+  assert.equal(db.movements[0].reference_type,"count");
+  assert.equal(db.audits.length,1);
+  assert.equal(db.audits[0][2],"ai.inventory.stock_adjusted");
+
+  const rejected=await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 1"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.78"}),env(db));
+  assert.equal(rejected.status,409);
+  assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
+  assert.equal(db.movements.length,1);
 });
