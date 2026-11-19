@@ -814,14 +814,13 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
       ]);
       return (results[0]?.meta?.changes ?? 0) === 1 ? json({ accepted: true, message: "Thank you. Your final COD total is confirmed. De VERVE will contact you about delivery." }) : error("This quotation has already been used. Please contact De VERVE.", 409);
     }
-    const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
-    const lines = items.results ?? [];
-    if (!lines.length) return error("The order could not be cancelled safely. Please contact De VERVE.", 409);
+    const items = await env.DB.prepare("SELECT variant_id, quantity FROM order_items WHERE order_id = ?").bind(order.id).all<{ variant_id: string | null; quantity: number }>();
+    const lines = aggregateOrderVariantQuantities(items.results ?? []);
+    if (!items.results?.length) return error("The order could not be cancelled safely. Please contact De VERVE.", 409);
     const statements = [
-      env.DB.prepare("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ?").bind(now, order.id, tokenHash, now),
+      env.DB.prepare("UPDATE orders SET order_status = 'cancelled', delivery_fee_status = 'declined', delivery_fee_token_hash = NULL, delivery_fee_expires_at = NULL, updated_at = ? WHERE id = ? AND delivery_fee_token_hash = ? AND delivery_fee_status = 'awaiting_customer' AND delivery_fee_expires_at > ? AND NOT EXISTS (SELECT 1 FROM (SELECT variant_id, SUM(quantity) AS required_quantity FROM order_items WHERE order_id = ? AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id = oi.variant_id WHERE v.id IS NULL OR v.reserved_quantity < oi.required_quantity)").bind(now, order.id, tokenHash, now, order.id),
     ];
     for (const item of lines) {
-      if (!item.variant_id) continue;
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(item.quantity, now, item.variant_id, item.quantity, order.id));
     }
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'order.delivery_fee_declined', 'order', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled' AND delivery_fee_status = 'declined')").bind(crypto.randomUUID(), order.id, JSON.stringify({ decision: "declined_by_customer" }), order.id));
