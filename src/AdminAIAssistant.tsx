@@ -90,6 +90,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       setHistory([...next, { role: "model", text: reply.slice(0, 2200) }]); setModel(result.model || "");
       if (task === "product" && result.product_draft) {
         const incoming = result.product_draft;
+        setResearchQuery(incoming.barcode || incoming.name || "");
         setDraft({
           ...incoming,
           variants: Array.isArray(incoming.variants) ? incoming.variants.slice(0, 100).map(item => ({
