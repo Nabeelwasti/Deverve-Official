@@ -1481,7 +1481,7 @@ class FakeStatement {
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("INSERT INTO audit_logs")) {
-      const literalAction = q.match(/,\\s*'([a-z][a-z0-9_.-]+)'\\s*,\\s*'/i)?.[1];
+      const literalAction = q.match(/,\s*'([a-z][a-z0-9_.-]+)'\s*,\s*'/i)?.[1];
       const action = literalAction || v[2] || "";
       const entry = {
         id: v[0] ?? null,
