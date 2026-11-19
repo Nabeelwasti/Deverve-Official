@@ -1086,28 +1086,27 @@ async function adminOrderRoutes(request: Request, env: Env, url: URL): Promise<R
       processing: ["dispatched", "cancelled"], dispatched: ["delivered"], delivered: [], cancelled: [],
     };
     if (!allowed[current.order_status]?.includes(nextStatus)) return error("That order status change is not allowed", 409);
-    const items = await env.DB.prepare("SELECT id, variant_id, quantity FROM order_items WHERE order_id = ?").bind(id).all<{ id: string; variant_id: string | null; quantity: number }>();
-    const lines = items.results ?? [];
-    if (!lines.length) return error("This order has no valid line items", 409);
+    const items = await env.DB.prepare("SELECT variant_id, quantity FROM order_items WHERE order_id = ?").bind(id).all<{ variant_id: string | null; quantity: number }>();
+    const lines = aggregateOrderVariantQuantities(items.results ?? []);
+    if (!items.results?.length || !lines.length) return error("This order has no valid inventory-linked line items", 409);
+    const aggregateStockGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id, SUM(quantity) AS required_quantity FROM order_items WHERE order_id = orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id = oi.variant_id WHERE v.id IS NULL OR v.stock_on_hand < oi.required_quantity OR v.reserved_quantity < oi.required_quantity)";
+    const aggregateReservationGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id, SUM(quantity) AS required_quantity FROM order_items WHERE order_id = orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id = oi.variant_id WHERE v.id IS NULL OR v.reserved_quantity < oi.required_quantity)";
     const guard = nextStatus === "processing"
       ? "orders.delivery_fee_status = 'accepted' AND ((orders.payment_provider = 'manual' AND orders.payment_method = 'cod') OR orders.payment_status = 'paid')"
       : nextStatus === "dispatched"
-        ? "orders.delivery_fee_status = 'accepted' AND ((orders.payment_provider = 'manual' AND orders.payment_method = 'cod') OR orders.payment_status = 'paid') AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND (v.stock_on_hand < oi.quantity OR v.reserved_quantity < oi.quantity))"
+        ? "orders.delivery_fee_status = 'accepted' AND ((orders.payment_provider = 'manual' AND orders.payment_method = 'cod') OR orders.payment_status = 'paid') AND " + aggregateStockGuard
         : nextStatus === "cancelled"
-        ? "orders.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id = orders.id AND pa.provider = 'safepay' AND pa.status IN ('created','pending','succeeded')) AND NOT EXISTS (SELECT 1 FROM order_items oi JOIN product_variants v ON v.id = oi.variant_id WHERE oi.order_id = orders.id AND v.reserved_quantity < oi.quantity)"
+        ? "orders.payment_status != 'paid' AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id = orders.id AND pa.provider = 'safepay' AND pa.status IN ('created','pending','succeeded')) AND " + aggregateReservationGuard
         : "1 = 1";
     const now = new Date().toISOString();
     const statements = [env.DB.prepare("UPDATE orders SET order_status = ?, updated_at = ? WHERE id = ? AND order_status = ? AND " + guard).bind(nextStatus, now, id, current.order_status)];
     if (nextStatus === "cancelled") {
-      for (const item of lines) statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled')")
-        .bind(item.quantity, now, item.variant_id, item.quantity, id));
+      for (const item of lines) statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'cancelled')").bind(item.quantity, now, item.variant_id, item.quantity, id));
     }
     if (nextStatus === "dispatched") {
       for (const item of lines) {
-        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand - ?, reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')")
-          .bind(item.quantity, item.quantity, now, item.variant_id, item.quantity, item.quantity, id));
-        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, 'sold', ?, 'order', ?, 'COD order dispatched', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')")
-          .bind(crypto.randomUUID(), item.variant_id, -item.quantity, id, admin.admin_user_id, id));
+        statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand = stock_on_hand - ?, reserved_quantity = reserved_quantity - ?, updated_at = ? WHERE id = ? AND stock_on_hand >= ? AND reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched')").bind(item.quantity, item.quantity, now, item.variant_id, item.quantity, item.quantity, id));
+        statements.push(env.DB.prepare("INSERT INTO inventory_movements (id, variant_id, movement_type, quantity_delta, reference_type, reference_id, note, actor_admin_id) SELECT ?, ?, 'sold', ?, 'order', ?, 'COD order dispatched', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'dispatched') AND EXISTS (SELECT 1 FROM product_variants WHERE id = ? AND stock_on_hand >= 0 AND reserved_quantity >= 0)").bind(crypto.randomUUID(), item.variant_id, -item.quantity, id, admin.admin_user_id, id, item.variant_id));
       }
     }
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, actor_id, note) SELECT ?, ?, ?, ?, 'admin', ?, ? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = ?)").bind(crypto.randomUUID(), id, current.order_status, nextStatus, admin.admin_user_id, statusNote, id, nextStatus));
@@ -4328,6 +4327,19 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
+export function aggregateOrderVariantQuantities(lines: ReadonlyArray<{ variant_id: string | null; quantity: number }>): Array<{ variant_id: string; quantity: number }> {
+  const totals = new Map<string, number>();
+  for (const line of lines) {
+    if (!line || !Number.isSafeInteger(line.quantity) || line.quantity < 1) throw new TypeError("Order inventory lines require positive integer quantities");
+    if (line.variant_id === null) continue;
+    if (typeof line.variant_id !== "string" || !line.variant_id.trim()) throw new TypeError("Order inventory lines require valid variant IDs");
+    const next = (totals.get(line.variant_id) ?? 0) + line.quantity;
+    if (!Number.isSafeInteger(next)) throw new RangeError("Combined order quantity exceeds the supported range");
+    totals.set(line.variant_id, next);
+  }
+  return [...totals].map(([variant_id, quantity]) => ({ variant_id, quantity }));
+}
+
 export function buildPosStockGuard(items: ReadonlyArray<{ variant_id: string; quantity: number }>): { sql: string; bindings: Array<string | number> } {
   const combined = new Map<string, number>();
   for (const item of items) {
