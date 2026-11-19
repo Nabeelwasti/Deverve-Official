@@ -34,3 +34,27 @@
 - Confirm the configured Gemini key/model has multimodal access and Google Search grounding enabled.
 - Verify uploaded product media and generated draft data against a non-production D1/R2 environment.
 - Do not enable autonomous settings changes, product publishing, payment actions, stock changes, staff access changes or destructive actions until each action has explicit role checks, a preview/approval step, idempotency where needed, audit logging and dedicated integration tests.
+
+
+## Follow-up engineering audit — 19 November 2026
+
+- AI exact-SKU stock commands now update the stock balance and append a matching `adjustment` row to `inventory_movements` in the same D1 batch, followed by the AI audit record. Inactive variants are rejected, reserved quantities cannot be undercut, and a no-op quantity does not create a zero-delta movement.
+- Bulk draft publishing now reports the actual number of rows changed by the database and writes its batch audit record only when rows were published. This avoids reporting a pre-query estimate as a confirmed write when another admin changes catalogue state concurrently.
+- Both changes are on this feature branch only. They have not been merged or deployed.
+
+## Production and CI evidence
+
+- A read-only inspection of the production D1 database on 19 November 2026 confirmed that the existing commerce tables, including `inventory_movements`, are present. The AI continuity tables `ai_task_runs` and `ai_task_events` are absent; migration `0036_ai_task_continuity.sql` has therefore **not** been applied to production.
+- The successful CI run associated with the prior AI intake head completed build, worker checks, schema checks and Playwright browser tests (79 passed; one mobile product-card test timed out once and passed on retry).
+- That CI run skipped the remote D1 integration suite because the GitHub Actions Cloudflare test credentials were not configured. A green CI result is not evidence of a real production D1 migration or physical-device camera test.
+- The follow-up CI run for the stock-ledger and bulk-publishing corrections is running separately.
+
+## Still required before production sign-off
+
+1. Add idempotent bulk media-library upload with bounded concurrency, retry/resume and per-file result reporting.
+2. Complete CSV product import with a validated preview, duplicate handling and atomic product/variant creation.
+3. Add XLSX and DOCX extraction/import support with file-size, type and content validation.
+4. Expand owner-command execution to additional supported workflows with server-side role checks, business invariants and audit records.
+5. Test 100-image whole-catalogue analysis and task restoration on a physical Android device and desktop browser.
+6. Apply migration 0036 only to an isolated preview/test D1 first, verify task creation/restoration there, then schedule the production migration as part of a separately approved release.
+7. Configure a remote D1 integration test environment in CI and verify the actual enabled Gemini projects/models and Google Search grounding.
