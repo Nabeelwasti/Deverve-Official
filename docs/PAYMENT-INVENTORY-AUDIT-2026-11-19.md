@@ -2,10 +2,13 @@
 
 **Audit date:** 19 November 2026  
 **Audited source:** `fix/variants-camera-multilingual`  
-**Audited commit:** `685b858b2318e34e296beee02c9d50579ff61bc3`  
+**Initial finding commit:** `685b858b2318e34e296beee02c9d50579ff61bc3`  
+**Remediation branch commits:** `d69d753d99c57ed51ad903f81c6249cf25d58434` and subsequent regression-test commits  
 **Scope:** source-level review of checkout and Safepay webhook reconciliation. This is not a live payment test.
 
 ## Finding PAY-01 — Safepay success reconciliation can partially commit
+
+**Remediation status: guarded SQL transition implemented on the feature branch; CI verification pending at the time of this update.**
 
 **Severity: High — release blocker before enabling Safepay.**
 
@@ -28,7 +31,11 @@ After the D1 batch returns, the code checks each statement's `meta.changes` and 
 - Add D1-backed integration tests for: normal success; duplicate event; same event ID/different payload; delayed success; wrong amount/currency/state; order no longer eligible; duplicate concurrent delivery; failure followed by later success; and ledger exactly-once behavior.
 - Verify provider event ordering and the exact Safepay signature/event contract against current official documentation and sandbox fixtures before live enablement.
 
-**Current handling:** Safepay remains gated by provider configuration and is not accepted as production-ready. Do not add live credentials or enable live transactions until the correction and tests are complete.
+**Branch remediation implemented:** the payment-attempt success update now requires an eligible matching order; the order-paid update now requires the same attempt to be succeeded with matching order and amount; the ledger insert requires both the paid order/transaction ID and succeeded attempt. These mutually dependent predicates prevent a zero-row order update from leaving an attempt newly marked succeeded. Existing post-batch change-count checks remain as an additional invariant check, not as rollback protection. Event IDs are now bound to their first payload digest; a replay with the same ID but a different digest is rejected rather than overwriting the stored digest. The test fixture now models these state guards, checks exactly-one ledger behavior for duplicate delivery, rejects payload conflicts, and checks that an ineligible order does not consume the attempt.
+
+**Still not proven:** the repository's `FakeD1.batch()` is a sequential in-memory test double, not Cloudflare D1. It cannot prove transaction isolation, true concurrent duplicate delivery, rollback on SQL constraint failures, or real D1 behavior. A D1-backed isolated integration test and Safepay sandbox fixtures are still mandatory. The handler currently processes the business logic synchronously before acknowledging; Safepay's current developer guidance recommends durable event storage followed by prompt acknowledgement and asynchronous processing. That architecture remains a separate release item and must be designed with a durable queue/worker before live enablement.
+
+**Current handling:** Safepay remains gated by provider configuration and is not accepted as production-ready. Do not add live credentials or enable live transactions until the correction, D1-backed tests, provider-contract confirmation, and durable webhook acknowledgement architecture are complete.
 
 ## Finding INV-01 — POS stock guard is improved but not integration-certified
 
@@ -47,3 +54,8 @@ The current branch adds a conditional sale insert requiring every selected activ
 ## Release status
 
 This source review identified a payment-reconciliation defect that must be fixed before Safepay can be enabled. Automated CI passing does not cover this state-transition failure. Keep the PR draft/unmerged and do not deploy or apply production migrations under the existing owner instruction.
+
+
+## Provider documentation note
+
+The current Safepay developer documentation for this checkout integration describes `X-SFPY-SIGNATURE`, HMAC-SHA512 over the raw JSON payload, and event envelope fields such as `token`, `type`, and `data.tracker`. See [Safepay HMAC verification](https://safepay.alihamas.pk/docs/developers/webhooks/verify-hmac-signatures), [webhook overview](https://safepay.alihamas.pk/docs/developers/webhooks/overview), and [webhook event types](https://safepay.alihamas.pk/docs/developers/webhooks/webhook-types). Safepay's newer Raast webhook delivery guide documents a different event envelope and SHA-256 timestamped signature contract; do not mix that Raast-specific contract into this existing checkout integration without confirming that the merchant account/product actually uses it: [Raast webhook delivery](https://github.com/getsafepay/raast-docs/blob/main/guides/webhooks-delivery.mdx).
