@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from "react";
 import {BrowserMultiFormatReader} from "@zxing/browser";
 import {BarcodeFormat,DecodeHintType} from "@zxing/library";
 type DetectedBarcode={rawValue:string};
-type DetectorLike={detect(source:HTMLVideoElement|ImageBitmap):Promise<DetectedBarcode[]>};
+type DetectorLike={detect(source:HTMLVideoElement|ImageBitmap|HTMLImageElement):Promise<DetectedBarcode[]>};
 type DetectorConstructor=(new(options:{formats:string[]})=>DetectorLike)&{getSupportedFormats?:()=>Promise<string[]>};
 type BrowserWithBarcodeDetector=Window&{BarcodeDetector?:DetectorConstructor};
 function createZxingReader(){
