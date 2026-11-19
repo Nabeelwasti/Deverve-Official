@@ -6,7 +6,13 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildSafepayCheckoutUrl, callGemini, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+
+test("AI support language signal distinguishes Urdu script, Roman Urdu and ordinary English", () => {
+  assert.match(customerLanguageHint("مجھے اس کی قیمت بتائیں"), /Arabic-derived script/);
+  assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
+  assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
+});
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 globalThis.fetch = async (input, init = {}) => {
