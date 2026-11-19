@@ -62,7 +62,7 @@ try {
   const dispatched = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-dispatch' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
     { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-dispatch' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
-    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-dispatch','v-dispatch','sold',-5,'order','o-dispatch' WHERE EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-dispatch','v-dispatch','sold',-5,'order','o-dispatch' WHERE changes()=1 AND EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
   ]);
   check(changes(dispatched, 0) === 1 && changes(dispatched, 1) === 1 && changes(dispatched, 2) === 1, "duplicate dispatch lines are aggregated and decrement stock/reservations once");
 
@@ -95,7 +95,7 @@ try {
   const fulfilPaid = await batch(databaseId, [
     { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-paid' AND order_status='pending' AND payment_status='paid' AND delivery_fee_status='accepted' AND " + stockGuard },
     { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-paid' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
-    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-paid','v-paid','sold',-5,'order','o-paid' WHERE EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-paid','v-paid','sold',-5,'order','o-paid' WHERE changes()=1 AND EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
   ]);
   check(fulfilPaid.every((item, index) => changes(fulfilPaid, index) === 1), "paid order can dispatch duplicate variant lines exactly once without changing its payment ledger");
   const finalState = await query(databaseId, "SELECT o.order_status,o.payment_status,o.financial_transaction_id,v.stock_on_hand,v.reserved_quantity,(SELECT COUNT(*) FROM financial_transactions WHERE reference_id='o-paid') AS ledger_count,(SELECT COALESCE(SUM(quantity_delta),0) FROM inventory_movements WHERE reference_id='o-paid') AS movement_total FROM orders o JOIN product_variants v ON v.id='v-paid' WHERE o.id='o-paid'");
