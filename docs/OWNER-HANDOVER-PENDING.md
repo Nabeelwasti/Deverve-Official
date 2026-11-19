@@ -66,7 +66,9 @@ Only configure these after the final production hostname is confirmed. Never com
 ## 6. Engineering work tracked by the development team
 
 - [x] Add mutually dependent SQL guards to the Safepay payment-attempt, order-paid and gateway-ledger writes; reject same event ID with a different payload digest. Add regression coverage for duplicate delivery, ledger exactly-once, conflicting payload replay and ineligible-order state preservation. See [the 19 November payment and inventory audit](PAYMENT-INVENTORY-AUDIT-2026-11-19.md).
-- [ ] Run the new regression suite successfully on the latest branch head, then add isolated Cloudflare D1 integration tests for concurrent duplicate delivery, rollback, SQL constraints and payment/ledger atomicity. The in-memory FakeD1 is not a substitute.
+- [x] New Safepay regression suite passed in CI run `44504567013` on commit `a8325a09b656f33397f15de7de59ac65082abd33`; all workflow steps passed, including Worker tests, D1 schema validation and storefront browser tests. [View run](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44504567013).
+- [ ] Confirm final documentation-only branch head CI run `44504634498` completes successfully.
+- [ ] Add isolated Cloudflare D1 integration tests for concurrent duplicate delivery, rollback, SQL constraints and payment/ledger atomicity. The in-memory FakeD1 is not a substitute.
 - [ ] Redesign Safepay webhook ingestion for durable event storage, prompt acknowledgement and asynchronous processing using a durable queue/worker. Confirm the exact merchant product's event contract against sandbox fixtures before enabling live payments.
 
 - [ ] Add first-class reservation records with immutable identifiers, order-item/variant linkage, quantity, state transitions, timestamps, payment tracker linkage, idempotency and audit history. Design safe expiry/reconciliation around provider webhook guarantees.
