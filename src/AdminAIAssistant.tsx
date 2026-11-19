@@ -109,7 +109,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         const images = await Promise.all(imageFiles.map(async file => {
           const dataUrl = await fileToDataUrl(file); const match = /^data:(image\\/(?:jpeg|png|webp));base64,(.+)$/.exec(dataUrl);
           if (!match) throw new Error(file.name + " could not be prepared for AI analysis.");
-          return { mime_type: match[1], data: match[2] };
+          return { name: file.name, mime_type: match[1], data: match[2] };
         }));
         const documentFiles = batch.filter(file => !attachmentMime(file).startsWith("image/"));
         const documents = await Promise.all(documentFiles.map(async file => {
