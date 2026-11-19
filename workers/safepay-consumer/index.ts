@@ -32,6 +32,14 @@ export default {
         throw new Error("Malformed Safepay queue message");
       }
       const payload = message.body;
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.rawBody));
+      const actualDigest = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      let eventToken = "";
+      try { eventToken = String((JSON.parse(payload.rawBody) as Record<string, unknown>).token ?? ""); } catch { /* handler returns a retryable invalid-payload response */ }
+      if (actualDigest !== payload.payloadDigest || eventToken !== payload.eventId) {
+        console.error("[safepay-queue] queued payload identity/digest mismatch", payload.eventId);
+        throw new Error("Safepay queue payload integrity check failed");
+      }
       const request = new Request("https://internal.deverve.invalid/api/webhooks/safepay", {
         method: "POST",
         headers: { "content-type": "application/json", "X-SFPY-SIGNATURE": payload.signature },
