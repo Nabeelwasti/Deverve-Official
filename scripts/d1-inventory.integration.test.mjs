@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+
+const accountId = process.env.CLOUDFLARE_ACCOUNT_ID?.trim();
+const apiToken = process.env.CLOUDFLARE_API_TOKEN?.trim();
+if (!accountId || !apiToken) {
+  throw new Error("Set CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN (D1 read/write scope) to run isolated remote D1 tests.");
+}
+
+const apiBase = "https://api.cloudflare.com/client/v4";
+const headers = { authorization: "Bearer " + apiToken, "content-type": "application/json" };
+async function api(method, path, body) {
+  const response = await fetch(apiBase + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.success === false) {
+    const details = (payload.errors ?? []).map((item) => item.message).join("; ");
+    throw new Error("Cloudflare D1 API " + method + " " + path + " failed (" + response.status + "): " + details);
+  }
+  return payload.result;
+}
+const name = "deverve-inventory-test-" + Date.now().toString(36);
+let databaseId;
+let passed = 0;
+const check = (condition, message) => { assert.ok(condition, message); passed += 1; console.log("PASS", message); };
+const sql = (database, statement) => api("POST", "/accounts/" + accountId + "/d1/database/" + database + "/query", statement);
+const batch = (database, statements) => sql(database, { batch: statements });
+const query = (database, statement, params = []) => sql(database, { sql: statement, params: params.map(String) });
+const changes = (result, index = 0) => Number(result?.[index]?.meta?.changes ?? 0);
+
+try {
+  const created = await api("POST", "/accounts/" + accountId + "/d1/database", { name, primary_location_hint: "apac" });
+  databaseId = created.uuid;
+  console.log("Created isolated D1 test database:", name, databaseId);
+
+  await batch(databaseId, [
+    { sql: "CREATE TABLE products (id TEXT PRIMARY KEY, status TEXT NOT NULL)" },
+    { sql: "CREATE TABLE product_variants (id TEXT PRIMARY KEY, product_id TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1, stock_on_hand INTEGER NOT NULL, reserved_quantity INTEGER NOT NULL, updated_at TEXT)" },
+    { sql: "CREATE TABLE orders (id TEXT PRIMARY KEY, order_status TEXT NOT NULL, payment_provider TEXT NOT NULL, payment_status TEXT NOT NULL, payment_method TEXT NOT NULL, delivery_fee_status TEXT NOT NULL, total_paisa INTEGER NOT NULL DEFAULT 0, financial_transaction_id TEXT, updated_at TEXT)" },
+    { sql: "CREATE TABLE order_items (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, variant_id TEXT, quantity INTEGER NOT NULL)" },
+    { sql: "CREATE TABLE payment_attempts (id TEXT PRIMARY KEY, order_id TEXT NOT NULL, provider TEXT NOT NULL, status TEXT NOT NULL, amount_paisa INTEGER NOT NULL)" },
+    { sql: "CREATE TABLE inventory_movements (id TEXT PRIMARY KEY, variant_id TEXT NOT NULL, movement_type TEXT NOT NULL, quantity_delta INTEGER NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL)" },
+    { sql: "CREATE TABLE financial_transactions (id TEXT PRIMARY KEY, account_id TEXT NOT NULL, direction TEXT NOT NULL, amount_paisa INTEGER NOT NULL, category TEXT NOT NULL, reference_type TEXT NOT NULL, reference_id TEXT NOT NULL, note TEXT)" },
+  ]);
+
+  await query(databaseId, "INSERT INTO products(id,status) VALUES ('p1','published'); INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-race','p1',1,5,0,'test');");
+
+  const checkout = (id) => batch(databaseId, [
+    { sql: "INSERT INTO orders(id,order_status,payment_provider,payment_status,payment_method,delivery_fee_status,updated_at) SELECT ?,'pending','manual','pending','cod','accepted','test' WHERE EXISTS (SELECT 1 FROM product_variants WHERE id='v-race' AND is_active=1 AND stock_on_hand-reserved_quantity>=4)", params: [id] },
+    { sql: "UPDATE product_variants SET reserved_quantity=reserved_quantity+4 WHERE id='v-race' AND is_active=1 AND stock_on_hand-reserved_quantity>=4 AND EXISTS (SELECT 1 FROM orders WHERE id=?)", params: [id] },
+    { sql: "INSERT INTO order_items(id,order_id,variant_id,quantity) SELECT ?,?,'v-race',4 WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)", params: ["item-" + id, id, id] },
+  ]);
+  const racing = await Promise.all([checkout("checkout-a"), checkout("checkout-b")]);
+  check(racing.reduce((sum, result) => sum + changes(result), 0) === 3, "concurrent checkout allows exactly one 4-unit reservation against 5 available");
+  const raceState = await query(databaseId, "SELECT (SELECT COUNT(*) FROM orders) AS orders,(SELECT reserved_quantity FROM product_variants WHERE id='v-race') AS reserved,(SELECT COALESCE(SUM(quantity),0) FROM order_items) AS items");
+  check(raceState[0].results[0].orders === 1 && raceState[0].results[0].reserved === 4 && raceState[0].results[0].items === 4, "concurrent checkout leaves no orphan order, item or excess reservation");
+
+  await query(databaseId, "DELETE FROM order_items; DELETE FROM orders; DELETE FROM product_variants; INSERT INTO product_variants(id,product_id,is_active,stock_on_hand,reserved_quantity,updated_at) VALUES ('v-dispatch','p1',1,10,5,'test'),('v-short','p1',1,4,4,'test'),('v-cancel','p1',1,8,5,'test'),('v-cancel-short','p1',1,8,4,'test'),('v-paid','p1',1,5,5,'test');");
+  await query(databaseId, "INSERT INTO orders(id,order_status,payment_provider,payment_status,payment_method,delivery_fee_status,total_paisa,updated_at) VALUES ('o-dispatch','processing','manual','pending','cod','accepted',1000,'test'),('o-short','processing','manual','pending','cod','accepted',1000,'test'),('o-cancel','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-cancel-short','pending','manual','pending','bank_transfer','accepted',1000,'test'),('o-paid','pending','safepay','pending','online','accepted',12500,'test');");
+  await query(databaseId, "INSERT INTO order_items(id,order_id,variant_id,quantity) VALUES ('d1','o-dispatch','v-dispatch',2),('d2','o-dispatch','v-dispatch',3),('s1','o-short','v-short',3),('s2','o-short','v-short',2),('c1','o-cancel','v-cancel',2),('c2','o-cancel','v-cancel',3),('cs1','o-cancel-short','v-cancel-short',3),('cs2','o-cancel-short','v-cancel-short',2),('p1','o-paid','v-paid',2),('p2','o-paid','v-paid',3);");
+
+  const stockGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id,SUM(quantity) AS required_quantity FROM order_items WHERE order_id=orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id=oi.variant_id WHERE v.id IS NULL OR v.stock_on_hand<oi.required_quantity OR v.reserved_quantity<oi.required_quantity)";
+  const reserveGuard = "NOT EXISTS (SELECT 1 FROM (SELECT variant_id,SUM(quantity) AS required_quantity FROM order_items WHERE order_id=orders.id AND variant_id IS NOT NULL GROUP BY variant_id) oi LEFT JOIN product_variants v ON v.id=oi.variant_id WHERE v.id IS NULL OR v.reserved_quantity<oi.required_quantity)";
+  const dispatched = await batch(databaseId, [
+    { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-dispatch' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
+    { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-dispatch' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-dispatch','v-dispatch','sold',-5,'order','o-dispatch' WHERE EXISTS (SELECT 1 FROM orders WHERE id='o-dispatch' AND order_status='dispatched')" },
+  ]);
+  check(changes(dispatched, 0) === 1 && changes(dispatched, 1) === 1 && changes(dispatched, 2) === 1, "duplicate dispatch lines are aggregated and decrement stock/reservations once");
+
+  const blockedDispatch = await batch(databaseId, [
+    { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-short' AND order_status='processing' AND delivery_fee_status='accepted' AND " + stockGuard },
+    { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-short' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-short' AND order_status='dispatched')" },
+  ]);
+  check(changes(blockedDispatch, 0) === 0 && changes(blockedDispatch, 1) === 0, "insufficient combined stock blocks dispatch without changing stock");
+
+  const cancelled = await batch(databaseId, [
+    { sql: "UPDATE orders SET order_status='cancelled' WHERE id='o-cancel' AND order_status='pending' AND payment_status!='paid' AND " + reserveGuard },
+    { sql: "UPDATE product_variants SET reserved_quantity=reserved_quantity-5 WHERE id='v-cancel' AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-cancel' AND order_status='cancelled')" },
+  ]);
+  check(changes(cancelled, 0) === 1 && changes(cancelled, 1) === 1, "duplicate cancellation lines release their combined reservation once");
+
+  const blockedCancel = await batch(databaseId, [
+    { sql: "UPDATE orders SET order_status='cancelled' WHERE id='o-cancel-short' AND order_status='pending' AND payment_status!='paid' AND " + reserveGuard },
+    { sql: "UPDATE product_variants SET reserved_quantity=reserved_quantity-5 WHERE id='v-cancel-short' AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-cancel-short' AND order_status='cancelled')" },
+  ]);
+  check(changes(blockedCancel, 0) === 0 && changes(blockedCancel, 1) === 0, "insufficient combined reservation blocks cancellation and preserves reserved stock");
+
+  await query(databaseId, "INSERT INTO payment_attempts(id,order_id,provider,status,amount_paisa) VALUES ('pa-paid','o-paid','safepay','pending',12500);");
+  const paid = await batch(databaseId, [
+    { sql: "UPDATE payment_attempts SET status='succeeded' WHERE id='pa-paid' AND status IN ('created','pending') AND EXISTS (SELECT 1 FROM orders WHERE id=payment_attempts.order_id AND payment_provider='safepay' AND (payment_status!='paid' OR financial_transaction_id IS NULL) AND total_paisa=payment_attempts.amount_paisa AND delivery_fee_status='accepted' AND order_status IN ('pending','confirmed'))" },
+    { sql: "UPDATE orders SET payment_status='paid',financial_transaction_id='ft-paid' WHERE id='o-paid' AND payment_provider='safepay' AND (payment_status!='paid' OR financial_transaction_id IS NULL) AND total_paisa=12500 AND delivery_fee_status='accepted' AND order_status IN ('pending','confirmed') AND EXISTS (SELECT 1 FROM payment_attempts WHERE id='pa-paid' AND order_id=orders.id AND status='succeeded' AND amount_paisa=orders.total_paisa)" },
+    { sql: "INSERT INTO financial_transactions(id,account_id,direction,amount_paisa,category,reference_type,reference_id,note) SELECT 'ft-paid','gateway-clearing','in',12500,'website_order','order','o-paid','Safepay' WHERE EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND payment_status='paid' AND financial_transaction_id='ft-paid') AND EXISTS (SELECT 1 FROM payment_attempts WHERE id='pa-paid' AND status='succeeded')" },
+  ]);
+  check(changes(paid, 0) === 1 && changes(paid, 1) === 1 && changes(paid, 2) === 1, "Safepay success advances matching attempt, order and gateway ledger together");
+
+  const fulfilPaid = await batch(databaseId, [
+    { sql: "UPDATE orders SET order_status='dispatched' WHERE id='o-paid' AND order_status='pending' AND payment_status='paid' AND delivery_fee_status='accepted' AND " + stockGuard },
+    { sql: "UPDATE product_variants SET stock_on_hand=stock_on_hand-5,reserved_quantity=reserved_quantity-5 WHERE id='v-paid' AND stock_on_hand>=5 AND reserved_quantity>=5 AND EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
+    { sql: "INSERT INTO inventory_movements(id,variant_id,movement_type,quantity_delta,reference_type,reference_id) SELECT 'm-paid','v-paid','sold',-5,'order','o-paid' WHERE EXISTS (SELECT 1 FROM orders WHERE id='o-paid' AND order_status='dispatched')" },
+  ]);
+  check(fulfilPaid.every((item, index) => changes(fulfilPaid, index) === 1), "paid order can dispatch duplicate variant lines exactly once without changing its payment ledger");
+  const finalState = await query(databaseId, "SELECT o.order_status,o.payment_status,o.financial_transaction_id,v.stock_on_hand,v.reserved_quantity,(SELECT COUNT(*) FROM financial_transactions WHERE reference_id='o-paid') AS ledger_count,(SELECT COALESCE(SUM(quantity_delta),0) FROM inventory_movements WHERE reference_id='o-paid') AS movement_total FROM orders o JOIN product_variants v ON v.id='v-paid' WHERE o.id='o-paid'");
+  const final = finalState[0].results[0];
+  check(final.order_status === "dispatched" && final.payment_status === "paid" && final.financial_transaction_id === "ft-paid" && final.stock_on_hand === 0 && final.reserved_quantity === 0 && final.ledger_count === 1 && final.movement_total === -5, "paid order, one financial ledger row and exact inventory movement reconcile end-to-end");
+
+  console.log("Remote D1 integration checks passed:", passed);
+} finally {
+  if (databaseId) {
+    await api("DELETE", "/accounts/" + accountId + "/d1/database/" + databaseId);
+    console.log("Deleted isolated D1 test database:", databaseId);
+  }
+}
