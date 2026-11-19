@@ -1555,6 +1555,40 @@ test("owner can create variants and record stock movements without allowing nega
   assert.equal((await history.json()).movements.length, 3);
 });
 
+test("bulk size-colour variant creation is atomic, records opening stock and blocks duplicates or unsafe legacy stock", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const productResponse = await handleRequest(request("/api/admin/products", "POST", {
+    name: "Matrix Hoodie", category: "hoodies", audience: "unisex",
+  }, headers), env(db));
+  const productId = (await productResponse.json()).id;
+  const payload = { variants: [
+    { size: "M", color: "Black", initial_stock: 4, reorder_level: 2 },
+    { size: "L", color: "Black", initial_stock: 3, reorder_level: 2 },
+  ] };
+  const created = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", payload, headers), env(db));
+  assert.equal(created.status, 201);
+  const result = await created.json();
+  assert.equal(result.created, 2);
+  assert.equal(result.atomic, true);
+  assert.equal(db.variants.size, 2);
+  assert.equal(db.movements.length, 2);
+  assert.deepEqual([...db.variants.values()].map(row => row.stock_on_hand).sort(), [3,4]);
+
+  const duplicate = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", payload, headers), env(db));
+  assert.equal(duplicate.status, 409);
+  assert.equal(db.variants.size, 2);
+
+  db.variants.set("legacy-variant", { id:"legacy-variant", product_id:productId, sku:"LEGACY-MULTI", size:"S, M", color:"Black, White", stock_on_hand:12, reserved_quantity:0, is_active:1 });
+  const blocked = await handleRequest(request("/api/admin/products/" + productId + "/variants/bulk", "POST", {
+    variants:[{size:"S",color:"Black",initial_stock:6,reorder_level:2}]
+  }, headers), env(db));
+  assert.equal(blocked.status, 409);
+  assert.equal(db.variants.size, 3);
+});
+
 test("catalogue staff cannot change stock quantities", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
