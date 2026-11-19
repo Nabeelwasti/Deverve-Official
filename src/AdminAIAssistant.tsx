@@ -52,9 +52,6 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (initialBarcode) { setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode); setResearchQuery(current => current || initialBarcode); }
   }, [initialBarcode]);
   useEffect(() => {
-    if (initialBarcode) setMessage(current => current || "Please research this scanned barcode or SKU and help identify the exact product: " + initialBarcode);
-  }, [initialBarcode]);
-  useEffect(() => {
     const urls = files.map(file => URL.createObjectURL(file)); setPreviews(urls);
     return () => urls.forEach(url => URL.revokeObjectURL(url));
   }, [files]);
@@ -182,7 +179,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
         {previews.length > 0 && <div className="admin-ai-attachments">{previews.map((url, index) => <figure key={url}><img src={url} alt={"Selected product attachment " + (index + 1)}/><button type="button" aria-label="Remove image" onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{files[index]?.name}</figcaption></figure>)}</div>}
         <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
-          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about your business, or write a direct command such as “publish product summer-hoodie” or “publish all draft products”…" disabled={busy}/>
+          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about products, your business, or write a direct command such as “publish product summer-hoodie” or “publish all draft products”…" disabled={busy}/>
           <div><label className="admin-ai-attach">＋ Attach images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} disabled={busy || files.length >= 3}/></label><small>JPG / PNG / WebP · max 3 images</small><button type="submit" className="admin-primary" disabled={busy || !message.trim()}>Ask AI</button>{["owner", "manager"].includes(role) && <button type="button" className="admin-primary" disabled={busy || !message.trim()} onClick={() => void executeCommand()}>Execute command</button>}</div>
         </form>
         <p className="admin-ai-privacy">Do not attach CNICs, customer identity documents, payment credentials, passwords or confidential financial records. Images are sent to the configured Gemini provider for analysis.</p>
