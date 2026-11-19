@@ -13,7 +13,7 @@ type Props = { role: string; initialBarcode?: string; onProductCreated: () => vo
 type Source = { title: string; url: string };
 type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; sources?: Source[]; queries?: string[]; error?: string };
 
-const greeting = "Assalamu Alaikum! I’m your De VERVE admin assistant. I can help analyse product photos, prepare catalogue drafts, research products online and explain your business operations. What would you like to work on?";
+const greeting = "Assalamu Alaikum! I’m your De VERVE AI assistant. I can help with product analysis, research and supported direct business commands. Owner and manager publishing commands can execute without a separate approval form. What would you like me to do?";
 const pkrToPaisa = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? null : Math.round(value * 100);
 
 async function fileToDataUrl(file: File): Promise<string> {
@@ -113,6 +113,23 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     finally { setBusy(false); }
   };
 
+  const executeCommand = async () => {
+    const command = message.trim();
+    if (!command || busy || !["owner", "manager"].includes(role)) return;
+    setBusy(true); setStatus("Executing your written command…");
+    try {
+      const result = await api<{ ok: boolean; message: string; published?: number; error?: string }>("/api/admin/ai/execute", {
+        method: "POST", body: JSON.stringify({ command })
+      });
+      setStatus(result.message || "Command completed.");
+      setHistory(current => [...current, { role: "user", text: command }, { role: "model", text: result.message || "Command completed." }]);
+      setMessage("");
+      onProductCreated();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The command could not be completed.");
+    } finally { setBusy(false); }
+  };
+
   const updateDraft = (patch: Partial<ProductDraft>) => setDraft(current => current ? { ...current, ...patch } : current);
   const updateVariant = (index: number, patch: Partial<DraftVariant>) => setDraft(current => current ? { ...current, variants: current.variants.map((item, i) => i === index ? { ...item, ...patch } : item) } : current);
   const createDraft = async () => {
@@ -156,7 +173,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
 
   return <div className="admin-ai-command">
     <section className="admin-ai-welcome">
-      <div><p className="admin-eyebrow">DE VERVE · PRIVATE AI OPERATIONS</p><h2>AI Command Centre</h2><p>Chat, analyse product images, research online and prepare catalogue drafts. The assistant works within your staff permissions and asks you to review changes before saving.</p></div>
+      <div><p className="admin-eyebrow">DE VERVE · PRIVATE AI OPERATIONS</p><h2>AI Command Centre</h2><p>Chat, analyse product images, research online and execute supported owner commands directly. Product analysis remains a preparation step; publishing commands run immediately when submitted by the owner or an authorized manager.</p></div>
       <div className="admin-ai-status"><span></span><strong>Requests use server-side Gemini keys</strong><small>{model ? "Last model: " + model : "Provider connectivity is checked when you send a request."}</small></div>
     </section>
     <div className="admin-ai-layout">
@@ -165,15 +182,15 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
         {previews.length > 0 && <div className="admin-ai-attachments">{previews.map((url, index) => <figure key={url}><img src={url} alt={"Selected product attachment " + (index + 1)}/><button type="button" aria-label="Remove image" onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{files[index]?.name}</figcaption></figure>)}</div>}
         <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
-          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about products, inventory, orders, marketing, settings or business operations…" disabled={busy}/>
-          <div><label className="admin-ai-attach">＋ Attach images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} disabled={busy || files.length >= 3}/></label><small>JPG / PNG / WebP · max 3 images</small><button type="submit" className="admin-primary" disabled={busy || !message.trim()}>Send message</button></div>
+          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about your business, or write a direct command such as “publish product summer-hoodie” or “publish all draft products”…" disabled={busy}/>
+          <div><label className="admin-ai-attach">＋ Attach images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={chooseFiles} disabled={busy || files.length >= 3}/></label><small>JPG / PNG / WebP · max 3 images</small><button type="submit" className="admin-primary" disabled={busy || !message.trim()}>Ask AI</button>{["owner", "manager"].includes(role) && <button type="button" className="admin-primary" disabled={busy || !message.trim()} onClick={() => void executeCommand()}>Execute command</button>}</div>
         </form>
         <p className="admin-ai-privacy">Do not attach CNICs, customer identity documents, payment credentials, passwords or confidential financial records. Images are sent to the configured Gemini provider for analysis.</p>
       </section>
       <aside className="admin-ai-tools">
-        <section><p className="admin-eyebrow">FAST CATALOGUE</p><h3>AI product intake</h3><p>Attach front, back, tag or label photos. AI extracts visible details and prepares a draft with size/colour combinations. You confirm prices and opening stock.</p><button type="button" className="admin-primary" disabled={busy || files.length === 0} onClick={() => void submit("product")}>Analyse images & prepare draft</button><small>New products are always saved as drafts. AI never publishes them automatically.</small></section>
+        <section><p className="admin-eyebrow">FAST CATALOGUE</p><h3>AI product intake</h3><p>Attach front, back, tag or label photos. AI extracts visible details and prepares a draft with size/colour combinations. You confirm prices and opening stock.</p><button type="button" className="admin-primary" disabled={busy || files.length === 0} onClick={() => void submit("product")}>Analyse images & prepare draft</button><small>AI product extraction prepares a reviewable product record. Owner and manager publishing commands can publish directly to the live catalogue.</small></section>
         <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim()} onClick={() => void submit("research")}>Research online</button>{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
-        <section><p className="admin-eyebrow">ACTION SAFETY</p><h3>Human approval stays in control</h3><ul><li>Product drafts require review before creation.</li><li>Publishing, stock changes, payments, staff permissions and sensitive settings are not changed by chat.</li><li>Existing admin permissions and audit records remain authoritative.</li></ul></section>
+        <section><p className="admin-eyebrow">ACTION SAFETY</p><h3>Direct command execution</h3><ul><li>Owner and manager can execute supported written commands without a separate approval form.</li><li>Product publishing is recorded in the admin audit log.</li><li>Unsupported commands are reported clearly and are never presented as completed.</li></ul></section>
       </aside>
     </div>
     {status && <p className="admin-message" role="status">{status}</p>}
