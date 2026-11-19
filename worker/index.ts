@@ -4393,9 +4393,11 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    const product=rows[0];
    if(product.status==="archived")return error("Archived products must be restored before publishing",409);
    if(product.status==="published")return json({ok:true,action:"publish_product",published:0,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"This product is already live."});
-   const changed=await env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id=? AND status='draft'").bind(now,product.id).run();
-   if((changed.meta?.changes??0)!==1)return error("Product status changed during execution. Refresh and retry.",409);
-   await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,?,?,?,?)").bind(crypto.randomUUID(),admin.admin_user_id,"ai.product.published","product",product.id,JSON.stringify({command,slug:product.slug})).run();
+   const written=await env.DB.batch([
+    env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id=? AND status='draft'").bind(now,product.id),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.product.published","product",product.id,JSON.stringify({command,slug:product.slug}))
+   ]);
+   if((written[0]?.meta?.changes??0)!==1)return error("Product status changed during execution. Refresh and retry.",409);
    return json({ok:true,action:"publish_product",published:1,product:{id:product.id,slug:product.slug,name:product.name,status:"published"},message:"Published "+product.name+" directly to the live catalogue."});
   }
   return error("This command is not yet supported by the direct executor. Supported commands: 'publish product <exact name, slug or ID>' and 'publish all draft products'. No changes were made.",422);
