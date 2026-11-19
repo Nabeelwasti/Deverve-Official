@@ -202,6 +202,23 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   expect(attachedMedia).toBe(true);
 });
 
+test("owner can execute a direct AI publishing command without an approval form", async ({ page }) => {
+  await mockAdminApi(page);
+  let executed: Record<string, unknown> | null = null;
+  await page.route("**/api/admin/ai/execute", async route => {
+    executed = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, action: "publish_product", published: 1,
+      message: "Published Everyday Hoodie directly to the live catalogue."
+    }) });
+  });
+  await page.goto("/admin?section=ai");
+  await page.getByPlaceholder(/Ask about products/).fill("publish product everyday-hoodie");
+  await page.getByRole("button", { name: "Execute command" }).click();
+  await expect(page.getByRole("status")).toContainText("Published Everyday Hoodie directly");
+  expect(executed).toEqual({ command: "publish product everyday-hoodie" });
+});
+
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
   await mockAdminApi(page);
   await page.addInitScript(() => {
