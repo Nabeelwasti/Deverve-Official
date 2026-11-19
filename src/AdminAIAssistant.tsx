@@ -100,6 +100,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         batches.push(batch); index += batch.length;
       }
       const results: AssistantResponse[] = [];
+      const batchRecords: Array<{ response: AssistantResponse; files: File[] }> = [];
       const totalBatches = Math.max(1, batches.length);
       if (!batches.length) batches.push([]);
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
@@ -128,16 +129,51 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           method: "POST", body: JSON.stringify({ task, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
         });
         results.push(result);
+        batchRecords.push({ response: result, files: batch });
         } catch (batchError) {
           const names = batch.map(file => file.name).join(", ");
-          results.push({ ok: false, reply: "Batch " + (batchIndex + 1) + " failed for " + names + ": " + (batchError instanceof Error ? batchError.message : "provider error") });
+          const failed = { ok: false, reply: "Batch " + (batchIndex + 1) + " failed for " + names + ": " + (batchError instanceof Error ? batchError.message : "provider error") };
+          results.push(failed);
+          batchRecords.push({ response: failed, files: batch });
         }
       }
       if (!results.some(item => item.ok)) throw new Error(results.map(item => item.reply).join("\n"));
       const replies = results.map((result, index) => (results.length > 1 ? "Batch " + (index + 1) + ":\n" : "") + (result.reply || "The assistant returned no response."));
       const combinedReply = replies.join("\n\n");
+      let globalPlan = "";
+      if (task === "product" && batchRecords.length > 1) {
+        const summaries = batchRecords.filter(item => item.response.ok).map((item, index) => {
+          const draft = item.response.product_draft;
+          return {
+            batch: index + 1,
+            files: item.files.map(file => file.name).slice(0, 3),
+            candidate: draft ? {
+              name: draft.name, category: draft.category, audience: draft.audience,
+              visible_description: draft.description.slice(0, 180),
+              colours: draft.colours.slice(0, 8), sizes: draft.sizes.slice(0, 8),
+              variants: draft.variants.slice(0, 8).map(variant => ({ size: variant.size, colour: variant.color })),
+              unknowns: draft.unknowns.slice(0, 4)
+            } : null,
+            visual_summary: item.response.reply.slice(0, 180)
+          };
+        });
+        const planningInput = JSON.stringify(summaries).slice(0, 8200);
+        try {
+          setStatus("Comparing all successful batches and planning product groups…");
+          const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
+            method: "POST",
+            body: JSON.stringify({
+              task: "chat",
+              messages: [{ role: "user", text: "GLOBAL CATALOGUE GROUPING PLAN. You have summaries from every attachment batch in this task. Analyse them together. Group images that show the same underlying product/style, and distinguish different products from the same product in different colours. Use filenames as clues only, not proof. Never merge merely similar garments. Flag uncertainty and missing evidence. Do not invent stock or sizes. Return a concise numbered plan with group name, included batch/file names, evidence, confidence (high/medium/low), and unresolved questions. Do not create or publish records. Batch summaries: " + planningInput }]
+            })
+          });
+          globalPlan = plan.reply || "";
+        } catch (planningError) {
+          globalPlan = "Global grouping pass could not complete: " + (planningError instanceof Error ? planningError.message : "provider unavailable") + ". The individual batch analyses are preserved; no cross-batch grouping is assumed.";
+        }
+      }
       const result: AssistantResponse = {
-        ok: results.every(item => item.ok), reply: combinedReply,
+        ok: results.every(item => item.ok), reply: combinedReply + (globalPlan ? "\n\nGLOBAL PRODUCT GROUPING PLAN\n" + globalPlan : ""),
         model: results.map(item => item.model).filter(Boolean).join(", "),
         sources: [...new Map(results.flatMap(item => item.sources || []).map(source => [source.url, source])).values()],
         product_draft: results.find(item => item.product_draft)?.product_draft
