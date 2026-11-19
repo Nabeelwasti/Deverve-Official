@@ -214,7 +214,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
                 messages: [{ role: "user", text: "Return valid JSON only: {groups:[{candidate_ids:string[],product_name:string,confidence:'high'|'medium'|'low'}]}. Compare all candidates. Put multiple candidate IDs in one group ONLY when they show the same underlying product, including that exact product in different colours. Similar-looking but distinct styles must remain separate. Use high confidence only with clear visual/source evidence. Never combine uncertain candidates. Every candidate ID must appear in exactly one group. Keep product_name under 36 characters. Do not create records. Candidates: " + JSON.stringify(chunk) }]
               })
             });
-            const chunkMatch = plan.reply.match(/\\{[\\s\\S]*\\}/);
+            const chunkMatch = plan.reply.match(/\{[\s\S]*\}/);
             let parsedChunk: { groups?: unknown[] } | null = null;
             if (chunkMatch) try { parsedChunk = JSON.parse(chunkMatch[0]) as { groups?: unknown[] }; } catch { parsedChunk = null; }
             const parsedGroups = Array.isArray(parsedChunk?.groups) ? parsedChunk!.groups! : [];
