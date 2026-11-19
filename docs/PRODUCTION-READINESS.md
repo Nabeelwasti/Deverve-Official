@@ -1,5 +1,17 @@
 # Current source and production data-protection review — 18 November 2026
 
+## Active hardening work — 19 November 2026
+
+- **Work branch:** `fix/variants-camera-multilingual`; draft PR [#3](https://github.com/Nabeelwasti/Deverve-Official/pull/3), based on main commit `0bfd7141de2ec69e56a7245748cd4ec0cefeab0c`. Keep unmerged until the latest CI passes and acceptance checks are complete.
+- **Variant inventory:** each purchasable size/colour combination is a separate variant with its own SKU, barcode and stock ledger. The storefront supports choosing either dimension first and moves to an available matching combination. Out-of-stock options are disabled. Legacy variants containing multiple sizes/colours under one shared stock balance must be reconciled and deactivated before a new per-combination matrix can be generated; this avoids silently duplicating aggregate stock.
+- **Bulk matrix:** one authenticated, same-origin endpoint validates up to 100 combinations and saves variant rows, opening stock movements and audit entries in a single D1 transaction. A failed transaction rolls back the batch; the admin retains the entered matrix for correction/retry.
+- **Camera scanner:** bundled ZXing is the cross-browser fallback; native BarcodeDetector is optional acceleration. Scanner unmount stops decoding controls, animation frames and camera tracks. Product-photo decoding falls back to HTMLImageElement where createImageBitmap is unavailable. Browser simulation is not proof of physical-device camera permission, focus, lighting or QR/barcode detection.
+- **AI language:** the support prompt follows the latest customer message and writing system. A deterministic signal strengthens Urdu-script and Roman Urdu handling. AI responses still require real-provider acceptance tests in Urdu script, Roman Urdu and English; the prompt cannot guarantee perfect model compliance.
+- **CI status:** check the latest PR-head run before merge. Earlier runs against intermediate commits are not evidence that the current PR head passed. A successful build and browser suite do not replace a real-origin smoke test or device testing.
+- **Deployment restriction:** no Cloudflare API, Wrangler, Pages deployment, production migration or live-data mutation was performed for this work. Keep the PR unmerged and do not deploy until the owner explicitly says **“deploy now”**.
+- **Remaining owner/operations acceptance:** verify live product and vehicle details, approved prices and policies; configure and test approved payment, email, Meta and WhatsApp providers; verify Google Business Profile and domain; complete independent encrypted backup/restore drills; test real customer checkout, stock reservation/release, refunds/returns and rental document handling on the production origin after an explicitly approved release.
+
+
 ## Latest production reconciliation — 18 November 2026
 
 **This section is the authoritative current status and supersedes conflicting migration, deployment, and dependency notes in the historical audit snapshots below.**
