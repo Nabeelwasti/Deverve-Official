@@ -705,6 +705,7 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa")) return { success: true, results: [] };
     if (q.startsWith("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs")) {
       const [search, pattern, limit, offset] = v;
       const matches = this.db.audits.filter(row => !search || [row.action,row.entity_type,row.entity_id,row.metadata_json,row.actor_email].join(" ").toLowerCase().includes(String(search).toLowerCase()));
