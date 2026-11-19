@@ -328,7 +328,7 @@ test("Safepay webhook is durably queued after signature verification when the Pa
   assert.equal(sent[0].rawBody, raw);
   assert.equal(sent[0].signature, signature);
   assert.equal(sent[0].eventId, "evt_queue_123456789012");
-  assert.equal(sent[0].payloadDigest.length, 64);
+  assert.equal(sent[0].payloadDigest.length, 43, "event digest uses the existing base64url SHA-256 representation");
   assert.equal(db.paymentWebhookEvents.get("evt_queue_123456789012").processing_status, "received");
   assert.equal(db.paymentAttempts.size, 0, "the Pages request must acknowledge only after durable queue publication, not process payment inline");
 });
