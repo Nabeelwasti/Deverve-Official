@@ -38,6 +38,12 @@ async function fileToDataUrl(file: File): Promise<string> {
   return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onerror = () => reject(new Error("An image could not be read.")); reader.onload = () => resolve(String(reader.result)); reader.readAsDataURL(blob!); });
 }
 
+async function fileBatchFingerprint(files: File[]): Promise<string> {
+  const identity = files.map(file => file.name + "\\u0000" + file.size + "\\u0000" + file.lastModified).sort().join("\\n");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+  return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
+}
+
 export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [message, setMessage] = useState("");
@@ -95,6 +101,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     if (!text || busy) { if (!text) setStatus("Write a message or attach product images with an instruction."); return; }
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
     setBusy(true); setStatus(""); setSources([]);
+    const resumedTask = Boolean(taskIdRef.current);
     const taskId = taskIdRef.current || crypto.randomUUID();
     taskIdRef.current = taskId;
     try {
@@ -112,6 +119,13 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         }
         batches.push(batch); index += batch.length;
       }
+      let savedTaskEvents: Array<{ event_type: string; payload?: Record<string, unknown> }> = [];
+      if (resumedTask) {
+        try {
+          const saved = await api<{ events?: Array<{ event_type: string; payload?: Record<string, unknown> }> }>("/api/admin/ai/tasks/" + taskId);
+          savedTaskEvents = Array.isArray(saved.events) ? saved.events : [];
+        } catch { /* A task without saved history simply starts with fresh batches. */ }
+      }
       const results: AssistantResponse[] = [];
       const batchRecords: Array<{ response: AssistantResponse; files: File[] }> = [];
       const totalBatches = Math.max(1, batches.length);
@@ -119,6 +133,19 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
         const batch = batches[batchIndex];
         try {
+        const fingerprint = await fileBatchFingerprint(batch);
+        const savedEvent = savedTaskEvents.find(event => event.event_type === "batch_completed" && event.payload?.fingerprint === fingerprint);
+        if (savedEvent) {
+          const rawDrafts = Array.isArray(savedEvent.payload?.product_draft) ? savedEvent.payload?.product_draft as ProductDraft[] : [];
+          const restored: AssistantResponse = {
+            ok: true, reply: String(savedEvent.payload?.reply || "Restored a completed batch from durable task memory."),
+            model: String(savedEvent.payload?.model || ""),
+            product_drafts: rawDrafts, product_draft: rawDrafts[0]
+          };
+          results.push(restored); batchRecords.push({ response: restored, files: batch });
+          setStatus("Restored completed batch " + (batchIndex + 1) + " from saved task memory; no Gemini request was repeated.");
+          continue;
+        }
         setStatus(files.length ? "Analysing batch " + (batchIndex + 1) + " of " + totalBatches + " · " + files.length + " attachment(s) queued…" : "Working with the AI assistant…");
         const imageFiles = batch.filter(file => attachmentMime(file).startsWith("image/"));
         const images = await Promise.all(imageFiles.map(async file => {
@@ -139,7 +166,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           return { name: file.name, mime_type: attachmentMime(file), text: content };
         }));
         const result = await api<AssistantResponse>("/api/admin/ai/assistant", {
-          method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
+          method: "POST", body: JSON.stringify({ task, task_id: taskId, task_complete: batchIndex === batches.length - 1, batch_fingerprint: fingerprint, messages: next, images, documents, query: task === "research" ? (researchQuery.trim() || text) : undefined })
         });
         results.push(result);
         batchRecords.push({ response: result, files: batch });
