@@ -501,10 +501,11 @@ function normalizeProduct(body: Record<string, unknown>, current?: AdminProductR
 async function adminProductRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   const isCollection = path === "/api/admin/products";
+  const isImport = path === "/api/admin/products/import";
   const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";
   const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
   const isOverview = path === "/api/admin/overview";
-  if (!isCollection && !productMatch && !isOverview) return null;
+  if (!isCollection && !isImport && !productMatch && !isOverview) return null;
 
   let admin: SessionRow | null;
   try {
@@ -553,6 +554,70 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   if (!canManage) return error("You do not have permission to manage products", 403);
   if (!["POST", "PATCH", "DELETE"].includes(request.method)) return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+
+  if (isImport && request.method === "POST") {
+    if (!["owner", "manager", "catalogue"].includes(admin.role)) return error("You do not have permission to import products", 403);
+    const body = await readJson(request, 300_000);
+    const items = body && Array.isArray(body.products) ? body.products : null;
+    if (!items || items.length < 1 || items.length > 20) return error("Import between 1 and 20 products per atomic batch", 400);
+    const normalizedProducts: Array<{id:string; product:NormalizedProduct; variants:Array<{id:string;sku:string;size:string;color:string;stock:number;cost:number;reorder:number;barcode:string}>}> = [];
+    const seenSlugs = new Set<string>();
+    let totalVariants = 0;
+    for (const rawProduct of items) {
+      if (!rawProduct || typeof rawProduct !== "object" || Array.isArray(rawProduct)) return error("Every imported product must be a valid object", 400);
+      const product = normalizeProduct({...rawProduct, status:"draft"});
+      if (!product || product.status !== "draft") return error("A product contains invalid name, slug, category, audience or price details", 400);
+      if (seenSlugs.has(product.slug)) return error("The import contains a duplicate product slug: " + product.slug, 409);
+      seenSlugs.add(product.slug);
+      const rawVariants = (rawProduct as Record<string,unknown>).variants;
+      if (!Array.isArray(rawVariants) || rawVariants.length < 1 || rawVariants.length > 100) return error(product.name + " must contain 1–100 size-and-colour combinations", 400);
+      const seenOptions = new Set<string>();
+      const variants:Array<{id:string;sku:string;size:string;color:string;stock:number;cost:number;reorder:number;barcode:string}> = [];
+      for (const raw of rawVariants) {
+        if (!raw || typeof raw !== "object" || Array.isArray(raw)) return error("Each imported variant must be a valid object", 400);
+        const v = raw as Record<string,unknown>;
+        const size=cleanText(v.size,32),color=cleanText(v.color,32);
+        const stock=v.initial_stock===undefined?0:v.initial_stock;
+        const cost=v.cost_price_paisa===undefined?0:v.cost_price_paisa;
+        const reorder=v.reorder_level===undefined?5:v.reorder_level;
+        if(!size||!color||size.includes(",")||size.includes(";")||size.includes("|")||color.includes(",")||color.includes(";")||color.includes("|")||!Number.isSafeInteger(stock)||Number(stock)<0||Number(stock)>1_000_000||!Number.isSafeInteger(cost)||Number(cost)<0||Number(cost)>1_000_000_000_000||!Number.isSafeInteger(reorder)||Number(reorder)<0||Number(reorder)>1_000_000) return error("Each variant needs one size, one colour, whole-number stock and reorder quantities, and a valid cost",400);
+        if(v.cost_price_paisa!==undefined&&!["owner","manager"].includes(admin.role))return error("Only an owner or manager can set purchase cost",403);
+        const optionKey=size.toLowerCase()+"::"+color.toLowerCase();
+        if(seenOptions.has(optionKey))return error(product.name+" contains a duplicate "+size+" / "+color+" combination",409);
+        seenOptions.add(optionKey);
+        variants.push({id:crypto.randomUUID(),sku:"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,stock:Number(stock),cost:Number(cost),reorder:Number(reorder),barcode:generateInternalBarcode()});
+      }
+      totalVariants+=variants.length;
+      normalizedProducts.push({id:crypto.randomUUID(),product,variants});
+    }
+    if(totalVariants>250)return error("Atomic import is limited to 250 total size-and-colour combinations",400);
+    try {
+      const slugs=[...seenSlugs], placeholders=slugs.map(()=>"?").join(",");
+      const existing=await env.DB.prepare("SELECT slug FROM products WHERE slug IN ("+placeholders+")").bind(...slugs).all<{slug:string}>();
+      if((existing.results??[]).length)return error("These product slugs already exist: "+(existing.results??[]).map(row=>row.slug).join(", "),409);
+      const now=new Date().toISOString();
+      const statements:Array<ReturnType<typeof env.DB.prepare>>=[];
+      for(const item of normalizedProducts){
+        const p=item.product;
+        statements.push(env.DB.prepare("INSERT INTO products (id,slug,name,description,category,audience,status,retail_price_paisa,wholesale_price_paisa,seo_title,seo_description,created_at,updated_at) VALUES (?,?,?,?,? ,?,'draft',?,?,?,?,?,?)")
+          .bind(item.id,p.slug,p.name,p.description,p.category,p.audience,p.retailPrice,p.wholesalePrice,p.seoTitle,p.seoDescription,now,now));
+        statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'product.imported','product',?,?)")
+          .bind(crypto.randomUUID(),admin.admin_user_id,item.id,JSON.stringify({status:"draft",category:p.category,variant_count:item.variants.length,source:"csv_import"})));
+        for(const v of item.variants){
+          statements.push(env.DB.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,barcode,cost_price_paisa,reorder_level,is_active,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,1,?,?)")
+            .bind(v.id,item.id,v.sku,v.size,v.color,v.stock,v.barcode,v.cost,v.reorder,now,now));
+          if(v.stock>0)statements.push(env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,note,actor_admin_id) VALUES (?,?,'opening',?,'manual','CSV import opening stock',?)")
+            .bind(crypto.randomUUID(),v.id,v.stock,admin.admin_user_id));
+          statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'variant.imported','product_variant',?,?)")
+            .bind(crypto.randomUUID(),admin.admin_user_id,v.id,JSON.stringify({product_id:item.id,sku:v.sku,size:v.size,color:v.color,initial_stock:v.stock,source:"csv_import"})));
+        }
+      }
+      await env.DB.batch(statements);
+      return json({imported:normalizedProducts.length,variants:totalVariants,atomic:true,status:"draft",products:normalizedProducts.map(item=>({id:item.id,name:item.product.name,slug:item.product.slug,variants:item.variants.length}))},201);
+    } catch {
+      return error("The CSV import could not be committed. No partial product batch was accepted.",503);
+    }
+  }
 
   if (isCollection && request.method === "POST") {
     const body = await readJson(request);
