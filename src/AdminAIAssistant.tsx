@@ -159,30 +159,40 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
           const drafts = item.response.product_drafts || (item.response.product_draft ? [item.response.product_draft] : []);
           return {
             batch: index + 1,
-            files: item.files.map(file => file.name.slice(0, 32)),
+            files: item.files.map(file => file.name.slice(0, 24)),
             candidates: drafts.slice(0, 3).map(draft => ({
-              source_files: draft.source_files || [],
-              name: draft.name.slice(0, 48), category: draft.category.slice(0, 24),
-              colours: draft.colours.slice(0, 4).map(value => value.slice(0, 12)),
-              sizes: draft.sizes.slice(0, 4),
-              description: draft.description.slice(0, 80)
-            })),
-            summary: item.response.reply.slice(0, 100)
+              source_files: (draft.source_files || []).map(name => name.slice(0, 24)),
+              name: draft.name.slice(0, 32), category: draft.category.slice(0, 16),
+              colours: draft.colours.slice(0, 2).map(value => value.slice(0, 8)),
+              sizes: draft.sizes.slice(0, 3),
+              description: draft.description.slice(0, 50)
+            }))
           };
         });
-        const planningInput = JSON.stringify(summaries);
         try {
-          setStatus("Comparing all successful batches and planning product groups…");
-          const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
+          setStatus("Comparing every successful image batch in one catalogue plan…");
+          const chunkPlans: string[] = [];
+          for (let offset = 0; offset < summaries.length; offset += 6) {
+            const chunk = summaries.slice(offset, offset + 6);
+            const plan = await api<AssistantResponse>("/api/admin/ai/assistant", {
+              method: "POST",
+              body: JSON.stringify({
+                task: "chat", task_id: taskId, task_complete: false,
+                messages: [{ role: "user", text: "CATALOGUE GROUPING SUBPLAN. Compare these image-batch candidates. Identify which are the same underlying garment/product, which are genuinely different products, and which are the same product shown in different colours. Do not merge merely similar styles. Use source filenames to map evidence. Keep uncertainty explicit. Return a concise list of candidate groups with product identity, included filenames, colour variants, confidence and unresolved questions. Do not create records. Candidates: " + JSON.stringify(chunk) }]
+              })
+            });
+            chunkPlans.push(plan.reply.slice(0, 900));
+          }
+          const finalPlan = await api<AssistantResponse>("/api/admin/ai/assistant", {
             method: "POST",
             body: JSON.stringify({
               task: "chat", task_id: taskId, task_complete: true,
-              messages: [{ role: "user", text: "GLOBAL CATALOGUE GROUPING PLAN. You have summaries from every attachment batch in this task. Analyse them together. Group images that show the same underlying product/style, and distinguish different products from the same product in different colours. Use filenames as clues only, not proof. Never merge merely similar garments. Flag uncertainty and missing evidence. Do not invent stock or sizes. Return a concise numbered plan with group name, included batch/file names, evidence, confidence (high/medium/low), and unresolved questions. Do not create or publish records. Batch summaries: " + planningInput }]
+              messages: [{ role: "user", text: "FINAL GLOBAL CATALOGUE GROUPING PLAN. Reconcile all preliminary grouping results below into one consistent plan across the entire original attachment task. Resolve duplicate groups across chunks, preserve distinct products, identify same-product colour variants only when supported, and list exact filenames for each group. Flag uncertain matches; never infer stock or product authenticity. Do not create or publish records. Preliminary plans: " + JSON.stringify(chunkPlans) }]
             })
           });
-          globalPlan = plan.reply || "";
+          globalPlan = finalPlan.reply || chunkPlans.join("\n\n");
         } catch (planningError) {
-          globalPlan = "Global grouping pass could not complete: " + (planningError instanceof Error ? planningError.message : "provider unavailable") + ". The individual batch analyses are preserved; no cross-batch grouping is assumed.";
+          globalPlan = "Global grouping pass could not complete: " + (planningError instanceof Error ? planningError.message : "provider unavailable") + ". Individual batch analyses and product drafts are preserved; no uncertain cross-batch merge has been made.";
         }
       }
       const result: AssistantResponse = {
