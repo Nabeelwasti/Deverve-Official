@@ -838,6 +838,7 @@ class FakeStatement {
     if (q.startsWith("SELECT order_number, total_paisa, order_status FROM orders WHERE id = ?")) { const row = [...this.db.orders.values()].find((item) => item.id === v[0]); return row ?? null; }
     if (q.startsWith("SELECT id, order_status, subtotal_paisa, discount_amount_paisa, free_delivery FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, order_status FROM orders WHERE id = ?")) return this.db.orders.get(v[0]) ?? null;
+    if (q.startsWith("SELECT object_key,mime_type,byte_size,status,uploaded_by,updated_at FROM media_assets WHERE id=?")) return this.db.mediaAssets.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, email, role, is_active, password_hash FROM admin_users")) {
       return [...this.db.admins.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     }
@@ -951,6 +952,10 @@ class FakeStatement {
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter((row) => row.product_id === v[0]) };
     }
+    if (q.startsWith("SELECT v.id,v.sku,v.size,v.color,v.stock_on_hand,v.reserved_quantity,v.is_active,p.id AS product_id,p.name,p.status FROM product_variants v JOIN products p ON p.id=v.product_id WHERE v.sku=")) {
+      const rows=[...this.db.variants.values()].filter(row=>String(row.sku).toLowerCase()===String(v[0]).toLowerCase()).slice(0,2);
+      return {success:true,results:rows.map(row=>({...row,product_id:row.product_id,name:this.db.products.get(row.product_id)?.name??"Test product",status:this.db.products.get(row.product_id)?.status??"published"}))};
+    }
     if (q.startsWith("SELECT id, movement_type, quantity_delta, reference_type, reference_id, note, created_at FROM inventory_movements WHERE variant_id = ?")) {
       return { success: true, results: this.db.movements.filter((row) => row.variant_id === v[0]).slice(0, 100) };
     }
@@ -1023,6 +1028,32 @@ class FakeStatement {
     if (q.startsWith("UPDATE owner_notifications SET is_read=1,read_at=? WHERE id=?")) {
       const row = this.db.notifications.get(v[1]); if (row && !row.is_read) Object.assign(row, { is_read: 1, read_at: v[0] });
       return { success: true, meta: { changes: row && row.is_read ? 1 : 0 } };
+    }
+    if (q.startsWith("INSERT INTO media_assets")) {
+      const [id,object_key,mime_type,byte_size,alt_text,uploaded_by]=v;
+      if(this.db.mediaAssets.has(id))throw new Error("UNIQUE constraint failed: media_assets.id");
+      this.db.mediaAssets.set(id,{id,object_key,media_type:"image",mime_type,byte_size,alt_text,caption:"",status:q.includes("'processing'")?"processing":"ready",uploaded_by,updated_at:new Date().toISOString()});
+      return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("UPDATE media_assets SET status='ready'")) {
+      const [updated_at,id,uploaded_by]=v;const row=this.db.mediaAssets.get(id);
+      if(!row||row.uploaded_by!==uploaded_by||row.status!=="processing")return {success:true,meta:{changes:0}};
+      Object.assign(row,{status:"ready",updated_at});
+      return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("UPDATE media_assets SET updated_at=? WHERE id=? AND status='processing'")) {
+      const [updated_at,id,uploaded_by,expected]=v;const row=this.db.mediaAssets.get(id);
+      if(!row||row.uploaded_by!==uploaded_by||row.status!=="processing"||row.updated_at!==expected)return {success:true,meta:{changes:0}};
+      row.updated_at=updated_at;return {success:true,meta:{changes:1}};
+    }
+    if (q.startsWith("DELETE FROM media_assets WHERE id=?")) {
+      const [id,uploaded_by]=v;const row=this.db.mediaAssets.get(id);
+      if(row&&row.uploaded_by===uploaded_by&&row.status==="processing"){this.db.mediaAssets.delete(id);return {success:true,meta:{changes:1}};}
+      return {success:true,meta:{changes:0}};
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'media.bulk_uploaded'")) {
+      this.db.audits.push({id:v[0],actor_admin_id:v[1],action:"media.bulk_uploaded",entity_type:"media_asset",entity_id:v[2],metadata_json:v[3]});
+      return {success:true,meta:{changes:1}};
     }
     if (q.startsWith("INSERT INTO return_requests")) {
       const [id, order_id, customer_id, return_number, reason, details, refund_amount_paisa] = v;
@@ -1383,6 +1414,21 @@ class FakeStatement {
       this.db.variants.set(id, { id, product_id, sku, size, color, stock_on_hand, reserved_quantity: 0, is_active: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
+    if (q.startsWith("UPDATE product_variants SET stock_on_hand=?")) {
+      const [quantity,updatedAt,id,current,reservedLimit]=v;
+      const row=this.db.variants.get(id);
+      const changed=Boolean(row&&row.is_active===1&&row.stock_on_hand===current&&(row.reserved_quantity??0)<=reservedLimit);
+      if(changed){row.stock_on_hand=quantity;row.updated_at=updatedAt;}
+      this.db.lastChanges=changed?1:0;
+      return {success:true,meta:{changes:changed?1:0}};
+    }
+    if (q.startsWith("INSERT INTO inventory_movements") && q.includes("WHERE changes()=1")) {
+      const [id,variant_id,quantity_delta,note,actor_admin_id]=v;
+      if(this.db.lastChanges!==1)return {success:true,meta:{changes:0}};
+      this.db.movements.push({id,variant_id,movement_type:"adjustment",quantity_delta,reference_type:"count",reference_id:null,note,actor_admin_id,created_at:new Date().toISOString()});
+      this.db.lastChanges=1;
+      return {success:true,meta:{changes:1}};
+    }
     if (q.startsWith("UPDATE product_variants SET stock_on_hand = stock_on_hand + ?")) {
       const row = this.db.variants.get(v[2]);
       if (!row || row.is_active !== 1 || row.stock_on_hand !== v[3] || row.stock_on_hand + v[0] < 0) return { success: true, meta: { changes: 0 } };
@@ -1435,7 +1481,20 @@ class FakeStatement {
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
     if (q.startsWith("INSERT INTO audit_logs")) {
-      this.db.audits.push(v);
+      const literalAction = q.match(/,\s*'([a-z][a-z0-9_.-]+)'\s*,\s*'/i)?.[1];
+      const action = literalAction || v[2] || "";
+      const entry = {
+        id: v[0] ?? null,
+        actor_admin_id: v[1] ?? null,
+        action,
+        entity_type: v[3] ?? null,
+        entity_id: v[4] ?? v[1] ?? null,
+        metadata_json: v[5] ?? v[3] ?? null,
+        values: v,
+        2: action,
+        includes: (needle) => q.includes(String(needle)) || v.some(value => String(value ?? "").includes(String(needle))),
+      };
+      this.db.audits.push(entry);
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_users")) {
@@ -1504,6 +1563,7 @@ class FakeD1 {
   products = new Map();
   variants = new Map();
   movements = [];
+  lastChanges = 0;
   enquiries = new Map();
   orders = new Map();
   orderItems = [];
@@ -1520,6 +1580,8 @@ class FakeD1 {
   posSales = new Map();
   posReceiptOutbox = new Map();
   storeSettings = new Map();
+  mediaAssets = new Map();
+  mediaObjects = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
     const results = [];
@@ -1528,7 +1590,12 @@ class FakeD1 {
   }
 }
 
-const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, MEDIA: { put: async () => undefined, delete: async () => undefined, get: async () => null }, ADMIN_BOOTSTRAP_TOKEN: token });
+const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") => ({ DB: db, MEDIA: {
+  put: async (key, body, options={}) => db.mediaObjects.set(key,{body,customMetadata:options.customMetadata||{},httpMetadata:options.httpMetadata||{}}),
+  delete: async key => db.mediaObjects.delete(key),
+  head: async key => { const item=db.mediaObjects.get(key); return item?{customMetadata:item.customMetadata}:null; },
+  get: async key => db.mediaObjects.get(key)??null
+}, ADMIN_BOOTSTRAP_TOKEN: token });
 const origin = "https://deverve.example";
 const request = (path, method, body, headers = {}) => {
   const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals" || path === "/api/customer/register";
@@ -2674,4 +2741,90 @@ test("legacy hard-coded recipient is blocked until the owner sets a business inb
   assert.equal(isSafeNotificationRecipient("deverve61@gmail.com"), false);
   assert.equal(isSafeNotificationRecipient("accounts@deverve.example"), true);
   assert.equal(isSafeNotificationRecipient("not-an-email"), false);
+});
+
+test("AI owner exact-SKU stock command records a balanced inventory adjustment and audit", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  db.products.set("product-stock-1", { id:"product-stock-1", name:"Test Hoodie", status:"published" });
+  db.variants.set("variant-stock-1", { id:"variant-stock-1", product_id:"product-stock-1", sku:"DV-TEST-M-BLK", size:"M", color:"Black", stock_on_hand:5, reserved_quantity:2, is_active:1 });
+  const response = await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 8"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.77"}),env(db));
+  assert.equal(response.status,200);
+  const payload=await response.json();
+  assert.equal(payload.previous_stock,5);
+  assert.equal(payload.stock_on_hand,8);
+  assert.equal(payload.quantity_delta,3);
+  assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
+  assert.equal(db.movements.length,1);
+  assert.equal(db.movements[0].movement_type,"adjustment");
+  assert.equal(db.movements[0].quantity_delta,3);
+  assert.equal(db.movements[0].reference_type,"count");
+  assert.equal(db.audits.length,1);
+  assert.equal(db.audits[0][2],"ai.inventory.stock_adjusted");
+
+  const rejected=await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 1"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.78"}),env(db));
+  assert.equal(rejected.status,409);
+  assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
+  assert.equal(db.movements.length,1);
+});
+
+test("bulk media upload recovers an R2 object left behind by an interrupted D1 completion", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const id="22345678-1234-5123-a123-123456789abc";
+  const bytes=new Uint8Array([137,80,78,71,1,2,3,4]);
+  const digest=await crypto.subtle.digest("SHA-256",bytes);
+  const sha256=Array.from(new Uint8Array(digest),value=>value.toString(16).padStart(2,"0")).join("");
+  const adminId=[...db.admins.keys()][0];
+  db.mediaAssets.set(id,{id,object_key:"catalogue/"+id+".png",media_type:"image",mime_type:"image/png",byte_size:bytes.length,alt_text:"Interrupted",caption:"",status:"processing",uploaded_by:adminId,updated_at:new Date().toISOString()});
+  db.mediaObjects.set("catalogue/"+id+".png",{body:bytes.buffer,customMetadata:{assetId:id,sha256},httpMetadata:{contentType:"image/png"}});
+  const form=new FormData();
+  form.append("files",new File([bytes],"recovered.png",{type:"image/png"}),"recovered.png");
+  form.append("asset_ids",JSON.stringify([id]));
+  const response=await handleRequest(new Request(origin+"/api/admin/media/bulk",{method:"POST",headers:{origin,cookie,"sec-fetch-site":"same-origin"},body:form}),env(db));
+  assert.equal(response.status,200);
+  const body=await response.json();
+  assert.equal(body.uploaded,1);
+  assert.equal(body.media[0].reused,true);
+  assert.equal(db.mediaAssets.get(id).status,"ready");
+  assert.equal(db.mediaObjects.size,1);
+  assert.equal(db.audits.filter(row=>row.action==="media.bulk_uploaded").length,1);
+});
+
+test("bulk media uploads resume idempotently and reject reused identifiers with different bytes", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const id="12345678-1234-5123-a123-123456789abc";
+  const makeRequest=async bytes=>{
+    const form=new FormData();
+    form.append("files",new File([new Uint8Array(bytes)],"front.png",{type:"image/png"}),"front.png");
+    form.append("asset_ids",JSON.stringify([id]));
+    form.append("alt_text","Test hoodie");
+    return handleRequest(new Request(origin+"/api/admin/media/bulk",{method:"POST",headers:{origin,cookie,"sec-fetch-site":"same-origin"},body:form}),env(db));
+  };
+  const first=await makeRequest([137,80,78,71,1,2,3,4]);
+  assert.equal(first.status,200);
+  const firstBody=await first.json();
+  assert.equal(firstBody.uploaded,1);
+  assert.equal(firstBody.media[0].reused,false);
+  assert.equal(db.mediaAssets.size,1);
+  assert.equal(db.mediaObjects.size,1);
+
+  const retry=await makeRequest([137,80,78,71,1,2,3,4]);
+  assert.equal(retry.status,200);
+  const retryBody=await retry.json();
+  assert.equal(retryBody.uploaded,1);
+  assert.equal(retryBody.media[0].reused,true);
+  assert.equal(db.mediaAssets.size,1);
+  assert.equal(db.audits.filter(row=>row.action==="media.bulk_uploaded").length,1);
+
+  const collision=await makeRequest([137,80,78,71,9,8,7,6]);
+  assert.equal(collision.status,207);
+  const collisionBody=await collision.json();
+  assert.equal(collisionBody.uploaded,0);
+  assert.equal(collisionBody.failed,1);
+  assert.equal(db.mediaAssets.size,1);
 });

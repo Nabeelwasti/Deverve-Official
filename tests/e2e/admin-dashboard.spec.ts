@@ -173,8 +173,8 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   await page.route("**/api/admin/products/*/variants/bulk", async route => {
     await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ created: 1, atomic: true, variants: [{ id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb" }] }) });
   });
-  await page.route("**/api/admin/media", async route => {
-    if (route.request().method() === "POST") await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ media: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" } }) });
+  await page.route("**/api/admin/media/bulk", async route => {
+    if (route.request().method() === "POST") await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ uploaded: 1, failed: 0, media: [{ id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", status: "ready", reused: false }], failures: [] }) });
     else await route.fallback();
   });
   await page.route("**/api/admin/products/*/media", async route => {
@@ -200,6 +200,81 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   await expect(page.locator(".admin-ai-command > p[role=\"status\"]")).toContainText("Draft created successfully");
   expect(createdProduct?.status).toBe("draft");
   expect(attachedMedia).toBe(true);
+});
+
+test("AI catalogue intake analyses all 100 selected images across resumable batches and a whole-set visual plan", async ({ page }) => {
+  await mockAdminApi(page);
+  let productBatches = 0;
+  let chunkPlans = 0;
+  let finalSheetCount = 0;
+  let maximumImagesPerBatch = 0;
+  await page.route("**/api/admin/ai/assistant", async route => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    const images = Array.isArray(body.images) ? body.images as Array<{ name: string }> : [];
+    if (body.task === "product") {
+      productBatches++;
+      maximumImagesPerBatch = Math.max(maximumImagesPerBatch, images.length);
+      const drafts = images.map(image => ({
+        name: "Catalogue hoodie " + productBatches,
+        category: "Hoodies",
+        audience: "unisex",
+        description: "A test garment candidate.",
+        retail_price_pkr: null,
+        wholesale_price_pkr: null,
+        seo_title: "Catalogue hoodie",
+        seo_description: "Test catalogue hoodie",
+        sizes: ["M"],
+        colours: ["Black"],
+        source_files: [image.name],
+        variants: [{ size: "M", color: "Black", initial_stock: 0, reorder_level: 5, cost_price_pkr: null }],
+        unknowns: ["Confirm actual price and stock."]
+      }));
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: "Analysed this image batch.", model: "gemini-test", product_drafts: drafts }) });
+      return;
+    }
+    const messages = Array.isArray(body.messages) ? body.messages as Array<{ text?: string }> : [];
+    if (messages.some(message => String(message.text || "").includes("labelled visual contact-sheet overview"))) {
+      finalSheetCount = images.length;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: JSON.stringify({ groups: [] }), model: "gemini-test" }) });
+      return;
+    }
+    chunkPlans++;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, reply: JSON.stringify({ groups: [] }), model: "gemini-test" }) });
+  });
+
+  await page.goto("/admin?section=ai");
+  await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen", "ai");
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC", "base64");
+  const files = Array.from({ length: 100 }, (_, index) => ({
+    name: "catalogue-" + String(index + 1).padStart(3, "0") + ".png",
+    mimeType: "image/png",
+    buffer: png
+  }));
+  await page.locator(".admin-ai-attach input").setInputFiles(files);
+  await expect(page.locator(".admin-ai-attachments figure")).toHaveCount(100);
+  await page.getByRole("button", { name: "Analyse images & prepare draft" }).click();
+  await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible({ timeout: 60000 });
+  expect(productBatches).toBe(34);
+  expect(finalSheetCount).toBe(7);
+  expect(chunkPlans).toBe(9);
+  expect(maximumImagesPerBatch).toBe(3);
+});
+
+test("owner can execute a direct AI publishing command without an approval form", async ({ page }) => {
+  await mockAdminApi(page);
+  let executed: Record<string, unknown> | null = null;
+  await page.route("**/api/admin/ai/execute", async route => {
+    executed = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, action: "publish_product", published: 1,
+      message: "Published Everyday Hoodie directly to the live catalogue."
+    }) });
+  });
+  await page.goto("/admin?section=ai");
+  await page.getByPlaceholder(/Ask about products/).fill("publish product everyday-hoodie");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByRole("status")).toContainText("Published Everyday Hoodie directly");
+  expect(executed).toEqual({ command: "publish product everyday-hoodie" });
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
