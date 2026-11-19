@@ -21,7 +21,7 @@ function validMessage(value: unknown): value is SafepayQueueMessage {
   return typeof item.rawBody === "string" && item.rawBody.length > 0 && item.rawBody.length <= 65_536
     && typeof item.signature === "string" && item.signature.length <= 256
     && typeof item.eventId === "string" && /^evt_[A-Za-z0-9_-]{12,150}$/.test(item.eventId)
-    && typeof item.payloadDigest === "string" && /^[a-f0-9]{64}$/i.test(item.payloadDigest);
+    && typeof item.payloadDigest === "string" && /^[A-Za-z0-9_-]{43}$/.test(item.payloadDigest);
 }
 
 export default {
@@ -33,7 +33,7 @@ export default {
       }
       const payload = message.body;
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload.rawBody));
-      const actualDigest = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+      const actualDigest = btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
       let eventToken = "";
       try { eventToken = String((JSON.parse(payload.rawBody) as Record<string, unknown>).token ?? ""); } catch { /* handler returns a retryable invalid-payload response */ }
       if (actualDigest !== payload.payloadDigest || eventToken !== payload.eventId) {
