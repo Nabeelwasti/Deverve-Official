@@ -80,7 +80,7 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
-  await page.locator(".admin-heading-row").getByRole("button", { name: /Add product/ }).click();
+  await page.locator("#products .admin-panel-heading").getByRole("button", { name: /Add product/ }).click();
   await page.getByLabel("Product name").fill("Palette test hoodie");
   await page.getByLabel("Category").fill("Hoodies");
   await page.getByRole("button", { name: "Save product" }).click();
