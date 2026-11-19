@@ -47,6 +47,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const [status, setStatus] = useState("");
   const [model, setModel] = useState("");
   const [draft, setDraft] = useState<ProductDraft | null>(null);
+  const [draftQueue, setDraftQueue] = useState<Array<{ draft: ProductDraft; files: File[] }>>([]);
+  const [draftSourceFiles, setDraftSourceFiles] = useState<File[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
   const [recentTasks, setRecentTasks] = useState<AITaskSummary[]>([]);
   const taskIdRef = useRef<string | null>(null);
@@ -189,10 +191,11 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         sources: [...new Map(results.flatMap(item => item.sources || []).map(source => [source.url, source])).values()],
         product_draft: results.find(item => item.product_draft)?.product_draft
       };
-      if (task === "product" && results.length > 1) {
+      let productDraftEntries: Array<{ draft: ProductDraft; files: File[] }> = [];
+      if (task === "product") {
         const drafts = results.map(item => item.product_draft).filter((item): item is ProductDraft => Boolean(item));
         if (drafts.length) {
-          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+          const normalizeName = (value: string) => value.toLocaleLowerCase().normalize("NFKC").replace(/[^\\p{L}\\p{N}]+/gu, " ").trim();
           const groups = new Map<string, ProductDraft[]>();
           for (const item of drafts) {
             const key = normalizeName(item.name);
@@ -200,25 +203,35 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
             group.push(item);
             groups.set(key, group);
           }
-          if (groups.size === 1) {
-            const sameProductDrafts = [...groups.values()][0];
-            const first = sameProductDrafts[0];
+          for (const [groupKey, groupDrafts] of groups) {
+            const first = groupDrafts[0];
             const variants = new Map<string, DraftVariant>();
-            for (const item of sameProductDrafts.flatMap(value => value.variants || [])) {
+            const duplicateStockKeys = new Set<string>();
+            for (const item of groupDrafts.flatMap(value => value.variants || [])) {
               const key = item.size.trim().toLocaleLowerCase() + "::" + item.color.trim().toLocaleLowerCase();
               const previous = variants.get(key);
-              variants.set(key, previous ? { ...previous, initial_stock: previous.initial_stock + item.initial_stock } : item);
+              if (previous) {
+                if (previous.initial_stock !== item.initial_stock) duplicateStockKeys.add(key);
+                variants.set(key, {
+                  ...previous,
+                  initial_stock: Math.max(previous.initial_stock, item.initial_stock),
+                  cost_price_pkr: previous.cost_price_pkr ?? item.cost_price_pkr
+                });
+              } else variants.set(key, item);
             }
-            result.product_draft = {
+            const merged: ProductDraft = {
               ...first,
-              sizes: [...new Set(sameProductDrafts.flatMap(item => item.sizes || []))],
-              colours: [...new Set(sameProductDrafts.flatMap(item => item.colours || []))],
+              sizes: [...new Set(groupDrafts.flatMap(item => item.sizes || []))],
+              colours: [...new Set(groupDrafts.flatMap(item => item.colours || []))],
               variants: [...variants.values()].slice(0, 100),
-              unknowns: [...new Set(sameProductDrafts.flatMap(item => item.unknowns || []))]
+              unknowns: [...new Set([...groupDrafts.flatMap(item => item.unknowns || []), ...(duplicateStockKeys.size ? ["Repeated stock figures were not added together; verify opening quantities for repeated size/colour combinations."] : [])])]
             };
-          } else {
-            result.product_draft = undefined;
-            result.reply += "\n\nI identified " + groups.size + " differently named product candidates across the attachment batches. I have NOT combined their sizes, colours or stock into one product. Create each candidate separately after reviewing the grouping plan; this assistant currently supports one product draft at a time.";
+            const matchingFiles = batchRecords.filter(item => item.response.product_draft && normalizeName(item.response.product_draft.name) === groupKey).flatMap(item => item.files);
+            productDraftEntries.push({ draft: merged, files: matchingFiles });
+          }
+          result.product_draft = productDraftEntries[0]?.draft;
+          if (productDraftEntries.length > 1) {
+            result.reply += "\n\nI identified " + productDraftEntries.length + " separate product candidates. Their size/colour matrices have been kept separate. Review and create each unpublished draft one at a time; photos will only be attached to the matching candidate batch.";
           }
         }
       }
@@ -230,6 +243,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       if (task === "product" && result.product_draft) {
         const incoming = result.product_draft;
         setResearchQuery(incoming.barcode || incoming.name || "");
+        setDraftQueue(productDraftEntries.slice(1));
+        setDraftSourceFiles(productDraftEntries[0]?.files ?? files);
         setDraft({
           ...incoming,
           variants: Array.isArray(incoming.variants) ? incoming.variants.slice(0, 100).map(item => ({
@@ -311,14 +326,25 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         await api("/api/admin/products/" + createdId + "/variants", { method: "POST", body: JSON.stringify({ size: "One Size", color: "Standard", barcode: draft.barcode || "", sku: draft.sku || "", initial_stock: 0, reorder_level: 5 }) });
       }
       let uploaded = 0;
-      for (const file of files.filter(item => attachmentMime(item).startsWith("image/"))) {
+      const productImages = (draftSourceFiles.length ? draftSourceFiles : files).filter(item => attachmentMime(item).startsWith("image/"));
+      for (const file of productImages) {
         const data = new FormData(); data.append("file", file); data.append("alt_text", (draft.name + " · " + file.name).slice(0, 240));
         const result = await api<{ media?: { id: string } }>("/api/admin/media", { method: "POST", body: data });
         if (!result.media?.id) throw new Error("Image upload returned no media record.");
         await api("/api/admin/products/" + createdId + "/media", { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: "", is_primary: uploaded === 0, position: uploaded }) });
         uploaded++;
       }
-      setDraft(null); setFiles([]); setStatus("Draft created successfully. " + draft.variants.length + " variant combinations and " + uploaded + " product images saved. It is NOT published."); onProductCreated();
+      if (draftQueue.length) {
+        const next = draftQueue[0];
+        setDraftQueue(draftQueue.slice(1));
+        setDraftSourceFiles(next.files);
+        setDraft(next.draft);
+        setStatus("Draft saved. " + draftQueue.length + " more separate product candidate(s) are ready for review. The next draft's photos are isolated from the previous product.");
+      } else {
+        setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setFiles([]);
+        setStatus("Draft created successfully. " + draft.variants.length + " variant combinations and " + uploaded + " matching product images saved. It is NOT published.");
+      }
+      onProductCreated();
     } catch (error) {
       if (createdId) { setDraft(null); setFiles([]); onProductCreated(); }
       setStatus((createdId ? "Product draft " + createdId.slice(0, 8) + " was created, but a later variant or image step needs attention. Open Products & variants to finish it. " : "") + (error instanceof Error ? error.message : "The product draft could not be completed."));
@@ -332,7 +358,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     </section>
     <div className="admin-ai-layout">
       <section className="admin-ai-chat-card">
-        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setSources([]); taskIdRef.current = null; }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
+        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setSources([]); taskIdRef.current = null; }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
         {recentTasks.length > 0 && <div className="admin-ai-task-history"><strong>Saved AI task memory</strong><small>Continue previous work without repeating completed analysis</small><div>{recentTasks.slice(0, 5).map(task => <button key={task.id} type="button" className="admin-secondary" disabled={busy} onClick={() => void resumeTaskMemory(task)}>{task.task_type} · {task.status} · {task.completed_batches} completed / {task.failed_batches} failed</button>)}</div></div>}
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
         {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{attachmentMime(file).startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={file.type + " attachment"}>📄<strong>{attachmentMime(file) === "application/pdf" ? "PDF" : attachmentMime(file).split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
@@ -350,7 +376,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     </div>
     {status && <p className="admin-message" role="status">{status}</p>}
     {draft && <section className="admin-ai-draft">
-      <div className="admin-panel-heading"><div><p className="admin-eyebrow">REVIEW BEFORE SAVING</p><h3>Prepared product draft</h3></div><button type="button" className="admin-secondary" onClick={() => setDraft(null)}>Discard draft</button></div>
+      <div className="admin-panel-heading"><div><p className="admin-eyebrow">REVIEW BEFORE SAVING</p><h3>Prepared product draft</h3></div><button type="button" className="admin-secondary" onClick={() => { if (draftQueue.length) { const next = draftQueue[0]; setDraftQueue(draftQueue.slice(1)); setDraftSourceFiles(next.files); setDraft(next.draft); setStatus("Skipped the current candidate. The next separate product draft is ready."); } else { setDraft(null); setDraftSourceFiles([]); } }}>Discard draft</button></div>
       {draft.unknowns?.length > 0 && <p className="admin-ai-warning"><strong>Needs verification:</strong> {draft.unknowns.join(" · ")}</p>}
       <div className="admin-ai-draft-fields">
         <label>Product name<input value={draft.name || ""} onChange={event => updateDraft({name:event.target.value})}/></label>
