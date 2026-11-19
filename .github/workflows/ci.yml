@@ -1,9 +1,9 @@
 name: Build and type-check
 
-# Validate the newest main-branch state; cancel stale runs so a hung browser download cannot block the current build.
+# Validate every pushed main-branch revision; do not silently cancel an earlier commit's checks.
 concurrency:
   group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   push:
