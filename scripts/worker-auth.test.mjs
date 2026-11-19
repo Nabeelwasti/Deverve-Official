@@ -929,7 +929,7 @@ class FakeStatement {
       const [id, eventId, digest] = v;
       const previous = this.db.paymentWebhookEvents.get(eventId);
       if (!previous) this.db.paymentWebhookEvents.set(eventId, { id, provider_event_id: eventId, payload_sha256: digest, processing_status: "received" });
-      else if (!["processed", "ignored"].includes(previous.processing_status)) Object.assign(previous, { payload_sha256: digest, processing_status: "received" });
+      else if (previous.payload_sha256 === digest && !["processed", "ignored"].includes(previous.processing_status)) Object.assign(previous, { processing_status: "received" });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_attempts SET status = 'pending', failure_code")) {
@@ -940,15 +940,27 @@ class FakeStatement {
     }
     if (q.startsWith("UPDATE payment_attempts SET status = 'succeeded'")) {
       const row = this.db.paymentAttempts.get(v[1]);
-      if (!row || !["created", "pending"].includes(row.status)) return { success: true, meta: { changes: 0 } };
+      const order = row && this.db.orders.get(row.order_id);
+      const eligible = order && order.payment_provider === "safepay" && (order.payment_status !== "paid" || !order.financial_transaction_id) && order.total_paisa === row.amount_paisa && order.delivery_fee_status === "accepted" && ["pending", "confirmed"].includes(order.order_status);
+      if (!row || !["created", "pending"].includes(row.status) || (q.includes("AND EXISTS (SELECT 1 FROM orders") && !eligible)) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { status: "succeeded", updated_at: v[0] });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET payment_status = 'paid', financial_account_id")) {
-      const [transactionId, updatedAt, id, amount] = v;
+      const [transactionId, updatedAt, id, amount, attemptId] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.payment_provider !== "safepay" || (row.payment_status === "paid" && row.financial_transaction_id) || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
+      const attempt = this.db.paymentAttempts.get(attemptId);
+      if (!row || !attempt || attempt.order_id !== id || attempt.status !== "succeeded" || attempt.amount_paisa !== amount || row.payment_provider !== "safepay" || (row.payment_status === "paid" && row.financial_transaction_id) || row.total_paisa !== amount || row.delivery_fee_status !== "accepted" || !["pending", "confirmed"].includes(row.order_status)) return { success: true, meta: { changes: 0 } };
       Object.assign(row, { payment_status: "paid", financial_account_id:"gateway-clearing", financial_transaction_id:transactionId, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("INSERT INTO financial_transactions")) {
+      const [id, account_id, direction, amount_paisa, category, reference_type, reference_id] = v;
+      const order = this.db.orders.get(reference_id);
+      const attempt = this.db.paymentAttempts.get(v[5] === undefined ? "" : v[5]);
+      const shouldInsert = order?.payment_status === "paid" && order.financial_transaction_id === id;
+      if (!shouldInsert) return { success: true, meta: { changes: 0 } };
+      this.db.financialTransactions.push({ id, account_id, direction, amount_paisa, category, reference_type, reference_id });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE payment_webhook_events SET processing_status = 'processed'")) {
