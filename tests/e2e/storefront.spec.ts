@@ -429,6 +429,15 @@ test("product variants let shoppers choose colour or size first and hide unavail
   await expect(page.locator(".product-specifications")).toContainText("Red");
   await expect(page.getByRole("button", { name: "Size XL" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Colour Blue" })).toBeDisabled();
+
+  // Reload to verify the reverse interaction order independently.
+  await page.goto("/product/variant-choice-test");
+  await page.getByRole("button", { name: "Size M" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
+  await page.getByRole("button", { name: "Colour Red" }).click();
+  await expect(page.locator(".product-specifications")).toContainText("M");
+  await expect(page.locator(".product-specifications")).toContainText("Red");
   await page.getByRole("button", { name: /Add to cart/ }).click();
   const cart = JSON.parse(await page.evaluate(() => localStorage.getItem("deverve-cart") || "[]"));
   expect(cart[0]).toMatchObject({ variant_id: "33333333-3333-4333-8333-333333333333", size: "M", color: "Red", quantity: 1 });
