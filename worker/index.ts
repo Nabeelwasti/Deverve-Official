@@ -1,5 +1,6 @@
-interface R2ObjectBody { body: ReadableStream<Uint8Array>; size: number; }
-interface R2Bucket { put(key: string, value: ArrayBuffer | ReadableStream | string, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>; get(key: string): Promise<R2ObjectBody | null>; delete(key: string): Promise<void>; }
+interface R2Object { customMetadata?: Record<string,string>; size: number; }
+interface R2ObjectBody extends R2Object { body: ReadableStream<Uint8Array>; arrayBuffer(): Promise<ArrayBuffer>; }
+interface R2Bucket { put(key: string, value: ArrayBuffer | ReadableStream | string, options?: { httpMetadata?: { contentType?: string }; customMetadata?: Record<string,string> }): Promise<unknown>; get(key: string): Promise<R2ObjectBody | null>; head(key: string): Promise<R2Object | null>; delete(key: string): Promise<void>; }
 interface D1Result<T = Record<string, unknown>> {
   success: boolean;
   results?: T[];
@@ -1974,8 +1975,8 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
           if(existing.uploaded_by!==admin.admin_user_id||existing.mime_type!==file.type||Number(existing.byte_size)!==file.size||existing.status==="archived"){
             failures.push({name:file.name,error:"This retry identifier is already used by a different or unavailable media item."});continue;
           }
-          const storedObject=await env.MEDIA.get(existing.object_key);
-          const storedHash=storedObject?Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256",await storedObject.arrayBuffer())),value=>value.toString(16).padStart(2,"0")).join(""):null;
+          const storedObject=await env.MEDIA.head(existing.object_key);
+          const storedHash=storedObject?.customMetadata?.sha256??null;
           if(existing.status==="ready"){
             if(storedHash!==sha256){failures.push({name:file.name,error:"The saved media content does not match this retry. Use a new upload identifier."});continue;}
             results.push({id,media_type:"image",mime_type:file.type,byte_size:file.size,status:"ready",url:"/api/admin/media/"+id+"/file",reused:true});
