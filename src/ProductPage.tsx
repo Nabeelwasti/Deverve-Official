@@ -5,7 +5,7 @@ import ProductVariantPicker from "./ProductVariantPicker";
 type Variant={id:string;sku:string|null;size:string;color:string;available_quantity:number};
 type Media={id:string;media_type:"image"|"video";alt_text:string;caption:string;is_primary:number;color?:string;url:string};
 type Product={id:string;slug:string;name:string;description:string;category:string;audience:string;retail_price_paisa:number|null;image_key:string|null;seo_title:string;seo_description:string;variants:Variant[];media:Media[]};
-type CartLine={variant_id:string;product_id:string;name:string;sku:string|null;size:string;color:string;quantity:number;unit_price_paisa:number;available_quantity:number};
+type CartLine={variant_id:string;product_id:string;name:string;sku:string|null;size:string;color:string;quantity:number;unit_price_paisa:number;available_quantity:number;image_url?:string};
 type ProductReview={id:string;rating:number;title:string;body:string;created_at:string;reviewer_name:string;verified_purchase?:number};
 type EligibleReviewOrder={order_item_id:string;order_number:string;size_snapshot:string;color_snapshot:string};
 const split=(value:string)=>[...new Set(value.split(/[,;|\n]+/).map(item=>item.trim()).filter(Boolean))];
@@ -33,7 +33,9 @@ export default function ProductPage(){
 
  const addToCart=()=>{
   if(!product||!selected||product.retail_price_paisa===null||selected.available_quantity<1)return;
-  const line:CartLine={variant_id:selected.id,product_id:product.id,name:product.name,sku:selected.sku,size:selectedSize||selected.size,color:selectedColor||selected.color,quantity:Math.min(quantity,selected.available_quantity,10),unit_price_paisa:product.retail_price_paisa,available_quantity:selected.available_quantity};
+  const cartColour=(selectedColor||selected.color||"").trim().toLowerCase();
+   const cartImage=product.media.find(media=>media.media_type==="image"&&media.color?.trim().toLowerCase()===cartColour)||product.media.find(media=>media.media_type==="image"&&!media.color?.trim())||product.media.find(media=>media.media_type==="image"&&media.is_primary===1)||product.media.find(media=>media.media_type==="image");
+   const line:CartLine={variant_id:selected.id,product_id:product.id,name:product.name,sku:selected.sku,size:selectedSize||selected.size,color:selectedColor||selected.color,quantity:Math.min(quantity,selected.available_quantity,10),unit_price_paisa:product.retail_price_paisa,available_quantity:selected.available_quantity,...(cartImage?.url?{image_url:cartImage.url}:product.image_key?{image_url:"/media/"+product.image_key}:{})};
   let current:CartLine[]=[];try{const parsed:unknown=JSON.parse(localStorage.getItem("deverve-cart")||"[]");if(Array.isArray(parsed))current=parsed.filter((item):item is CartLine=>Boolean(item&&typeof item==="object"&&typeof item.variant_id==="string"&&/^[a-f0-9-]{36}$/i.test(item.variant_id)&&typeof item.product_id==="string"&&typeof item.name==="string"&&(item.sku===null||typeof item.sku==="string")&&typeof item.size==="string"&&typeof item.color==="string"&&Number.isInteger(item.quantity)&&item.quantity>0&&item.quantity<=10&&Number.isSafeInteger(item.unit_price_paisa)&&item.unit_price_paisa>=0&&Number.isInteger(item.available_quantity)&&item.available_quantity>0));}catch{}
   const key=(item:CartLine)=>[item.product_id,item.size.trim().toLowerCase(),item.color.trim().toLowerCase()].join("::");
   const deduplicated=new Map<string,CartLine>();
