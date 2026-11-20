@@ -164,6 +164,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     return () => urls.forEach(url => URL.revokeObjectURL(url));
   }, [files]);
   useEffect(() => { if (listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [history, busy]);
+  useEffect(() => { if (!drawerOpen) return; const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setDrawerOpen(false); }; window.addEventListener("keydown", closeOnEscape); return () => window.removeEventListener("keydown", closeOnEscape); }, [drawerOpen]);
 
   const chooseFiles = (event: ChangeEvent<HTMLInputElement>) => {
     const incoming = Array.from(event.target.files ?? []); event.target.value = "";
