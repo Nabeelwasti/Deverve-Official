@@ -8,7 +8,7 @@
     {
       "binding": "DB",
       "database_name": "deverve-production",
-      "database_id": "REPLACE_WITH_THE_EXISTING_D1_DATABASE_ID"
+      "database_id": "355da876-17c4-4762-a59d-bb85f2e4551b"
     }
   ],
   "queues": {
