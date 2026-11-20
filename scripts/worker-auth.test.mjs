@@ -1459,7 +1459,7 @@ class FakeStatement {
       }
       return { success: true, meta: { changes: 1 } };
     }
-    if (q.startsWith("INSERT INTO audit_logs") && q.includes(" SELECT ")) {
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes(" SELECT ") && q.includes("EXISTS (SELECT 1 FROM inventory_movements")) {
       const [id, actor, action, entity, entityId, metadata, movementId] = v;
       if (!this.db.movements.some((row) => row.id === movementId)) return { success: true, meta: { changes: 0 } };
       this.db.audits.push([id, actor, action, entity, entityId, metadata]);
@@ -2792,7 +2792,7 @@ test("AI owner command prepares a requested wholesale quote without sending or a
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   db.wholesaleQuotes.set(id, { id, status: "requested", valid_until: null, approval_token: "opaque-token" });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "prepare wholesale quote " + id }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.91" }), env(db));
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set wholesale quote " + id + " status to prepared" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.91" }), env(db));
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "prepare_wholesale_quote");
