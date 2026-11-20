@@ -1,22 +1,24 @@
 # Production readiness — historical engineering record and current status
 
-## Current verified status — 20 November 2026
+## Current verified status — 21 November 2026
 
 This section supersedes older branch, migration, deployment and production-state claims in the historical notes below.
 
-- **Current source:** `main` at `412f6c4b7549977cfc7432be55666491779c21d8` before this audit documentation/code-alignment commit.
-- **Current production D1:** read-only Cloudflare D1 queries confirm 63 application tables and the expected structures from migrations 0034–0036, including `order_inventory_reservations`, `ai_task_runs`, `ai_task_events` and the unique active variant-options index. Do not rerun those migrations.
-- **Inventory data:** four variants exist. One legacy variant contains multiple size/colour options in a shared stock record; one variant lacks a SKU and one lacks a barcode. Physical stock reconciliation is required before splitting this row.
-- **CNIC retention:** Cloudflare R2 read-back confirms enabled indefinite Bucket Lock rule `deverve-rental-cnic-indefinite` for `rental-private/` in `deverve-media-private`. The managed public `r2.dev` domain is disabled. D1 immutability triggers are present.
-- **Payment queues:** Cloudflare account queue listing returned no queues. Safepay queue, DLQ, Pages producer binding and separate consumer deployment remain unconfigured. Safepay must not be treated as production-accepted.
-- **Backups:** a same-account R2 copy/restore drill has been completed and the per-rental encrypted CNIC backup tool exists. An independent off-account D1/R2 backup and documented restore drill remain outstanding.
-- **CI:** run #1390 passed on the AI inbox source commit. Remote D1 integration was skipped because GitHub Actions Cloudflare test credentials were not configured. Subsequent documentation/source-alignment commits require their own latest CI confirmation.
-- **Deployment:** Cloudflare Pages source-triggered, production and preview deployments remain disabled intentionally. Current `main` source is not live. Do not deploy or enable deployment without explicit owner authorization.
-- **External acceptance:** real Safepay sandbox, Resend delivery, Meta WhatsApp template/opt-in, catalogue verification, physical-device camera testing, POS/finance and rental acceptance remain outstanding.
+- **Current source:** GitHub `main` contains the latest reviewed application commit `330b6f4c4628b44e6e31025e0c8fc7e8b44f7c6d`; the latest documentation-only reconciliation commit is tracked in the repository history. These source changes are not deployed.
+- **Current production deployment:** Cloudflare Pages project `deverve-official` still serves commit `1bc020f089d46ff7452fb3eb0a44ba900543827d`, deployment `32aabada-c3b6-4003-a37b-749a9762466a` (20 November 2026 17:03 UTC). The project is connected to GitHub but `production_deployments_enabled=false`, `deployments_enabled=false`, and preview deployment setting is `none`.
+- **Production bindings:** Pages production has the expected D1 binding `DB` and private R2 binding `MEDIA`. The Cloudflare project read-back reports `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1` as not configured; do not assume bootstrap or Gemini-backed features are operational.
+- **Current production D1:** read-only Cloudflare metadata reports database `deverve-production` with 62 tables. The prior direct schema reconciliation confirmed the expected structures from migrations 0034–0036, including `order_inventory_reservations`, `ai_task_runs`, `ai_task_events` and the unique active variant-options index. Do not rerun those migrations. D1 metadata table counts and application-table counts differ; use direct `sqlite_master`/schema inspection for exact reconciliation.
+- **Inventory data:** four variants were recorded in the last direct inspection. One legacy variant contains multiple size/colour options under a shared stock record; one variant lacks a SKU and one lacks a barcode. Physical stock reconciliation is required before splitting this row.
+- **CNIC retention:** Cloudflare R2 confirms enabled indefinite Bucket Lock rule `deverve-rental-cnic-indefinite` for `rental-private/` in `deverve-media-private`. The managed public `r2.dev` domain is disabled. D1 immutability triggers are present.
+- **Payment queues:** current Cloudflare account queue listing is empty. Safepay queue, DLQ, Pages producer binding and separate consumer deployment remain unconfigured. Safepay must not be treated as production-accepted.
+- **Backups:** a same-account R2 copy/restore drill has been completed and the per-rental encrypted CNIC backup tool exists. An independent off-account D1/R2 backup and documented restore drill remain outstanding. Customer/CNIC data must not be copied to an unverified personal cloud destination.
+- **CI:** run #1498 failed only in the newly added storefront test's assertion for a hidden/unreachable newsletter heading; build, type-check, production dependency audit, Worker tests, schema and SQL checks passed, with 102 browser tests passing and two desktop/mobile instances of that assertion failing. The assertion and unreachable section have been corrected. CI for the latest application commit `330b6f4` is still pending; do not mark it green until the exact run completes successfully. The remote D1 integration remains skipped because GitHub Actions Cloudflare test credentials are not configured.
+- **Storefront navigation:** the Home screen now exposes the accurate service information panel; the Contact screen exposes the FAQ section. The redundant newsletter/contact block that could never appear in the screen-first navigation has been removed.
+- **External acceptance:** real Safepay sandbox, Resend delivery, Meta WhatsApp template/opt-in, Turnstile secret verification, catalogue verification, physical-device camera testing, POS/finance and rental acceptance remain outstanding.
 
 ### Release decision
 
-**Not production-accepted.** Keep deployment disabled. Before any production release, complete independent backups and restore validation, legacy inventory reconciliation, Safepay architecture/sandbox acceptance, external provider configuration, owner business-data/legal acceptance, real-device testing and final CI/security review.
+**Not production-accepted.** The user has explicitly requested a deployment, but the documented release gates remain open. Do not publish the current source to production until independent backup/restore, legacy inventory reconciliation, payment/provider acceptance, owner business-data/legal acceptance, physical-device testing, exact-head CI and final production smoke/rollback review are complete. No production database, object storage, secrets, queue resources or deployment settings were changed during this review.
 
 ---
 
