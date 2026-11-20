@@ -3,7 +3,9 @@ const VERSION = 1;
 const ITERATIONS = 310000;
 const AAD = new TextEncoder().encode("De VERVE permanent evidence backup v1");
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
-const MAX_ARCHIVE_BYTES = 24 * 1024 * 1024;
+// Two maximum-size 8 MiB source images are JSON/base64 encoded, then the ciphertext is base64 encoded again.
+// 32 MiB leaves safe room for both encoding layers and the envelope metadata.
+const MAX_ARCHIVE_BYTES = 32 * 1024 * 1024;
 
 export type EvidenceFile = { name: string; type: string; size: number; data: string };
 export type EvidencePayload = { format: typeof FORMAT; version: number; referenceCode: string; createdAt: string; files: EvidenceFile[] };
