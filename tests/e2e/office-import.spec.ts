@@ -14,6 +14,7 @@ function zipStore(files: Record<string,string>): Buffer {
 async function mockAdmin(page:Page){
  await page.route("**/api/admin/**",async route=>{
   const url=new URL(route.request().url());let payload:Record<string,unknown>={products:[],users:[],invites:[],settings:{},enquiries:[],customers:[],orders:[],returns:[],exchanges:[],quotes:[],vehicles:[],rentals:[],reviews:[],events:[],items:[],accounts:[],registers:[],session:null,has_more:false,overview:{published_products:0,draft_products:0,new_enquiries:0,pending_orders:0,rental_requests:0}};
+  if(url.pathname==="/api/admin/ai/execute"){await route.fulfill({status:422,contentType:"application/json",body:JSON.stringify({error:"No actionable business intent was identified."})});return;}
   if(url.pathname==="/api/admin/me")payload={admin:owner};
   else if(url.pathname==="/api/admin/ai/keys")payload={keys:[],environment_keys:[],encryption_ready:true,encryption_mode:"dedicated",model:"Gemini 3.8 Flash",models:[]};
   else if(url.pathname==="/api/admin/ai/tasks")payload={tasks:[]};
