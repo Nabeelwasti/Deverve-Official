@@ -210,6 +210,9 @@ export default function Admin() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [productOffset,setProductOffset]=useState(0);
+  const [productHasMore,setProductHasMore]=useState(false);
+  const [loadingMoreProducts,setLoadingMoreProducts]=useState(false);
   const [enquiries, setEnquiries] = useState<Enquiry[]>([]);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [financialAccounts, setFinancialAccounts] = useState<FinancialAccount[]>([]);
@@ -296,9 +299,31 @@ export default function Admin() {
   const updateDeliveryFeeDrafts = (updater: (current: Record<string, string>) => Record<string, string>) => { const next = updater(deliveryFeeDrafts); setDeliveryFeeDrafts(next); writeAdminDraft("delivery-fee-drafts", { values: next }); };
 
 
-  const loadProducts = async () => {
-    const result = await api<{ products: Product[] }>("/api/admin/products?limit=100");
-    setProducts(result.products);
+  const loadProducts = async (statusFilter = filter) => {
+    const params = new URLSearchParams({ limit: "100", offset: "0" });
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    const result = await api<{ products: Product[]; has_more?: boolean; next_offset?: number }>("/api/admin/products?" + params.toString());
+    const nextProducts = result.products ?? [];
+    setProducts(nextProducts);
+    setProductOffset(result.next_offset ?? nextProducts.length);
+    setProductHasMore(Boolean(result.has_more));
+  };
+  const loadMoreProducts = async () => {
+    if (loadingMoreProducts || !productHasMore) return;
+    setLoadingMoreProducts(true);
+    try {
+      const params = new URLSearchParams({ limit: "100", offset: String(productOffset) });
+      if (filter !== "all") params.set("status", filter);
+      const result = await api<{ products: Product[]; has_more?: boolean; next_offset?: number }>("/api/admin/products?" + params.toString());
+      const nextProducts = result.products ?? [];
+      setProducts(current => [...current, ...nextProducts]);
+      setProductOffset(result.next_offset ?? productOffset + nextProducts.length);
+      setProductHasMore(Boolean(result.has_more));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "More products could not be loaded.");
+    } finally {
+      setLoadingMoreProducts(false);
+    }
   };
   const loadOverview = async () => {
     const result = await api<{ overview: Overview }>("/api/admin/overview");
@@ -1063,7 +1088,7 @@ export default function Admin() {
           {admin.role !== "catalogue" && <button type="button" className="admin-ribbon-help" onClick={()=>navigateAdminScreen("enquiries")}><span className="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.7 9a2.4 2.4 0 1 1 4.2 1.6c-.9 1-1.9 1.2-1.9 2.8M12 17h.01"/></svg></span><span>Help & enquiries</span></button>}
           <div className="admin-nav-footer"><span className="admin-nav-status" aria-hidden="true"></span><span>Secure workspace</span><small>Access: {admin.role}</small></div>
         </nav>
-        <div className="admin-stat-grid"><article><span>ALL PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
+        <div className="admin-stat-grid"><article><span>LOADED PRODUCTS</span><strong>{products.length}</strong></article><article><span>PUBLISHED</span><strong>{overview.published_products}</strong></article><article><span>DRAFTS</span><strong>{overview.draft_products}</strong></article><article><span>NEW ENQUIRIES</span><strong>{overview.new_enquiries}</strong></article><article><span>PENDING ORDERS</span><strong>{overview.pending_orders}</strong></article><article><span>RENTAL REQUESTS</span><strong>{overview.rental_requests}</strong></article></div>
 
         {["owner", "manager", "orders", "rental"].includes(admin.role) && <section id="followups" className="admin-panel admin-followups-panel">
           <div className="admin-panel-heading"><div><h2>Open follow-ups</h2><p className="admin-muted">A combined queue of active customer work from existing business records. Update each record in its original workspace.</p></div><span className="admin-enquiry-count">{followUpItems.length} open items</span></div>
@@ -1224,9 +1249,10 @@ export default function Admin() {
         {["owner","manager"].includes(admin.role) && <section id="product-reviews" className="admin-panel admin-product-reviews-panel"><div className="admin-panel-heading"><div><h2>Product reviews & comments</h2><p className="admin-muted">New customer reviews are published immediately. This workspace is only for legacy pending entries or exceptional moderation.</p></div><button type="button" className="admin-secondary" onClick={()=>void loadProductReviews()}>Refresh queue</button></div>{productReviews.length===0?<div className="admin-empty"><strong>No pending moderation items</strong><p>New customer feedback is already visible on the public product page as soon as it is submitted.</p></div>:<div className="admin-review-queue">{productReviews.map(review=><article className="admin-review-row" key={review.id}><div className="admin-review-meta"><strong>{review.product_name}</strong><span>{review.order_number?"Order "+review.order_number:"Customer comment"} · {new Date(review.created_at).toLocaleString()}</span><span>{review.customer_name} · {review.customer_email}</span><b>{"★".repeat(review.rating)}{"☆".repeat(5-review.rating)}</b></div>{review.title&&<h3>{review.title}</h3>}<p>{review.body}</p><div className="admin-row-actions"><a href={"/product/"+encodeURIComponent(review.product_slug)} target="_blank" rel="noreferrer">View product ↗</a><button type="button" className="admin-primary" onClick={()=>void moderateProductReview(review,"approved").catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Review could not be approved."))}>Approve & publish</button><button type="button" className="admin-danger" onClick={()=>void moderateProductReview(review,"rejected").catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Review could not be rejected."))}>Reject</button></div></article>)}</div>}</section>}
         <section id="products" className="admin-panel">
           {canEditProducts && <ProductCsvImport role={admin.role} onImported={() => void loadProducts()} />}
-          <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, attach product photos, variants and stock from one place.</p></div><div className="admin-row-actions">{canEditProducts&&<button type="button" className="admin-primary" aria-label="Add product" title="Add product" onClick={startNew} disabled={busy}>＋ Add product</button>}{canEditProducts&&<button type="button" className="admin-secondary" onClick={()=>navigateAdminScreen("ai")} disabled={busy}>Create with AI</button>}<select aria-label="Filter products" value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div></div>
-          {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Use the AI Command Centre to analyse product photos and prepare your first unpublished catalogue draft.</p>{canEditProducts && <button className="admin-primary" onClick={()=>navigateAdminScreen("ai")}>Open AI product assistant</button>}</div> :
+          <div className="admin-panel-heading"><div><h2>Product catalogue</h2><p className="admin-muted">Manage product details, attach product photos, variants and stock from one place.</p></div><div className="admin-row-actions">{canEditProducts&&<button type="button" className="admin-primary" aria-label="Add product" title="Add product" onClick={startNew} disabled={busy}>＋ Add product</button>}{canEditProducts&&<button type="button" className="admin-secondary" onClick={()=>navigateAdminScreen("ai")} disabled={busy}>Create with AI</button>}<select aria-label="Filter products" value={filter} onChange={(e) => {const value=e.target.value;setFilter(value);void loadProducts(value);}} disabled={loadingMoreProducts}><option value="all">All products</option><option value="published">Published</option><option value="draft">Drafts</option><option value="archived">Archived</option></select></div></div>
+          {shownProducts.length === 0 ? <div className="admin-empty"><strong>No products here yet</strong><p>Use the bulk catalogue importer above or the AI Command Centre to prepare your first unpublished product draft.</p>{canEditProducts && <button className="admin-primary" onClick={()=>navigateAdminScreen("ai")}>Open AI product assistant</button>}</div> :
             <div className="admin-product-list">{shownProducts.map((product) => <article className="admin-product-row" key={product.id}><div><strong>{product.name}</strong><span>{product.category} · {product.audience} · <i className={`status-${product.status}`}>{product.status}</i></span></div><div className="admin-row-actions">{canEditProducts && <button type="button" onClick={() => void openMediaLibrary(product)}>Images</button>}<button type="button" onClick={() => void openVariants(product)}>Variants & stock</button>{canEditProducts && <button type="button" onClick={() => startEdit(product)}>Edit</button>}{["owner", "manager"].includes(admin.role) && product.status !== "archived" && <button type="button" className="admin-danger" onClick={() => void archiveProduct(product)}>Archive</button>}</div></article>)}</div>}
+          {productHasMore&&<div className="admin-pagination-row"><span>Showing {products.length} loaded products. More products are available.</span><button type="button" className="admin-secondary" onClick={()=>void loadMoreProducts()} disabled={loadingMoreProducts}>{loadingMoreProducts?"Loading products…":"Load next 100 products"}</button></div>}
         </section>
         {vehicleGalleryTarget && <VehicleGalleryManager vehicle={vehicleGalleryTarget} onClose={() => setVehicleGalleryTarget(null)} onChanged={() => void loadVehicles()} />}
         {showVehicleEditor && <div className="admin-modal-backdrop"><section className="admin-editor" role="dialog" aria-modal="true" aria-labelledby="vehicle-editor-title">
