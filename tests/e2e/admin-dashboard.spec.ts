@@ -322,6 +322,30 @@ test("owner can request an order status transition through natural language", as
   expect(executed).toEqual({ command: "set order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed" });
 });
 
+test("women and kids collection cards open their correctly filtered live catalogues", async ({ page }) => {
+  const products = [
+    { id: "women-product", slug: "women-hoodie", name: "Women Hoodie", description: "Women fit", category: "Hoodie", audience: "women", retail_price_paisa: 250000, variants: [], media: [] },
+    { id: "kids-product", slug: "kids-shirt", name: "Kids Shirt", description: "Kids fit", category: "Shirt", audience: "kids", retail_price_paisa: 150000, variants: [], media: [] },
+    { id: "men-product", slug: "men-trouser", name: "Men Trouser", description: "Men fit", category: "Trouser", audience: "men", retail_price_paisa: 300000, variants: [], media: [] },
+  ];
+  await page.route("**/api/products*", async route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ products }),
+  }));
+  await page.route("**/api/storefront/settings", async route => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({}),
+  }));
+  await page.goto("/");
+  await page.getByRole("link", { name: "Shop Women's fashion collection" }).click();
+  await expect(page).toHaveURL(/category=women/);
+  await expect(page.getByRole("heading", { name: "Women Hoodie" })).toBeVisible();
+  await expect(page.getByText("Kids Shirt", { exact: true })).toHaveCount(0);
+  await page.goto("/");
+  await page.getByRole("link", { name: "Shop Kids' fashion collection" }).click();
+  await expect(page).toHaveURL(/category=kids/);
+  await expect(page.getByRole("heading", { name: "Kids Shirt" })).toBeVisible();
+  await expect(page.getByText("Women Hoodie", { exact: true })).toHaveCount(0);
+});
+
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
   await mockAdminApi(page);
   await page.addInitScript(() => {
