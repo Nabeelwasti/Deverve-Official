@@ -558,21 +558,25 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     try {
       const limitValue = Number(url.searchParams.get("limit") ?? "50");
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
+      const offsetValue = Number(url.searchParams.get("offset") ?? "0");
+      const offset = Number.isInteger(offsetValue) && offsetValue >= 0 ? Math.min(offsetValue, 1_000_000) : 0;
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
-        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
-        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
-      const productRows = rows.results ?? [];
-      if (!productRows.length) return json({ products: [] });
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?").bind(status, limit + 1, offset).all<AdminProductRow>()
+        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products ORDER BY updated_at DESC LIMIT ? OFFSET ?").bind(limit + 1, offset).all<AdminProductRow>();
+      const fetchedRows = rows.results ?? [];
+      const hasMore = fetchedRows.length > limit;
+      const productRows = fetchedRows.slice(0, limit);
+      if (!productRows.length) return json({ products: [], has_more: false, next_offset: offset });
       const productIds = productRows.map((product) => product.id);
       const placeholders = productIds.map(() => "?").join(",");
-      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500").bind(...productIds).all<PublicVariantRow>();
+      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 10000").bind(...productIds).all<PublicVariantRow>();
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variantRows.results ?? []) {
         const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
       }
-      return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })) });
+      return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })), has_more: hasMore, next_offset: offset + productRows.length });
     } catch {
       return error("Product management is temporarily unavailable", 503);
     }
