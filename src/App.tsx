@@ -230,6 +230,7 @@ function playLuxuryChime(type: "add" | "favourite" = "add") {
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
+    osc.addEventListener("ended", () => { void ctx.close().catch(() => undefined); }, { once: true });
     const gain = ctx.createGain();
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -255,10 +256,7 @@ function playLuxuryChime(type: "add" | "favourite" = "add") {
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
-  const [sizeGuideUnit, setSizeGuideUnit] = useState<"in" | "cm">("in");
   const [openFaq, setOpenFaq] = useState<number | null>(null);
-  const [newsletterEmail, setNewsletterEmail] = useState("");
-  const [newsletterSubscribed, setNewsletterSubscribed] = useState(false);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -592,14 +590,14 @@ function Storefront() {
               <button className="button button-primary" type="button" onClick={() => navigate("fashion")}>Explore fashion <span>↗</span></button>
               <button className="text-link" type="button" onClick={() => navigate("wholesale")}>Wholesale enquiries →</button>
             </div>
-            <div className="hero-stats-strip">
-              <div><strong>10,000+</strong><small>Satisfied Clients</small></div>
+            <div className="hero-stats-strip" aria-label="De VERVE services">
+              <div><strong>Jhelum</strong><small>Based in Pakistan</small></div>
               <div className="stat-separator" />
-              <div><strong>4.9 ★</strong><small>Client Rating</small></div>
+              <div><strong>Retail</strong><small>Fashion</small></div>
               <div className="stat-separator" />
-              <div><strong>100%</strong><small>Original Quality</small></div>
+              <div><strong>Wholesale</strong><small>Enquiries</small></div>
               <div className="stat-separator" />
-              <div><strong>2-4 Days</strong><small>Express Shipping</small></div>
+              <div><strong>Mobility</strong><small>Rental requests</small></div>
             </div>
             <div className="hero-footnote"><span className="blue-dot" /> YOUR EVERYDAY VERVE · JHELUM, PAKISTAN</div>
           </div>
@@ -615,35 +613,11 @@ function Storefront() {
           <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><button type="button" onClick={() => navigate("fashion")}>EXPLORE COLLECTIONS ↗</button></div>
         </section>
 
-        <section className="trust-pillars-section" aria-label="Why choose De VERVE">
-          <div className="trust-pillar-card">
-            <span className="trust-pillar-icon">⚡</span>
-            <div>
-              <h4>Express Nationwide Delivery</h4>
-              <p>Tracked delivery across Karachi, Lahore, Islamabad, Rawalpindi, Jhelum & all Pakistan.</p>
-            </div>
-          </div>
-          <div className="trust-pillar-card">
-            <span className="trust-pillar-icon">💎</span>
-            <div>
-              <h4>100% Original Fabric Guarantee</h4>
-              <p>Finest combed cotton, bespoke craftsmanship & luxury finishing on every piece.</p>
-            </div>
-          </div>
-          <div className="trust-pillar-card">
-            <span className="trust-pillar-icon">🔄</span>
-            <div>
-              <h4>7-Day Easy Exchanges</h4>
-              <p>Hassle-free size & colour swaps through our online customer portal or WhatsApp.</p>
-            </div>
-          </div>
-          <div className="trust-pillar-card">
-            <span className="trust-pillar-icon">💬</span>
-            <div>
-              <h4>VIP 24/7 Concierge</h4>
-              <p>Direct personal guidance from our Jhelum showroom staff: +92 319 7553705.</p>
-            </div>
-          </div>
+        <section className="trust-pillars-section" aria-label="Shopping and service information">
+          <div className="trust-pillar-card"><span className="trust-pillar-icon">📦</span><div><h4>Delivery confirmed before dispatch</h4><p>Our team confirms the delivery area, charges and estimated timeline before an order is dispatched.</p></div></div>
+          <div className="trust-pillar-card"><span className="trust-pillar-icon">🧵</span><div><h4>Product details that matter</h4><p>Check each listing for its available sizes, colours, photos and current stock. Ask us when you need more detail.</p></div></div>
+          <div className="trust-pillar-card"><span className="trust-pillar-icon">🔄</span><div><h4>Exchange request support</h4><p>Eligible unused items may be submitted for exchange within 7 calendar days of delivery, subject to inspection and replacement stock.</p></div></div>
+          <div className="trust-pillar-card"><span className="trust-pillar-icon">💬</span><div><h4>Talk to our Jhelum team</h4><p>Contact us for product, wholesale and vehicle-rental enquiries. We will confirm availability and terms with you.</p></div></div>
         </section>
 
         <section className="intro-strip" id="about">
@@ -745,52 +719,13 @@ function Storefront() {
             <div>
               <p className="eyebrow">FIT & MEASUREMENTS</p>
               <h2 id="size-guide-title">Garment Size Guide</h2>
-              <p>Standard Pakistani sizing across all De VERVE apparel.</p>
+              <p>Product-specific measurements are confirmed with our team.</p>
             </div>
             <button type="button" className="checkout-close" onClick={() => setSizeGuideOpen(false)} aria-label="Close size guide">×</button>
           </div>
-          <div className="size-guide-controls">
-            <span>Display measurements in:</span>
-            <div className="size-guide-toggle-group">
-              <button type="button" className={`size-toggle-btn ${sizeGuideUnit === "in" ? "is-active" : ""}`} onClick={() => setSizeGuideUnit("in")}>Inches (in)</button>
-              <button type="button" className={`size-toggle-btn ${sizeGuideUnit === "cm" ? "is-active" : ""}`} onClick={() => setSizeGuideUnit("cm")}>Centimeters (cm)</button>
-            </div>
-          </div>
-          <div className="size-guide-table-wrap">
-            <table className="size-guide-table">
-              <thead>
-                <tr>
-                  <th>Size</th>
-                  <th>Chest / Bust</th>
-                  <th>Length</th>
-                  <th>Shoulder</th>
-                  <th>Waist</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sizeGuideUnit === "in" ? (
-                  <>
-                    <tr><td><strong>S</strong></td><td>36 – 38″</td><td>27″</td><td>17″</td><td>30 – 32″</td></tr>
-                    <tr><td><strong>M</strong></td><td>39 – 41″</td><td>28″</td><td>18″</td><td>32 – 34″</td></tr>
-                    <tr><td><strong>L</strong></td><td>42 – 44″</td><td>29″</td><td>19″</td><td>34 – 36″</td></tr>
-                    <tr><td><strong>XL</strong></td><td>45 – 47″</td><td>30″</td><td>20″</td><td>36 – 38″</td></tr>
-                    <tr><td><strong>XXL</strong></td><td>48 – 50″</td><td>31″</td><td>21″</td><td>38 – 40″</td></tr>
-                  </>
-                ) : (
-                  <>
-                    <tr><td><strong>S</strong></td><td>91 – 96 cm</td><td>69 cm</td><td>43 cm</td><td>76 – 81 cm</td></tr>
-                    <tr><td><strong>M</strong></td><td>99 – 104 cm</td><td>71 cm</td><td>46 cm</td><td>81 – 86 cm</td></tr>
-                    <tr><td><strong>L</strong></td><td>107 – 112 cm</td><td>74 cm</td><td>48 cm</td><td>86 – 91 cm</td></tr>
-                    <tr><td><strong>XL</strong></td><td>114 – 119 cm</td><td>76 cm</td><td>51 cm</td><td>91 – 96 cm</td></tr>
-                    <tr><td><strong>XXL</strong></td><td>122 – 127 cm</td><td>79 cm</td><td>53 cm</td><td>96 – 102 cm</td></tr>
-                  </>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="size-guide-tips">
-            <strong>💡 Fit Advice:</strong>
-            <p>Garments are tailored with a modern regular fit. If you prefer an oversized or relaxed aesthetic, we recommend ordering one size up. Need personalized assistance? Our Jhelum master tailor can advise you on WhatsApp.</p>
+          <div className="size-guide-note">
+            <strong>There is no single measurement chart for every garment.</strong>
+            <p>Fit and measurements can vary by product, fabric, cut and manufacturer. We are not publishing a universal size chart until verified measurements are available for each item. Please check the selected product details or contact our team with the product name and your usual measurements before ordering.</p>
           </div>
           <div className="size-guide-actions">
             <button type="button" className="button button-outline" onClick={() => setSizeGuideOpen(false)}>Back to shopping</button>
@@ -886,48 +821,9 @@ function Storefront() {
           </article>)}</div></div>}
         </section>
 
-        <section className="testimonials-section" id="testimonials" aria-label="Customer reviews & experiences">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">VOICES OF VERVE</p>
-              <h2>Trusted by clients<br /><em>across Pakistan.</em></h2>
-            </div>
-            <p className="section-aside">Authentic feedback from our fashion, wholesale and mobility customers.</p>
-          </div>
-          <div className="testimonials-grid">
-            <article className="testimonial-card">
-              <div className="testimonial-rating">★★★★★</div>
-              <p>“The fabric drape, stitching, and finishing on the De VERVE casual collection are world-class. Arrived at DHA Lahore in 48 hours in luxury packaging. Exceptional standard for Pakistani fashion.”</p>
-              <div className="testimonial-author">
-                <strong>Muhammad Usman</strong>
-                <small>DHA Lahore · Verified Fashion Buyer</small>
-              </div>
-            </article>
-            <article className="testimonial-card">
-              <div className="testimonial-rating">★★★★★</div>
-              <p>“Rented an executive SUV for our northern tour starting from Jhelum. Immaculate interior, mechanically spotless, and zero hidden charges. De VERVE Mobility is our go-to choice.”</p>
-              <div className="testimonial-author">
-                <strong>Hamza Malik</strong>
-                <small>F-7 Islamabad · Verified Mobility Client</small>
-              </div>
-            </article>
-            <article className="testimonial-card">
-              <div className="testimonial-rating">★★★★★</div>
-              <p>“Ordered corporate bespoke polo lots for our annual conference. The wholesale team delivered ahead of schedule with exact custom embroidery. Superb professionalism.”</p>
-              <div className="testimonial-author">
-                <strong>Dr. Ayesha Tariq</strong>
-                <small>Rawalpindi · Corporate Wholesale Client</small>
-              </div>
-            </article>
-            <article className="testimonial-card">
-              <div className="testimonial-rating">★★★★★</div>
-              <p>“Best shopping experience on Kachahri Road. The store staff is courteous, sizes are consistent, and exchange handling is effortless. Highly recommended!”</p>
-              <div className="testimonial-author">
-                <strong>Bilal Ahmed</strong>
-                <small>Cantt Jhelum · Flagship Store Client</small>
-              </div>
-            </article>
-          </div>
+        <section className="customer-feedback-invite section" id="customer-feedback">
+          <div className="section-heading"><div><p className="eyebrow">YOUR EXPERIENCE MATTERS</p><h2>Have a question<br /><em>before you choose?</em></h2></div><p className="section-aside">Speak with our team about product details, wholesale orders or vehicle-rental requests. We will confirm the information that applies to your enquiry.</p></div>
+          <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to ask a question before placing an order.")} target="_blank" rel="noreferrer">Talk to De VERVE ↗</a>
         </section>
 
         <section className="faq-section" id="faq" aria-label="Frequently Asked Questions">
@@ -940,11 +836,11 @@ function Storefront() {
           </div>
           <div className="faq-list">
             {[
-              { q: "How do I place an order and what payment options are accepted?", a: "Select your desired size and colour, add the item to your cart, and proceed to checkout. We accept Cash on Delivery (COD) nationwide across Pakistan, Direct Bank Transfer (HBL/Meezan/any bank), JazzCash/Easypaisa, and online card payments through Safepay. For direct transfers, account details are displayed directly on your screen upon order submission." },
-              { q: "How fast is shipping and what are the delivery charges?", a: "Orders are dispatched via express tracked couriers (TCS, Leopards, CallCourier) and typically arrive within 2 to 4 business days anywhere in Pakistan. Standard delivery is calculated based on destination city and parcel weight, and is confirmed with you before dispatch. Orders above PKR 5,000 qualify for FREE delivery nationwide!" },
-              { q: "What is the De VERVE exchange policy?", a: "We offer a 7-day hassle-free exchange policy for sizing and colour adjustments. Items must be unworn, in their original condition with all tags intact. You can initiate an exchange directly in your online Customer Account or message our concierge on WhatsApp (+92 319 7553705)." },
-              { q: "How does car rental with De VERVE Mobility work?", a: "You can submit a rental request online selecting your preferred dates, destination, and choice of self-drive or professional chauffeur. Because security and trust are essential, both sides of your valid CNIC are uploaded securely. Our team verifies vehicle availability and confirms final terms before booking." },
-              { q: "Can I visit your flagship showroom in Jhelum?", a: "Absolutely! We warmly welcome clients to our flagship physical showroom located at the Basement of Ali Plaza, Kachahri Road, near Khawateen College, opposite Ali Mobile in Jhelum. Experience our fabrics, try on garments, or consult our mobility fleet in person." }
+              { q: "How do I place an order and what payment options are accepted?", a: "Choose an available product variant, add it to your cart and submit your order request. The payment methods currently enabled by De VERVE are shown at checkout; available methods can change. A direct bank or wallet transfer remains pending until the owner verifies the payment. Online gateway checkout is offered only when it is enabled for the current environment." },
+              { q: "How fast is shipping and what are the delivery charges?", a: "Delivery areas, charges and estimated timelines are confirmed by our team before dispatch. Timelines may vary by destination, courier operations, weather and public holidays. Any promotion or free-delivery offer is applied only when the checkout shows it for your order." },
+              { q: "What is the De VERVE exchange policy?", a: "Eligible items may be submitted for exchange within 7 calendar days of delivery if unused, unworn, unwashed and unaltered, with original tags and packaging. Requests are subject to inspection, approval and replacement stock. Hygiene-sensitive items such as opened or used socks and boxers are excluded except where applicable law requires otherwise. Start an eligible request from your Customer Account." },
+              { q: "How does car rental with De VERVE Mobility work?", a: "Submit a rental request with your preferred vehicle and dates. A request is not a confirmed booking. Vehicle availability, driver arrangement, rates, deposit and other terms are confirmed in a written rental agreement before handover. The secure form requests both sides of a valid CNIC for rental verification." },
+              { q: "Can I visit your showroom in Jhelum?", a: "Our listed location is the basement of Ali Plaza, Kachahri Road, near Khawateen College and opposite Ali Mobile, Jhelum. Please contact our team before travelling to confirm current opening hours and availability." }
             ].map((faq, idx) => (
               <div key={idx} className={`faq-item ${openFaq === idx ? "is-open" : ""}`}>
                 <button type="button" className="faq-question" onClick={() => setOpenFaq(openFaq === idx ? null : idx)} aria-expanded={openFaq === idx}>
@@ -957,27 +853,10 @@ function Storefront() {
           </div>
         </section>
 
-        <section className="newsletter-section" aria-label="Join De VERVE VIP Club">
+        <section className="newsletter-section" aria-label="Contact De VERVE">
           <div className="newsletter-card">
-            <div className="newsletter-copy">
-              <p className="eyebrow">EXCLUSIVE ACCESS</p>
-              <h3>Join the De VERVE VIP Circle</h3>
-              <p>Receive private invitations to seasonal drops, private tailoring previews, and an exclusive discount voucher on your first order.</p>
-            </div>
-            {newsletterSubscribed ? (
-              <div className="newsletter-success" role="status">
-                <span>✨</span>
-                <div>
-                  <strong>Welcome to the VIP Circle!</strong>
-                  <p>Use code <b>VERVEVIP</b> at checkout for <b>Rs. 500 off</b> your first order across Pakistan.</p>
-                </div>
-              </div>
-            ) : (
-              <form className="newsletter-form" onSubmit={(e) => { e.preventDefault(); if (newsletterEmail.includes("@")) setNewsletterSubscribed(true); }}>
-                <input type="email" required placeholder="Enter your email address…" value={newsletterEmail} onChange={(e) => setNewsletterEmail(e.target.value)} aria-label="VIP Club email signup" />
-                <button type="submit" className="button button-primary">Join VIP <span>↗</span></button>
-              </form>
-            )}
+            <div className="newsletter-copy"><p className="eyebrow">STAY CONNECTED</p><h3>Keep in touch with De VERVE</h3><p>Ask about new arrivals, current availability, wholesale options and upcoming services directly with our team.</p></div>
+            <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, please keep me informed about new arrivals and current offers.")} target="_blank" rel="noreferrer">Message us on WhatsApp ↗</a>
           </div>
         </section>
 
