@@ -15,17 +15,17 @@ test("CSV product import previews and atomically submits grouped size/colour var
   await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({atomic:true,imported:1,variants:3,status:"draft",products:[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"Premium Hoodie",slug:"premium-hoodie",variants:3}]})});
  });
  await page.goto("/admin?section=products");
- await expect(page.getByRole("heading",{name:"Bulk product import (CSV)"})).toBeVisible();
+ await expect(page.getByRole("heading",{name:"Bulk catalogue import"})).toBeVisible();
  const csv="\uFEFFname,slug,description,category,audience,retail_price_pkr,wholesale_price_pkr,size,color,stock,reorder_level,cost_price_pkr\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Black,12,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,M,Black,18,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Navy,7,2,1100";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"products.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
  await expect(page.getByText(/Validated 1 products and 3 unique size\/colour combinations/)).toBeVisible();
- await expect(page.getByRole("button",{name:"Import validated drafts"})).toBeEnabled();
- await page.getByRole("button",{name:"Import validated drafts"}).click();
+ await expect(page.getByRole("button",{name:"Import all products + attach matching photos"})).toBeEnabled();
+ await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
  await expect.poll(()=>submitted).not.toBeNull();
  const payload=submitted as {products:Array<{status:string;variants:Array<{size:string;color:string;initial_stock:number;cost_price_paisa:number}>}>};
  expect(payload.products).toHaveLength(1);expect(payload.products[0].status).toBe("draft");
  expect(payload.products[0].variants).toHaveLength(3);expect(payload.products[0].variants[0]).toMatchObject({size:"S",color:"Black",initial_stock:12,cost_price_paisa:110000});
- await expect(page.getByText(/Atomic import completed: 1 products and 3 variants/)).toBeVisible();
+ await expect(page.getByText(/Import completed. 1 products and 3 variants/)).toBeVisible();
 });
 test("CSV importer rejects duplicate size/colour combinations before making an API request",async({page})=>{
  await mockAdmin(page);let requested=false;
