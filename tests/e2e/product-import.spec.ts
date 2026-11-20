@@ -63,10 +63,12 @@ test("owner can import matching photos and request all-or-none publication",asyn
   await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({atomic:true,imported:1,variants:1,products:[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"Premium Hoodie",slug:"premium-hoodie",variants:1}]})});
  });
  await page.route("**/api/admin/media/bulk",async route=>{
-  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({uploaded:1,failed:0,media:[{id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",status:"ready"}],failures:[]})});
+  const form=await route.request().formData();const ids=JSON.parse(String(form.get("asset_ids")));
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({uploaded:ids.length,failed:0,media:ids.map((id:string)=>({id,status:"ready"})),failures:[]})});
  });
+ const mediaAttachments:Array<{media_id:string;color:string;is_primary:boolean;position:number}>=[];
  await page.route("**/api/admin/products/*/media",async route=>{
-  if(route.request().method()==="POST")await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({attached:true})});
+  if(route.request().method()==="POST"){mediaAttachments.push(route.request().postDataJSON());await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({attached:true})});}
  });
  await page.route("**/api/admin/products/publish-bulk",async route=>{
   publishedPayload=route.request().postDataJSON();
@@ -75,11 +77,12 @@ test("owner can import matching photos and request all-or-none publication",asyn
  await page.goto("/admin?section=products");
  const csv="name,slug,category,audience,retail_price_pkr,size,color,stock\nPremium Hoodie,premium-hoodie,Hoodies,unisex,2500,M,Black,3";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"products.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
- await page.locator('input[type="file"][multiple][accept^="image/"]').setInputFiles({name:"premium-hoodie-front.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217])});
+ await page.locator('input[type="file"][multiple][accept^="image/"]').setInputFiles([{name:"premium-hoodie-front.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217])},{name:"premium-hoodie--black--back.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217,0])}]);
  await page.getByLabel(/Publish after import in one secure operation/).check();
  await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
  await expect.poll(()=>publishedPayload).not.toBeNull();
  expect(publishedPayload).toEqual({product_ids:["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]});
+ expect(mediaAttachments.map(({color,is_primary,position})=>({color,is_primary,position}))).toEqual([{color:"",is_primary:true,position:0},{color:"Black",is_primary:false,position:0}]);
  await expect(page.getByText(/Published 1 products after server-side checks/)).toBeVisible();
 });
 
