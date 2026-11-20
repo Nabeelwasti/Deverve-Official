@@ -278,6 +278,11 @@ test("AI chat uses a slide-in inbox menu for conversations and tools", async ({ 
   await expect(page.getByRole("button", { name: /General assistant/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Product & file analysis/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Deep research/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Orders & payments/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Website settings/ })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".admin-ai-drawer")).not.toHaveClass(/is-open/);
+  await page.getByRole("button", { name: "Open chat menu" }).click();
   await page.getByRole("button", { name: /Deep research/ }).click();
   await expect(page.locator(".admin-ai-chat-context")).toContainText("Research with sources");
   await expect(page.locator(".admin-ai-drawer")).not.toHaveClass(/is-open/);
