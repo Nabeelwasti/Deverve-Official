@@ -1134,3 +1134,32 @@
   background: #a43838;
   color: #ffffff;
 }
+
+/* Inventory data-integrity warnings for legacy aggregate variants. */
+.inventory-data-warning {
+  margin: 14px 0;
+  padding: 14px 16px;
+  border: 1px solid #e2c48c;
+  border-left: 4px solid #b7791f;
+  border-radius: 12px;
+  background: #fff9ed;
+  color: #694b1f;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.inventory-data-warning strong {
+  display: block;
+  margin-bottom: 5px;
+  color: #573b13;
+  font-weight: 800;
+}
+.inventory-data-warning p { margin: 0 0 5px; }
+.inventory-data-warning small { display: block; color: #80643b; overflow-wrap: anywhere; }
+.inventory-data-warning-secondary {
+  border-color: #d7e0ec;
+  border-left-color: #647d9c;
+  background: #f5f8fc;
+  color: #42566f;
+}
+.inventory-data-warning-secondary strong { color: #263f5c; }
+.inventory-data-warning-secondary small { color: #5d7189; }
