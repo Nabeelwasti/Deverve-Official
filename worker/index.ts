@@ -4647,7 +4647,25 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The wholesale quote changed during execution. Refresh the Wholesale workspace and retry.",409);
    return json({ok:true,action:"prepare_wholesale_quote",changed:true,quote_id:id,status:"prepared",message:"Marked wholesale quote "+id+" as prepared. It has not been sent to the customer; use the quote workspace to review and send it."});
   }
-  return error("I could not safely match this request to an available business action. No changes were made. Supported direct actions include publishing one identified product, publishing eligible draft products, updating stock for an exact SKU, changing an enquiry status, and marking a requested wholesale quote as prepared. Other workspaces remain available for guided workflows.",422);
+  const vehicleCommand=/^(?:please )?(?:set|mark|update) vehicle ([0-9a-f-]{36}) (?:status )?(?:to|as) (available|maintenance|retired)$/i.exec(normalized);
+  if(vehicleCommand){
+   const id=vehicleCommand[1],nextStatus=vehicleCommand[2].toLowerCase();
+   const current=await env.DB.prepare("SELECT id, status FROM vehicles WHERE id = ? LIMIT 1").bind(id).first<{id:string;status:string}>();
+   if(!current)return error("No vehicle matched that exact ID",404);
+   const previousStatus=current.status;
+   if(previousStatus===nextStatus)return json({ok:true,action:"update_vehicle_status",changed:false,vehicle_id:id,status:nextStatus,message:"This vehicle is already marked "+nextStatus+"."});
+   const active=await env.DB.prepare("SELECT COUNT(*) AS count FROM rental_requests WHERE vehicle_id = ? AND status IN ('requested','reviewing','confirmed','active')").bind(id).first<{count:number}>();
+   const activeRentals=Number(active?.count??0);
+   if(!Number.isSafeInteger(activeRentals)||activeRentals<0)return error("Could not safely verify active rentals. No vehicle change was made.",503);
+   if(activeRentals>0)return error("This vehicle has "+activeRentals+" active or pending rental request(s). Resolve those bookings before changing its availability.",409);
+   const written=await env.DB.batch([
+    env.DB.prepare("UPDATE vehicles SET status = ?, updated_at = ? WHERE id = ? AND status = ?").bind(nextStatus,now,id,previousStatus),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.vehicle.status_updated","vehicle",id,JSON.stringify({command,previous_status:previousStatus,new_status:nextStatus,active_rentals:activeRentals}))
+   ]);
+   if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The vehicle changed during execution. Refresh Fleet and retry.",409);
+   return json({ok:true,action:"update_vehicle_status",changed:true,vehicle_id:id,previous_status:previousStatus,status:nextStatus,message:"Updated vehicle "+id+" from "+previousStatus+" to "+nextStatus+". No active rentals were found and the change was recorded in the audit log."});
+  }
+  return error("I could not safely match this request to an available business action. No changes were made. Supported direct actions include publishing one identified product, publishing eligible draft products, updating stock for an exact SKU, changing an enquiry status, preparing a requested wholesale quote, and changing a vehicle status when no active rentals exist. Other workspaces remain available for guided workflows.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
 }
 async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
