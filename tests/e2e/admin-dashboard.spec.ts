@@ -339,12 +339,14 @@ test("women and kids collection cards open their correctly filtered live catalog
     status: 200, contentType: "application/json", body: JSON.stringify({}),
   }));
   await page.goto("/");
-  await page.getByRole("link", { name: "Shop Women's fashion collection" }).first().click();
+  await expect(page.getByTestId("collection-women-art")).toHaveAttribute("href", "/?screen=fashion&category=women");
+  await page.getByTestId("collection-women-art").click();
   await expect(page).toHaveURL(/category=women/);
   await expect(page.getByRole("heading", { name: "Women Hoodie" })).toBeVisible();
   await expect(page.getByText("Kids Shirt", { exact: true })).toHaveCount(0);
   await page.goto("/");
-  await page.getByRole("link", { name: "Shop Kids' fashion collection" }).first().click();
+  await expect(page.getByTestId("collection-kids-art")).toHaveAttribute("href", "/?screen=fashion&category=kids");
+  await page.getByTestId("collection-kids-art").click();
   await expect(page).toHaveURL(/category=kids/);
   await expect(page.getByRole("heading", { name: "Kids Shirt" })).toBeVisible();
   await expect(page.getByText("Women Hoodie", { exact: true })).toHaveCount(0);

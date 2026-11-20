@@ -565,7 +565,7 @@ function Storefront() {
           <div className="collection-grid">
             {visibleCategories.map((item) => (
               <article className={`collection-card ${item.tone}`} key={item.id}>
-                <a className="collection-art" href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
+                <a className="collection-art" data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
                   <span className="category-garment"><i /></span>
                   <span className="category-art-word">{item.id === "essentials" ? "DAILY" : item.id.toUpperCase()}</span>
