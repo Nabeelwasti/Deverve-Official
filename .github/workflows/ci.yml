@@ -51,7 +51,7 @@ jobs:
           grep -q "Content-Security-Policy: default-src 'self'" dist/_headers
           grep -q "script-src 'self' https://challenges.cloudflare.com" dist/_headers
           grep -q "frame-src 'self' https://challenges.cloudflare.com" dist/_headers
-          grep -q "Permissions-Policy: camera=(self), microphone=(), geolocation=()" dist/_headers
+          grep -q "Permissions-Policy: camera=(self), microphone=(self), geolocation=()" dist/_headers
       - name: Test Worker authentication behavior
         run: npm run test:worker
       - name: Validate D1 schema and constraints
