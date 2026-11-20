@@ -1035,3 +1035,5 @@
 
 .barcode-torch-toggle[aria-pressed="true"]{border-color:#d9c18b;background:#fff8e8;color:#76551a}
 .barcode-torch-toggle{min-height:40px}
+
+.admin-global-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-left:auto}.admin-global-actions button{min-height:42px;white-space:nowrap}@media(max-width:650px){.admin-global-actions{width:100%;justify-content:flex-start;margin-left:0}.admin-global-actions button{flex:1 1 145px}.admin-dashboard .admin-heading-row{width:100%}}
