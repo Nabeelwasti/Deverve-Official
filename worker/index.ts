@@ -4622,12 +4622,12 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
   const enquiryCommand=/^(?:please )?(?:mark|set|update) enquiry ([0-9a-f-]{36}) (?:status )?(?:to|as) (new|contacted|qualified|closed|spam)$/i.exec(normalized);
   if(enquiryCommand){
    const id=enquiryCommand[1],nextStatus=enquiryCommand[2].toLowerCase();
-   const current=await env.DB.prepare("SELECT id,status FROM enquiries WHERE id=? LIMIT 1").bind(id).first<{id:string;status:string}>();
+   const current=await env.DB.prepare("SELECT id, status FROM enquiries WHERE id = ? LIMIT 1").bind(id).first<{id:string;status:string}>();
    if(!current)return error("No enquiry matched that exact ID",404);
    if(current.status===nextStatus)return json({ok:true,action:"update_enquiry_status",changed:false,enquiry_id:id,status:nextStatus,message:"This enquiry is already marked "+nextStatus+"."});
    const written=await env.DB.batch([
-    env.DB.prepare("UPDATE enquiries SET status=? WHERE id=? AND status=?").bind(nextStatus,id,current.status),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'ai.enquiry.status_updated','enquiry',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({command,previous_status:current.status,new_status:nextStatus}))
+    env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ? AND status = ?").bind(nextStatus,id,current.status),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.enquiry.status_updated","enquiry",id,JSON.stringify({command,previous_status:current.status,new_status:nextStatus}))
    ]);
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The enquiry changed during execution. Refresh the Enquiries workspace and retry.",409);
    return json({ok:true,action:"update_enquiry_status",changed:true,enquiry_id:id,previous_status:current.status,status:nextStatus,message:"Updated enquiry "+id+" from "+current.status+" to "+nextStatus+". The change was recorded in the audit log."});
@@ -4635,13 +4635,13 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
   const quoteCommand=/^(?:please )?(?:mark|set|update) wholesale quote ([0-9a-f-]{36}) (?:status )?(?:to|as) prepared$/i.exec(normalized);
   if(quoteCommand){
    const id=quoteCommand[1];
-   const current=await env.DB.prepare("SELECT id,status FROM wholesale_quotes WHERE id=? LIMIT 1").bind(id).first<{id:string;status:string}>();
+   const current=await env.DB.prepare("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ? LIMIT 1").bind(id).first<{id:string;status:string}>();
    if(!current)return error("No wholesale quote matched that exact ID",404);
    if(current.status==="prepared")return json({ok:true,action:"prepare_wholesale_quote",changed:false,quote_id:id,status:"prepared",message:"This wholesale quote is already prepared. It has not been sent to the customer."});
    if(current.status!=="requested")return error("Only a requested wholesale quote can be marked prepared. Accepted, declined, sent or expired quotes are not changed by this command.",409);
    const written=await env.DB.batch([
-    env.DB.prepare("UPDATE wholesale_quotes SET status='prepared' WHERE id=? AND status='requested'").bind(id),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'ai.wholesale_quote.prepared','wholesale_quote',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({command,previous_status:current.status,new_status:"prepared"}))
+    env.DB.prepare("UPDATE wholesale_quotes SET status = ?, updated_at = ? WHERE id = ? AND status = ?").bind("prepared",now,id,current.status),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.wholesale_quote.prepared","wholesale_quote",id,JSON.stringify({command,previous_status:current.status,new_status:"prepared"}))
    ]);
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The wholesale quote changed during execution. Refresh the Wholesale workspace and retry.",409);
    return json({ok:true,action:"prepare_wholesale_quote",changed:true,quote_id:id,status:"prepared",message:"Marked wholesale quote "+id+" as prepared. It has not been sent to the customer; use the quote workspace to review and send it."});
