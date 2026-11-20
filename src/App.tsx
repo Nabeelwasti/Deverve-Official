@@ -613,19 +613,6 @@ function Storefront() {
           <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><button type="button" onClick={() => navigate("fashion")}>EXPLORE COLLECTIONS ↗</button></div>
         </section>
 
-        <section className="trust-pillars-section" aria-label="Shopping and service information">
-          <div className="trust-pillar-card"><span className="trust-pillar-icon">📦</span><div><h4>Delivery confirmed before dispatch</h4><p>Our team confirms the delivery area, charges and estimated timeline before an order is dispatched.</p></div></div>
-          <div className="trust-pillar-card"><span className="trust-pillar-icon">🧵</span><div><h4>Product details that matter</h4><p>Check each listing for its available sizes, colours, photos and current stock. Ask us when you need more detail.</p></div></div>
-          <div className="trust-pillar-card"><span className="trust-pillar-icon">🔄</span><div><h4>Exchange request support</h4><p>Eligible unused items may be submitted for exchange within 7 calendar days of delivery, subject to inspection and replacement stock.</p></div></div>
-          <div className="trust-pillar-card"><span className="trust-pillar-icon">💬</span><div><h4>Talk to our Jhelum team</h4><p>Contact us for product, wholesale and vehicle-rental enquiries. We will confirm availability and terms with you.</p></div></div>
-        </section>
-
-        <section className="intro-strip" id="about">
-          <p>MORE THAN A LOOK.<br /><strong>YOUR EVERYDAY VERVE.</strong></p>
-          <p>We bring fashion and mobility together with a simple promise: clear communication, considered choices and a better everyday experience.</p>
-          <span className="intro-mark">DV<span>.</span></span>
-        </section>
-
         <section className="section collections-section" id="collections">
           <div className="section-heading">
             <div><p className="eyebrow">01 — THE FASHION EDIT</p><h2>Find your<br /><em>everyday favourite.</em></h2></div>
