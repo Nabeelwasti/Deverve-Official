@@ -938,3 +938,20 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .public-faq-list summary{font-weight:700;cursor:pointer}
 .public-faq-list details p{margin:.8rem 0 0}
 @media(max-width:640px){.public-page-header{align-items:flex-start;flex-direction:column}.public-page-header nav{width:100%;justify-content:space-between}.public-image-text{grid-template-columns:1fr}.public-image-text>img{max-height:420px}.public-product-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.public-product-card img,.public-product-placeholder{height:170px}}
+
+
+/* Accessible customer AI chat: photo attachments, voice controls and responsive touch targets. */
+.ai-chat-tools{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding-top:7px;border-top:1px solid #edf1f5}
+.ai-chat-tools button,.ai-chat-tool,.ai-chat-tools select{min-height:36px;padding:7px 9px;border:1px solid #dce5ee;border-radius:8px;background:#f8fafc;color:#385873;font:inherit;font-size:10px;font-weight:700;cursor:pointer}
+.ai-chat-tools button:disabled{opacity:.5;cursor:not-allowed}
+.ai-chat-tools button.is-active{border-color:#d9a4a4;background:#fff2f2;color:#9b3434}
+.ai-chat-tools select{max-width:100px}
+.ai-chat-tool{display:inline-flex;align-items:center;gap:5px}
+.ai-chat-attachments{display:flex;gap:9px;overflow:auto;padding:9px 12px;border-top:1px solid #edf1f5}
+.ai-chat-attachments figure{position:relative;flex:0 0 76px;margin:0}
+.ai-chat-attachments img{display:block;width:76px;height:68px;object-fit:cover;border:1px solid #dce5ee;border-radius:8px}
+.ai-chat-attachments figure>button{position:absolute;top:3px;right:3px;width:22px;height:22px;border:0;border-radius:50%;background:#183d5d;color:#fff;cursor:pointer}
+.ai-chat-attachments figcaption{overflow:hidden;margin-top:3px;color:#71849a;font-size:9px;text-overflow:ellipsis;white-space:nowrap}
+.ai-chat-message>span{display:block;margin-bottom:4px;color:#8798a8;font-size:8px;font-weight:800;letter-spacing:.1em}
+.ai-chat-note{margin:0;padding:0 12px 9px;color:#8493a2;font-size:9px;line-height:1.5}
+@media(max-width:480px){.ai-chat-tools{gap:5px}.ai-chat-tools button,.ai-chat-tool,.ai-chat-tools select{min-height:40px;font-size:10px}.ai-chat-panel{max-width:calc(100vw - 20px)}}
