@@ -2590,8 +2590,8 @@ async function adminInventoryOverviewRoutes(request: Request, env: Env, url: URL
   if (!["owner", "manager", "orders", "catalogue"].includes(admin.role)) return error("You do not have permission to view inventory", 403);
   const search = (url.searchParams.get("q") ?? "").trim().slice(0, 100);
   try {
-    const result = await env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.status AS product_status, v.id AS variant_id, v.sku, v.barcode, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.reorder_level, v.cost_price_paisa, v.is_active AS variant_active, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE (? = '' OR p.name LIKE ? OR p.category LIKE ? OR COALESCE(v.sku,'') LIKE ? OR COALESCE(v.size,'') LIKE ? OR COALESCE(v.color,'') LIKE ?) ORDER BY p.name, v.size, v.color LIMIT 500")
-      .bind(search, "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%").all<Record<string, unknown>>();
+    const result = await env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.status AS product_status, v.id AS variant_id, v.sku, v.barcode, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.reorder_level, v.cost_price_paisa, v.is_active AS variant_active, p.retail_price_paisa FROM product_variants v JOIN products p ON p.id = v.product_id WHERE (? = '' OR p.name LIKE ? OR p.category LIKE ? OR COALESCE(v.sku,'') LIKE ? OR COALESCE(v.barcode,'') LIKE ? OR COALESCE(v.size,'') LIKE ? OR COALESCE(v.color,'') LIKE ?) ORDER BY p.name, v.size, v.color LIMIT 500")
+      .bind(search, "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%", "%" + search + "%").all<Record<string, unknown>>();
     const items = (result.results ?? []).map((row) => {
       const stock = Number(row.stock_on_hand ?? 0);
       const reserved = Number(row.reserved_quantity ?? 0);
