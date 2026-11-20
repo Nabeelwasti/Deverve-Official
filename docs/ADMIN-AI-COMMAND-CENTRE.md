@@ -93,3 +93,6 @@ Natural-language interaction is not a claim that every business workflow is alre
 - Changes are committed to `main` with `skip:` commit-message prefix.
 - Cloudflare Pages automatic and production deployments are intentionally disabled during this work. No production deployment is authorized by these commits.
 - Run the normal type-check, Worker tests, schema checks and desktop/mobile Playwright suite before enabling any future release.
+
+
+The slide-in menu also exposes the role-authorized business workspaces (overview, follow-ups, catalogue, inventory, POS, vehicles, rentals, orders, returns, exchanges, wholesale, enquiries, customers, reviews, content, notifications, staff, settings and audit history). Selecting a workspace closes the drawer and uses the existing admin navigation and role permissions; it does not duplicate or bypass the underlying workspace APIs.
