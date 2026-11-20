@@ -4585,7 +4585,7 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
  if(!originalCommand)return error("A written request is required",400);
  const command=await resolveAdminAIActionIntent(originalCommand,env);
  if(!command)return error("No actionable business intent was identified. Continue as a normal assistant conversation, or provide the missing record, SKU or value.",422);
- const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\\s+/g," ").trim();
+ const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\s+/g," ").trim();
  const now=new Date().toISOString();
  try{
   if(/^(?:please )?publish all draft products$/.test(normalized)||/^(?:please )?publish all eligible draft products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
