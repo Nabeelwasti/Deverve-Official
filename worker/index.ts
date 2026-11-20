@@ -562,8 +562,8 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       const offset = Number.isInteger(offsetValue) && offsetValue >= 0 ? Math.min(offsetValue, 1_000_000) : 0;
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
-        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ? OFFSET ?").bind(status, limit + 1, offset).all<AdminProductRow>()
-        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products ORDER BY updated_at DESC LIMIT ? OFFSET ?").bind(limit + 1, offset).all<AdminProductRow>();
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").bind(status, limit + 1, offset).all<AdminProductRow>()
+        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").bind(limit + 1, offset).all<AdminProductRow>();
       const fetchedRows = rows.results ?? [];
       const hasMore = fetchedRows.length > limit;
       const productRows = fetchedRows.slice(0, limit);
