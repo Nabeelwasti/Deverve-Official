@@ -2854,6 +2854,35 @@ test("AI owner natural-language intent planner interprets conversational request
   }
 });
 
+test("AI owner assistant answers ordinary questions in one Gemini request without a second chat call", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const configured = env(db);
+  configured.NabeelG_Api_key1 = "AIza" + "B".repeat(35);
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      calls++;
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.match(body.contents?.at(-1)?.parts?.[0]?.text || "", /How many products are live/i);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ command: null, reply: "There are 4 products in the current catalogue." }) }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "How many products are live?" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.97" }), configured);
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.action, null);
+    assert.equal(payload.message, "There are 4 products in the current catalogue.");
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("AI owner command prepares a requested wholesale quote without sending or accepting it", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);

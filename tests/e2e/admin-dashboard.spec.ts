@@ -39,7 +39,7 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
     };
 
     if (url.pathname === "/api/admin/ai/execute") {
-      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "No actionable business intent was identified." }) });
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, action: null, message: "I can help with that. Tell me a little more about what you need." }) });
       return;
     } else if (url.pathname === "/api/admin/me") {
       payload = { admin: owner };
@@ -305,7 +305,7 @@ test("owner can publish a product through natural language in the normal chat co
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please publish the Everyday Hoodie on the website.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".admin-ai-live-status")).toContainText("Published Everyday Hoodie directly");
-  expect(executed).toEqual({ command: "Please publish the Everyday Hoodie on the website." });
+  expect(executed).toMatchObject({ command: "Please publish the Everyday Hoodie on the website.", task_id: expect.any(String), messages: expect.any(Array) });
 });
 
 test("owner can request an order status transition through natural language", async ({ page }) => {
@@ -322,7 +322,7 @@ test("owner can request an order status transition through natural language", as
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".admin-ai-live-status")).toContainText("Updated the order to confirmed");
-  expect(executed).toEqual({ command: "Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed" });
+  expect(executed).toMatchObject({ command: "Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed", task_id: expect.any(String), messages: expect.any(Array) });
 });
 
 test("women and kids collection cards open their correctly filtered live catalogues", async ({ page }) => {

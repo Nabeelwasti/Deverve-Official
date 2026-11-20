@@ -163,8 +163,10 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (task === "chat" && ["owner", "manager"].includes(role)) {
-      const handled = await executeCommand(message);
-      if (handled) return;
+      if (!files.length) {
+        const handled = await executeCommand(message, history);
+        if (handled) return;
+      }
     }
     if (task !== "chat") { taskIdRef.current = null; setActiveTaskId(null); }
     const text = message.trim() || (task === "product" ? "Analyse these product images and prepare a reviewable catalogue draft. Do not invent missing facts." : task === "research" ? researchQuery.trim() : "");
