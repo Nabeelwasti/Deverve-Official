@@ -1512,7 +1512,7 @@ class FakeStatement {
         const product = this.db.products.get(id);
         const hasStock = [...this.db.variants.values()].some(row => row.product_id === id && row.is_active === 1 && row.stock_on_hand > (row.reserved_quantity ?? 0));
         const hasCover = [...this.db.productMediaAssets.values()].some(row => row.product_id === id && row.is_primary === 1 && row.color === "" && this.db.mediaAssets.get(row.media_asset_id)?.status === "ready" && this.db.mediaAssets.get(row.media_asset_id)?.media_type === "image");
-        return product?.status === "draft" && product.name?.trim().length >= 2 && product.category?.trim().length >= 2 && product.retail_price_paisa !== null && product.retail_price_paisa !== undefined && hasStock && hasCover;
+        return product?.status === "draft" && product.name?.trim().length >= 2 && product.category?.trim().length >= 2 && product.retail_price_paisa > 0 && hasStock && hasCover;
       });
       const changed = eligible && ids.length === expected ? ids.length : 0;
       if (changed) for (const id of ids) Object.assign(this.db.products.get(id), { status: "published", updated_at: updatedAt });
