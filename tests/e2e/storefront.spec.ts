@@ -710,6 +710,7 @@ test("cart does not show free delivery at the exact Rs. 5,000 threshold", async 
   await page.locator(".header-cart").click();
   await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
   await expect(page.locator(".cart-shipping-track-label")).toContainText("1");
+  await expect(page.locator(".cart-shipping-fill")).toHaveAttribute("style", /99%/);
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
 });
 
