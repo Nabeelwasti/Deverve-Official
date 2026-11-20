@@ -4624,13 +4624,14 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    const id=enquiryCommand[1],nextStatus=enquiryCommand[2].toLowerCase();
    const current=await env.DB.prepare("SELECT id, status FROM enquiries WHERE id = ? LIMIT 1").bind(id).first<{id:string;status:string}>();
    if(!current)return error("No enquiry matched that exact ID",404);
-   if(current.status===nextStatus)return json({ok:true,action:"update_enquiry_status",changed:false,enquiry_id:id,status:nextStatus,message:"This enquiry is already marked "+nextStatus+"."});
+   const previousStatus=current.status;
+   if(previousStatus===nextStatus)return json({ok:true,action:"update_enquiry_status",changed:false,enquiry_id:id,status:nextStatus,message:"This enquiry is already marked "+nextStatus+"."});
    const written=await env.DB.batch([
-    env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ? AND status = ?").bind(nextStatus,id,current.status),
-    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.enquiry.status_updated","enquiry",id,JSON.stringify({command,previous_status:current.status,new_status:nextStatus}))
+    env.DB.prepare("UPDATE enquiries SET status = ? WHERE id = ? AND status = ?").bind(nextStatus,id,previousStatus),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,?,?, ?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,"ai.enquiry.status_updated","enquiry",id,JSON.stringify({command,previous_status:previousStatus,new_status:nextStatus}))
    ]);
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The enquiry changed during execution. Refresh the Enquiries workspace and retry.",409);
-   return json({ok:true,action:"update_enquiry_status",changed:true,enquiry_id:id,previous_status:current.status,status:nextStatus,message:"Updated enquiry "+id+" from "+current.status+" to "+nextStatus+". The change was recorded in the audit log."});
+   return json({ok:true,action:"update_enquiry_status",changed:true,enquiry_id:id,previous_status:previousStatus,status:nextStatus,message:"Updated enquiry "+id+" from "+previousStatus+" to "+nextStatus+". The change was recorded in the audit log."});
   }
   const quoteCommand=/^(?:please )?(?:mark|set|update) wholesale quote ([0-9a-f-]{36}) (?:status )?(?:to|as) prepared$/i.exec(normalized);
   if(quoteCommand){
