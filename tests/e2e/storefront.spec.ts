@@ -684,6 +684,9 @@ test("storefront uses verified service wording instead of fabricated social proo
     "Verified Fashion Buyer",
     "Standard Pakistani sizing across all De VERVE apparel",
     "2-4 Days",
+    "Nationwide Express Delivery",
+    "Free Delivery across Pakistan",
+    "Flagship Store & Concierge Active",
   ]) {
     await expect(body).not.toContainText(unsupportedClaim);
   }
