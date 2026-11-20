@@ -16,7 +16,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Latest merged application implementation: PR #5 merge commit `4e11bd757a41f7f23785ffd1476aef3d56a5e176`. Follow-up release documentation is maintained on `main`; GitHub Actions validates every pushed `main` revision.
 - Latest production deployment remains an older build from `d3280becfc507c5b3fdba362434c14097a0ebacd`; the merged implementation has not been deployed to the public Pages site.
 - Live D1 schema reconciliation on 20 November 2026 confirms migrations 0028–0033 are already reflected in production, including the permanent CNIC protection triggers. Migration 0034's unique active variant index, migration 0035's order inventory-reservation ledger, and migration 0036's AI task continuity tables are absent. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
-- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, verified CNIC retention settings, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md).
+- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, independent backup and restore verification, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md).
 
 ## Implemented
 
@@ -68,7 +68,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Server-side role checks, hashed random session tokens, HttpOnly/Secure/SameSite=Strict cookies and same-origin mutation checks.
 - Cloudflare Turnstile verification through a separate Worker and D1-backed public rate limits.
 - Security response headers and Content Security Policy.
-- Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are permanent evidence. Application code and the scheduled Worker never delete them; D1 triggers prevent deletion or mutation of document rows and block cascade deletion of linked rental records. The owner must also enable an indefinite R2 Bucket Lock rule for the rental-private/ prefix; this dashboard setting is still unverified.
+- Separate scheduled CNIC Worker with D1/R2 bindings. Its current code expires temporary upload tokens only; it does not delete stored CNIC documents. Stored files are permanent evidence. Application code and the scheduled Worker never delete them; D1 triggers prevent deletion or mutation of document rows and block cascade deletion of linked rental records. Cloudflare read-back on 20 November 2026 confirms the enabled indefinite R2 Bucket Lock rule `deverve-rental-cnic-indefinite` for `rental-private/`; the managed public r2.dev domain is disabled.
 - GitHub Actions build, type-check, Worker tests, schema checks and desktop/mobile browser tests.
 
 ## Owner setup checklist — email, WhatsApp and permanent CNIC evidence
@@ -99,7 +99,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 1. The application now avoids deleting CNIC R2 objects even when an upload transaction fails; D1 triggers reject document deletion, metadata alteration and deletion of a rental record that would cascade into stored evidence.
 2. In Cloudflare Dashboard → R2 → deverve-media-private → Settings → Bucket lock rules, add a rule named cnic-lifetime-evidence, prefix rental-private/, and retention Indefinite. Save it. R2 Bucket Lock protects existing and future objects under that prefix from deletion and overwrite while the rule remains active.
 3. Restrict Cloudflare account access with strong MFA and least-privilege roles. An account owner who removes the lock or deletes the bucket can still defeat storage protections, so maintain a second encrypted backup in a separately controlled account/location and test restoration.
-4. The bucket-lock rule has not been enabled or verified by this code change. Do not treat permanent storage immutability as complete until the owner confirms it in the dashboard.
+4. Cloudflare read-back on 20 November 2026 verified the enabled indefinite bucket-lock rule `deverve-rental-cnic-indefinite` for `rental-private/`. Recheck it during future release audits; do not delete or overwrite CNIC evidence.
 
 ## Historical production snapshot — 16 November 2026 (not a current live read-back)
 
@@ -157,7 +157,7 @@ Use direct SQL against `sqlite_master` for table counts. Cloudflare's D1 metadat
 6. Configure Safepay sandbox merchant credentials and complete an end-to-end sandbox payment plus webhook/reconciliation test before considering live onboarding.
 7. Obtain PayFast merchant-specific hosted OneCheckout documentation and credentials before implementing or enabling that provider.
 8. Configure a verified sender domain, Resend API key and sender address; test delivery, failure handling and retries.
-9. Enable and verify indefinite R2 Bucket Lock for the rental-private/ prefix, establish a second encrypted offsite backup, and verify restore procedures. CNIC documents must never be deleted.
+9. Maintain the verified indefinite R2 Bucket Lock rule for `rental-private/`, establish a second encrypted offsite backup, and verify restore procedures. CNIC documents must never be deleted.
 10. Complete real-device acceptance on Android/iOS and desktop, including a real visible Turnstile challenge. Playwright mocks the challenge/API and does not replace a real human challenge or real transaction.
 11. Decide whether customer email verification/password recovery and SMS are required. POS WhatsApp receipts are implemented but require Meta credentials, an approved Utility template and explicit customer opt-in; SMS is not implemented.
 12. Connect a custom domain only when the owner supplies a domain they control and DNS access.
