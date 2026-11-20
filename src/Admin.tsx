@@ -1382,9 +1382,14 @@ export default function Admin() {
             const value=raw.trim().slice(0,2048); let data:Record<string,unknown>|null=null;
             try { const parsed=JSON.parse(value); if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed)) data=parsed as Record<string,unknown>; } catch {}
             if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());if(!Object.keys(data).length)data={url:value};}catch{}}
+            const field=(...keys:string[])=>Object.entries(data||{}).find(([name])=>keys.some(key=>name.toLowerCase()===key.toLowerCase()))?.[1];
+            const barcodeValue=field("barcode","gtin","ean","upc"),skuValue=field("sku","product_code","code");
+            const lookup=typeof barcodeValue==="string"||typeof barcodeValue==="number"?String(barcodeValue):typeof skuValue==="string"||typeof skuValue==="number"?String(skuValue):value;
             const imported=applyProductTagData(value,data||{});
             setBarcodeScanTarget(null);
-            setMessage(imported?"Tag details imported. Review all fields before saving.":"Code captured. Use the camera's AI label reader to extract printed details, or enter them manually.");
+            setMessage(imported?"Code decoded. Searching for matching public product information…":"Code decoded. Searching for matching public product information…");
+            if(lookup&&!/^https?:\/\//i.test(lookup))setPendingInventoryBarcode(lookup);
+            void researchProductOnline(lookup);
           }} onDetectedWithImage={(raw,image)=>{const value=raw.trim().slice(0,2048);let data:Record<string,unknown>|null=null;try{const parsed=JSON.parse(value);if(parsed&&typeof parsed==="object"&&!Array.isArray(parsed))data=parsed as Record<string,unknown>;}catch{}if(!data&&/^https?:\/\//i.test(value)){try{const url=new URL(value);data=Object.fromEntries(url.searchParams.entries());}catch{}}applyProductTagData(value,data||{});const find=(...keys:string[])=>Object.entries(data||{}).find(([name])=>keys.some(key=>name.toLowerCase()===key.toLowerCase()))?.[1];const barcodeValue=find("barcode","gtin","ean","upc"),skuValue=find("sku","product_code","code");const barcode=typeof barcodeValue==="string"||typeof barcodeValue==="number"?String(barcodeValue):!data&&/^\d{8,14}$/.test(value)?value:"";const sku=typeof skuValue==="string"||typeof skuValue==="number"?String(skuValue):!data&&!barcode?value:"";void readProductLabel(image,barcode,sku);}} onImageCaptured={image=>readProductLabel(image)}  onClose={()=>setBarcodeScanTarget(null)} />}
         </section></div>}
         {message && <p className="admin-message" role="status">{message}</p>}
