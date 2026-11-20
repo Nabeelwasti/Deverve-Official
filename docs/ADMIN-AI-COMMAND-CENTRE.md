@@ -70,3 +70,26 @@
 5. Test 100-image whole-catalogue analysis and task restoration on a physical Android device and desktop browser.
 6. Apply migration 0036 only to an isolated preview/test D1 first, verify task creation/restoration there, then schedule the production migration as part of a separately approved release.
 7. Configure a remote D1 integration test environment in CI and verify the actual enabled Gemini projects/models and Google Search grounding.
+
+
+## Inbox redesign — 20 November 2026
+
+The admin AI experience is now organized as a conversation-first inbox rather than a command-centre dashboard:
+
+- The chat is the primary workspace, with a compact header, familiar message timeline and single natural-language composer.
+- A hamburger control opens a scrollable, slide-in left drawer containing recent saved AI tasks/conversations, General assistant, Product & file analysis, Deep research, manual product entry and (owner only) AI provider/key settings.
+- The drawer closes by selecting a tool, tapping its close control, or using the backdrop. Reduced-motion preferences are respected.
+- Saved AI task previews use the first user message. New chat tasks retain their task ID across turns; the task history stores user-message summaries alongside assistant results so previous sessions can be resumed.
+- Product intake and research are modes within the same chat inbox. Product analysis still creates unpublished drafts for review; it does not publish products automatically.
+- The composer accepts natural-language requests. A small, explicit intent mapper converts supported owner/manager requests for publishing one product, publishing eligible draft products, and setting stock for a precise SKU into the existing server-side audited action endpoint. The server remains the authority and verifies each write.
+- Unsupported or ambiguous requests stay in normal AI chat; the interface must not claim that an action was executed. The AI chat itself remains read-only for other operations.
+
+### Capability boundary
+
+Natural-language interaction is not a claim that every business workflow is already an AI-executable action. Current direct AI writes remain limited to the three audited actions above. Payments/refunds, staff permissions, settings, customer communications, rental decisions, CNIC/private files, and destructive operations remain outside this direct executor until each receives its own least-privilege implementation, validation, audit trail and tests.
+
+### Release state
+
+- Changes are committed to `main` with `skip:` commit-message prefix.
+- Cloudflare Pages automatic and production deployments are intentionally disabled during this work. No production deployment is authorized by these commits.
+- Run the normal type-check, Worker tests, schema checks and desktop/mobile Playwright suite before enabling any future release.
