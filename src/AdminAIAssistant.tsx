@@ -16,32 +16,6 @@ type AssistantResponse = { ok: boolean; reply: string; model?: string; product_d
 type AITaskSummary = { id: string; title?: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
 
 const greeting = "Assalamu Alaikum! I’m your De VERVE business assistant. Tell me what you need in your own words — in English, Urdu or Roman Urdu. I can discuss your business, analyse files and product photos, research information, and carry out supported owner actions. I’ll explain clearly whenever something needs more information or is not yet connected.";
-function naturalActionCommand(value: string): string | null {
-  const text = value.trim().replace(/\s+/g, " ").replace(/[.!?]+$/, "");
-  if (!text) return null;
-  if (/\b(?:publish|make live|put live|list)\b.*\b(?:all|every|each)\b.*\b(?:draft|unpublished)\b.*\b(?:products|items)\b/i.test(text)
-    || /\b(?:publish|make live)\b.*\b(?:all|every)\b.*\b(?:products|items)\b.*\b(?:draft|unpublished)\b/i.test(text)
-    || /\bpublish all (?:the )?drafts?\b/i.test(text)) return "publish all eligible draft products";
-  const stock = text.match(/(?:set|update|change|adjust)\s+(?:the\s+)?(?:stock|inventory|quantity)\s+(?:for|of)\s+(?:sku\s+)?([a-z0-9._-]{2,80})\s+(?:to|at|as)\s+(\d{1,8})/i)
-    || text.match(/\bsku\s+([a-z0-9._-]{2,80})\b.{0,45}\b(?:stock|inventory|quantity)\s+(?:to|at|as)\s+(\d{1,8})/i);
-  if (stock) return "set stock for SKU " + stock[1] + " to " + stock[2];
-  const enquiry = text.match(/(?:please\s+)?(?:mark|set|update)\s+(?:the\s+)?enquiry\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as)\s+(new|contacted|qualified|closed|spam)\b/i)
-    || text.match(/enquiry\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as)\s+(new|contacted|qualified|closed|spam)\b/i);
-  if (enquiry) return "set enquiry " + enquiry[1] + " status to " + enquiry[2].toLowerCase();
-  const quote = text.match(/(?:please\s+)?(?:mark|set|update|prepare)\s+(?:the\s+)?wholesale\s+quote\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as\s+)?prepared\b/i);
-  if (quote) return "set wholesale quote " + quote[1] + " status to prepared";
-  const vehicle = text.match(/(?:please\s+)?(?:mark|set|update)\s+(?:the\s+)?vehicle\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as)\s+(available|maintenance|retired)\b/i);
-  if (vehicle) return "set vehicle " + vehicle[1] + " status to " + vehicle[2].toLowerCase();
-  const order = text.match(/(?:please\s+)?(?:mark|set|update)\s+(?:the\s+)?order\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as)\s+(confirmed|processing|dispatched|delivered|cancelled)\b/i);
-  if (order) return "set order " + order[1] + " status to " + order[2].toLowerCase();
-  const publish = text.match(/(?:please\s+)?(?:publish|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i)
-    || text.match(/(?:please\s+)?(?:make|put)\s+(?:the\s+)?(.+?)\s+(?:live|available)\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue)$/i);
-  if (publish) {
-    const name = publish[1].trim().replace(/[“”"']/g, "").replace(/[.!?]+$/, "");
-    if (name && !/^(?:all|every|all draft products|all drafts)$/i.test(name)) return "publish product " + name;
-  }
-  return null;
-}
 
 const pkrToPaisa = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? null : Math.round(value * 100);
 const attachmentMime = (file: File) => {
@@ -189,8 +163,8 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
     if (task === "chat" && ["owner", "manager"].includes(role)) {
-      const action = naturalActionCommand(message);
-      if (action) { await executeCommand(action); return; }
+      const handled = await executeCommand(message);
+      if (handled) return;
     }
     if (task !== "chat") { taskIdRef.current = null; setActiveTaskId(null); }
     const text = message.trim() || (task === "product" ? "Analyse these product images and prepare a reviewable catalogue draft. Do not invent missing facts." : task === "research" ? researchQuery.trim() : "");
@@ -490,9 +464,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     finally { setBusy(false); }
   };
 
-  const executeCommand = async (command: string): Promise<void> => {
+  const executeCommand = async (command: string): Promise<boolean> => {
     const original = message.trim();
-    if (!command || busy || !["owner", "manager"].includes(role)) return;
+    if (!command || busy || !["owner", "manager"].includes(role)) return false;
     setBusy(true); setStatus("Checking the requested business action…");
     try {
       const result = await api<{ ok: boolean; message: string; published?: number; error?: string }>("/api/admin/ai/execute", { method: "POST", body: JSON.stringify({ command }) });
@@ -500,10 +474,13 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
       setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply }]);
       setStatus(reply); setMessage(""); taskIdRef.current = null; setActiveTaskId(null); onProductCreated();
       void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
+      return true;
     } catch (error) {
       const reply = error instanceof Error ? error.message : "The requested action could not be completed.";
+      if (reply.startsWith("No actionable business intent was identified.")) { setStatus(""); return false; }
       setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply + " No success is being reported." }]);
       setStatus(reply); setMessage("");
+      return true;
     } finally { setBusy(false); }
   };
 
