@@ -16,6 +16,9 @@ test("CSV product import previews and atomically submits grouped size/colour var
  });
  await page.goto("/admin?section=products");
  await expect(page.getByRole("heading",{name:"Bulk catalogue import"})).toBeVisible();
+ await expect(page.getByRole("button",{name:"Add product"}).first()).toBeVisible();
+ const unnamedButtons=await page.locator("button").evaluateAll(buttons=>buttons.filter(button=>!((button.getAttribute("aria-label")||button.getAttribute("title")||button.textContent||"").trim())).length);
+ expect(unnamedButtons).toBe(0);
  const csv="\uFEFFname,slug,description,category,audience,retail_price_pkr,wholesale_price_pkr,size,color,sku,barcode,stock,reorder_level,cost_price_pkr\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Black,DV-HOOD-S,8901234567890,12,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,M,Black,DV-HOOD-M,8901234567891,18,3,1100\nPremium Hoodie,premium-hoodie,Imported quality hoodie,Hoodies,unisex,2500,1800,S,Navy,DV-HOOD-S-NAVY,8901234567892,7,2,1100";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"products.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
  await expect(page.getByText(/Validated 1 products and 3 unique size\/colour combinations/)).toBeVisible();
