@@ -157,3 +157,30 @@ A failed job must alert the owner through a configured business notification cha
 - [Cloudflare D1: Import and export data](https://developers.cloudflare.com/d1/best-practices/import-export-data/)
 - [Cloudflare R2: Bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/)
 - [Cloudflare R2 API: Set bucket lock rules](https://developers.cloudflare.com/api/resources/r2/subresources/buckets/subresources/locks/methods/update/)
+
+
+## 10. Live infrastructure follow-up — 20 November 2026
+
+A subsequent Cloudflare API read-back and non-destructive R2 object comparison refined the status above:
+
+- A dedicated APAC bucket named `deverve-db-backups` already exists. It was empty at the time of inspection, so it is a configured destination, **not evidence of a completed D1 backup**.
+- Bucket Lock rules were configured and read back successfully on `deverve-db-backups`: `d1/` and `media/` objects have a 35-day minimum retention; `rental-private/` objects are retained indefinitely. These rules do not create objects, encryption, off-account copies or a restore service.
+- A dated R2 restore-drill bucket already contained 15 copies of the 15 objects currently listed in `deverve-media-private`. A read-only comparison found no missing/extra keys and matching object sizes and ETags, totalling 1,522,058 bytes. This is a successful object-list consistency check at the time of comparison; it is **not** a SHA-256 verification, a D1 restore, or proof of recovery from Cloudflare account loss.
+- That restore-drill bucket contains private `rental-private/` evidence copies. An indefinite Bucket Lock rule was added and read back successfully for that prefix, aligning the backup copy's deletion/overwrite protection with the source bucket's existing indefinite lock. The bucket remains private.
+- The primary `deverve-media-private` bucket's existing indefinite `rental-private/` lock remains enabled.
+- The separate `deverve-db-backups` bucket and restore-drill bucket are still in the same Cloudflare account as production. They improve recovery from accidental object loss but are not an independent security/account boundary.
+- The database backup bucket still contains no D1 SQL export. No production D1 export was initiated because the documented export process can temporarily block database queries.
+- No Dropbox API app/token, encrypted off-account archive, offline copy, automated alerting, scheduled Workflow or successful isolated D1 import/restore was verified.
+
+**Updated verdict:** R2 media object-copy consistency has been checked and retention controls have been strengthened. Full disaster recovery remains **not production-ready** until encrypted D1 backups, independent off-account storage, SHA-256 verification, automated monitoring and an isolated D1 + R2 restore drill all pass.
+
+## 11. Immediate next implementation gates
+
+1. Build and test the scheduled D1 export Workflow against a non-production D1 database first; use bounded polling, retry/backoff, an overlap guard and a low-traffic schedule.
+2. Encrypt each backup artifact with AES-256-GCM using a unique nonce and a key held outside Cloudflare and Dropbox; record only the key version.
+3. Upload the encrypted D1 dump and manifest under timestamped, write-once object keys in `deverve-db-backups/d1/`. Do not overwrite a previous successful backup.
+4. Add an independently controlled Dropbox destination with a dedicated least-privilege API app and MFA-protected business identity. Verify Dropbox's returned content hash against its documented block-hash algorithm; a successful HTTP upload alone is not verification.
+5. Add a separate offline encrypted copy and test key escrow/recovery.
+6. Perform an isolated D1 import into a newly created non-production database, validate schema/data/integrity and exercise application smoke tests. Keep production untouched.
+7. Add a monthly automated restore smoke test, quarterly full restore exercise and owner-visible alert when the last successful backup exceeds the target RPO.
+8. Only after the isolated process passes should a production backup schedule be enabled, during a controlled quiet window and with a documented maintenance notice/monitoring plan.
