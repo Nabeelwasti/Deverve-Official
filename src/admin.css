@@ -1181,3 +1181,7 @@
 .admin-csv-image-preview img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:7px;background:#edf2f8}
 .admin-csv-image-preview figcaption{overflow:hidden;color:#64758a;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
 .admin-csv-image-preview>p{grid-column:1/-1}
+
+.admin-pagination-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 4px;padding:12px 14px;border:1px solid #e1e9f1;border-radius:10px;background:#f8fafc}
+.admin-pagination-row span{color:#60738a;font-size:12px}
+@media(max-width:640px){.admin-pagination-row{align-items:stretch;flex-direction:column}.admin-pagination-row button{width:100%}}
