@@ -955,3 +955,7 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .ai-chat-message>span{display:block;margin-bottom:4px;color:#8798a8;font-size:8px;font-weight:800;letter-spacing:.1em}
 .ai-chat-note{margin:0;padding:0 12px 9px;color:#8493a2;font-size:9px;line-height:1.5}
 @media(max-width:480px){.ai-chat-tools{gap:5px}.ai-chat-tools button,.ai-chat-tool,.ai-chat-tools select{min-height:40px;font-size:10px}.ai-chat-panel{max-width:calc(100vw - 20px)}}
+
+.ai-chat-shortcuts{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;border-bottom:1px solid #edf1f5;scrollbar-width:thin}
+.ai-chat-shortcuts a{flex:0 0 auto;padding:7px 9px;border:1px solid #dce6ef;border-radius:999px;background:#f8fafc;color:#355b7b;font-size:9px;font-weight:750;text-decoration:none}
+.ai-chat-shortcuts a:focus-visible,.ai-chat-tools button:focus-visible,.ai-chat-tool:focus-within{outline:2px solid #387db3;outline-offset:2px}
