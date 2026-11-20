@@ -100,18 +100,21 @@ export default function ProductCsvImport({role,onImported}:Props){
  const uploadProductImages=async(product:ImportedProduct,files:File[])=>{
    let attached=0;const failures:string[]=[];
    for(let offset=0;offset<files.length;offset+=4){
-     const batch=files.slice(offset,offset+4),ids=await Promise.all(batch.map(stableAssetId)),form=new FormData();
-     for(const file of batch)form.append("files",file,file.name);
-     form.append("asset_ids",JSON.stringify(ids));form.append("alt_text",product.name+" · De VERVE product catalogue");
-     const result=await api<{media?:Array<{id:string;status:string}>;failures?:Array<{name:string;error:string}>}>("/api/admin/media/bulk",{method:"POST",body:form});
-     for(const failure of result.failures||[])failures.push(failure.name+": "+failure.error);
-     for(let i=0;i<(result.media||[]).length;i++){
-       const media=result.media![i];const file=batch.find(f=>ids[batch.indexOf(f)]===media.id)||batch[i];
-       if(!media?.id){failures.push((file?.name||"Image")+": upload returned no media identifier.");continue;}
-       try{await api("/api/admin/products/"+product.id+"/media",{method:"POST",body:JSON.stringify({media_id:media.id,color:"",is_primary:attached===0,position:attached})});attached++;}
-       catch(e){failures.push((file?.name||"Image")+": "+(e instanceof Error?e.message:"Could not attach image."));}
-     }
-     if((result.media||[]).length+failures.length<batch.length)failures.push("Some images in "+product.name+" were not confirmed by the media service.");
+     const batch=files.slice(offset,offset+4);
+     try {
+       const ids=await Promise.all(batch.map(stableAssetId)),form=new FormData();
+       for(const file of batch)form.append("files",file,file.name);
+       form.append("asset_ids",JSON.stringify(ids));form.append("alt_text",product.name+" · De VERVE product catalogue");
+       const result=await api<{media?:Array<{id:string;status:string}>;failures?:Array<{name:string;error:string}>}>("/api/admin/media/bulk",{method:"POST",body:form});
+       for(const failure of result.failures||[])failures.push(failure.name+": "+failure.error);
+       for(let i=0;i<(result.media||[]).length;i++){
+         const media=result.media![i];const file=batch.find(f=>ids[batch.indexOf(f)]===media.id)||batch[i];
+         if(!media?.id){failures.push((file?.name||"Image")+": upload returned no media identifier.");continue;}
+         try{await api("/api/admin/products/"+product.id+"/media",{method:"POST",body:JSON.stringify({media_id:media.id,color:"",is_primary:attached===0,position:attached})});attached++;}
+         catch(e){failures.push((file?.name||"Image")+": "+(e instanceof Error?e.message:"Could not attach image."));}
+       }
+       if((result.media||[]).length+failures.length<batch.length)failures.push("Some images in "+product.name+" were not confirmed by the media service.");
+     } catch(e) { for(const file of batch)failures.push(file.name+": "+(e instanceof Error?e.message:"Upload request failed.")); }
    }
    return {attached,failures};
  };
@@ -133,7 +136,14 @@ export default function ProductCsvImport({role,onImported}:Props){
      }
      const unmatched=images.filter(file=>!products.some(p=>imageMatches(file,p.slug)));
      if(unmatched.length)setReport(current=>[...current,...unmatched.map(file=>"Unmatched image (not uploaded): "+file.name)]);
-     setMessage("Import completed. "+products.length+" products and "+products.reduce((n,p)=>n+p.variants.length,0)+" variants were saved in "+batches.length+" atomic batches. Products remain drafts; review images and details before publishing.");
+     let published=0;
+     if(publishAfterImport){
+       setProgress("Checking every product, stock combination and cover photo before publication…");
+       const result=await api<{published:number}>("/api/admin/products/publish-bulk",{method:"POST",body:JSON.stringify({product_ids:createdProducts.map(p=>p.id)})});
+       if(result.published!==createdProducts.length)throw new Error("The server did not confirm publication of the complete catalogue. Refresh Products & catalogue before retrying.");
+       published=result.published;
+     }
+     setMessage("Import completed. "+products.length+" products and "+products.reduce((n,p)=>n+p.variants.length,0)+" variants were saved in "+batches.length+" atomic batches. "+(publishAfterImport?"Published "+published+" products after server-side checks.":"Products remain drafts; review details and images before publishing."));
      setProducts([]);setImages([]);setResumeIndex(0);onImported();
    }catch(e){setMessage((e instanceof Error?e.message:"Import stopped.")+" Completed batches are retained. Do not restart the entire file; verify the last batch in Products & catalogue before resuming.");}
    finally{setBusy(false);setProgress("");}
