@@ -319,7 +319,7 @@ test("owner can request an order status transition through natural language", as
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".admin-ai-live-status")).toContainText("Updated the order to confirmed");
-  expect(executed).toEqual({ command: "set order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed" });
+  expect(executed).toEqual({ command: "Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed" });
 });
 
 test("women and kids collection cards open their correctly filtered live catalogues", async ({ page }) => {
