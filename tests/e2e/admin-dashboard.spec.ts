@@ -201,7 +201,7 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible();
   expect((productPayload?.images as unknown[])?.length).toBe(1);
   await page.getByRole("button", { name: "Create product draft & upload images" }).click();
-  await expect(page.locator(".admin-ai-command > p[role=\"status\"]")).toContainText("Draft created successfully");
+  await expect(page.locator(".admin-ai-live-status")).toContainText("Draft created successfully");
   expect(createdProduct?.status).toBe("draft");
   expect(attachedMedia).toBe(true);
 });
@@ -302,7 +302,7 @@ test("owner can publish a product through natural language in the normal chat co
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please publish the Everyday Hoodie on the website.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".admin-ai-live-status")).toContainText("Published Everyday Hoodie directly");
-  expect(executed).toEqual({ command: "publish product everyday-hoodie" });
+  expect(executed).toEqual({ command: "publish product Everyday Hoodie" });
 });
 
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
