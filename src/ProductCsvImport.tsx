@@ -37,7 +37,7 @@ function buildProducts(raw:string):CsvProduct[] {
   const required=["name","category","audience","size","color"];
   const missing=required.filter(h=>!headers.includes(h));if(missing.length)throw new Error("Missing required columns: "+missing.join(", "));
   const at=(r:string[],key:string)=>{const i=headers.indexOf(key);return i<0?"":(r[i]??"").trim();};
-  const grouped=new Map<string,CsvProduct>();
+  const grouped=new Map<string,CsvProduct>(),allSkus=new Set<string>(),allBarcodes=new Set<string>();
   for(let i=1;i<rows.length;i++){
     const r=rows[i];if(r.length>headers.length)throw new Error("Row "+(i+1)+" has more values than the header.");
     const name=at(r,"name"),category=at(r,"category"),audience=at(r,"audience").toLowerCase();
@@ -55,7 +55,7 @@ function buildProducts(raw:string):CsvProduct[] {
     if(hasVariant){
       if(!size||!color||size.length>32||color.length>32||/[;,|\n]/.test(size+color))throw new Error("Row "+(i+1)+": each stock row needs one size and one colour.");
       const integer=(value:string,label:string,def:number)=>{if(!value)return def;if(!/^\d+$/.test(value))throw new Error("Row "+(i+1)+": "+label+" must be a whole number.");const n=Number(value);if(!Number.isSafeInteger(n)||n>1_000_000)throw new Error("Row "+(i+1)+": "+label+" is outside the supported range.");return n;};
-      const sku=at(r,"sku"),barcode=at(r,"barcode");if(sku&&!/^[A-Za-z0-9._-]{2,64}$/.test(sku))throw new Error("Row "+(i+1)+": SKU must use 2–64 letters, numbers, dots, underscores or hyphens.");if(barcode&&!/^[A-Za-z0-9._:-]{3,64}$/.test(barcode))throw new Error("Row "+(i+1)+": barcode must use 3–64 letters, numbers or safe separators.");\n      p.variants.push({size,color,sku,barcode,stock:integer(at(r,"stock"),"stock",0),reorder:integer(at(r,"reorder_level"),"reorder level",5),costPaisa:money(at(r,"cost_price_pkr"))??0});
+      const sku=at(r,"sku"),barcode=at(r,"barcode");if(sku&&!/^[A-Za-z0-9._-]{2,64}$/.test(sku))throw new Error("Row "+(i+1)+": SKU must use 2–64 letters, numbers, dots, underscores or hyphens.");if(barcode&&!/^[A-Za-z0-9._:-]{3,64}$/.test(barcode))throw new Error("Row "+(i+1)+": barcode must use 3–64 letters, numbers or safe separators.");if(sku){const key=sku.toLowerCase();if(allSkus.has(key))throw new Error("Row "+(i+1)+": duplicate SKU "+sku+" in this file.");allSkus.add(key);}if(barcode){const key=barcode.toLowerCase();if(allBarcodes.has(key))throw new Error("Row "+(i+1)+": duplicate barcode "+barcode+" in this file.");allBarcodes.add(key);}\n      p.variants.push({size,color,sku,barcode,stock:integer(at(r,"stock"),"stock",0),reorder:integer(at(r,"reorder_level"),"reorder level",5),costPaisa:money(at(r,"cost_price_pkr"))??0});
       if(p.variants.length>100)throw new Error(name+" exceeds 100 size/colour combinations.");
     }
   }
