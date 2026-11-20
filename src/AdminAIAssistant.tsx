@@ -10,7 +10,7 @@ type ProductDraft = {
   brand: string | null; material: string | null; barcode: string | null; sku: string | null;
   sizes: string[]; colours: string[]; variants: DraftVariant[]; unknowns: string[]; source_files?: string[];
 };
-type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void; settings?: ReactNode };
+type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void; onNavigate: (screen: string) => void; settings?: ReactNode };
 type Source = { title: string; url: string };
 type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; product_drafts?: ProductDraft[]; sources?: Source[]; queries?: string[]; error?: string };
 type AITaskSummary = { id: string; title?: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
@@ -106,7 +106,7 @@ async function fileBatchFingerprint(files: File[], task: string, prompt: string)
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
 
-export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate, settings }: Props) {
+export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate, onNavigate, settings }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -127,6 +127,27 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const canSetCost = role === "owner" || role === "manager";
+  const workspaceLinks: Array<{ screen: string; label: string; roles: string[] }> = [
+    { screen: "overview", label: "Overview", roles: ["owner", "manager", "catalogue", "orders", "rental", "viewer"] },
+    { screen: "followups", label: "Follow-up inbox", roles: ["owner", "manager", "orders", "rental"] },
+    { screen: "products", label: "Products & catalogue", roles: ["owner", "manager", "catalogue"] },
+    { screen: "inventory", label: "Inventory management", roles: ["owner", "manager", "orders", "catalogue"] },
+    { screen: "pos", label: "Point of sale", roles: ["owner", "manager", "orders"] },
+    { screen: "vehicles", label: "Vehicle fleet", roles: ["owner", "manager", "rental"] },
+    { screen: "rentals", label: "Rental bookings", roles: ["owner", "manager", "rental"] },
+    { screen: "orders", label: "Orders & payments", roles: ["owner", "manager", "orders"] },
+    { screen: "returns", label: "Returns", roles: ["owner", "manager", "orders"] },
+    { screen: "exchanges", label: "Exchanges", roles: ["owner", "manager", "orders"] },
+    { screen: "wholesale", label: "Wholesale quotations", roles: ["owner", "manager", "orders"] },
+    { screen: "enquiries", label: "Customer enquiries", roles: ["owner", "manager", "orders", "rental"] },
+    { screen: "customers", label: "Customer directory", roles: ["owner", "manager", "orders"] },
+    { screen: "product-reviews", label: "Product reviews", roles: ["owner", "manager"] },
+    { screen: "content", label: "Pages & visual designer", roles: ["owner", "manager"] },
+    { screen: "notifications", label: "Notifications", roles: ["owner"] },
+    { screen: "staff", label: "Staff & permissions", roles: ["owner", "manager"] },
+    { screen: "settings", label: "Website settings", roles: ["owner"] },
+    { screen: "audit", label: "Activity history", roles: ["owner"] }
+  ].filter(item => item.roles.includes(role));
   const visibleMessages = useMemo(() => [{ role: "model" as const, text: greeting }, ...history], [history]);
 
   useEffect(() => {
@@ -570,6 +591,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
               <span className="admin-ai-conversation-icon">◌</span><span className="admin-ai-conversation-copy"><strong>{task.title || (task.task_type === "product" ? "Product analysis" : task.task_type === "research" ? "Research" : "Business conversation")}</strong><small>{new Date(task.updated_at).toLocaleString("en-PK", { dateStyle: "medium", timeStyle: "short" })} · {task.status}</small></span>
             </button>)}
           </div>
+        </div>
+        <div className="admin-ai-drawer-section"><div className="admin-ai-drawer-label">BUSINESS WORKSPACES</div>
+          <div className="admin-ai-workspace-list">{workspaceLinks.map(item => <button key={item.screen} type="button" className="admin-ai-workspace-link" onClick={() => { setDrawerOpen(false); onNavigate(item.screen); }}><span>{item.label}</span><span>›</span></button>)}</div>
         </div>
         <div className="admin-ai-drawer-section"><div className="admin-ai-drawer-label">AI TOOLS</div>
           <button type="button" className={"admin-ai-tool-link " + (activeTool === "chat" ? "is-active" : "")} onClick={() => { setActiveTool("chat"); setDrawerOpen(false); }}><span>✦</span><span><strong>General assistant</strong><small>Ask about your business</small></span></button>
