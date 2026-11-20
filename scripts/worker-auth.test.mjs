@@ -2815,7 +2815,7 @@ test("AI owner command updates enquiry status and writes an audit record", async
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   db.enquiries.set(id, { id, status: "new", customer_name: "Test visitor" });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "mark enquiry " + id + " as contacted" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.90" }), env(db));
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set enquiry " + id + " status to contacted" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.90" }), env(db));
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "update_enquiry_status");
