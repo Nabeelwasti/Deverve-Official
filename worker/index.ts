@@ -4692,7 +4692,7 @@ async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Re
  const recordTaskEvent=async(payload:{reply:string;model:string;product_draft?:unknown;attachments:string[];step:string;fingerprint?:string|null},success:boolean)=>{
   try{
    const now=new Date().toISOString(),eventId=crypto.randomUUID();
-   const compact={step:payload.step,reply:payload.reply.slice(0,700),model:payload.model,attachments:payload.attachments.slice(0,12),fingerprint:payload.fingerprint??null,product_draft:payload.product_draft??null};
+   const compact={step:payload.step,user_message:latest.slice(0,1200),reply:payload.reply.slice(0,1200),model:payload.model,attachments:payload.attachments.slice(0,12),fingerprint:payload.fingerprint??null,product_draft:payload.product_draft??null};
    const events=[...taskMemoryEvents,compact].slice(-40);
    const contextJson=JSON.stringify({events});
    await env.DB.batch([
@@ -4729,8 +4729,9 @@ async function adminAITaskHistoryRoute(request:Request,env:Env,url:URL):Promise<
    return json({ok:true,task,events});
   }
   if(url.pathname!=="/api/admin/ai/tasks")return error("Not found",404);
-  const result=await env.DB.prepare("SELECT id,task_type,status,current_step,completed_batches,failed_batches,last_error,created_at,updated_at,completed_at FROM ai_task_runs WHERE created_by_admin_id=? ORDER BY updated_at DESC LIMIT 25").bind(admin.admin_user_id).all<Record<string,unknown>>();
-  return json({ok:true,tasks:result.results??[]});
+  const result=await env.DB.prepare("SELECT id,task_type,status,current_step,completed_batches,failed_batches,last_error,context_json,created_at,updated_at,completed_at FROM ai_task_runs WHERE created_by_admin_id=? ORDER BY updated_at DESC LIMIT 25").bind(admin.admin_user_id).all<Record<string,unknown>>();
+  const tasks=(result.results??[]).map(row=>{let title="New conversation";try{const context=JSON.parse(String(row.context_json??"{}")) as {events?:Array<{user_message?:string}>};const first=context.events?.find(event=>typeof event.user_message==="string"&&event.user_message.trim());if(first?.user_message)title=first.user_message.trim().slice(0,88);}catch{}return {...row,title};});
+  return json({ok:true,tasks});
  }catch{return error("AI task history is unavailable. Apply migration 0036_ai_task_continuity.sql and retry.",503);}
 }
 
