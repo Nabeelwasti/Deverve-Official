@@ -475,10 +475,11 @@ export default function Admin() {
   };
   const researchProductOnline = async (scannedCode = "") => {
     const lookupCode=scannedCode.trim()||pendingInventoryBarcode.trim()||variantForm.barcode.trim();
+    const scannedIsGtin=/^\\d{8,14}$/.test(lookupCode);
     if(!form.name.trim()&&!lookupCode&&!variantForm.sku.trim()){setMessage("Enter a product name or scan its barcode before researching online.");return;}
     setResearchBusy(true);setProductResearch(null);setMessage("Researching this code with Gemini and Google Search…");
     try{
-      const result=await api<{ok:boolean;summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}>("/api/admin/products/research",{method:"POST",body:JSON.stringify({name:form.name,barcode:lookupCode,sku:variantForm.sku,category:form.category,description:form.description})});
+      const result=await api<{ok:boolean;summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}>("/api/admin/products/research",{method:"POST",body:JSON.stringify({name:form.name,barcode:scannedIsGtin?lookupCode:"",sku:scannedIsGtin?variantForm.sku:lookupCode||variantForm.sku,category:form.category,description:form.description})});
       setProductResearch(result);setMessage("Online research completed. Review every fact and source before using it.");
     }catch(error){setMessage(error instanceof Error?error.message:"Online product research could not be completed.");}
     finally{setResearchBusy(false);}
