@@ -473,11 +473,12 @@ export default function Admin() {
       setMessage(imported?"AI extracted the readable label details. Review prices, sizes, colour, quantity and every field before saving.":"The label was scanned, but no reliable product fields were readable. Enter the missing details manually.");
     }catch(error){setMessage(error instanceof Error?error.message:"The product label could not be read. Try a clearer, closer photo.");}
   };
-  const researchProductOnline = async () => {
-    if(!form.name.trim()&&!pendingInventoryBarcode.trim()&&!variantForm.barcode.trim()){setMessage("Enter a product name or scan its barcode before researching online.");return;}
-    setResearchBusy(true);setProductResearch(null);setMessage("Researching this product with Gemini and Google Search…");
+  const researchProductOnline = async (scannedCode = "") => {
+    const lookupCode=scannedCode.trim()||pendingInventoryBarcode.trim()||variantForm.barcode.trim();
+    if(!form.name.trim()&&!lookupCode&&!variantForm.sku.trim()){setMessage("Enter a product name or scan its barcode before researching online.");return;}
+    setResearchBusy(true);setProductResearch(null);setMessage("Researching this code with Gemini and Google Search…");
     try{
-      const result=await api<{ok:boolean;summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}>("/api/admin/products/research",{method:"POST",body:JSON.stringify({name:form.name,barcode:pendingInventoryBarcode||variantForm.barcode,sku:variantForm.sku,category:form.category,description:form.description})});
+      const result=await api<{ok:boolean;summary:string;sources:Array<{title:string;url:string}>;queries:string[];model:string}>("/api/admin/products/research",{method:"POST",body:JSON.stringify({name:form.name,barcode:lookupCode,sku:variantForm.sku,category:form.category,description:form.description})});
       setProductResearch(result);setMessage("Online research completed. Review every fact and source before using it.");
     }catch(error){setMessage(error instanceof Error?error.message:"Online product research could not be completed.");}
     finally{setResearchBusy(false);}
