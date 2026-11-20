@@ -5,7 +5,7 @@ const owner = { id: "11111111-1111-4111-8111-111111111111", email: "owner@deverv
 const vehicleId = "22222222-2222-4222-8222-222222222222";
 const rentalId = "33333333-3333-4333-8333-333333333333";
 
-async function mockAdminApi(page: Page, options: { rental?: Record<string, unknown> } = {}) {
+async function mockAdminApi(page: Page, options: { rental?: Record<string, unknown>; inventory?: Record<string, unknown> } = {}) {
   let rental = options.rental ?? null;
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
@@ -49,6 +49,8 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
       const body = request.postDataJSON() as { status: string; vehicle_id: string | null; admin_note: string };
       if (rental) rental = { ...rental, status: body.status, vehicle_id: body.vehicle_id, admin_note: body.admin_note, vehicle_name: body.vehicle_id ? "Toyota Corolla 2022" : null };
       payload = { updated: true, status: body.status, vehicle_id: body.vehicle_id };
+    } else if (url.pathname === "/api/admin/inventory") {
+      payload = options.inventory ?? { items: [], summary: { variants: 0, stock_units: 0, reserved_units: 0, available_units: 0, low_stock_variants: 0, out_of_stock_variants: 0 } };
     } else if (url.pathname === "/api/admin/ai/keys") {
       payload = { keys: [], environment_keys: [], encryption_ready: true, encryption_mode: "dedicated", model: "Gemini 3.8 Flash", models: [] };
     } else if (url.pathname === "/api/admin/product-reviews") {
@@ -724,4 +726,33 @@ test("unknown QR payload is prefilled in the new stock variant form", async ({ p
   const editor = page.locator(".admin-variant-editor");
   await expect(editor).toBeVisible();
   await expect(editor.getByLabel("Barcode")).toHaveValue(qrPayload);
+});
+test("inventory warns before splitting legacy shared stock or using incomplete variants", async ({ page }) => {
+  await mockAdminApi(page, {
+    inventory: {
+      items: [
+        {
+          product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", product_name: "Trouser", category: "Trousers", product_status: "published",
+          variant_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", sku: null, barcode: null,
+          size: "S, M, L, XL", color: "Black, Red, Grey, White, Yellow",
+          stock_on_hand: 2000, reserved_quantity: 0, reorder_level: 0, available_quantity: 2000,
+          variant_active: 1, retail_price_paisa: 1200000, stock_state: "in_stock",
+        },
+        {
+          product_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", product_name: "Tolaza", category: "Trousers", product_status: "published",
+          variant_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", sku: "DV-TOLAZA-M", barcode: "2054519750657",
+          size: "M", color: "",
+          stock_on_hand: 300, reserved_quantity: 0, reorder_level: 0, available_quantity: 300,
+          variant_active: 1, retail_price_paisa: 1200000, stock_state: "in_stock",
+        },
+      ],
+      summary: { variants: 2, stock_units: 2300, reserved_units: 0, available_units: 2300, low_stock_variants: 0, out_of_stock_variants: 0 },
+    },
+  });
+  await page.goto("/admin?section=inventory");
+  await expect(page.getByRole("heading", { name: "Inventory overview" })).toBeVisible();
+  await expect(page.locator(".inventory-data-warning").first()).toContainText("Legacy shared-stock variants need physical reconciliation");
+  await expect(page.locator(".inventory-data-warning").first()).toContainText("Trouser");
+  await expect(page.locator(".inventory-data-warning-secondary")).toContainText("Variant records need verified details");
+  await expect(page.locator(".inventory-data-warning-secondary")).toContainText("Tolaza");
 });
