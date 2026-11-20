@@ -22,9 +22,9 @@ test("CSV product import previews and atomically submits grouped size/colour var
  await expect(page.getByRole("button",{name:"Import all products + attach matching photos"})).toBeEnabled();
  await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
  await expect.poll(()=>submitted).not.toBeNull();
- const payload=submitted as {products:Array<{status:string;variants:Array<{size:string;color:string;initial_stock:number;cost_price_paisa:number}>}>};
+ const payload=submitted as {products:Array<{status:string;variants:Array<{size:string;color:string;sku:string;barcode:string;initial_stock:number;cost_price_paisa:number}>}>};
  expect(payload.products).toHaveLength(1);expect(payload.products[0].status).toBe("draft");
- expect(payload.products[0].variants).toHaveLength(3);expect(payload.products[0].variants[0]).toMatchObject({size:"S",color:"Black",initial_stock:12,cost_price_paisa:110000});
+ expect(payload.products[0].variants).toHaveLength(3);expect(payload.products[0].variants[0]).toMatchObject({size:"S",color:"Black",sku:"DV-HOOD-S",barcode:"8901234567890",initial_stock:12,cost_price_paisa:110000});
  await expect(page.getByText(/Import completed. 1 products and 3 variants/)).toBeVisible();
 });
 test("CSV importer rejects duplicate size/colour combinations before making an API request",async({page})=>{
@@ -78,4 +78,14 @@ test("owner can import matching photos and request all-or-none publication",asyn
  await expect.poll(()=>publishedPayload).not.toBeNull();
  expect(publishedPayload).toEqual({product_ids:["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]});
  await expect(page.getByText(/Published 1 products after server-side checks/)).toBeVisible();
+});
+
+test("CSV importer rejects duplicate supplier SKUs across different products before upload",async({page})=>{
+ await mockAdmin(page);let requested=false;
+ await page.route("**/api/admin/products/import",async route=>{requested=true;await route.fulfill({status:201,contentType:"application/json",body:"{}"});});
+ await page.goto("/admin?section=products");
+ const csv="name,category,audience,size,color,sku\\nHoodie One,Hoodies,unisex,M,Black,DV-DUP-001\\nHoodie Two,Hoodies,unisex,L,Navy,DV-DUP-001";
+ await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"duplicate-sku.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+ await expect(page.getByText(/duplicate SKU DV-DUP-001 in this file/i)).toBeVisible();
+ expect(requested).toBe(false);
 });
