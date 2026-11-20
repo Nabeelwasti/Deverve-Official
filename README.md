@@ -13,10 +13,10 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
 - GitHub is connected to Cloudflare Pages, but source-triggered and production deployments are currently disabled intentionally. Preview deployments are also disabled. Do not describe a source merge as a production deployment.
-- Latest merged application implementation: PR #5 merge commit `4e11bd757a41f7f23785ffd1476aef3d56a5e176`. Follow-up release documentation is maintained on `main`; GitHub Actions validates every pushed `main` revision.
+- Latest verified source implementation commit: `504110e4348c9c2947bbd7a8833d2676759b7068` (AI customer accessibility, scanner enhancements and audited admin AI actions). Latest documentation commit: `94865ac5aaf294002326c8bdf0e8800d9333d5ed`.
 - Latest production deployment remains an older build from `d3280becfc507c5b3fdba362434c14097a0ebacd`; the merged implementation has not been deployed to the public Pages site.
-- Live D1 schema reconciliation on 20 November 2026 confirms migrations 0028–0033 are already reflected in production, including the permanent CNIC protection triggers. Migration 0034's unique active variant index, migration 0035's order inventory-reservation ledger, and migration 0036's AI task continuity tables are absent. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
-- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, independent backup and restore verification, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md).
+- Live D1 schema reconciliation on 20 November 2026 confirms the expected structures from migrations 0028–0036 are already reflected in production, including permanent CNIC protection triggers, the unique active variant index, order inventory reservations and AI task continuity tables. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
+- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md), [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md), [disaster recovery architecture and gates](docs/DISASTER-RECOVERY-IMPLEMENTATION.md) and [AI Command Centre capability record](docs/ADMIN-AI-COMMAND-CENTRE.md).
 
 ## Implemented
 
