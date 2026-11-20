@@ -491,6 +491,11 @@ test("customer AI chat exposes accessible photo, voice input and spoken response
   await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
   await expect(page.getByText("＋ Photo")).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Browse garments" })).toHaveAttribute("href", "/?screen=fashion");
+  await expect(page.getByRole("link", { name: "Wholesale enquiry" })).toHaveAttribute("href", "/?screen=wholesale");
+  await expect(page.getByRole("link", { name: "Car rental" })).toHaveAttribute("href", "/?screen=mobility");
+  await expect(page.getByRole("link", { name: "Contact team" })).toHaveAttribute("href", "/?screen=contact");
+  await expect(page.getByRole("link", { name: "My account" })).toHaveAttribute("href", "/account");
 });
 
 
