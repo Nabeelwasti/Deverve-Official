@@ -466,21 +466,26 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     finally { setBusy(false); }
   };
 
-  const executeCommand = async (command: string): Promise<boolean> => {
-    const original = message.trim();
-    if (!command || busy || !["owner", "manager"].includes(role)) return false;
-    setBusy(true); setStatus("Checking the requested business action…");
+  const executeCommand = async (command: string, priorMessages: Message[]): Promise<boolean> => {
+    const original = command.trim();
+    if (!original || busy || !["owner", "manager"].includes(role)) return false;
+    const taskId = taskIdRef.current || crypto.randomUUID();
+    taskIdRef.current = taskId; setActiveTaskId(taskId);
+    setBusy(true); setStatus("Thinking through your request…");
     try {
-      const result = await api<{ ok: boolean; message: string; published?: number; error?: string }>("/api/admin/ai/execute", { method: "POST", body: JSON.stringify({ command }) });
-      const reply = result.message || "The server confirmed the requested action.";
+      const messages = [...priorMessages.slice(-7), { role: "user" as const, text: original }];
+      const result = await api<{ ok: boolean; action?: string | null; task_id?: string; model?: string; message: string }>("/api/admin/ai/execute", {
+        method: "POST", body: JSON.stringify({ command: original, messages, task_id: taskId })
+      });
+      const reply = result.message || "The assistant completed your request.";
       setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply }]);
-      setStatus(reply); setMessage(""); taskIdRef.current = null; setActiveTaskId(null); onProductCreated();
+      setStatus(reply); setMessage("");
+      if (result.action) { taskIdRef.current = null; setActiveTaskId(null); onProductCreated(); }
       void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
       return true;
     } catch (error) {
       const reply = error instanceof Error ? error.message : "The requested action could not be completed.";
-      if (reply.startsWith("No actionable business intent was identified.")) { setStatus(""); return false; }
-      setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply + " No success is being reported." }]);
+      setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply + " No business change is being reported." }]);
       setStatus(reply); setMessage("");
       return true;
     } finally { setBusy(false); }
