@@ -480,3 +480,5 @@ The current POS sale handler always inserts `customer_email`, `email_receipt_req
 - Products are drafts by default. An explicit owner/manager option invokes POST /api/admin/products/publish-bulk. The server checks the complete selected set in one guarded D1 update: every product must be a valid draft with a retail price, an active variant with available stock, and a ready primary cover image. If one item fails, none are published. A single audit event records a successful bulk publication.
 - The bulk-publish endpoint is restricted to owner/manager roles; catalogue staff can import drafts but cannot publish a bulk batch.
 - This work is on PR #6 and must not be treated as deployed until the PR CI run passes, it is merged, and the Cloudflare Pages deployment is independently verified. No production business records or stock were changed by this code work.
+
+- The admin product catalogue now paginates in deterministic 100-product pages, including status-filtered pages, so imports larger than the first 100 products remain browsable. The UI labels its loaded count accurately and provides a Load next 100 products action.
