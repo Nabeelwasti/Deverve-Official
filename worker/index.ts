@@ -590,6 +590,10 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     if (!items || items.length < 1 || items.length > 20) return error("Import between 1 and 20 products per atomic batch", 400);
     const normalizedProducts: Array<{id:string; product:NormalizedProduct; variants:Array<{id:string;sku:string;size:string;color:string;stock:number;cost:number;reorder:number;barcode:string}>}> = [];
     const seenSlugs = new Set<string>();
+    const seenSkus = new Set<string>();
+    const seenBarcodes = new Set<string>();
+    const providedSkus: string[] = [];
+    const providedBarcodes: string[] = [];
     let totalVariants = 0;
     for (const rawProduct of items) {
       if (!rawProduct || typeof rawProduct !== "object" || Array.isArray(rawProduct)) return error("Every imported product must be a valid object", 400);
@@ -608,18 +612,30 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
         const stock=v.initial_stock===undefined?0:v.initial_stock;
         const cost=v.cost_price_paisa===undefined?0:v.cost_price_paisa;
         const reorder=v.reorder_level===undefined?5:v.reorder_level;
-        if(!size||!color||size.includes(",")||size.includes(";")||size.includes("|")||color.includes(",")||color.includes(";")||color.includes("|")||!Number.isSafeInteger(stock)||Number(stock)<0||Number(stock)>1_000_000||!Number.isSafeInteger(cost)||Number(cost)<0||Number(cost)>1_000_000_000_000||!Number.isSafeInteger(reorder)||Number(reorder)<0||Number(reorder)>1_000_000) return error("Each variant needs one size, one colour, whole-number stock and reorder quantities, and a valid cost",400);
+        const suppliedSku=cleanText(v.sku,64);
+        const suppliedBarcode=cleanText(v.barcode,64);
+        if(!size||!color||size.includes(",")||size.includes(";")||size.includes("|")||color.includes(",")||color.includes(";")||color.includes("|")||!Number.isSafeInteger(stock)||Number(stock)<0||Number(stock)>1_000_000||!Number.isSafeInteger(cost)||Number(cost)<0||Number(cost)>1_000_000_000_000||!Number.isSafeInteger(reorder)||Number(reorder)<0||Number(reorder)>1_000_000||(suppliedSku&&!/^[A-Za-z0-9._-]{2,64}$/.test(suppliedSku))||(suppliedBarcode&&!/^[A-Za-z0-9._:-]{3,64}$/.test(suppliedBarcode))) return error("Each variant needs one size, one colour, valid optional SKU/barcode values, whole-number stock and reorder quantities, and a valid cost",400);
         if(v.cost_price_paisa!==undefined&&!["owner","manager"].includes(admin.role))return error("Only an owner or manager can set purchase cost",403);
         const optionKey=size.toLowerCase()+"::"+color.toLowerCase();
         if(seenOptions.has(optionKey))return error(product.name+" contains a duplicate "+size+" / "+color+" combination",409);
         seenOptions.add(optionKey);
-        variants.push({id:crypto.randomUUID(),sku:"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,stock:Number(stock),cost:Number(cost),reorder:Number(reorder),barcode:generateInternalBarcode()});
+        if(suppliedSku){const key=suppliedSku.toLowerCase();if(seenSkus.has(key))return error("The import contains a duplicate SKU: "+suppliedSku,409);seenSkus.add(key);providedSkus.push(suppliedSku);}
+        if(suppliedBarcode){const key=suppliedBarcode.toLowerCase();if(seenBarcodes.has(key))return error("The import contains a duplicate barcode: "+suppliedBarcode,409);seenBarcodes.add(key);providedBarcodes.push(suppliedBarcode);}
+        variants.push({id:crypto.randomUUID(),sku:suppliedSku||"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,stock:Number(stock),cost:Number(cost),reorder:Number(reorder),barcode:suppliedBarcode||generateInternalBarcode()});
       }
       totalVariants+=variants.length;
       normalizedProducts.push({id:crypto.randomUUID(),product,variants});
     }
     if(totalVariants>250)return error("Atomic import is limited to 250 total size-and-colour combinations",400);
     try {
+      if(providedSkus.length){
+        const existing=await env.DB.prepare("SELECT sku FROM product_variants WHERE sku IN ("+providedSkus.map(()=>"?").join(",")+")").bind(...providedSkus).all<{sku:string}>();
+        if((existing.results??[]).length)return error("These SKUs already exist: "+(existing.results??[]).map(row=>row.sku).join(", "),409);
+      }
+      if(providedBarcodes.length){
+        const existing=await env.DB.prepare("SELECT barcode FROM product_variants WHERE barcode IN ("+providedBarcodes.map(()=>"?").join(",")+")").bind(...providedBarcodes).all<{barcode:string}>();
+        if((existing.results??[]).length)return error("These barcodes already exist: "+(existing.results??[]).map(row=>row.barcode).join(", "),409);
+      }
       const slugs=[...seenSlugs], placeholders=slugs.map(()=>"?").join(",");
       const existing=await env.DB.prepare("SELECT slug FROM products WHERE slug IN ("+placeholders+")").bind(...slugs).all<{slug:string}>();
       if((existing.results??[]).length)return error("These product slugs already exist: "+(existing.results??[]).map(row=>row.slug).join(", "),409);
