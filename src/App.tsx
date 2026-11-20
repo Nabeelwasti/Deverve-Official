@@ -62,6 +62,23 @@ type StoreVehicle = { id: string; name: string; vehicle_type: string; transmissi
 type CartLine = { variant_id: string; product_id: string; name: string; sku: string | null; size: string; color: string; quantity: number; unit_price_paisa: number; available_quantity: number; image_url?: string };
 
 function splitProductOptions(value: string) { return [...new Set(value.split(/[,;|\n]+/).map(item => item.trim()).filter(Boolean))]; }
+function matchesStoreCollection(product: StoreProduct, selected: string): boolean {
+  const key = selected.trim().toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  const audience = String(product.audience || "").trim().toLowerCase();
+  const category = String(product.category || "").toLowerCase().replace(/[’']/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  if (!key || ["all", "all products", "featured", "general"].includes(key)) return true;
+  if (["men", "mens", "mens fashion", "male"].includes(key)) return audience === "men" || audience === "unisex";
+  if (["women", "womens", "womens fashion", "ladies", "female"].includes(key)) return audience === "women" || audience === "unisex";
+  if (["kids", "kids fashion", "children", "childrens", "boys", "girls"].includes(key)) return audience === "kids";
+  const groups: Record<string, string[]> = {
+    essentials: ["essential", "t shirt", "tshirt", "tee", "sock", "boxer", "underwear", "vest"],
+    layers: ["hoodie", "jacket", "sweatshirt", "zipper", "zip up", "outerwear", "coat"],
+    bottoms: ["trouser", "pant", "jean", "jogger", "short"],
+  };
+  const terms = groups[key];
+  if (terms) return terms.some(term => category.includes(term));
+  return category === key || category.includes(key) || key.includes(category);
+}
 function productGalleryImages(product: StoreProduct, selectedVariantId?: string, selectedColor?: string) {
   const selected = product.variants.find((variant) => variant.id === selectedVariantId && variant.available_quantity > 0)
     || product.variants.find((variant) => variant.available_quantity > 0)
@@ -228,7 +245,7 @@ function Storefront() {
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
-  const filteredProducts=useMemo(()=>{const category=selectedCategory.trim().toLocaleLowerCase();if(!category)return products;if(["men","mens","men’s","men's fashion","mens fashion"].includes(category))return products.filter(product=>product.audience==="men"||product.audience==="unisex");if(["women","womens","women’s","women's fashion","womens fashion"].includes(category))return products.filter(product=>product.audience==="women"||product.audience==="unisex");if(["kids","kids' fashion","children"].includes(category))return products.filter(product=>product.audience==="kids");return products.filter(product=>product.category.trim().toLocaleLowerCase()===category);},[products,selectedCategory]);
+  const filteredProducts=useMemo(()=>products.filter(product=>matchesStoreCollection(product,selectedCategory)),[products,selectedCategory]);
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
