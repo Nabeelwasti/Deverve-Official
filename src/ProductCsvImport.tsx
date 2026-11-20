@@ -138,6 +138,7 @@ export default function ProductCsvImport({role,onImported}:Props){
        const matched=images.filter(file=>imageProductSlug(file,products)===imported.slug);
        if(matched.length){setProgress("Uploading "+matched.length+" image(s) for "+imported.name+"…");const imageResult=await uploadProductImages(imported,matched);if(imageResult.failures.length)setReport(current=>[...current,imported.name+" · IMAGE REVIEW: "+imageResult.failures.join(" | ")]);else if(imageResult.attached)setReport(current=>[...current,imported.name+" · "+imageResult.attached+" image(s) attached"]);}
      }
+     onImported();
      const unmatched=images.filter(file=>!imageProductSlug(file,products));
      if(unmatched.length)setReport(current=>[...current,...unmatched.map(file=>"Unmatched image (not uploaded): "+file.name)]);
      let published=0;
