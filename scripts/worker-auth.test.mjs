@@ -1000,10 +1000,6 @@ class FakeStatement {
         dispatched: ["delivered"],
       };
       if (!row || row.order_status !== previousStatus || !(allowed[previousStatus] || []).includes(status)) return { success: true, meta: { changes: 0 } };
-      if (status === "processing" || status === "dispatched") {
-        if (row.delivery_fee_status !== "accepted" || !((row.payment_provider === "manual" && row.payment_method === "cod") || row.payment_status === "paid")) return { success: true, meta: { changes: 0 } };
-      }
-      if (status === "cancelled" && row.payment_status === "paid") return { success: true, meta: { changes: 0 } };
       Object.assign(row, { order_status: status, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
