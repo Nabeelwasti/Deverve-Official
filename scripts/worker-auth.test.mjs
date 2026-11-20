@@ -2848,7 +2848,7 @@ test("AI owner order status command reuses the guarded order workflow and audit 
   const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   db.orders.set(id, { id, order_number: "DV-TEST-ORDER", order_status: "pending", payment_provider: "manual", payment_status: "pending", delivery_fee_status: "accepted" });
   db.orderItems.push({ id: "order-line-1", order_id: id, variant_id: "variant-order-1", quantity: 1 });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "mark order " + id + " status to confirmed" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.94" }), env(db));
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set order " + id + " status to confirmed" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.94" }), env(db));
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "update_order_status");
