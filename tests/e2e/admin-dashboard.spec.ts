@@ -479,6 +479,7 @@ test("rental vehicle assignment and internal note can be saved without changing 
   expect(backupPath).toBeTruthy();
   const encryptedBackupBytes = await readFile(backupPath!);
   expect(encryptedBackupBytes.length).toBeGreaterThan(24 * 1024 * 1024);
+  expect(encryptedBackupBytes.length).toBeLessThan(32 * 1024 * 1024);
   const encryptedEnvelope = JSON.parse(encryptedBackupBytes.toString("utf8")) as Record<string, unknown>;
   expect(encryptedEnvelope).toMatchObject({format:"DEVERVE-CNIC-BACKUP",cipher:"AES-256-GCM",kdf:"PBKDF2-SHA-256"});
   expect(JSON.stringify(encryptedEnvelope)).not.toContain("cnic_front");
