@@ -536,7 +536,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       return error("Choose 1–1,000 unique product IDs from the imported catalogue", 400);
     }
     const idsJson = JSON.stringify(ids);
-    const eligible = "p.id IN (SELECT value FROM json_each(?)) AND p.status='draft' AND length(trim(p.name))>=2 AND length(trim(p.category))>=2 AND p.retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=p.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity) AND EXISTS (SELECT 1 FROM product_media_assets pm JOIN media_assets m ON m.id=pm.media_asset_id WHERE pm.product_id=p.id AND pm.is_primary=1 AND pm.color='' AND m.media_type='image' AND m.status='ready')";
+    const eligible = "p.id IN (SELECT value FROM json_each(?)) AND p.status='draft' AND length(trim(p.name))>=2 AND length(trim(p.category))>=2 AND p.retail_price_paisa > 0 AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=p.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity) AND EXISTS (SELECT 1 FROM product_media_assets pm JOIN media_assets m ON m.id=pm.media_asset_id WHERE pm.product_id=p.id AND pm.is_primary=1 AND pm.color='' AND m.media_type='image' AND m.status='ready')";
     try {
       const now = new Date().toISOString();
       const written = await env.DB.batch([
