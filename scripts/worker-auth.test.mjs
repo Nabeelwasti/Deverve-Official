@@ -820,6 +820,7 @@ class FakeStatement {
       return variant && product ? { ...variant, reserved_quantity: variant.reserved_quantity ?? 0, name: product.name, wholesale_price_paisa: product.wholesale_price_paisa, retail_price_paisa: product.retail_price_paisa } : null;
     }
     if (q.startsWith("SELECT id, status FROM vehicles WHERE id = ?")) { const row = this.db.vehicles.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
+    if (q.startsWith("SELECT COUNT(*) AS count FROM rental_requests WHERE vehicle_id = ? AND status IN")) return { count: [...this.db.rentalRequests.values()].filter(row => row.vehicle_id === v[0] && ["requested","reviewing","confirmed","active"].includes(row.status)).length };
     if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status, admin_note FROM rental_requests WHERE id = ?") || q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
@@ -1241,6 +1242,13 @@ class FakeStatement {
     if (q.startsWith("INSERT INTO vehicles")) {
       const [id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description] = v;
       this.db.vehicles.set(id, { id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      return { success: true, meta: { changes: 1 } };
+    }
+    if (q.startsWith("UPDATE vehicles SET status = ?")) {
+      const [status, updated_at, id, previousStatus] = v;
+      const row = this.db.vehicles.get(id);
+      if (!row || row.status !== previousStatus) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { status, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE vehicles SET name")) {
@@ -2800,6 +2808,22 @@ test("AI owner command prepares a requested wholesale quote without sending or a
   assert.match(payload.message, /has not been sent to the customer/i);
   assert.equal(db.wholesaleQuotes.get(id).status, "prepared");
   assert.equal(db.audits.at(-1).action, "ai.wholesale_quote.prepared");
+});
+
+test("AI owner vehicle status action protects active rentals and records the change", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  db.vehicles.set(id, { id, name: "Test vehicle", status: "available" });
+  const changed = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set vehicle " + id + " status to maintenance" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.92" }), env(db));
+  assert.equal(changed.status, 200);
+  assert.equal(db.vehicles.get(id).status, "maintenance");
+  assert.equal(db.audits.at(-1).action, "ai.vehicle.status_updated");
+  db.rentalRequests.set("rental-active-1", { id: "rental-active-1", vehicle_id: id, status: "confirmed" });
+  const blocked = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set vehicle " + id + " status to available" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.93" }), env(db));
+  assert.equal(blocked.status, 409);
+  assert.equal(db.vehicles.get(id).status, "maintenance");
 });
 
 test("bulk media upload recovers an R2 object left behind by an interrupted D1 completion", async () => {
