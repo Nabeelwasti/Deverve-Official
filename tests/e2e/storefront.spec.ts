@@ -696,3 +696,35 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Message us on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
   await expect(body).toContainText("Our team confirms the delivery area, charges and estimated timeline before an order is dispatched.");
 });
+
+test("cart does not show free delivery at the exact Rs. 5,000 threshold", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("deverve-cart", JSON.stringify([{
+      variant_id: "11111111-1111-4111-8111-111111111111",
+      product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Threshold Test Hoodie", sku: "DV-THRESHOLD-M", size: "M", color: "Navy",
+      quantity: 1, unit_price_paisa: 500000, available_quantity: 5,
+    }]));
+  });
+  await page.goto("/");
+  await page.locator(".header-cart").click();
+  await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
+  await expect(page.locator(".cart-shipping-track-label")).toContainText("1");
+  await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
+});
+
+test("cart tracker follows the selected percentage promotion instead of also promising free delivery", async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("deverve-cart", JSON.stringify([{
+      variant_id: "11111111-1111-4111-8111-111111111111",
+      product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      name: "Promotion Test Hoodie", sku: "DV-PROMO-M", size: "M", color: "Navy",
+      quantity: 1, unit_price_paisa: 2500000, available_quantity: 5,
+    }]));
+  });
+  await page.goto("/");
+  await page.locator(".header-cart").click();
+  const tracker = page.locator(".cart-shipping-unlocked");
+  await expect(tracker).toContainText("30% order discount");
+  await expect(tracker).not.toContainText("free-delivery offer");
+});
