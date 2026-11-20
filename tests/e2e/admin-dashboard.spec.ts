@@ -463,9 +463,10 @@ test("rental vehicle assignment and internal note can be saved without changing 
   await expect(card.getByLabel("Assign vehicle")).toHaveValue(vehicleId);
   await expect(page.getByRole("status")).toContainText("Assignment and internal details saved");
 
+  const largePng = Buffer.alloc(7 * 1024 * 1024);
+  Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]).copy(largePng);
   await page.route("**/api/admin/rentals/" + rentalId + "/documents/**", async route => {
-    const side = new URL(route.request().url()).pathname.split("/").pop() || "cnic_front";
-    await route.fulfill({status:200,contentType:"image/png",headers:{"cache-control":"private, no-store"},body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j5WQAAAAASUVORK5CYII=","base64")});
+    await route.fulfill({status:200,contentType:"image/png",headers:{"cache-control":"private, no-store"},body:largePng});
   });
   await card.getByRole("button", {name:"Create encrypted backup"}).click();
   await card.getByLabel("New backup password").fill("Test-Backup-Password-2026!");
@@ -476,7 +477,9 @@ test("rental vehicle assignment and internal note can be saved without changing 
   expect(backup.suggestedFilename()).toMatch(/DV-R-TEST-0001-cnic-evidence\.dvbackup$/);
   const backupPath = await backup.path();
   expect(backupPath).toBeTruthy();
-  const encryptedEnvelope = JSON.parse(await readFile(backupPath!, "utf8")) as Record<string, unknown>;
+  const encryptedBackupBytes = await readFile(backupPath!);
+  expect(encryptedBackupBytes.length).toBeGreaterThan(24 * 1024 * 1024);
+  const encryptedEnvelope = JSON.parse(encryptedBackupBytes.toString("utf8")) as Record<string, unknown>;
   expect(encryptedEnvelope).toMatchObject({format:"DEVERVE-CNIC-BACKUP",cipher:"AES-256-GCM",kdf:"PBKDF2-SHA-256"});
   expect(JSON.stringify(encryptedEnvelope)).not.toContain("cnic_front");
   expect(JSON.stringify(encryptedEnvelope)).not.toContain("iVBORw0KGgo");
