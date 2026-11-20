@@ -993,7 +993,17 @@ class FakeStatement {
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
       const [status, updatedAt, id, previousStatus] = v;
       const row = this.db.orders.get(id);
-      if (!row || row.order_status !== previousStatus || !q.includes("AND 1 = 1")) return { success: true, meta: { changes: 0 } };
+      const allowed = {
+        pending: ["confirmed", "cancelled"],
+        confirmed: ["processing", "cancelled"],
+        processing: ["dispatched", "cancelled"],
+        dispatched: ["delivered"],
+      };
+      if (!row || row.order_status !== previousStatus || !(allowed[previousStatus] || []).includes(status)) return { success: true, meta: { changes: 0 } };
+      if (status === "processing" || status === "dispatched") {
+        if (row.delivery_fee_status !== "accepted" || !((row.payment_provider === "manual" && row.payment_method === "cod") || row.payment_status === "paid")) return { success: true, meta: { changes: 0 } };
+      }
+      if (status === "cancelled" && row.payment_status === "paid") return { success: true, meta: { changes: 0 } };
       Object.assign(row, { order_status: status, updated_at: updatedAt });
       return { success: true, meta: { changes: 1 } };
     }
