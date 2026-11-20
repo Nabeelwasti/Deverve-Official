@@ -25,6 +25,11 @@ function naturalActionCommand(value: string): string | null {
   const stock = text.match(/(?:set|update|change|adjust)\s+(?:the\s+)?(?:stock|inventory|quantity)\s+(?:for|of)\s+(?:sku\s+)?([a-z0-9._-]{2,80})\s+(?:to|at|as)\s+(\d{1,8})/i)
     || text.match(/\bsku\s+([a-z0-9._-]{2,80})\b.{0,45}\b(?:stock|inventory|quantity)\s+(?:to|at|as)\s+(\d{1,8})/i);
   if (stock) return "set stock for SKU " + stock[1] + " to " + stock[2];
+  const enquiry = text.match(/(?:please\\s+)?(?:mark|set|update)\\s+(?:the\\s+)?enquiry\\s+([a-f0-9-]{36})\\s+(?:status\\s+)?(?:to|as)\\s+(new|contacted|qualified|closed|spam)\\b/i)
+    || text.match(/enquiry\\s+([a-f0-9-]{36})\\s+(?:status\\s+)?(?:to|as)\\s+(new|contacted|qualified|closed|spam)\\b/i);
+  if (enquiry) return "set enquiry " + enquiry[1] + " status to " + enquiry[2].toLowerCase();
+  const quote = text.match(/(?:please\\s+)?(?:mark|set|update|prepare)\\s+(?:the\\s+)?wholesale\\s+quote\\s+([a-f0-9-]{36})\\s+(?:status\\s+)?(?:to|as\\s+)?prepared\\b/i);
+  if (quote) return "set wholesale quote " + quote[1] + " status to prepared";
   const publish = text.match(/(?:please\s+)?(?:publish|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i)
     || text.match(/(?:please\s+)?(?:make|put)\s+(?:the\s+)?(.+?)\s+(?:live|available)\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue)$/i);
   if (publish) {
