@@ -133,6 +133,13 @@ export default function AIChatWidget() {
     </button>
     {open && <section className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head"><div><strong>De VERVE assistant</strong><small>Fashion · Wholesale · Car rentals</small></div><button type="button" aria-label="Close chat" onClick={() => { setOpen(false); recognitionRef.current?.stop(); }}>×</button></header>
+      <nav className="ai-chat-shortcuts" aria-label="Quick website tasks">
+        <a href="/?screen=fashion">Browse garments</a>
+        <a href="/?screen=wholesale">Wholesale enquiry</a>
+        <a href="/?screen=mobility">Car rental</a>
+        <a href="/?screen=contact">Contact team</a>
+        <a href="/account">My account</a>
+      </nav>
       <div className="ai-chat-messages" ref={listRef} aria-live="polite">{messages.map((message, index) => <div key={index} className={"ai-chat-message " + message.role}><span>{message.role === "user" ? "YOU" : "DE VERVE AI"}</span>{message.text}</div>)}{sending && <span className="ai-chat-typing" role="status">Thinking…</span>}</div>
       {images.length > 0 && <div className="ai-chat-attachments" aria-label="Attached photos">{images.map((item, index) => <figure key={item.name + index}><img src={item.preview} alt={"Photo attachment " + (index + 1)} /><button type="button" aria-label="Remove photo" onClick={() => setImages(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
       <form className="ai-chat-form" onSubmit={send}>
