@@ -825,11 +825,6 @@ function Storefront() {
           </article>)}</div></div>}
         </section>
 
-        <section className="customer-feedback-invite section" id="customer-feedback">
-          <div className="section-heading"><div><p className="eyebrow">YOUR EXPERIENCE MATTERS</p><h2>Have a question<br /><em>before you choose?</em></h2></div><p className="section-aside">Speak with our team about product details, wholesale orders or vehicle-rental requests. We will confirm the information that applies to your enquiry.</p></div>
-          <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to ask a question before placing an order.")} target="_blank" rel="noreferrer">Talk to De VERVE ↗</a>
-        </section>
-
         <section className="faq-section" id="faq" aria-label="Frequently Asked Questions">
           <div className="section-heading">
             <div>
@@ -854,13 +849,6 @@ function Storefront() {
                 {openFaq === idx && <div className="faq-answer"><p>{faq.a}</p></div>}
               </div>
             ))}
-          </div>
-        </section>
-
-        <section className="newsletter-section" aria-label="Contact De VERVE">
-          <div className="newsletter-card">
-            <div className="newsletter-copy"><p className="eyebrow">STAY CONNECTED</p><h3>Keep in touch with De VERVE</h3><p>Ask about new arrivals, current availability, wholesale options and upcoming services directly with our team.</p></div>
-            <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, please keep me informed about new arrivals and current offers.")} target="_blank" rel="noreferrer">Message us on WhatsApp ↗</a>
           </div>
         </section>
 
