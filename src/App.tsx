@@ -758,7 +758,7 @@ function Storefront() {
                     <strong>{formatPrice(Math.max(100, 500_100 - cartSubtotal))} away</strong>
                   </div>
                   <div className="cart-shipping-track">
-                    <div className="cart-shipping-fill" style={{ width: `${Math.min(100, Math.round((cartSubtotal / 500_000) * 100))}%` }} />
+                    <div className="cart-shipping-fill" style={{ width: `${Math.min(99, Math.floor((cartSubtotal / 500_100) * 100))}%` }} />
                   </div>
                   <small>Add {formatPrice(Math.max(100, 500_100 - cartSubtotal))} more to qualify for the free-delivery offer. Delivery coverage is confirmed before dispatch.</small>
                 </>
