@@ -12,7 +12,7 @@ This separate Worker consumes the queue produced by the Pages Function. Pages Fu
    - Variable name: `PAYMENT_WEBHOOK_QUEUE`
    - Queue: `deverve-payment-webhooks`
    - Configure for the production environment only after owner approval.
-4. In `wrangler.jsonc`, replace the D1 database ID placeholder with the exact same D1 database ID used by the Pages Function. Do not point the consumer at a different database.
+4. `wrangler.jsonc` is now pinned to the existing production D1 database ID `355da876-17c4-4762-a59d-bb85f2e4551b`, matching the Pages Function. Verify the ID before deployment; do not point the consumer at a different database.
 5. Configure the consumer Worker secrets through Cloudflare secret settings: `SAFEPAY_ENV`, `SAFEPAY_MERCHANT_API_KEY`, `SAFEPAY_SECRET_KEY`, and `SAFEPAY_WEBHOOK_SECRET`. Do not commit these values.
 6. Deploy the consumer Worker only after the queue, dead-letter queue, matching D1 binding and secrets have been reviewed.
 7. Send a Safepay sandbox payment and verify: the Pages webhook returns 202 only after Queue publication; the consumer processes the event; the order and payment attempt reconcile; exactly one gateway ledger row is written; duplicate delivery does not duplicate the ledger; transient failures retry; exhausted retries appear in the dead-letter queue.
