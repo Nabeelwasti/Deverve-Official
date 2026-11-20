@@ -743,7 +743,15 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">YOUR SHOPPING BAG</p><h2 id="cart-title">Your cart ({cart.reduce((sum,item)=>sum+item.quantity,0)})</h2><p>Review your selected products before continuing.</p></div><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}>×</button></div>
           {cart.length===0 ? <div className="cart-empty-state"><strong>Your cart is waiting for something you love.</strong><p>Explore the collection and add a product to get started.</p><button type="button" className="button button-primary" onClick={()=>{setCartOpen(false);navigate("fashion");}}>Continue shopping <span>↗</span></button></div> : <>
             <div className="cart-shipping-tracker">
-              {cartSubtotal <= 500_000 ? (
+              {promotionPreview?.freeDelivery ? (
+                <div className="cart-shipping-unlocked">
+                  <span>✨</span> You qualify for the <strong>free-delivery offer</strong>. Delivery coverage is confirmed before dispatch.
+                </div>
+              ) : promotionPreview ? (
+                <div className="cart-shipping-unlocked">
+                  <span>✨</span> <strong>{promotionPreview.label}</strong> is selected for this order. Promotions cannot be combined.
+                </div>
+              ) : (
                 <>
                   <div className="cart-shipping-track-label">
                     <span>Free-delivery offer</span>
@@ -754,10 +762,6 @@ function Storefront() {
                   </div>
                   <small>Add {formatPrice(Math.max(100, 500_100 - cartSubtotal))} more to qualify for the free-delivery offer. Delivery coverage is confirmed before dispatch.</small>
                 </>
-              ) : (
-                <div className="cart-shipping-unlocked">
-                  <span>✨</span> You qualify for the <strong>free-delivery offer</strong>. Delivery coverage is confirmed before dispatch.
-                </div>
               )}
             </div>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
