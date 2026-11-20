@@ -16,7 +16,7 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Latest merged application implementation: PR #5 merge commit `4e11bd757a41f7f23785ffd1476aef3d56a5e176`. Follow-up release documentation is maintained on `main`; GitHub Actions validates every pushed `main` revision.
 - Latest production deployment remains an older build from `d3280becfc507c5b3fdba362434c14097a0ebacd`; the merged implementation has not been deployed to the public Pages site.
 - Live D1 schema reconciliation on 20 November 2026 confirms migrations 0028–0033 are already reflected in production, including the permanent CNIC protection triggers. Migration 0034's unique active variant index, migration 0035's order inventory-reservation ledger, and migration 0036's AI task continuity tables are absent. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
-- Production release is gated on an independently stored and restore-tested D1/R2 backup, the verified missing migrations, provider configuration and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md).
+- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, verified CNIC retention settings, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md).
 
 ## Implemented
 
