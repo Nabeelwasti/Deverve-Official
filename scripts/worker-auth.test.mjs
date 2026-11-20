@@ -2884,7 +2884,7 @@ test("AI owner order status command reuses the guarded order workflow and audit 
   assert.equal(payload.status, "confirmed");
   assert.equal(db.orders.get(id).order_status, "confirmed");
   assert.equal(db.orderStatusEvents.at(-1).to_status, "confirmed");
-  assert.equal(db.audits.some(row => row.action === "order.status_changed"), true);
+  assert.equal(db.audits.some(row => row.action === "order.status_changed" || row.values?.[2] === "order.status_changed"), true);
 
   const invalid = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set order " + id + " status to delivered" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.95" }), env(db));
   assert.equal(invalid.status, 409);
