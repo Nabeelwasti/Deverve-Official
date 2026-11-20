@@ -185,7 +185,7 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
 
   await page.goto("/admin?section=ai");
   await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen", "ai");
-  await expect(page.locator(".admin-ai-welcome").getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
+  await expect(page.locator(".admin-ai-chat-context").getByRole("heading", { name: "How can I help today?" })).toBeVisible();
   const image = { name: "hoodie.png", mimeType: "image/png", buffer: Buffer.from("fake-image-data") };
   await page.locator(".admin-ai-attach input").setInputFiles(image);
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please describe this hoodie.");
@@ -296,7 +296,7 @@ test("owner can publish a product through natural language in the normal chat co
   await page.goto("/admin?section=ai");
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please publish the Everyday Hoodie on the website.");
   await page.getByRole("button", { name: "Send message" }).click();
-  await expect(page.getByRole("status")).toContainText("Published Everyday Hoodie directly");
+  await expect(page.locator(".admin-ai-live-status")).toContainText("Published Everyday Hoodie directly");
   expect(executed).toEqual({ command: "publish product everyday-hoodie" });
 });
 
