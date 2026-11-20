@@ -65,7 +65,7 @@ export async function createEncryptedEvidenceBackup(referenceCode: string, files
 
 export async function decryptEvidenceBackup(file: File, password: string): Promise<EvidencePayload> {
   if (!globalThis.crypto?.subtle) throw new Error("Secure browser decryption is unavailable. Use the official HTTPS website in an updated browser.");
-  if (file.size < 100 || file.size > MAX_ARCHIVE_BYTES) throw new Error("The backup file is empty or exceeds the 24 MB safety limit.");
+  if (file.size < 100 || file.size > MAX_ARCHIVE_BYTES) throw new Error("The backup file is empty or exceeds the 32 MB safety limit.");
   let envelope: EncryptedEnvelope;
   try { envelope = JSON.parse(await file.text()) as EncryptedEnvelope; } catch { throw new Error("This is not a readable De VERVE encrypted backup file."); }
   if (envelope.format !== FORMAT || envelope.version !== VERSION || envelope.cipher !== "AES-256-GCM" || envelope.kdf !== "PBKDF2-SHA-256" || envelope.iterations !== ITERATIONS) throw new Error("This backup format or encryption version is not supported.");
