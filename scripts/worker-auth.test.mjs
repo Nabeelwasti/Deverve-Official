@@ -2995,3 +2995,14 @@ test("bulk media uploads resume idempotently and reject reused identifiers with 
   assert.equal(collisionBody.failed,1);
   assert.equal(db.mediaAssets.size,1);
 });
+
+test("server promotion selection keeps strict thresholds and never combines offers", () => {
+  assert.equal(selectOrderPromotion(500_000, false).code, "");
+  assert.equal(selectOrderPromotion(500_001, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2_000_000, false).code, "FREE_DELIVERY");
+  assert.equal(selectOrderPromotion(2_000_001, false).code, "ORDER_30");
+  assert.equal(selectOrderPromotion(4_000_000, false).code, "ORDER_30");
+  assert.equal(selectOrderPromotion(4_000_001, false).code, "ORDER_45");
+  assert.equal(selectOrderPromotion(2_000_001, true).code, "ADVANCE_40");
+  assert.equal(selectOrderPromotion(4_000_001, true).code, "ORDER_45");
+});
