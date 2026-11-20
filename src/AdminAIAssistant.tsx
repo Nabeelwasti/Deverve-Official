@@ -144,7 +144,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     { screen: "product-reviews", label: "Product reviews", roles: ["owner", "manager"] },
     { screen: "content", label: "Pages & visual designer", roles: ["owner", "manager"] },
     { screen: "notifications", label: "Notifications", roles: ["owner"] },
-    { screen: "staff", label: "Staff & permissions", roles: ["owner", "manager"] },
+    { screen: "staff", label: "Staff & permissions", roles: ["owner"] },
     { screen: "settings", label: "Website settings", roles: ["owner"] },
     { screen: "audit", label: "Activity history", roles: ["owner"] }
   ].filter(item => item.roles.includes(role));
