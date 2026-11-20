@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 type Message = { role: "user" | "model"; text: string };
 type ImageAttachment = { name: string; mime_type: "image/jpeg"; data: string; preview: string };
 type SpeechRecognitionResult = { 0?: { transcript?: string }; isFinal?: boolean };
-type SpeechRecognitionEventLike = Event & { results?: ArrayLike<SpeechRecognitionResult> };
+type SpeechRecognitionEventLike = Event & { results?: ArrayLike<SpeechRecognitionResult>; resultIndex?: number };
 type SpeechRecognitionLike = {
   lang: string; continuous: boolean; interimResults: boolean;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
@@ -58,6 +58,7 @@ export default function AIChatWidget() {
   const listRef = useRef<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const voiceDraftPrefixRef = useRef("");
 
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, images]);
   useEffect(() => () => { recognitionRef.current?.abort(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }, []);
@@ -79,10 +80,11 @@ export default function AIChatWidget() {
     if (!Speech) { setNotice("Voice input is not available in this browser. You can still type or attach a photo."); return; }
     try {
       const recognition = new Speech(); recognition.lang = voiceLanguage; recognition.continuous = false; recognition.interimResults = true;
+      voiceDraftPrefixRef.current = draft.trim() ? draft.trimEnd() + " " : "";
       recognition.onresult = event => {
         let transcript = "";
         for (let i = 0; i < (event.results?.length || 0); i++) transcript += event.results?.[i]?.[0]?.transcript || "";
-        if (transcript) setDraft(current => (current.trim() ? current.trimEnd() + " " : "") + transcript.trim());
+        setDraft(voiceDraftPrefixRef.current + transcript.trim());
       };
       recognition.onerror = () => { setNotice("Microphone access or speech recognition failed. Check browser permission and try again."); setListening(false); };
       recognition.onend = () => { setListening(false); recognitionRef.current = null; };
@@ -153,7 +155,7 @@ export default function AIChatWidget() {
         </div>
       </form>
       {notice && <p className="ai-chat-note" role="status">{notice}</p>}
-      <div className="ai-chat-note">You can speak or attach product photos. Never send CNIC images, OTPs, passwords or payment-card details in chat. Orders and rentals are completed through secure website forms.</div>
+      <div className="ai-chat-note">You can speak or attach product photos. Voice transcription may use your browser’s speech service; avoid speaking sensitive information. Never send CNIC images, OTPs, passwords or payment-card details in chat. Orders and rentals are completed through secure website forms.</div>
     </section>}
   </>;
 }
