@@ -36,3 +36,46 @@ test("CSV importer rejects duplicate size/colour combinations before making an A
  await expect(page.getByText(/duplicate M \/ black combination/i)).toBeVisible();
  expect(requested).toBe(false);
 });
+
+test("large CSV catalogues are split into bounded atomic server batches",async({page})=>{
+ await mockAdmin(page);const batches:Array<Array<{name:string;variants:unknown[]}>>=[];
+ await page.route("**/api/admin/products/import",async route=>{
+  const body=route.request().postDataJSON() as {products:Array<{name:string;slug:string;variants:unknown[]}>};batches.push(body.products);
+  await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({atomic:true,imported:body.products.length,variants:body.products.reduce((n,p)=>n+p.variants.length,0),products:body.products.map((p,i)=>({id:(String(batches.length)+String(i)).padStart(8,"0")+"-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:p.name,slug:p.slug,variants:p.variants.length}))})});
+ });
+ await page.goto("/admin?section=products");
+ const rows=["name,slug,category,audience,size,color,stock"];
+ for(let i=1;i<=21;i++)rows.push(["Hoodie "+i,"hoodie-"+i,"Hoodies","unisex","M","Black","2"].join(","));
+ await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"large-catalogue.csv",mimeType:"text/csv",buffer:Buffer.from(rows.join("\n"))});
+ await expect(page.getByText(/Validated 21 products and 21 unique size\/colour combinations/)).toBeVisible();
+ await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
+ await expect.poll(()=>batches.length).toBe(2);
+ expect(batches[0]).toHaveLength(20);expect(batches[1]).toHaveLength(1);
+ await expect(page.getByText(/21 products and 21 variants were saved in 2 atomic batches/)).toBeVisible();
+});
+
+test("owner can import matching photos and request all-or-none publication",async({page})=>{
+ await mockAdmin(page);let publishedPayload:unknown=null;
+ await page.route("**/api/admin/products/import",async route=>{
+  await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({atomic:true,imported:1,variants:1,products:[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"Premium Hoodie",slug:"premium-hoodie",variants:1}]})});
+ });
+ await page.route("**/api/admin/media/bulk",async route=>{
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({uploaded:1,failed:0,media:[{id:"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",status:"ready"}],failures:[]})});
+ });
+ await page.route("**/api/admin/products/*/media",async route=>{
+  if(route.request().method()==="POST")await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({attached:true})});
+ });
+ await page.route("**/api/admin/products/publish-bulk",async route=>{
+  publishedPayload=route.request().postDataJSON();
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({ok:true,atomic:true,published:1})});
+ });
+ await page.goto("/admin?section=products");
+ const csv="name,slug,category,audience,retail_price_pkr,size,color,stock\nPremium Hoodie,premium-hoodie,Hoodies,unisex,2500,M,Black,3";
+ await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"products.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
+ await page.locator('input[type="file"][accept^="image/"]').setInputFiles({name:"premium-hoodie-front.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217])});
+ await page.getByLabel(/Publish after import in one secure operation/).check();
+ await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
+ await expect.poll(()=>publishedPayload).not.toBeNull();
+ expect(publishedPayload).toEqual({product_ids:["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"]});
+ await expect(page.getByText(/Published 1 products after server-side checks/)).toBeVisible();
+});
