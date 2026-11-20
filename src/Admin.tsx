@@ -475,7 +475,7 @@ export default function Admin() {
   };
   const researchProductOnline = async (scannedCode = "") => {
     const lookupCode=scannedCode.trim()||pendingInventoryBarcode.trim()||variantForm.barcode.trim();
-    const scannedIsGtin=/^\\d{8,14}$/.test(lookupCode);
+    const scannedIsGtin=/^\d{8,14}$/.test(lookupCode);
     if(!form.name.trim()&&!lookupCode&&!variantForm.sku.trim()){setMessage("Enter a product name or scan its barcode before researching online.");return;}
     setResearchBusy(true);setProductResearch(null);setMessage("Researching this code with Gemini and Google Search…");
     try{
