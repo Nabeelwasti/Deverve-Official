@@ -1175,3 +1175,9 @@
 @media(max-width:640px){.admin-csv-import{padding:13px}.admin-csv-import .admin-table-wrap{max-width:100%;overflow-x:auto}.admin-csv-import>.admin-primary{width:100%}}
 
 .admin-global-actions .admin-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:132px;min-height:42px;color:#fff!important;font-size:14px!important;line-height:1.2;white-space:nowrap}
+
+.admin-csv-image-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:9px;padding:12px;border:1px solid #e2eaf2;border-radius:10px;background:#fff}
+.admin-csv-image-preview figure{min-width:0;margin:0;display:grid;gap:5px}
+.admin-csv-image-preview img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:7px;background:#edf2f8}
+.admin-csv-image-preview figcaption{overflow:hidden;color:#64758a;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.admin-csv-image-preview>p{grid-column:1/-1}
