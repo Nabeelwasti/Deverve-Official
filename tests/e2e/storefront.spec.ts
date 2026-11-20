@@ -499,6 +499,27 @@ test("customer AI chat exposes accessible photo, voice input and spoken response
 });
 
 
+test("customer AI chat compresses and sends an attached product photo", async ({ page }) => {
+  const submitted: { images?: Array<{ name: string; mime_type: string; data: string }> } = {};
+  await page.route("**/api/ai/chat", async route => {
+    Object.assign(submitted, route.request().postDataJSON());
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "I can inspect the visible garment details." }) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  await page.locator(".ai-chat-panel input[type=file]").setInputFiles({
+    name: "garment-label.png",
+    mimeType: "image/png",
+    buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=", "base64")
+  });
+  await expect(page.getByAltText("Photo attachment 1")).toBeVisible();
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("I can inspect the visible garment details.")).toBeVisible();
+  expect(submitted.images).toHaveLength(1);
+  expect(submitted.images?.[0].mime_type).toBe("image/jpeg");
+  expect(submitted.images?.[0].data.startsWith("/9j/")).toBeTruthy();
+});
+
 test("product card opens from its content and product cart merges by size and colour", async ({ page }) => {
   const product = {
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
