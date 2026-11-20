@@ -1761,3 +1761,36 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
     flex-direction: column;
   }
 }
+
+
+/* Honest product guidance: never imply one universal size chart. */
+.size-guide-note {
+  margin: 18px 0;
+  padding: 18px 20px;
+  border: 1px solid #d7e5f3;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f7fbff, #edf5fd);
+  color: #405a75;
+  font-size: 13px;
+  line-height: 1.75;
+}
+.size-guide-note strong {
+  display: block;
+  margin-bottom: 7px;
+  color: #0b315d;
+  font: 800 14px Manrope, sans-serif;
+}
+.size-guide-note p { margin: 0; }
+.customer-feedback-invite {
+  background: #f6f9fd;
+  border-top: 1px solid #e3ebf4;
+  border-bottom: 1px solid #e3ebf4;
+}
+.customer-feedback-invite .section-heading { margin-bottom: 24px; }
+.customer-feedback-invite > .button { width: fit-content; }
+@media (max-width: 580px) {
+  .hero-stats-strip { gap: 10px 14px; }
+  .hero-stats-strip strong { font-size: 15px; }
+  .hero-stats-strip small { font-size: 9px; }
+  .customer-feedback-invite > .button { width: 100%; }
+}
