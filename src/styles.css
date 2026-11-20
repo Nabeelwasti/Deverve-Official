@@ -359,11 +359,11 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 
 
 /* Screen-first storefront navigation: customers open only the area they choose. */
-.store-main[data-screen="home"]>section:not(.hero),
+.store-main[data-screen="home"]>section:not(.hero):not(.trust-pillars-section),
 .store-main[data-screen="fashion"]>section:not(.collections-section),
 .store-main[data-screen="wholesale"]>section:not(.wholesale-section),
 .store-main[data-screen="mobility"]>section:not(.mobility-section),
-.store-main[data-screen="contact"]>section:not(.contact-section),
+.store-main[data-screen="contact"]>section:not(.contact-section):not(.faq-section),
 .store-main[data-screen="favourites"]>section:not(.favourites-section){display:none!important}
 .site-header{position:sticky;top:0;z-index:70}
 .brand-home-button{border:0;background:transparent;color:inherit;text-align:left;cursor:pointer;padding:0}
