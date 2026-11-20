@@ -84,7 +84,7 @@ test("CSV importer rejects duplicate supplier SKUs across different products bef
  await mockAdmin(page);let requested=false;
  await page.route("**/api/admin/products/import",async route=>{requested=true;await route.fulfill({status:201,contentType:"application/json",body:"{}"});});
  await page.goto("/admin?section=products");
- const csv="name,category,audience,size,color,sku\\nHoodie One,Hoodies,unisex,M,Black,DV-DUP-001\\nHoodie Two,Hoodies,unisex,L,Navy,DV-DUP-001";
+ const csv="name,category,audience,size,color,sku\nHoodie One,Hoodies,unisex,M,Black,DV-DUP-001\nHoodie Two,Hoodies,unisex,L,Navy,DV-DUP-001";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"duplicate-sku.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
  await expect(page.getByText(/duplicate SKU DV-DUP-001 in this file/i)).toBeVisible();
  expect(requested).toBe(false);
