@@ -1001,7 +1001,7 @@ class FakeStatement {
       };
       if (!row || row.order_status !== previousStatus || !(allowed[previousStatus] || []).includes(status)) return { success: true, meta: { changes: 0 } };
       if (status === "processing" || status === "dispatched") {
-        const paymentAllowed = (row.payment_provider === "manual" && row.payment_method === "cod") || row.payment_status === "paid";
+        const paymentAllowed = ((!row.payment_provider || row.payment_provider === "manual") && row.payment_method === "cod") || row.payment_status === "paid";
         if (row.delivery_fee_status !== "accepted" || !paymentAllowed) return { success: true, meta: { changes: 0 } };
       }
       const quantities = new Map();
