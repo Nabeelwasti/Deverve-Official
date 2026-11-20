@@ -25,7 +25,8 @@ function naturalActionCommand(value: string): string | null {
   const stock = text.match(/(?:set|update|change|adjust)\s+(?:the\s+)?(?:stock|inventory|quantity)\s+(?:for|of)\s+(?:sku\s+)?([a-z0-9._-]{2,80})\s+(?:to|at|as)\s+(\d{1,8})/i)
     || text.match(/\bsku\s+([a-z0-9._-]{2,80})\b.{0,45}\b(?:stock|inventory|quantity)\s+(?:to|at|as)\s+(\d{1,8})/i);
   if (stock) return "set stock for SKU " + stock[1] + " to " + stock[2];
-  const publish = text.match(/(?:please\s+)?(?:publish|make\s+(?:this\s+)?live|put\s+(?:this\s+)?live|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i);
+  const publish = text.match(/(?:please\s+)?(?:publish|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i)
+    || text.match(/(?:please\s+)?(?:make|put)\s+(?:the\s+)?(.+?)\s+(?:live|available)\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue)$/i);
   if (publish) {
     const name = publish[1].trim().replace(/[“”"']/g, "").replace(/[.!?]+$/, "");
     if (name && !/^(?:all|every|all draft products|all drafts)$/i.test(name)) return "publish product " + name;
