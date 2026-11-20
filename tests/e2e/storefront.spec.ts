@@ -470,7 +470,7 @@ test("install app control remains visible when the browser does not expose a nat
 });
 
 test("AI chat sends only real alternating conversation turns to Gemini", async ({ page }) => {
-  const submitted: { payload: { messages: Array<{ role: string; text: string }> } | null } = { payload: null };
+  const submitted: { payload: { messages: Array<{ role: string; text: string }>; images?: unknown[] } | null } = { payload: null };
   await page.route("**/api/ai/chat", async (route) => {
     submitted.payload = route.request().postDataJSON();
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "Test assistant reply" }) });
@@ -481,6 +481,16 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("Test assistant reply")).toBeVisible();
   expect(submitted.payload?.messages).toEqual([{ role: "user", text: "Hello De VERVE" }]);
+  expect(submitted.payload?.images).toEqual([]);
+});
+
+test("customer AI chat exposes accessible photo, voice input and spoken response controls", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  await expect(page.getByRole("button", { name: "Speak your message" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
+  await expect(page.getByText("＋ Photo")).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
 });
 
 
