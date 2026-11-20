@@ -38,7 +38,10 @@ async function mockAdminApi(page: Page, options: { rental?: Record<string, unkno
       has_more: false,
     };
 
-    if (url.pathname === "/api/admin/me") {
+    if (url.pathname === "/api/admin/ai/execute") {
+      await route.fulfill({ status: 422, contentType: "application/json", body: JSON.stringify({ error: "No actionable business intent was identified." }) });
+      return;
+    } else if (url.pathname === "/api/admin/me") {
       payload = { admin: owner };
     } else if (url.pathname === "/api/admin/rentals" && method === "GET") {
       payload = { rentals: rental ? [rental] : [] };
@@ -302,7 +305,7 @@ test("owner can publish a product through natural language in the normal chat co
   await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please publish the Everyday Hoodie on the website.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".admin-ai-live-status")).toContainText("Published Everyday Hoodie directly");
-  expect(executed).toEqual({ command: "publish product Everyday Hoodie" });
+  expect(executed).toEqual({ command: "Please publish the Everyday Hoodie on the website." });
 });
 
 test("owner can request an order status transition through natural language", async ({ page }) => {
@@ -328,6 +331,7 @@ test("women and kids collection cards open their correctly filtered live catalog
     { id: "kids-product", slug: "kids-shirt", name: "Kids Shirt", description: "Kids fit", category: "Shirt", audience: "kids", retail_price_paisa: 150000, variants: [], media: [] },
     { id: "men-product", slug: "men-trouser", name: "Men Trouser", description: "Men fit", category: "Trouser", audience: "men", retail_price_paisa: 300000, variants: [], media: [] },
   ];
+  await page.route("**/api/pages/home", async route => route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "No published CMS homepage in this isolated storefront test." }) }));
   await page.route("**/api/products*", async route => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ products }),
   }));
