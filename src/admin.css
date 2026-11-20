@@ -1032,3 +1032,6 @@
 .admin-ai-workspace-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;min-height:34px;padding:7px 9px;border:1px solid transparent;border-radius:8px;background:transparent;color:#506a83;text-align:left;font:inherit;font-size:10px;font-weight:650;cursor:pointer}
 .admin-ai-workspace-link>span:last-child{color:#9aa9b7;font-size:15px}
 .admin-ai-workspace-link:hover{border-color:#e2eaf1;background:#f5f9fc;color:#1c5079}
+
+.barcode-torch-toggle[aria-pressed="true"]{border-color:#d9c18b;background:#fff8e8;color:#76551a}
+.barcode-torch-toggle{min-height:40px}
