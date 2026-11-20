@@ -4665,6 +4665,20 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The vehicle changed during execution. Refresh Fleet and retry.",409);
    return json({ok:true,action:"update_vehicle_status",changed:true,vehicle_id:id,previous_status:previousStatus,status:nextStatus,message:"Updated vehicle "+id+" from "+previousStatus+" to "+nextStatus+". No active rentals were found and the change was recorded in the audit log."});
   }
+  const orderCommand=/^(?:please )?(?:set|mark|update) order ([0-9a-f-]{36}) (?:status )?(?:to|as) (confirmed|processing|dispatched|delivered|cancelled)$/i.exec(normalized);
+  if(orderCommand){
+   const id=orderCommand[1],nextStatus=orderCommand[2].toLowerCase();
+   const actionUrl=new URL("/api/admin/orders/"+id,url.origin);
+   const headers=new Headers(request.headers);
+   headers.set("content-type","application/json");
+   const actionRequest=new Request(actionUrl.toString(),{method:"PATCH",headers,body:JSON.stringify({order_status:nextStatus,status_note:"AI owner command: "+command.slice(0,250)})});
+   const actionResponse=await adminOrderRoutes(actionRequest,env,actionUrl);
+   if(!actionResponse)return error("The order action route was unavailable. No change was made.",503);
+   if(!actionResponse.ok)return actionResponse;
+   const payload=await actionResponse.json() as {updated?:boolean;order_status?:string};
+   if(payload.updated!==true||payload.order_status!==nextStatus)return error("The order status change could not be verified. Check the order and audit history before retrying.",503);
+   return json({ok:true,action:"update_order_status",order_id:id,status:nextStatus,message:"Updated order "+id+" to "+nextStatus+". The existing order workflow validated payment, delivery approval, stock reservations and allowed status transitions, and recorded the status event and audit entry."});
+  }
   return error("I could not safely match this request to an available business action. No changes were made. Supported direct actions include publishing one identified product, publishing eligible draft products, updating stock for an exact SKU, changing an enquiry status, preparing a requested wholesale quote, and changing a vehicle status when no active rentals exist. Other workspaces remain available for guided workflows.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
 }
