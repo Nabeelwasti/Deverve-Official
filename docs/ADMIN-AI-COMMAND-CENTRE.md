@@ -19,7 +19,7 @@
 - Product intake creates an unpublished draft. Owner and manager roles also have a separate direct-command executor: `publish product <exact name, slug or ID>` publishes one matching product immediately and `publish all draft products` publishes only eligible drafts. Bulk eligibility requires a non-empty product name and category, a retail price, and at least one active size/colour variant with available stock. Ineligible drafts remain drafts and are counted as skipped.
 - Direct publishing writes an audit-log record with the actor, action, product/batch reference and command metadata. The endpoint reports success only after the database confirms the write.
 - Existing Worker permission checks still govern product, variant and media writes. Catalogue users cannot set purchase cost.
-- Natural-language chat currently maps only three audited actions to the existing authenticated server-side executor: publish one clearly identified product, publish eligible draft products, and set stock for one exact SKU. The server still enforces role, target, readiness, reservation and audit checks. Other business operations remain advisory or require their dedicated workspace; do not claim broader autonomous execution.
+- Natural-language chat maps six explicitly supported owner/manager actions to the authenticated server-side executor: publish one clearly identified product; publish eligible draft products; set stock for one exact SKU; update an enquiry to one of its allowed statuses; mark a requested wholesale quote as prepared; and change a vehicle status to available, maintenance or retired only when no pending/active rentals exist. Every write uses exact identifiers, role checks, conditional updates and an audit record. Preparing a quote does not send or accept it. Changing vehicle availability is blocked while rental requests are requested, reviewing, confirmed or active.
 - Do not attach CNICs, identity documents, payment cards, bank credentials, passwords, OTPs, private customer records or confidential financial documents.
 
 ## Provider and cost
@@ -80,12 +80,13 @@ The admin AI experience is now organized as a conversation-first inbox rather th
 - The drawer closes by selecting a tool, tapping its close control, or using the backdrop. Reduced-motion preferences are respected.
 - Saved AI task previews use the first user message. New chat tasks retain their task ID across turns; the task history stores user-message summaries alongside assistant results so previous sessions can be resumed.
 - Product intake and research are modes within the same chat inbox. Product analysis still creates unpublished drafts for review; it does not publish products automatically.
-- The composer accepts natural-language requests. A small, explicit intent mapper converts supported owner/manager requests for publishing one product, publishing eligible draft products, and setting stock for a precise SKU into the existing server-side audited action endpoint. The server remains the authority and verifies each write.
-- Unsupported or ambiguous requests stay in normal AI chat; the interface must not claim that an action was executed. The AI chat itself remains read-only for other operations.
+- The composer accepts natural-language requests. An explicit intent mapper converts supported owner/manager requests for catalogue publishing, exact-SKU inventory, enquiry status, wholesale quote preparation and vehicle availability into the authenticated server-side action endpoint. The server remains authoritative and verifies each write.
+- Supported vehicle commands are blocked if the vehicle has any requested, reviewing, confirmed or active rental. Supported wholesale preparation does not send a customer message or mark a quote accepted.
+- Unsupported, ambiguous or high-impact requests stay in normal AI chat and/or the relevant business workspace; the interface must not claim that an action was executed.
 
 ### Capability boundary
 
-Natural-language interaction is not a claim that every business workflow is already an AI-executable action. Current direct AI writes remain limited to the three audited actions above. Payments/refunds, staff permissions, settings, customer communications, rental decisions, CNIC/private files, and destructive operations remain outside this direct executor until each receives its own least-privilege implementation, validation, audit trail and tests.
+Natural-language interaction is not a claim that every business workflow is already an AI-executable action. Current direct AI writes are limited to the six audited actions above. POS sales, order fulfilment/cancellation, payment verification/refunds, returns/exchanges, rental approvals and status transitions, customer communications, finance, staff permissions, settings, CMS publishing, CNIC/private files and destructive operations remain outside this direct executor until each receives its own least-privilege implementation, business-rule validation, idempotency, audit trail and integration tests. These workflows remain available through their dedicated workspaces; the assistant must not claim to have executed them.
 
 ### Release state
 
@@ -95,3 +96,14 @@ Natural-language interaction is not a claim that every business workflow is alre
 
 
 The slide-in menu also exposes the role-authorized business workspaces (overview, follow-ups, catalogue, inventory, POS, vehicles, rentals, orders, returns, exchanges, wholesale, enquiries, customers, reviews, content, notifications, staff, settings and audit history). Selecting a workspace closes the drawer and uses the existing admin navigation and role permissions; it does not duplicate or bypass the underlying workspace APIs.
+
+
+## Customer AI accessibility and scanner follow-up — 20 November 2026
+
+- The public customer assistant accepts up to three validated JPG/PNG/WebP product photos (compressed in the browser, size-limited and validated again in the Worker) and sends the image parts to the configured Gemini multimodal model. The public endpoint remains separate from the authenticated admin AI endpoint and does not accept customer CNIC or identity evidence.
+- The customer chat includes Urdu/English browser speech input, spoken assistant replies, direct links to garment browsing, wholesale enquiries, car rentals, contact and customer accounts. The microphone is enabled only for the same origin by the Permissions-Policy header.
+- Speech recognition is browser-dependent. Some browsers send audio to their speech service; users are informed not to speak sensitive information. Text input remains available when speech is unsupported.
+- The camera scanner continues to use bundled ZXing as the broad-compatibility decoder, with native BarcodeDetector acceleration when supported. It now also attempts continuous autofocus and exposes a flash toggle on devices that advertise torch support. Product-label reading still uses the existing authenticated Gemini image-reading flow and internal SKU/barcode matching.
+- The public assistant does not yet execute order, rental, payment or account changes from chat. Its shortcuts open the secure website workspaces/forms. Verified customer action APIs, contextual action cards and transaction execution remain a separate release gate.
+- Browser CI verifies the public chat photo attachment flow, task shortcuts and accessibility controls. Physical Android/iOS camera, flash, speech-recognition language and real voice-output testing remains required.
+- The Web Speech API and native BarcodeDetector are not universally supported; feature detection and fallbacks are intentional. See [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) and [MDN BarcodeDetector](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector).
