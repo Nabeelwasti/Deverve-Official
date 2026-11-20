@@ -469,3 +469,14 @@ The current POS sale handler always inserts `customer_email`, `email_receipt_req
 - The focused test schema is not a full production migration clone. The repeatable integration script still needs an authorized run and the full migration/rollback suite still needs expansion.
 - Latest observed CI run `44516695093`: TypeScript/build, dependency audit, Worker regression tests, D1 schema validation and Chromium install passed; storefront browser tests were still running when recorded.
 - No deployment, merge, production migration or production data mutation was performed.
+
+
+## Catalogue import and publication hardening — PR #6
+
+- The landing page no longer displays the four static trust-pillar cards or generic intro strip. Functional category links and the live product catalogue remain.
+- Bulk CSV intake accepts up to 1,000 products and 25,000 size/colour rows per file, then commits sequential D1 transactions of at most 20 products and 250 variants each. Earlier completed batches remain committed if a later batch fails; the UI retains progress and supports resuming the remaining batches.
+- CSV fields include product name, slug, description, category, audience, retail/wholesale prices, SEO title/description, size, colour, optional supplier SKU/barcode, opening stock, reorder threshold and purchase cost. Server-generated SKU/barcodes remain the fallback. Duplicate options and duplicate supplied identifiers are rejected before submission; existing SKU/barcode conflicts are checked against D1.
+- Product photos may be selected in the same import flow. File names must begin with the product slug (for example, premium-hoodie-front.jpg). Uploads use the existing authenticated four-file / 20 MB media pipeline, server-side content-signature and SHA-256 checks, retry-stable media IDs, and explicit product-media attachment. Unmatched or failed files are reported; they are never silently attached to another product.
+- Products are drafts by default. An explicit owner/manager option invokes POST /api/admin/products/publish-bulk. The server checks the complete selected set in one guarded D1 update: every product must be a valid draft with a retail price, an active variant with available stock, and a ready primary cover image. If one item fails, none are published. A single audit event records a successful bulk publication.
+- The bulk-publish endpoint is restricted to owner/manager roles; catalogue staff can import drafts but cannot publish a bulk batch.
+- This work is on PR #6 and must not be treated as deployed until the PR CI run passes, it is merged, and the Cloudflare Pages deployment is independently verified. No production business records or stock were changed by this code work.
