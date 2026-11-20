@@ -581,7 +581,7 @@ function Storefront() {
           <div className="hero-copy">
             <div className="hero-status-beacon" role="status">
               <span className="beacon-pulse" />
-              <span>Flagship Store & Concierge Active · Jhelum, Pakistan · Nationwide Express Delivery</span>
+              <span>De VERVE · Jhelum, Pakistan · Fashion / Wholesale / Mobility</span>
             </div>
             <p className="eyebrow"><span className="eyebrow-line" /> FASHION · LIFESTYLE · MOBILITY</p>
             <h1>Elevate<br /><em>your style.</em></h1>
@@ -743,20 +743,20 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">YOUR SHOPPING BAG</p><h2 id="cart-title">Your cart ({cart.reduce((sum,item)=>sum+item.quantity,0)})</h2><p>Review your selected products before continuing.</p></div><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}>×</button></div>
           {cart.length===0 ? <div className="cart-empty-state"><strong>Your cart is waiting for something you love.</strong><p>Explore the collection and add a product to get started.</p><button type="button" className="button button-primary" onClick={()=>{setCartOpen(false);navigate("fashion");}}>Continue shopping <span>↗</span></button></div> : <>
             <div className="cart-shipping-tracker">
-              {cartSubtotal < 500_000 ? (
+              {cartSubtotal <= 500_000 ? (
                 <>
                   <div className="cart-shipping-track-label">
-                    <span>Free Delivery across Pakistan</span>
-                    <strong>{formatPrice(500_000 - cartSubtotal)} away</strong>
+                    <span>Free-delivery offer</span>
+                    <strong>{formatPrice(Math.max(100, 500_100 - cartSubtotal))} away</strong>
                   </div>
                   <div className="cart-shipping-track">
                     <div className="cart-shipping-fill" style={{ width: `${Math.min(100, Math.round((cartSubtotal / 500_000) * 100))}%` }} />
                   </div>
-                  <small>Add {formatPrice(500_000 - cartSubtotal)} more to qualify for FREE delivery across Pakistan!</small>
+                  <small>Add {formatPrice(Math.max(100, 500_100 - cartSubtotal))} more to qualify for the free-delivery offer. Delivery coverage is confirmed before dispatch.</small>
                 </>
               ) : (
                 <div className="cart-shipping-unlocked">
-                  <span>✨</span> You qualify for <strong>FREE Delivery</strong> across Pakistan!
+                  <span>✨</span> You qualify for the <strong>free-delivery offer</strong>. Delivery coverage is confirmed before dispatch.
                 </div>
               )}
             </div>
