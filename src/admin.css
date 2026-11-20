@@ -1173,3 +1173,5 @@
 .admin-csv-publish-option input{grid-row:span 2;width:18px;height:18px;margin:1px 0 0;accent-color:#1769c2}
 .admin-csv-publish-option small{grid-column:2;color:#60758a;font-size:11px;font-weight:500;line-height:1.5}
 @media(max-width:640px){.admin-csv-import{padding:13px}.admin-csv-import .admin-table-wrap{max-width:100%;overflow-x:auto}.admin-csv-import>.admin-primary{width:100%}}
+
+.admin-global-actions .admin-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:132px;min-height:42px;color:#fff!important;font-size:14px!important;line-height:1.2;white-space:nowrap}
