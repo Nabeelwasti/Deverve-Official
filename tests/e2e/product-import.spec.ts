@@ -75,7 +75,7 @@ test("owner can import matching photos and request all-or-none publication",asyn
  await page.goto("/admin?section=products");
  const csv="name,slug,category,audience,retail_price_pkr,size,color,stock\nPremium Hoodie,premium-hoodie,Hoodies,unisex,2500,M,Black,3";
  await page.locator('input[type="file"][accept*=".csv"]').setInputFiles({name:"products.csv",mimeType:"text/csv",buffer:Buffer.from(csv)});
- await page.locator('input[type="file"][accept^="image/"]').setInputFiles({name:"premium-hoodie-front.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217])});
+ await page.locator('input[type="file"][multiple][accept^="image/"]').setInputFiles({name:"premium-hoodie-front.jpg",mimeType:"image/jpeg",buffer:Buffer.from([255,216,255,217])});
  await page.getByLabel(/Publish after import in one secure operation/).check();
  await page.getByRole("button",{name:"Import all products + attach matching photos"}).click();
  await expect.poll(()=>publishedPayload).not.toBeNull();
