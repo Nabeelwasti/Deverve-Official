@@ -565,13 +565,13 @@ function Storefront() {
           <div className="collection-grid">
             {visibleCategories.map((item) => (
               <article className={`collection-card ${item.tone}`} key={item.id}>
-                <a className="collection-art" href={whatsapp(`Assalamu Alaikum, please share available ${item.name} at De VERVE.`)} target="_blank" rel="noreferrer" aria-label={`Enquire about ${item.name}`}>
+                <a className="collection-art" href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
                   <span className="category-garment"><i /></span>
                   <span className="category-art-word">{item.id === "essentials" ? "DAILY" : item.id.toUpperCase()}</span>
                   <span className="category-arrow">↗</span>
                 </a>
-                <div className="collection-meta"><div><span className="category-number">{item.tag} / 06</span><h3>{item.name}</h3><p>{item.detail}</p></div><a href={whatsapp(`I am interested in ${item.name}. Please share availability.`)} target="_blank" rel="noreferrer" aria-label={`Ask about ${item.name}`}>↗</a></div>
+                <div className="collection-meta"><div><span className="category-number">{item.tag} / 06</span><h3>{item.name}</h3><p>{item.detail}</p></div><a href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>↗</a></div>
               </article>
             ))}
             {visibleCategories.length === 0 && <p className="empty-search">No matching category. Try “hoodies”, “kids” or “trousers”.</p>}
