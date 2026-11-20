@@ -2821,6 +2821,35 @@ test("AI owner command updates enquiry status and writes an audit record", async
   assert.equal(db.audits.at(-1).action, "ai.enquiry.status_updated");
 });
 
+test("AI owner natural-language intent planner interprets conversational requests before execution", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  db.enquiries.set(id, { id, status: "new", customer_name: "Natural language buyer" });
+  const configured = env(db);
+  configured.NabeelG_Api_key1 = "AIza" + "A".repeat(35);
+  const originalFetch = globalThis.fetch;
+  let plannerCalled = false;
+  globalThis.fetch = async (input, init = {}) => {
+    if (String(input).includes("generativelanguage.googleapis.com")) {
+      plannerCalled = true;
+      const body = JSON.parse(String(init.body || "{}"));
+      assert.match(body.contents?.[0]?.parts?.[0]?.text || "", /Please mark this customer enquiry as contacted/i);
+      return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify({ command: "set enquiry " + id + " status to contacted", reason: "The owner clearly requested this status change." }) }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return originalFetch(input, init);
+  };
+  try {
+    const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "Please mark this customer enquiry as contacted. We have called and confirmed the details." }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.96" }), configured);
+    assert.equal(response.status, 200);
+    assert.equal(plannerCalled, true);
+    assert.equal(db.enquiries.get(id).status, "contacted");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("AI owner command prepares a requested wholesale quote without sending or accepting it", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
