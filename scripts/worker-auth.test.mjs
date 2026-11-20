@@ -864,6 +864,7 @@ class FakeStatement {
   async all() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("SELECT variant_id, quantity FROM order_items WHERE order_id = ?")) return { results: this.db.orderItems.filter(item => item.order_id === v[0]).map(item => ({ variant_id: item.variant_id, quantity: item.quantity })) };
     if (q.startsWith("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa")) return { success: true, results: [] };
     if (q.startsWith("SELECT l.id, l.action, l.entity_type, l.entity_id, l.metadata_json, l.created_at, u.email AS actor_email FROM audit_logs")) {
       const [search, pattern, limit, offset] = v;
@@ -989,6 +990,13 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE orders SET order_status = ?")) {
+      const [status, updatedAt, id, previousStatus] = v;
+      const row = this.db.orders.get(id);
+      if (!row || row.order_status !== previousStatus || !q.includes("AND 1 = 1")) return { success: true, meta: { changes: 0 } };
+      Object.assign(row, { order_status: status, updated_at: updatedAt });
+      return { success: true, meta: { changes: 1 } };
+    }
     if (q.startsWith("UPDATE pos_receipt_outbox SET status='queued'")) {
       const [nextAttempt,id]=v;const row=[...this.db.posReceiptOutbox.values()].find(item=>item.id===id);
       if(!row||row.status!=="failed")return {success:true,meta:{changes:0}};
@@ -2808,6 +2816,27 @@ test("AI owner command prepares a requested wholesale quote without sending or a
   assert.match(payload.message, /has not been sent to the customer/i);
   assert.equal(db.wholesaleQuotes.get(id).status, "prepared");
   assert.equal(db.audits.at(-1).action, "ai.wholesale_quote.prepared");
+});
+
+test("AI owner order status command reuses the guarded order workflow and audit trail", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  db.orders.set(id, { id, order_number: "DV-TEST-ORDER", order_status: "pending", payment_provider: "manual", payment_status: "pending", delivery_fee_status: "accepted" });
+  db.orderItems.push({ id: "order-line-1", order_id: id, variant_id: "variant-order-1", quantity: 1 });
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "mark order " + id + " status to confirmed" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.94" }), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.action, "update_order_status");
+  assert.equal(payload.status, "confirmed");
+  assert.equal(db.orders.get(id).order_status, "confirmed");
+  assert.equal(db.orderStatusEvents.at(-1).to_status, "confirmed");
+  assert.equal(db.audits.some(row => row.action === "order.status_changed"), true);
+
+  const invalid = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set order " + id + " status to delivered" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.95" }), env(db));
+  assert.equal(invalid.status, 409);
+  assert.equal(db.orders.get(id).order_status, "confirmed");
 });
 
 test("AI owner vehicle status action protects active rentals and records the change", async () => {
