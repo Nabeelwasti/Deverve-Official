@@ -58,7 +58,9 @@ export async function createEncryptedEvidenceBackup(referenceCode: string, files
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
   const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: AAD, tagLength: 128 }, key, plaintext);
   const envelope: EncryptedEnvelope = { format: FORMAT, version: VERSION, cipher: "AES-256-GCM", kdf: "PBKDF2-SHA-256", iterations: ITERATIONS, salt: toBase64(salt), iv: toBase64(iv), ciphertext: toBase64(new Uint8Array(ciphertext)) };
-  return new Blob([JSON.stringify(envelope)], { type: "application/vnd.deverve.encrypted-evidence+json" });
+  const serialized = JSON.stringify(envelope);
+  if (new TextEncoder().encode(serialized).byteLength > MAX_ARCHIVE_BYTES) throw new Error("The encrypted backup exceeds the supported archive size. Reduce the image sizes and try again.");
+  return new Blob([serialized], { type: "application/vnd.deverve.encrypted-evidence+json" });
 }
 
 export async function decryptEvidenceBackup(file: File, password: string): Promise<EvidencePayload> {
