@@ -692,9 +692,14 @@ test("storefront uses verified service wording instead of fabricated social proo
   }
   await expect(page.locator(".testimonial-card")).toHaveCount(0);
   await expect(page.locator(".newsletter-form")).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "Keep in touch with De VERVE" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /Message us on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
-  await expect(body).toContainText("Our team confirms the delivery area, charges and estimated timeline before an order is dispatched.");
+  await expect(page.locator(".newsletter-section")).toHaveCount(0);
+  await expect(page.locator(".customer-feedback-invite")).toHaveCount(0);
+
+  // The screen-first layout exposes contact actions on the Contact screen, not in hidden sections.
+  await page.getByRole("button", { name: "Toggle navigation" }).click();
+  await page.getByRole("button", { name: "Contact", exact: true }).click();
+  await expect(page.locator(".contact-section")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
 test("cart does not show free delivery at the exact Rs. 5,000 threshold", async ({ page }) => {
