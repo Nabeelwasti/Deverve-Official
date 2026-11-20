@@ -673,3 +673,23 @@ test("cart shows the image belonging to the selected product colour", async ({ p
   await expect(cartImage).toHaveAttribute("src", blackImage);
 });
 
+test("storefront uses verified service wording instead of fabricated social proof or inactive offers", async ({ page }) => {
+  await page.goto("/");
+  const body = page.locator("body");
+  for (const unsupportedClaim of [
+    "10,000+",
+    "4.9 ★",
+    "VERVEVIP",
+    "Rs. 500 off",
+    "Verified Fashion Buyer",
+    "Standard Pakistani sizing across all De VERVE apparel",
+    "2-4 Days",
+  ]) {
+    await expect(body).not.toContainText(unsupportedClaim);
+  }
+  await expect(page.locator(".testimonial-card")).toHaveCount(0);
+  await expect(page.locator(".newsletter-form")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Keep in touch with De VERVE" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Message us on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
+  await expect(body).toContainText("Delivery areas, charges and estimated timelines are confirmed by our team before dispatch.");
+});
