@@ -30,7 +30,7 @@ function naturalActionCommand(value: string): string | null {
   if (enquiry) return "set enquiry " + enquiry[1] + " status to " + enquiry[2].toLowerCase();
   const quote = text.match(/(?:please\s+)?(?:mark|set|update|prepare)\s+(?:the\s+)?wholesale\s+quote\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as\s+)?prepared\b/i);
   if (quote) return "set wholesale quote " + quote[1] + " status to prepared";
-  const vehicle = text.match(/(?:please\\s+)?(?:mark|set|update)\\s+(?:the\\s+)?vehicle\\s+([a-f0-9-]{36})\\s+(?:status\\s+)?(?:to|as)\\s+(available|maintenance|retired)\\b/i);
+  const vehicle = text.match(/(?:please\s+)?(?:mark|set|update)\s+(?:the\s+)?vehicle\s+([a-f0-9-]{36})\s+(?:status\s+)?(?:to|as)\s+(available|maintenance|retired)\b/i);
   if (vehicle) return "set vehicle " + vehicle[1] + " status to " + vehicle[2].toLowerCase();
   const publish = text.match(/(?:please\s+)?(?:publish|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i)
     || text.match(/(?:please\s+)?(?:make|put)\s+(?:the\s+)?(.+?)\s+(?:live|available)\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue)$/i);
