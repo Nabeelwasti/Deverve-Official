@@ -1781,16 +1781,8 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
   font: 800 14px Manrope, sans-serif;
 }
 .size-guide-note p { margin: 0; }
-.customer-feedback-invite {
-  background: #f6f9fd;
-  border-top: 1px solid #e3ebf4;
-  border-bottom: 1px solid #e3ebf4;
-}
-.customer-feedback-invite .section-heading { margin-bottom: 24px; }
-.customer-feedback-invite > .button { width: fit-content; }
 @media (max-width: 580px) {
   .hero-stats-strip { gap: 10px 14px; }
   .hero-stats-strip strong { font-size: 15px; }
   .hero-stats-strip small { font-size: 9px; }
-  .customer-feedback-invite > .button { width: 100%; }
 }
