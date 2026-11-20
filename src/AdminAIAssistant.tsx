@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 import { adminRequest as api } from "./adminApi";
 import { extractOfficeText } from "./officeImport";
 
@@ -10,12 +10,29 @@ type ProductDraft = {
   brand: string | null; material: string | null; barcode: string | null; sku: string | null;
   sizes: string[]; colours: string[]; variants: DraftVariant[]; unknowns: string[]; source_files?: string[];
 };
-type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void };
+type Props = { role: string; initialBarcode?: string; onProductCreated: () => void; onManualCreate: () => void; settings?: ReactNode };
 type Source = { title: string; url: string };
 type AssistantResponse = { ok: boolean; reply: string; model?: string; product_draft?: ProductDraft; product_drafts?: ProductDraft[]; sources?: Source[]; queries?: string[]; error?: string };
-type AITaskSummary = { id: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
+type AITaskSummary = { id: string; title?: string; task_type: string; status: string; current_step: string; completed_batches: number; failed_batches: number; updated_at: string };
 
-const greeting = "Assalamu Alaikum! I’m your De VERVE AI assistant. I can help with product analysis, research and supported direct business commands. Owner and manager publishing commands can execute without a separate approval form. What would you like me to do?";
+const greeting = "Assalamu Alaikum! I’m your De VERVE business assistant. Tell me what you need in your own words — in English, Urdu or Roman Urdu. I can discuss your business, analyse files and product photos, research information, and carry out supported owner actions. I’ll explain clearly whenever something needs more information or is not yet connected.";
+function naturalActionCommand(value: string): string | null {
+  const text = value.trim().replace(/\s+/g, " ").replace(/[.!?]+$/, "");
+  if (!text) return null;
+  if (/\b(?:publish|make live|put live|list)\b.*\b(?:all|every|each)\b.*\b(?:draft|unpublished)\b.*\b(?:products|items)\b/i.test(text)
+    || /\b(?:publish|make live)\b.*\b(?:all|every)\b.*\b(?:products|items)\b.*\b(?:draft|unpublished)\b/i.test(text)
+    || /\bpublish all (?:the )?drafts?\b/i.test(text)) return "publish all eligible draft products";
+  const stock = text.match(/(?:set|update|change|adjust)\s+(?:the\s+)?(?:stock|inventory|quantity)\s+(?:for|of)\s+(?:sku\s+)?([a-z0-9._-]{2,80})\s+(?:to|at|as)\s+(\d{1,8})/i)
+    || text.match(/\bsku\s+([a-z0-9._-]{2,80})\b.{0,45}\b(?:stock|inventory|quantity)\s+(?:to|at|as)\s+(\d{1,8})/i);
+  if (stock) return "set stock for SKU " + stock[1] + " to " + stock[2];
+  const publish = text.match(/(?:please\s+)?(?:publish|make\s+(?:this\s+)?live|put\s+(?:this\s+)?live|list)\s+(?:the\s+)?(?:product\s+)?(?:named\s+|called\s+)?[“"']?(.+?)[”"']?(?:\s+(?:on|to)\s+(?:the\s+)?(?:website|site|store|live\s+catalogue))?$/i);
+  if (publish) {
+    const name = publish[1].trim().replace(/[“”"']/g, "").replace(/[.!?]+$/, "");
+    if (name && !/^(?:all|every|all draft products|all drafts)$/i.test(name)) return "publish product " + name;
+  }
+  return null;
+}
+
 const pkrToPaisa = (value: number | null | undefined) => value === null || value === undefined || !Number.isFinite(value) ? null : Math.round(value * 100);
 const attachmentMime = (file: File) => {
   if (file.type) return file.type;
@@ -88,7 +105,7 @@ async function fileBatchFingerprint(files: File[], task: string, prompt: string)
   return Array.from(new Uint8Array(digest), value => value.toString(16).padStart(2, "0")).join("");
 }
 
-export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate }: Props) {
+export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate, settings }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -104,6 +121,9 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const taskIdRef = useRef<string | null>(null);
   const [researchQuery, setResearchQuery] = useState("");
   const [publishing, setPublishing] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeTool, setActiveTool] = useState<"chat" | "product" | "research">("chat");
+  const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const canSetCost = role === "owner" || role === "manager";
   const visibleMessages = useMemo(() => [{ role: "model" as const, text: greeting }, ...history], [history]);
@@ -136,11 +156,11 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
 
   const submit = async (task: "chat" | "product" | "research", event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    const direct = message.trim().toLowerCase().replace(/[.!?]+$/,"").split(" ").filter(Boolean).join(" ").trim();
-    if (task === "chat" && ["owner", "manager"].includes(role) && (/^(?:please )?publish product .+$/i.test(message.trim()) || /^(?:please )?publish all draft products$/i.test(direct) || /^(?:please )?publish all eligible draft products$/i.test(direct) || /^(?:please )?publish all drafts$/i.test(direct) || /^(?:please )?(?:set|update) stock for sku [a-z0-9._-]{2,80} to [0-9]{1,8}$/i.test(direct))) {
-      await executeCommand();
-      return;
+    if (task === "chat" && ["owner", "manager"].includes(role)) {
+      const action = naturalActionCommand(message);
+      if (action) { await executeCommand(action); return; }
     }
+    if (task !== "chat") { taskIdRef.current = null; setActiveTaskId(null); }
     const text = message.trim() || (task === "product" ? "Analyse these product images and prepare a reviewable catalogue draft. Do not invent missing facts." : task === "research" ? researchQuery.trim() : "");
     if (!text || busy) { if (!text) setStatus("Write a message or attach product images with an instruction."); return; }
     if (task === "product" && !files.length) { setStatus("Attach at least one product photo, label or barcode image first."); return; }
@@ -148,6 +168,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     const resumedTask = Boolean(taskIdRef.current);
     const taskId = taskIdRef.current || crypto.randomUUID();
     taskIdRef.current = taskId;
+    setActiveTaskId(taskId);
     try {
       let next = [...history, { role: "user" as const, text }].map(item => ({ ...item, text: item.text.slice(0, 2200) }));
       const historySize = () => next.reduce((sum, item) => sum + item.text.length, 0);
@@ -385,7 +406,7 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         }
       }
       const planFailed = globalPlan.startsWith("Global grouping pass could not complete:");
-      if (results.every(item => item.ok) && !planFailed) taskIdRef.current = null;
+      if (results.every(item => item.ok) && !planFailed && task !== "chat") { taskIdRef.current = null; setActiveTaskId(null); }
       const reply = result.reply || "The assistant returned no response.";
       setHistory([...next, { role: "model", text: reply.slice(0, 12000) }]); setModel(result.model || "");
       if (results.some(item => !item.ok)) setStatus("Partial analysis completed. Some batches failed; successful results are preserved. Retry the failed files only. " + results.filter(item => !item.ok).length + " batch(es) failed.");
@@ -419,33 +440,45 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
   const resumeTaskMemory = async (task: AITaskSummary) => {
     setBusy(true); setStatus("Restoring saved task decisions and completed work…");
     try {
-      const result = await api<{ task: AITaskSummary; events?: Array<{ event_type: string; model?: string; payload?: { reply?: string; attachments?: string[]; step?: string } }> }>("/api/admin/ai/tasks/" + task.id);
-      taskIdRef.current = task.id;
+      const result = await api<{ task: AITaskSummary; events?: Array<{ event_type: string; model?: string; payload?: { user_message?: string; reply?: string; attachments?: string[]; step?: string } }> }>("/api/admin/ai/tasks/" + task.id);
+      taskIdRef.current = task.id; setActiveTaskId(task.id); setActiveTool("chat"); setDrawerOpen(false);
+      const recoveredMessages: Message[] = [];
+      for (const event of result.events || []) {
+        const payload = event.payload || {};
+        if (payload.user_message?.trim()) recoveredMessages.push({ role: "user", text: payload.user_message.trim() });
+        if (payload.reply?.trim()) recoveredMessages.push({ role: "model", text: payload.reply.trim() });
+      }
       const recovered = (result.events || []).map((event, index) => {
         const payload = event.payload || {};
-        return (index + 1) + ". " + (payload.step || event.event_type) + " · " + (event.model || "model unknown") + "\nFiles: " + (payload.attachments || []).join(", ") + "\n" + (payload.reply || "Saved task event");
+        return (index + 1) + ". " + (payload.step || event.event_type) + " · " + (event.model || "model unknown") + "\n" + (payload.reply || "Saved task event");
       }).join("\n\n");
-      setHistory(current => [...current, { role: "model", text: "Recovered durable task memory (" + task.status + "). Previous analysis and decisions:\n\n" + recovered + "\n\nI will include this saved context in the next request. Reattach any files that still need processing." }]);
-      setStatus("Previous task context restored. The same task ID will be reused so Gemini model/key fallback can continue with its saved memory.");
+      setHistory(recoveredMessages.length ? recoveredMessages : [{ role: "model", text: "Recovered saved task memory (" + task.status + ").\n\n" + recovered + "\n\nYou can continue this conversation. Reattach files if they are needed again." }]);
+      setStatus("Conversation restored. Saved AI responses and decisions are available; reattach any files needed for the next step.");
     } catch (error) { setStatus(error instanceof Error ? error.message : "Saved task memory could not be restored."); }
     finally { setBusy(false); }
   };
 
-  const executeCommand = async () => {
-    const command = message.trim();
+  const executeCommand = async (command: string): Promise<void> => {
+    const original = message.trim();
     if (!command || busy || !["owner", "manager"].includes(role)) return;
-    setBusy(true); setStatus("Executing your written command…");
+    setBusy(true); setStatus("Checking the requested business action…");
     try {
-      const result = await api<{ ok: boolean; message: string; published?: number; error?: string }>("/api/admin/ai/execute", {
-        method: "POST", body: JSON.stringify({ command })
-      });
-      setStatus(result.message || "Command completed.");
-      setHistory(current => [...current, { role: "user", text: command }, { role: "model", text: result.message || "Command completed." }]);
-      setMessage("");
-      onProductCreated();
+      const result = await api<{ ok: boolean; message: string; published?: number; error?: string }>("/api/admin/ai/execute", { method: "POST", body: JSON.stringify({ command }) });
+      const reply = result.message || "The server confirmed the requested action.";
+      setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply }]);
+      setStatus(reply); setMessage(""); taskIdRef.current = null; setActiveTaskId(null); onProductCreated();
+      void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The command could not be completed.");
+      const reply = error instanceof Error ? error.message : "The requested action could not be completed.";
+      setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply + " No success is being reported." }]);
+      setStatus(reply); setMessage("");
     } finally { setBusy(false); }
+  };
+
+  const startNewChat = () => {
+    setHistory([]); setStatus(""); setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setSources([]);
+    setFiles([]); setResearchQuery(""); taskIdRef.current = null; setActiveTaskId(null);
+    setActiveTool("chat"); setDrawerOpen(false);
   };
 
   const updateDraft = (patch: Partial<ProductDraft>) => setDraft(current => current ? { ...current, ...patch } : current);
@@ -515,29 +548,60 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     } finally { setPublishing(false); }
   };
 
-  return <div className="admin-ai-command">
-    <section className="admin-ai-welcome">
-      <div><p className="admin-eyebrow">DE VERVE · PRIVATE AI OPERATIONS</p><h2>AI Command Centre</h2><p>Chat, analyse product images, research online and execute supported owner commands directly. Product analysis remains a preparation step; publishing commands run immediately when submitted by the owner or an authorized manager.</p></div>
-      <div className="admin-ai-status"><span></span><strong>Requests use server-side Gemini keys</strong><small>{model ? "Last model: " + model : "Provider connectivity is checked when you send a request."}</small></div>
-    </section>
-    <div className="admin-ai-layout">
-      <section className="admin-ai-chat-card">
-        <header><div><strong>De VERVE AI assistant</strong><small>Private admin help · Urdu · Roman Urdu · English</small></div><div><button type="button" className="admin-secondary" onClick={() => { setHistory([]); setStatus("Conversation cleared."); setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setSources([]); taskIdRef.current = null; }}>New chat</button> <button type="button" className="admin-secondary" onClick={onManualCreate}>Manual product form</button></div></header>
-        {recentTasks.length > 0 && <div className="admin-ai-task-history"><strong>Saved AI task memory</strong><small>Continue previous work without repeating completed analysis</small><div>{recentTasks.slice(0, 5).map(task => <button key={task.id} type="button" className="admin-secondary" disabled={busy} onClick={() => void resumeTaskMemory(task)}>{task.task_type} · {task.status} · {task.completed_batches} completed / {task.failed_batches} failed</button>)}</div></div>}
-        <div className="admin-ai-messages" ref={listRef} aria-live="polite">{visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "AI" : "YOU"}</span><p>{item.text}</p></article>)}{busy && <p className="admin-ai-thinking">Working with Gemini…</p>}</div>
-        {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{attachmentMime(file).startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={file.type + " attachment"}>📄<strong>{attachmentMime(file) === "application/pdf" ? "PDF" : attachmentMime(file).split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
-        <form className="admin-ai-composer" onSubmit={event => void submit("chat", event)}>
-          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder="Ask about products, your business, or write a direct command such as “publish product summer-hoodie” or “publish all draft products”…" disabled={busy}/>
-          <div><label className="admin-ai-attach">＋ Attach files<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,text/csv,application/json,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.docx,.xlsx,.md" multiple onChange={chooseFiles} disabled={busy || files.length >= 100}/></label><small>Images, PDF, TXT, CSV, JSON, Markdown, DOCX and XLSX · up to 100 files · max 5 MB each</small><button type="submit" className="admin-primary" aria-label="Send message" disabled={busy || !message.trim()}>Ask AI</button>{["owner", "manager"].includes(role) && <button type="button" className="admin-primary" disabled={busy || !message.trim()} onClick={() => void executeCommand()}>Execute command</button>}</div>
-        </form>
-        <p className="admin-ai-privacy">Do not attach CNICs, customer identity documents, payment credentials, passwords or confidential financial records. Images are sent to the configured Gemini provider for analysis.</p>
-      </section>
-      <aside className="admin-ai-tools">
-        <section><p className="admin-eyebrow">FAST CATALOGUE</p><h3>AI product intake</h3><p>Attach front, back, tag or label photos. AI extracts visible details and prepares a draft with size/colour combinations. You confirm prices and opening stock.</p><button type="button" className="admin-primary" disabled={busy || files.length === 0} onClick={() => void submit("product")}>Analyse images & prepare draft</button><small>AI product extraction prepares a reviewable product record. Owner and manager publishing commands can publish directly to the live catalogue.</small></section>
-        <section><p className="admin-eyebrow">ONLINE RESEARCH</p><h3>Deep research</h3><p>Find official product information, compare sources and gather useful references before listing.</p><input value={researchQuery} onChange={event => setResearchQuery(event.target.value)} maxLength={500} placeholder="Product name, barcode or question…"/><button type="button" className="admin-secondary" disabled={busy || !researchQuery.trim()} onClick={() => void submit("research")}>Research online</button>{sources.length > 0 && <ul>{sources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a></li>)}</ul>}</section>
-        <section><p className="admin-eyebrow">ACTION SAFETY</p><h3>Direct command execution</h3><ul><li>Owner and manager can execute supported written commands without a separate approval form.</li><li>Product publishing is recorded in the admin audit log.</li><li>Unsupported commands are reported clearly and are never presented as completed.</li></ul></section>
+  return <div className="admin-ai-command admin-ai-inbox">
+    <section className="admin-ai-inbox-shell">
+      <header className="admin-ai-inbox-header">
+        <button type="button" className="admin-ai-menu-trigger" aria-label="Open chat menu" aria-expanded={drawerOpen} onClick={() => setDrawerOpen(true)}>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+        </button>
+        <div className="admin-ai-inbox-brand"><span className="admin-ai-brand-mark">DV</span><div><strong>De VERVE Assistant</strong><small>Business workspace · Private admin chat</small></div></div>
+        <div className="admin-ai-header-meta"><span className="admin-ai-online-dot"></span><span>{busy ? "Working…" : model ? "Connected · " + model : "Ready to help"}</span></div>
+        <button type="button" className="admin-ai-new-chat" onClick={startNewChat} disabled={busy}>＋ <span>New chat</span></button>
+      </header>
+      {drawerOpen && <button type="button" className="admin-ai-drawer-backdrop" aria-label="Close chat menu" onClick={() => setDrawerOpen(false)} />}
+      <aside className={"admin-ai-drawer " + (drawerOpen ? "is-open" : "")} aria-label="Chat menu" aria-hidden={!drawerOpen}>
+        <div className="admin-ai-drawer-head"><div><strong>Workspace menu</strong><small>Conversations and tools</small></div><button type="button" aria-label="Close chat menu" onClick={() => setDrawerOpen(false)}>×</button></div>
+        <button type="button" className="admin-ai-drawer-new" onClick={startNewChat}>＋ Start a new conversation</button>
+        <div className="admin-ai-drawer-section"><div className="admin-ai-drawer-label">YOUR CONVERSATIONS <span>{recentTasks.length}</span></div>
+          <div className="admin-ai-conversation-list">
+            {recentTasks.length === 0 && <p className="admin-ai-drawer-empty">Your recent conversations will appear here.</p>}
+            {recentTasks.map(task => <button key={task.id} type="button" className={"admin-ai-conversation " + (activeTaskId === task.id ? "is-active" : "")} disabled={busy} onClick={() => void resumeTaskMemory(task)}>
+              <span className="admin-ai-conversation-icon">◌</span><span className="admin-ai-conversation-copy"><strong>{task.title || (task.task_type === "product" ? "Product analysis" : task.task_type === "research" ? "Research" : "Business conversation")}</strong><small>{new Date(task.updated_at).toLocaleString("en-PK", { dateStyle: "medium", timeStyle: "short" })} · {task.status}</small></span>
+            </button>)}
+          </div>
+        </div>
+        <div className="admin-ai-drawer-section"><div className="admin-ai-drawer-label">AI TOOLS</div>
+          <button type="button" className={"admin-ai-tool-link " + (activeTool === "chat" ? "is-active" : "")} onClick={() => { setActiveTool("chat"); setDrawerOpen(false); }}><span>✦</span><span><strong>General assistant</strong><small>Ask about your business</small></span></button>
+          <button type="button" className={"admin-ai-tool-link " + (activeTool === "product" ? "is-active" : "")} onClick={() => { setActiveTool("product"); setDrawerOpen(false); }}><span>▧</span><span><strong>Product & file analysis</strong><small>Photos, labels, catalogues and stock sheets</small></span></button>
+          <button type="button" className={"admin-ai-tool-link " + (activeTool === "research" ? "is-active" : "")} onClick={() => { setActiveTool("research"); setDrawerOpen(false); }}><span>⌕</span><span><strong>Deep research</strong><small>Find sources and verify information</small></span></button>
+          <button type="button" className="admin-ai-tool-link" onClick={() => { setDrawerOpen(false); onManualCreate(); }}><span>＋</span><span><strong>Manual product entry</strong><small>Open the catalogue editor</small></span></button>
+        </div>
+        {settings && <div className="admin-ai-drawer-section admin-ai-settings-section"><div className="admin-ai-drawer-label">AI SETTINGS</div>{settings}</div>}
+        <div className="admin-ai-drawer-footer"><span className="admin-ai-online-dot"></span><span>Private workspace</span><small>Access follows your admin role</small></div>
       </aside>
-    </div>
+      <div className="admin-ai-chat-main">
+        <div className="admin-ai-chat-context">
+          <div><p className="admin-eyebrow">{activeTool === "product" ? "PRODUCT INTAKE" : activeTool === "research" ? "RESEARCH WORKSPACE" : "PRIVATE BUSINESS CHAT"}</p><h2>{activeTool === "product" ? "Analyse products and files" : activeTool === "research" ? "Research with sources" : "How can I help today?"}</h2><p>{activeTool === "product" ? "Attach product photos, labels or catalogues. I’ll extract verifiable details and prepare a separate draft for review." : activeTool === "research" ? "Ask a question or enter a product name, barcode or topic. Findings include source links when available." : "Write naturally. Explain the outcome you want — no special command format is required."}</p></div>
+          {recentTasks.length > 0 && <span className="admin-ai-saved-count">{recentTasks.length} saved conversations</span>}
+        </div>
+        <div className="admin-ai-messages" ref={listRef} aria-live="polite">
+          {visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "DE VERVE AI" : "YOU"}</span><p>{item.text}</p></article>)}
+          {sources.length > 0 && <section className="admin-ai-source-list"><strong>Sources and references</strong>{sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}<span>↗</span></a>)}</section>}
+          {busy && <p className="admin-ai-thinking"><span></span>Thinking through your request…</p>}
+        </div>
+        {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{attachmentMime(file).startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={attachmentMime(file) + " attachment"}>▤<strong>{attachmentMime(file) === "application/pdf" ? "PDF" : attachmentMime(file).split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
+        {status && <p className="admin-ai-live-status" role="status">{status}</p>}
+        <form className="admin-ai-composer" onSubmit={event => void submit(activeTool, event)}>
+          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder={activeTool === "product" ? "Describe what to extract, compare or prepare from these files…" : activeTool === "research" ? "What would you like me to research?" : "Message De VERVE Assistant…"} disabled={busy} aria-label="Message De VERVE Assistant"/>
+          <div className="admin-ai-composer-toolbar">
+            <label className="admin-ai-attach" title="Attach photos or documents">＋ Attach<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,text/csv,application/json,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.docx,.xlsx,.md" multiple onChange={chooseFiles} disabled={busy || files.length >= 100}/></label>
+            <small>{files.length ? files.length + " attachment(s) ready" : "Photos and documents · up to 100 files"}</small>
+            <button type="submit" className="admin-ai-send" aria-label="Send message" disabled={busy || (!message.trim() && files.length === 0)}>{busy ? "Working…" : "Send"} <span>↑</span></button>
+          </div>
+          <p className="admin-ai-privacy">Never attach passwords, API keys, OTPs, payment credentials or identity documents. Actions are restricted to your role and available integrations.</p>
+        </form>
+      </div>
+    </section>
     {status && <p className="admin-message" role="status">{status}</p>}
     {draft && <section className="admin-ai-draft">
       <div className="admin-panel-heading"><div><p className="admin-eyebrow">REVIEW BEFORE SAVING</p><h3>Prepared product draft</h3></div><button type="button" className="admin-secondary" onClick={() => { if (draftQueue.length) { const next = draftQueue[0]; setDraftQueue(draftQueue.slice(1)); setDraftSourceFiles(next.files); setDraft(next.draft); setStatus("Skipped the current candidate. The next separate product draft is ready."); } else { setDraft(null); setDraftSourceFiles([]); } }}>Discard draft</button></div>
