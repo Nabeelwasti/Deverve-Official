@@ -4619,7 +4619,34 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
    if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("Stock changed during execution. Refresh inventory and retry.",409);
    return json({ok:true,action:"set_variant_stock",sku:variant.sku,previous_stock:current,stock_on_hand:quantity,quantity_delta:delta,movement_id:movementId,reserved_quantity:reserved,available_quantity:Math.max(0,quantity-reserved),product:{id:variant.product_id,name:variant.name},variant:{size:variant.size,color:variant.color},message:"Updated stock for "+variant.name+" · "+variant.color+" · "+variant.size+" (SKU "+variant.sku+") from "+current+" to "+quantity+". The inventory movement and audit record were saved; reserved units were protected."});
   }
-  return error("I could not safely match this request to an available business action. No changes were made. I can currently publish one clearly identified product, publish eligible draft products, or update stock for one exact SKU. Ask me naturally; if the target or details are unclear, I will ask you to clarify.",422);
+  const enquiryCommand=/^(?:please )?(?:mark|set|update) enquiry ([0-9a-f-]{36}) (?:status )?(?:to|as) (new|contacted|qualified|closed|spam)$/i.exec(normalized);
+  if(enquiryCommand){
+   const id=enquiryCommand[1],nextStatus=enquiryCommand[2].toLowerCase();
+   const current=await env.DB.prepare("SELECT id,status FROM enquiries WHERE id=? LIMIT 1").bind(id).first<{id:string;status:string}>();
+   if(!current)return error("No enquiry matched that exact ID",404);
+   if(current.status===nextStatus)return json({ok:true,action:"update_enquiry_status",changed:false,enquiry_id:id,status:nextStatus,message:"This enquiry is already marked "+nextStatus+"."});
+   const written=await env.DB.batch([
+    env.DB.prepare("UPDATE enquiries SET status=? WHERE id=? AND status=?").bind(nextStatus,id,current.status),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'ai.enquiry.status_updated','enquiry',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({command,previous_status:current.status,new_status:nextStatus}))
+   ]);
+   if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The enquiry changed during execution. Refresh the Enquiries workspace and retry.",409);
+   return json({ok:true,action:"update_enquiry_status",changed:true,enquiry_id:id,previous_status:current.status,status:nextStatus,message:"Updated enquiry "+id+" from "+current.status+" to "+nextStatus+". The change was recorded in the audit log."});
+  }
+  const quoteCommand=/^(?:please )?(?:mark|set|update) wholesale quote ([0-9a-f-]{36}) (?:status )?(?:to|as) prepared$/i.exec(normalized);
+  if(quoteCommand){
+   const id=quoteCommand[1];
+   const current=await env.DB.prepare("SELECT id,status FROM wholesale_quotes WHERE id=? LIMIT 1").bind(id).first<{id:string;status:string}>();
+   if(!current)return error("No wholesale quote matched that exact ID",404);
+   if(current.status==="prepared")return json({ok:true,action:"prepare_wholesale_quote",changed:false,quote_id:id,status:"prepared",message:"This wholesale quote is already prepared. It has not been sent to the customer."});
+   if(current.status!=="requested")return error("Only a requested wholesale quote can be marked prepared. Accepted, declined, sent or expired quotes are not changed by this command.",409);
+   const written=await env.DB.batch([
+    env.DB.prepare("UPDATE wholesale_quotes SET status='prepared' WHERE id=? AND status='requested'").bind(id),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'ai.wholesale_quote.prepared','wholesale_quote',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({command,previous_status:current.status,new_status:"prepared"}))
+   ]);
+   if((written[0]?.meta?.changes??0)!==1||(written[1]?.meta?.changes??0)!==1)return error("The wholesale quote changed during execution. Refresh the Wholesale workspace and retry.",409);
+   return json({ok:true,action:"prepare_wholesale_quote",changed:true,quote_id:id,status:"prepared",message:"Marked wholesale quote "+id+" as prepared. It has not been sent to the customer; use the quote workspace to review and send it."});
+  }
+  return error("I could not safely match this request to an available business action. No changes were made. Supported direct actions include publishing one identified product, publishing eligible draft products, updating stock for an exact SKU, changing an enquiry status, and marking a requested wholesale quote as prepared. Other workspaces remain available for guided workflows.",422);
  }catch{return error("The command could not be completed. No success is being reported; check the product status and audit log before retrying.",503);}
 }
 async function adminAIAssistantRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
