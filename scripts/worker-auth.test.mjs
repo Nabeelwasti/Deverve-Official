@@ -1000,10 +1000,6 @@ class FakeStatement {
         dispatched: ["delivered"],
       };
       if (!row || row.order_status !== previousStatus || !(allowed[previousStatus] || []).includes(status)) return { success: true, meta: { changes: 0 } };
-      if (status === "processing" || status === "dispatched") {
-        const paymentAllowed = ((!row.payment_provider || row.payment_provider === "manual") && row.payment_method === "cod") || row.payment_status === "paid";
-        if (row.delivery_fee_status !== "accepted" || !paymentAllowed) return { success: true, meta: { changes: 0 } };
-      }
       const quantities = new Map();
       for (const item of this.db.orderItems.filter(item => item.order_id === id && item.variant_id)) quantities.set(item.variant_id, (quantities.get(item.variant_id) || 0) + Number(item.quantity || 0));
       if (status === "dispatched" || status === "cancelled") {
@@ -1516,7 +1512,7 @@ class FakeStatement {
       if (row) Object.assign(row, { status: "archived", updated_at: v[0] });
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
-    if (q.startsWith("INSERT INTO audit_logs") && q.includes("SELECT ?, ?, ?, 'order'") && q.includes("FROM orders WHERE id = ? AND order_status = ?")) {
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("SELECT") && q.includes("'order'") && q.includes("order_status = ?")) {
       this.db.audits.push({ id: v[0], actor_admin_id: v[1], action: v[2], entity_type: "order", entity_id: v[3], metadata_json: v[4] });
       return { success: true, meta: { changes: 1 } };
     }
