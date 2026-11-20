@@ -9,7 +9,7 @@ export default function InventoryWorkspace({onManageProduct,canManageMoney}:{onM
  const load=useCallback(async(search:string)=>{setLoading(true);setError("");try{const result=await adminRequest<{items?:Item[];summary?:Summary}>("/api/admin/inventory?q="+encodeURIComponent(search));if(!Array.isArray(result.items)||!result.summary)throw new Error("The inventory response was incomplete. Refresh and try again.");setItems(result.items);setSummary(result.summary);}catch(e){setError(e instanceof Error?e.message:"Inventory could not be loaded.");}finally{setLoading(false);}},[]);
  useEffect(()=>{void load("");},[load]);
  const visible=useMemo(()=>items.filter(item=>filter==="all"||(filter==="low"&&item.stock_state==="low_stock")||(filter==="out"&&item.stock_state==="out_of_stock")),[items,filter]);
- const optionCount=(value:string)=>value.split(/[,;|\\n]+/).map(part=>part.trim()).filter(Boolean).length;
+ const optionCount=(value:string)=>value.split(/[,;|\n]+/).map(part=>part.trim()).filter(Boolean).length;
  const legacyOptionRows=useMemo(()=>items.filter(item=>optionCount(item.size)>1||optionCount(item.color)>1),[items]);
  const incompleteOptionRows=useMemo(()=>items.filter(item=>!item.sku||!item.barcode||!item.size.trim()||!item.color.trim()),[items]);
  const money=(value:number|null)=>value===null?"—":"Rs. "+(value/100).toLocaleString("en-PK",{maximumFractionDigits:0});
