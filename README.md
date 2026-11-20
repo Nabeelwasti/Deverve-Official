@@ -13,12 +13,14 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Database: Cloudflare D1 (`deverve-production`, APAC)
 - Media: private Cloudflare R2 (`deverve-media-private`)
 - GitHub is connected to Cloudflare Pages, but source-triggered and production deployments are currently disabled intentionally. Preview deployments are also disabled. Do not describe a source merge as a production deployment.
-- Latest verified source implementation commit: `504110e4348c9c2947bbd7a8833d2676759b7068` (AI customer accessibility, scanner enhancements and audited admin AI actions). Latest documentation commit: `94865ac5aaf294002326c8bdf0e8800d9333d5ed`.
-- Latest production deployment remains an older build from `d3280becfc507c5b3fdba362434c14097a0ebacd`; the merged implementation has not been deployed to the public Pages site.
+- Latest source commit: `fd724e351191e316e05db00d4091b95e97999858` (storefront claims and policies corrected; universal sizing chart and fabricated reviews removed; non-functional newsletter voucher removed; UI guidance polished). This source commit is **not deployed**.
+- Latest verified Cloudflare Pages production deployment: commit `1bc020f089d46ff7452fb3eb0a44ba900543827d`, deployment `32aabada-c3b6-4003-a37b-749a9762466a`, created 20 November 2026 at 17:03 UTC. GitHub `main` is ahead of production. Source-triggered and production deployments remain disabled; do not describe a source commit as live.
 - Live D1 schema reconciliation on 20 November 2026 confirms the expected structures from migrations 0028–0036 are already reflected in production, including permanent CNIC protection triggers, the unique active variant index, order inventory reservations and AI task continuity tables. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
 - Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md), [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md), [disaster recovery architecture and gates](docs/DISASTER-RECOVERY-IMPLEMENTATION.md) and [AI Command Centre capability record](docs/ADMIN-AI-COMMAND-CENTRE.md).
 
 ## Implemented
+
+> Release note: the source contains substantial implemented functionality, but live production acceptance remains blocked by the outstanding gates below. UI presence and a passing build do not prove a provider, backup, payment or physical-device workflow is operational.
 
 ### Storefront and commerce
 - Responsive fashion, wholesale, car-rental, contact and bilingual policy pages.
