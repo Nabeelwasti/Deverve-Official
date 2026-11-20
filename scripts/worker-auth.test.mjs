@@ -1816,6 +1816,8 @@ test("catalogue staff cannot publish or archive products", async () => {
   assert.equal(publish.status, 403);
   const archive = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
   assert.equal(archive.status, 403);
+  const bulkPublish = await handleRequest(request("/api/admin/products/publish-bulk", "POST", { product_ids: [id] }, headers), env(db));
+  assert.equal(bulkPublish.status, 403);
   assert.equal(db.products.get(id).status, "draft");
 });
 
