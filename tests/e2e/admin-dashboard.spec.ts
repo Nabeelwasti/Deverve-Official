@@ -100,8 +100,9 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
   await page.getByRole("button", { name: "Create with AI" }).click();
   await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen", "ai");
-  await expect(page.locator(".admin-ai-welcome").getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
-  await page.getByRole("button", { name: "Manual product form" }).click();
+  await expect(page.locator(".admin-ai-chat-context").getByRole("heading", { name: "How can I help today?" })).toBeVisible();
+  await page.getByRole("button", { name: "Open chat menu" }).click();
+  await page.getByRole("button", { name: "Manual product entry" }).click();
   await page.getByLabel("Product name").fill("Palette test hoodie");
   await page.getByLabel("Category").fill("Hoodies");
   await expect(page.getByLabel("Default purchase cost (PKR)")).toBeVisible();
@@ -187,13 +188,16 @@ test("AI Command Centre analyses chat images and creates a reviewed unpublished 
   await expect(page.locator(".admin-ai-welcome").getByRole("heading", { name: "AI Command Centre" })).toBeVisible();
   const image = { name: "hoodie.png", mimeType: "image/png", buffer: Buffer.from("fake-image-data") };
   await page.locator(".admin-ai-attach input").setInputFiles(image);
-  await page.getByPlaceholder(/Ask about products/).fill("Please describe this hoodie.");
+  await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please describe this hoodie.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("I can analyse the attached product image.")).toBeVisible();
   expect((chatPayload?.images as unknown[])?.length).toBe(1);
 
   await page.locator(".admin-ai-attach input").setInputFiles(image);
-  await page.getByRole("button", { name: "Analyse images & prepare draft" }).click();
+  await page.getByRole("button", { name: "Open chat menu" }).click();
+  await page.getByRole("button", { name: /Product & file analysis/ }).click();
+  await page.getByPlaceholder(/Describe what to extract/).fill("Analyse these garment photos and prepare a product draft.");
+  await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible();
   expect((productPayload?.images as unknown[])?.length).toBe(1);
   await page.getByRole("button", { name: "Create product draft & upload images" }).click();
@@ -252,7 +256,10 @@ test("AI catalogue intake analyses all 100 selected images across resumable batc
   }));
   await page.locator(".admin-ai-attach input").setInputFiles(files);
   await expect(page.locator(".admin-ai-attachments figure")).toHaveCount(100);
-  await page.getByRole("button", { name: "Analyse images & prepare draft" }).click();
+  await page.getByRole("button", { name: "Open chat menu" }).click();
+  await page.getByRole("button", { name: /Product & file analysis/ }).click();
+  await page.getByPlaceholder(/Describe what to extract/).fill("Analyse this batch of catalogue images.");
+  await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByRole("heading", { name: "Prepared product draft" })).toBeVisible({ timeout: 60000 });
   expect(productBatches).toBe(34);
   expect(finalSheetCount).toBe(7);
@@ -260,7 +267,23 @@ test("AI catalogue intake analyses all 100 selected images across resumable batc
   expect(maximumImagesPerBatch).toBe(3);
 });
 
-test("owner can execute a direct AI publishing command without an approval form", async ({ page }) => {
+test("AI chat uses a slide-in inbox menu for conversations and tools", async ({ page }) => {
+  await mockAdminApi(page);
+  await page.goto("/admin?section=ai");
+  await expect(page.locator(".admin-ai-inbox-shell")).toBeVisible();
+  await expect(page.getByPlaceholder("Message De VERVE Assistant…")).toBeVisible();
+  await page.getByRole("button", { name: "Open chat menu" }).click();
+  await expect(page.getByRole("complementary", { name: "Chat menu" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Start a new conversation/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /General assistant/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Product & file analysis/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Deep research/ })).toBeVisible();
+  await page.getByRole("button", { name: /Deep research/ }).click();
+  await expect(page.locator(".admin-ai-chat-context")).toContainText("Research with sources");
+  await expect(page.locator(".admin-ai-drawer")).not.toHaveClass(/is-open/);
+});
+
+test("owner can publish a product through natural language in the normal chat composer", async ({ page }) => {
   await mockAdminApi(page);
   let executed: Record<string, unknown> | null = null;
   await page.route("**/api/admin/ai/execute", async route => {
@@ -271,7 +294,7 @@ test("owner can execute a direct AI publishing command without an approval form"
     }) });
   });
   await page.goto("/admin?section=ai");
-  await page.getByPlaceholder(/Ask about products/).fill("publish product everyday-hoodie");
+  await page.getByPlaceholder("Message De VERVE Assistant…").fill("Please make the Everyday Hoodie product live on the website.");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByRole("status")).toContainText("Published Everyday Hoodie directly");
   expect(executed).toEqual({ command: "publish product everyday-hoodie" });
