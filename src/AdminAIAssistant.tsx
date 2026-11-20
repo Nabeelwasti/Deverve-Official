@@ -603,7 +603,6 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         </form>
       </div>
     </section>
-    {status && <p className="admin-message" role="status">{status}</p>}
     {draft && <section className="admin-ai-draft">
       <div className="admin-panel-heading"><div><p className="admin-eyebrow">REVIEW BEFORE SAVING</p><h3>Prepared product draft</h3></div><button type="button" className="admin-secondary" onClick={() => { if (draftQueue.length) { const next = draftQueue[0]; setDraftQueue(draftQueue.slice(1)); setDraftSourceFiles(next.files); setDraft(next.draft); setStatus("Skipped the current candidate. The next separate product draft is ready."); } else { setDraft(null); setDraftSourceFiles([]); } }}>Discard draft</button></div>
       {draft.unknowns?.length > 0 && <p className="admin-ai-warning"><strong>Needs verification:</strong> {draft.unknowns.join(" · ")}</p>}
