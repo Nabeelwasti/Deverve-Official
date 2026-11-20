@@ -679,7 +679,7 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.locator(".trust-pillars-section")).toHaveCount(0);
   await expect(page.locator(".intro-strip")).toHaveCount(0);
   await expect(page.locator(".collections-section")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Shop Men.s fashion collection/ })).toHaveAttribute("href", /screen=fashion/);
+  await expect(page.getByRole("link", { name: /Shop Men.s fashion collection/ }).first()).toHaveAttribute("href", /screen=fashion/);
   for (const unsupportedClaim of [
     "10,000+",
     "4.9 ★",
