@@ -558,9 +558,9 @@ test("product card opens from its content and product cart merges by size and co
   });
 
   await page.goto("/");
-  const navToggle = page.getByRole("button", { name: "Toggle navigation" });
-  if (await navToggle.isVisible()) await navToggle.click();
-  await page.getByRole("button", { name: "Fashion", exact: true }).click();
+  // Use the visible hero entry point so desktop and mobile follow the same screen-first route.
+  await page.getByRole("button", { name: /Explore fashion/ }).click();
+  await expect(page.locator(".live-catalogue")).toBeVisible();
   await page.locator(".product-card h4").getByText("Trouser").click();
   await expect(page).toHaveURL(/\/product\/trouser$/);
   await expect(page.locator(".product-page-media-column")).toBeVisible();
