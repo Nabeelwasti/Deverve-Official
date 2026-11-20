@@ -107,3 +107,12 @@ The slide-in menu also exposes the role-authorized business workspaces (overview
 - The public assistant does not yet execute order, rental, payment or account changes from chat. Its shortcuts open the secure website workspaces/forms. Verified customer action APIs, contextual action cards and transaction execution remain a separate release gate.
 - Browser CI verifies the public chat photo attachment flow, task shortcuts and accessibility controls. Physical Android/iOS camera, flash, speech-recognition language and real voice-output testing remains required.
 - The Web Speech API and native BarcodeDetector are not universally supported; feature detection and fallbacks are intentional. See [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition) and [MDN BarcodeDetector](https://developer.mozilla.org/en-US/docs/Web/API/BarcodeDetector).
+
+
+## Guarded order-status execution — 20 November 2026
+
+The owner/manager natural-language executor now also recognizes an exact order UUID and one of the existing order statuses: `confirmed`, `processing`, `dispatched`, `delivered` or `cancelled`.
+
+This action does **not** implement a second order state machine. It forwards the requested transition through the existing authenticated `adminOrderRoutes` handler, preserving its current business rules: allowed transition graph, customer delivery-fee acceptance, manual/COD payment rules, online payment-session checks, reserved-stock checks, stock consumption on dispatch, reservation release on cancellation, order status events and audit records. Any rejection from that existing handler is returned to the AI chat; the assistant does not report success unless the handler confirms the exact requested status.
+
+This adds a seventh direct action family. It does not enable AI to verify payments, issue refunds, alter financial accounts, send delivery-fee approval links, or bypass fulfilment rules. The frontend recognizes exact UUID/status instructions; ambiguous order references remain conversational and make no changes.
