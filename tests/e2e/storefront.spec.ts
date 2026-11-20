@@ -676,6 +676,7 @@ test("cart shows the image belonging to the selected product colour", async ({ p
 test("storefront uses verified service wording instead of fabricated social proof or inactive offers", async ({ page }) => {
   await page.goto("/");
   const body = page.locator("body");
+  await expect(page.locator(".trust-pillars-section")).toBeVisible();
   for (const unsupportedClaim of [
     "10,000+",
     "4.9 ★",
@@ -698,6 +699,9 @@ test("storefront uses verified service wording instead of fabricated social proo
   // The screen-first layout exposes contact actions on the Contact screen, not in hidden sections.
   await page.getByRole("button", { name: "Toggle navigation" }).click();
   await page.getByRole("button", { name: "Contact", exact: true }).click();
+  await expect(page.locator(".faq-section")).toBeVisible();
+  await page.getByRole("button", { name: /How fast is shipping and what are the delivery charges/ }).click();
+  await expect(page.locator(".faq-section")).toContainText("Delivery areas, charges and estimated timelines are confirmed by our team before dispatch.");
   await expect(page.locator(".contact-section")).toBeVisible();
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
