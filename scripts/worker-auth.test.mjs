@@ -847,6 +847,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id FROM products WHERE slug = ?")) {
       return [...this.db.products.values()].find((item) => item.slug === v[0] && (!v[1] || item.id !== v[1])) ?? null;
     }
+    if (q.startsWith("SELECT id, status FROM enquiries WHERE id = ?")) return this.db.enquiries.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, COALESCE(contact_type, enquiry_type) AS enquiry_type, customer_name, phone, email, message, status, source, created_at FROM enquiries WHERE id = ?")) { const row=this.db.enquiries.get(v[0]); return row?{...row,enquiry_type:row.contact_type||row.enquiry_type}:null; }
     if (q.startsWith("SELECT id, status FROM products WHERE id = ?")) { const row = this.db.products.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
     if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity, barcode, cost_price_paisa, reorder_level, is_active, created_at, updated_at FROM product_variants WHERE id = ?")) return this.db.variants.get(v[0]) ?? null;
@@ -2767,6 +2768,38 @@ test("AI owner exact-SKU stock command records a balanced inventory adjustment a
   assert.equal(rejected.status,409);
   assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
   assert.equal(db.movements.length,1);
+});
+
+test("AI owner command updates enquiry status and writes an audit record", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  db.enquiries.set(id, { id, status: "new", customer_name: "Test visitor" });
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "mark enquiry " + id + " as contacted" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.90" }), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.action, "update_enquiry_status");
+  assert.equal(payload.previous_status, "new");
+  assert.equal(payload.status, "contacted");
+  assert.equal(db.enquiries.get(id).status, "contacted");
+  assert.equal(db.audits.at(-1).action, "ai.enquiry.status_updated");
+});
+
+test("AI owner command prepares a requested wholesale quote without sending or accepting it", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  db.wholesaleQuotes.set(id, { id, status: "requested", valid_until: null, approval_token: "opaque-token" });
+  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "prepare wholesale quote " + id }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.91" }), env(db));
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.action, "prepare_wholesale_quote");
+  assert.equal(payload.status, "prepared");
+  assert.match(payload.message, /has not been sent to the customer/i);
+  assert.equal(db.wholesaleQuotes.get(id).status, "prepared");
+  assert.equal(db.audits.at(-1).action, "ai.wholesale_quote.prepared");
 });
 
 test("bulk media upload recovers an R2 object left behind by an interrupted D1 completion", async () => {
