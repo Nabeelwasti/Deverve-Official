@@ -1,4 +1,25 @@
-# Current source and production data-protection review — 18 November 2026
+# Production readiness — historical engineering record and current status
+
+## Current verified status — 20 November 2026
+
+This section supersedes older branch, migration, deployment and production-state claims in the historical notes below.
+
+- **Current source:** `main` at `412f6c4b7549977cfc7432be55666491779c21d8` before this audit documentation/code-alignment commit.
+- **Current production D1:** read-only Cloudflare D1 queries confirm 63 application tables and the expected structures from migrations 0034–0036, including `order_inventory_reservations`, `ai_task_runs`, `ai_task_events` and the unique active variant-options index. Do not rerun those migrations.
+- **Inventory data:** four variants exist. One legacy variant contains multiple size/colour options in a shared stock record; one variant lacks a SKU and one lacks a barcode. Physical stock reconciliation is required before splitting this row.
+- **CNIC retention:** Cloudflare R2 read-back confirms enabled indefinite Bucket Lock rule `deverve-rental-cnic-indefinite` for `rental-private/` in `deverve-media-private`. The managed public `r2.dev` domain is disabled. D1 immutability triggers are present.
+- **Payment queues:** Cloudflare account queue listing returned no queues. Safepay queue, DLQ, Pages producer binding and separate consumer deployment remain unconfigured. Safepay must not be treated as production-accepted.
+- **Backups:** a same-account R2 copy/restore drill has been completed and the per-rental encrypted CNIC backup tool exists. An independent off-account D1/R2 backup and documented restore drill remain outstanding.
+- **CI:** run #1390 passed on the AI inbox source commit. Remote D1 integration was skipped because GitHub Actions Cloudflare test credentials were not configured. Subsequent documentation/source-alignment commits require their own latest CI confirmation.
+- **Deployment:** Cloudflare Pages source-triggered, production and preview deployments remain disabled intentionally. Current `main` source is not live. Do not deploy or enable deployment without explicit owner authorization.
+- **External acceptance:** real Safepay sandbox, Resend delivery, Meta WhatsApp template/opt-in, catalogue verification, physical-device camera testing, POS/finance and rental acceptance remain outstanding.
+
+### Release decision
+
+**Not production-accepted.** Keep deployment disabled. Before any production release, complete independent backups and restore validation, legacy inventory reconciliation, Safepay architecture/sandbox acceptance, external provider configuration, owner business-data/legal acceptance, real-device testing and final CI/security review.
+
+---
+
 
 ## Active hardening work — 19 November 2026
 
