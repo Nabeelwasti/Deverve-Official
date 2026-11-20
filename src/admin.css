@@ -1037,3 +1037,100 @@
 .barcode-torch-toggle{min-height:40px}
 
 .admin-global-actions{display:flex;align-items:center;justify-content:flex-end;gap:9px;flex-wrap:wrap;margin-left:auto}.admin-global-actions button{min-height:42px;white-space:nowrap}@media(max-width:650px){.admin-global-actions{width:100%;justify-content:flex-start;margin-left:0}.admin-global-actions button{flex:1 1 145px}.admin-dashboard .admin-heading-row{width:100%}}
+
+/* --- De VERVE Luxury POS Counter & Inventory Extensions --- */
+.pos-tender-group {
+  display: grid;
+  gap: 8px;
+  background: linear-gradient(135deg, #f8fbfd 0%, #f1f6fa 100%);
+  border: 1px solid #d5e3f0;
+  border-radius: 12px;
+  padding: 12px;
+}
+.pos-quick-tender-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pos-chip-btn {
+  background: #ffffff;
+  border: 1px solid #c8d8e8;
+  border-radius: 8px;
+  color: #123e6b;
+  font-size: 11px;
+  font-weight: 750;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pos-chip-btn:hover {
+  background: #092c57;
+  color: #ffffff;
+  border-color: #092c57;
+  box-shadow: 0 4px 12px rgba(9, 44, 87, 0.18);
+}
+.pos-change-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #eaf6ef 0%, #daf0e2 100%);
+  border: 1px solid #b7dfc6;
+  border-radius: 9px;
+  color: #1b5e39;
+  font-size: 13px;
+  font-weight: 750;
+}
+.pos-change-banner strong {
+  font-size: 17px;
+  color: #124b2b;
+  letter-spacing: -0.02em;
+}
+.pos-short-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 13px;
+  background: #fff4f2;
+  border: 1px solid #fad2ce;
+  border-radius: 9px;
+  color: #9c2e26;
+  font-size: 12px;
+  font-weight: 700;
+}
+.pos-short-banner strong {
+  font-size: 15px;
+  color: #8b1e16;
+}
+.admin-quick-deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+.admin-delta-btn {
+  background: #eef5fb;
+  border: 1px solid #cadbe9;
+  border-radius: 7px;
+  color: #174c7e;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 5px 9px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.admin-delta-btn:hover {
+  background: #174c7e;
+  color: #ffffff;
+}
+.admin-delta-btn.delta-negative {
+  background: #fdf1f1;
+  border-color: #f5cccc;
+  color: #a43838;
+}
+.admin-delta-btn.delta-negative:hover {
+  background: #a43838;
+  color: #ffffff;
+}

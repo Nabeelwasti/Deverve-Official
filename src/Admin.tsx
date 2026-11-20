@@ -1354,6 +1354,14 @@ export default function Admin() {
             <h3>Stock movement · {stockTarget.sku || [stockTarget.size, stockTarget.color].filter(Boolean).join(" / ")}</h3>
             <label>Movement type<select value={stockForm.movement_type} onChange={(e) => setStockForm({ ...stockForm, movement_type: e.target.value })}><option value="received">Stock received</option><option value="customer_return">Customer return</option><option value="adjustment">Stock adjustment</option></select></label>
             <label>Quantity change<input type="number" required min={stockForm.movement_type === "adjustment" ? -1000000 : 1} max="1000000" step="1" value={stockForm.quantity_delta} onChange={(e) => setStockForm({ ...stockForm, quantity_delta: e.target.value })} placeholder="Use a negative number for stock reduction" /></label>
+            <div className="admin-quick-deltas" role="group" aria-label="Quick stock adjustments">
+              {[1, 5, 10, 25, 50].map(n => (
+                <button key={n} type="button" className="admin-delta-btn" onClick={() => setStockForm(s => ({ ...s, quantity_delta: String((Number(s.quantity_delta) || 0) + n) }))}>+{n}</button>
+              ))}
+              {stockForm.movement_type === "adjustment" && [1, 5, 10].map(n => (
+                <button key={-n} type="button" className="admin-delta-btn delta-negative" onClick={() => setStockForm(s => ({ ...s, quantity_delta: String((Number(s.quantity_delta) || 0) - n) }))}>-{n}</button>
+              ))}
+            </div>
             <label>Reason / note<input required minLength={3} maxLength={500} value={stockForm.note} onChange={(e) => setStockForm({ ...stockForm, note: e.target.value })} placeholder="e.g. Received supplier delivery" /></label>
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setStockTarget(null)}>Cancel</button><button className="admin-primary" disabled={busy}>Save stock movement</button></div>
           </form>}

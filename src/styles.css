@@ -959,3 +959,364 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .ai-chat-shortcuts{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;border-bottom:1px solid #edf1f5;scrollbar-width:thin}
 .ai-chat-shortcuts a{flex:0 0 auto;padding:7px 9px;border:1px solid #dce6ef;border-radius:999px;background:#f8fafc;color:#355b7b;font-size:9px;font-weight:750;text-decoration:none}
 .ai-chat-shortcuts a:focus-visible,.ai-chat-tools button:focus-visible,.ai-chat-tool:focus-within{outline:2px solid #387db3;outline-offset:2px}
+
+
+/* ==========================================================================
+   DE VERVE LUXURY MODERNIZATION & FUTURISTIC REDESIGN LAYER (2026)
+   ========================================================================== */
+
+/* Enhanced Futuristic Root Tokens */
+:root {
+  --dv-midnight: #030d1c;
+  --dv-sapphire-950: #041226;
+  --dv-sapphire-900: #061c3d;
+  --dv-sapphire-800: #0a2754;
+  --dv-sapphire-700: #103873;
+  --dv-electric-500: #2575d6;
+  --dv-electric-400: #3b82f6;
+  --dv-cyan-glow: #38bdf8;
+  --dv-cyan-light: #e0f2fe;
+  --dv-emerald-500: #10b981;
+  --dv-amber-500: #f59e0b;
+  --dv-rose-500: #f43f5e;
+  --dv-glass-bg: rgba(255, 255, 255, 0.88);
+  --dv-glass-border: rgba(216, 230, 246, 0.85);
+  --dv-shadow-sm: 0 2px 10px rgba(7, 34, 72, 0.05);
+  --dv-shadow-md: 0 10px 30px rgba(7, 34, 72, 0.08), 0 2px 6px rgba(7, 34, 72, 0.04);
+  --dv-shadow-lg: 0 22px 55px rgba(7, 34, 72, 0.13), 0 6px 18px rgba(7, 34, 72, 0.06);
+  --dv-shadow-glow: 0 0 35px rgba(37, 117, 214, 0.25);
+  --dv-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dv-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Animations */
+@keyframes dvFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+@keyframes dvGlowPulse { 0%, 100% { box-shadow: 0 0 15px rgba(37, 117, 214, 0.2); } 50% { box-shadow: 0 0 30px rgba(56, 189, 248, 0.45); } }
+@keyframes dvPulseDot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.45; transform: scale(0.85); } }
+@keyframes dvShimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+@keyframes dvSlideUpFade { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Announcement Bar Glow */
+.announcement {
+  background: linear-gradient(90deg, #04142d 0%, #082855 50%, #0a336f 100%) !important;
+  font-weight: 750 !important;
+}
+.announcement span:first-child::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+  margin-right: 8px;
+  animation: dvPulseDot 2s infinite ease-in-out;
+}
+
+/* Header Glassmorphism */
+.site-header {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  transition: all 0.25s var(--dv-ease-out) !important;
+}
+.brand-lockup { transition: transform 0.2s var(--dv-ease-out); }
+.brand-lockup:hover { transform: translateY(-1px); }
+.brand-symbol {
+  background: linear-gradient(135deg, #06234f 0%, #164f99 100%) !important;
+  box-shadow: 0 6px 18px rgba(6, 35, 79, 0.25);
+  transition: transform 0.25s var(--dv-ease-out);
+}
+.brand-lockup:hover .brand-symbol { transform: scale(1.05); }
+
+/* Main Nav Enhancement */
+.main-nav a, .main-nav button {
+  border-radius: 999px !important;
+  transition: all 0.18s var(--dv-ease-out) !important;
+}
+.main-nav a:hover, .main-nav button:hover {
+  background: #edf4fc !important;
+  color: var(--blue) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* Header Cart Luxury Badge */
+.header-cart {
+  box-shadow: var(--dv-shadow-sm) !important;
+  transition: all 0.2s var(--dv-ease-out) !important;
+}
+.header-cart:hover {
+  border-color: #236fc7 !important;
+  background: #f2f7fd !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 18px rgba(35, 111, 199, 0.2) !important;
+}
+.header-cart span {
+  background: linear-gradient(135deg, #072b5a 0%, #175bb3 100%) !important;
+  box-shadow: 0 2px 8px rgba(7, 43, 90, 0.3) !important;
+}
+
+/* Hero Section Futuristic Mesh */
+.hero {
+  background:
+    radial-gradient(ellipse at 80% 25%, rgba(37, 117, 214, 0.12) 0%, transparent 60%),
+    radial-gradient(circle at 12% 85%, rgba(56, 189, 248, 0.08) 0%, transparent 50%),
+    linear-gradient(125deg, #ffffff 0%, #fbfdff 45%, #eef5fc 100%) !important;
+}
+.hero-art {
+  box-shadow: 0 24px 60px rgba(7, 34, 72, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.6) !important;
+  animation: dvFloat 5s ease-in-out infinite !important;
+}
+.hero-garment {
+  transition: transform 0.35s var(--dv-ease-spring) !important;
+}
+.hero-art:hover .hero-garment {
+  transform: scale(1.05) rotate(0deg) !important;
+}
+.hero h1 em, h2 em {
+  background: linear-gradient(135deg, #1b5fa8 0%, #38bdf8 100%) !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+}
+.button-primary {
+  background: linear-gradient(135deg, #072248 0%, #1555a6 100%) !important;
+  box-shadow: 0 8px 24px rgba(7, 34, 72, 0.2) !important;
+  border-radius: 14px !important;
+  transition: all 0.24s var(--dv-ease-out) !important;
+}
+.button-primary:hover {
+  transform: translateY(-3px) !important;
+  box-shadow: 0 14px 34px rgba(7, 34, 72, 0.28) !important;
+  background: linear-gradient(135deg, #04142d 0%, #0d4690 100%) !important;
+}
+
+/* Collection Cards 3D Lift */
+.collection-card {
+  border-radius: 20px !important;
+  box-shadow: var(--dv-shadow-sm) !important;
+  transition: transform 0.28s var(--dv-ease-out), box-shadow 0.28s var(--dv-ease-out), border-color 0.28s !important;
+}
+.collection-card:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: var(--dv-shadow-lg) !important;
+  border-color: #bad3ed !important;
+}
+.collection-card .collection-art {
+  transition: transform 0.3s var(--dv-ease-out) !important;
+}
+.collection-card:hover .collection-art {
+  transform: scale(1.02) !important;
+}
+.collection-card:hover .category-arrow {
+  background: var(--blue) !important;
+  color: #ffffff !important;
+  border-color: var(--blue) !important;
+  transform: translate(2px, -2px) !important;
+}
+
+/* Live Catalogue Toolbar & Search Enhancement */
+.live-catalogue-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 18px 0 28px;
+  padding: 14px 18px;
+  background: #f6f9fc;
+  border: 1px solid #dce6f2;
+  border-radius: 16px;
+  flex-wrap: wrap;
+}
+.live-catalogue-meta-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.category-filter-chip {
+  padding: 7px 14px;
+  border: 1px solid #d0e0f0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #24466b;
+  font-size: 11px;
+  font-weight: 750;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.category-filter-chip:hover {
+  background: #edf5fe;
+  border-color: #236fc7;
+  color: #236fc7;
+}
+.category-filter-chip.is-active {
+  background: var(--blue);
+  color: #ffffff;
+  border-color: var(--blue);
+  box-shadow: 0 3px 10px rgba(18, 76, 145, 0.25);
+}
+.catalogue-sort-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.catalogue-sort-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #556c86;
+}
+.catalogue-sort-select {
+  padding: 8px 12px;
+  border: 1px solid #d0e0f0;
+  border-radius: 10px;
+  background: #ffffff;
+  color: var(--ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  outline: none;
+  cursor: pointer;
+}
+.catalogue-sort-select:focus {
+  border-color: #236fc7;
+  box-shadow: 0 0 0 3px rgba(35, 111, 199, 0.15);
+}
+
+/* Product Cards Elevated */
+.product-card {
+  border-radius: 20px !important;
+  box-shadow: var(--dv-shadow-sm) !important;
+  transition: transform 0.26s var(--dv-ease-out), box-shadow 0.26s var(--dv-ease-out), border-color 0.26s !important;
+}
+.product-card:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: var(--dv-shadow-lg) !important;
+  border-color: #b5d1ee !important;
+}
+.product-urgency-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #c05621;
+  background: #fefcbf;
+  border: 1px solid #fbd38d;
+  padding: 3px 8px;
+  border-radius: 6px;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+.product-stock-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #22543d;
+  background: #c6f6d5;
+  border: 1px solid #9ae6b4;
+  padding: 3px 8px;
+  border-radius: 6px;
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* Free Shipping Tracker in Cart */
+.cart-shipping-tracker {
+  background: linear-gradient(135deg, #f0f7ff 0%, #e2effe 100%);
+  border: 1px solid #bcd8f7;
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin-bottom: 20px;
+}
+.cart-shipping-track-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11.5px;
+  font-weight: 750;
+  color: #124075;
+  margin-bottom: 8px;
+}
+.cart-shipping-track {
+  width: 100%;
+  height: 8px;
+  background: #d1e4f9;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.cart-shipping-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2575d6 0%, #38bdf8 100%);
+  border-radius: 999px;
+  transition: width 0.4s var(--dv-ease-out);
+}
+.cart-shipping-tracker small {
+  display: block;
+  font-size: 10.5px;
+  color: #3b6088;
+  line-height: 1.45;
+}
+.cart-shipping-unlocked {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 750;
+  margin-bottom: 20px;
+}
+
+/* Luxury Mobility Cards */
+.mobility-vehicle-card {
+  border-radius: 20px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.18) !important;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.24) !important;
+  transition: transform 0.26s var(--dv-ease-out), box-shadow 0.26s var(--dv-ease-out), border-color 0.26s !important;
+}
+.mobility-vehicle-card:hover {
+  transform: translateY(-6px) !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.38) !important;
+  border-color: rgba(56, 189, 248, 0.5) !important;
+}
+
+/* Customer AI Floating Companion */
+.ai-chat-launcher {
+  background: linear-gradient(135deg, #072248 0%, #1555a6 100%) !important;
+  animation: dvGlowPulse 3s infinite ease-in-out !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+  transition: transform 0.22s var(--dv-ease-out) !important;
+}
+.ai-chat-launcher:hover {
+  transform: scale(1.08) rotate(4deg) !important;
+}
+.ai-chat-panel {
+  border-radius: 22px !important;
+  box-shadow: 0 24px 75px rgba(4, 18, 38, 0.3) !important;
+}
+.ai-chat-head {
+  background: linear-gradient(135deg, #061c3d 0%, #103b74 100%) !important;
+}
+
+/* Mobile Bottom Dock Glassmorphism */
+@media (max-width: 760px) {
+  .mobile-dock {
+    border-radius: 20px !important;
+    background: rgba(255, 255, 255, 0.94) !important;
+    backdrop-filter: blur(24px) !important;
+    -webkit-backdrop-filter: blur(24px) !important;
+    border: 1px solid rgba(216, 230, 245, 0.9) !important;
+    box-shadow: 0 16px 45px rgba(5, 24, 52, 0.18) !important;
+  }
+}

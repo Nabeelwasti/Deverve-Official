@@ -7,6 +7,7 @@ dist/
 .dev.vars
 .DS_Store
 *.log
+.test-dist/
 /backups/
 *.dvbackup
 *.d1backup

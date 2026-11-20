@@ -234,6 +234,7 @@ function Storefront() {
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
   const [selectedCategory,setSelectedCategory]=useState(()=>new URLSearchParams(window.location.search).get("category")||"");
+  const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "name">("featured");
   const [showAll, setShowAll] = useState(false);
   const [visibleProductCount,setVisibleProductCount]=useState(8);
   const emptyEnquiry = { name: "", phone: "", email: "", enquiryType: "general", message: "", website: "" };
@@ -245,8 +246,24 @@ function Storefront() {
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
-  const filteredProducts=useMemo(()=>products.filter(product=>matchesStoreCollection(product,selectedCategory)),[products,selectedCategory]);
-  useEffect(()=>{setVisibleProductCount(8);},[selectedCategory]);
+  const filteredProducts=useMemo(()=>{
+    const term=search.trim().toLowerCase();
+    const list=products.filter(product=>{
+      if(!matchesStoreCollection(product,selectedCategory))return false;
+      if(!term)return true;
+      const name=(product.name||"").toLowerCase();
+      const desc=(product.description||"").toLowerCase();
+      const cat=(product.category||"").toLowerCase();
+      const aud=(product.audience||"").toLowerCase();
+      const skuMatch=product.variants?.some(v=>(v.sku||"").toLowerCase().includes(term));
+      return name.includes(term)||desc.includes(term)||cat.includes(term)||aud.includes(term)||Boolean(skuMatch);
+    });
+    if(sortBy==="price-asc")return [...list].sort((a,b)=>(a.retail_price_paisa??0)-(b.retail_price_paisa??0));
+    if(sortBy==="price-desc")return [...list].sort((a,b)=>(b.retail_price_paisa??0)-(a.retail_price_paisa??0));
+    if(sortBy==="name")return [...list].sort((a,b)=>a.name.localeCompare(b.name));
+    return list;
+  },[products,selectedCategory,search,sortBy]);
+  useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
@@ -583,11 +600,35 @@ function Storefront() {
               <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>{selectedCategory?selectedCategory+" collection":"Featured pieces"}</h3>{selectedCategory&&<button type="button" className="text-link" onClick={()=>{const url=new URL(window.location.href);url.searchParams.delete("category");window.history.replaceState({screen:"fashion"},"",url.pathname+url.search);setSelectedCategory("");}}>Clear category ×</button>}</div>
               <div className="live-catalogue-actions"><span>REAL LISTINGS · UPDATED BY OUR TEAM</span><button type="button" className="cart-open-button" disabled={!cart.length} onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)}) · {formatPrice(cartSubtotal)}</button></div>
             </div>
+            <div className="live-catalogue-toolbar">
+              <div className="live-catalogue-meta-chips" role="group" aria-label="Filter catalogue by collection">
+                <button type="button" className={`category-filter-chip ${!selectedCategory ? "is-active" : ""}`} onClick={() => { setSelectedCategory(""); const url = new URL(window.location.href); url.searchParams.delete("category"); window.history.replaceState({ screen: "fashion" }, "", url.pathname + url.search); }}>All pieces ({products.length})</button>
+                {categories.map((cat) => {
+                  const count = products.filter((p) => matchesStoreCollection(p, cat.id)).length;
+                  return (
+                    <button key={cat.id} type="button" className={`category-filter-chip ${selectedCategory === cat.id ? "is-active" : ""}`} onClick={() => { setSelectedCategory(cat.id); const url = new URL(window.location.href); url.searchParams.set("category", cat.id); window.history.replaceState({ screen: "fashion" }, "", url.pathname + url.search); }}>
+                      {cat.name.split(" ")[0]} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="catalogue-sort-row">
+                <label htmlFor="catalogue-sort-select" className="catalogue-sort-label">Sort by:</label>
+                <select id="catalogue-sort-select" className="catalogue-sort-select" value={sortBy} onChange={(e) => setSortBy(e.target.value as any)}>
+                  <option value="featured">Featured listings</option>
+                  <option value="price-asc">Price: Low to High</option>
+                  <option value="price-desc">Price: High to Low</option>
+                  <option value="name">Product Name (A-Z)</option>
+                </select>
+              </div>
+            </div>
             {catalogueState === "loading" && <p className="catalogue-feedback">Loading available listings…</p>}
             {catalogueState === "error" && <p className="catalogue-feedback">The live catalogue is not connected yet. Please contact our team for current collections.</p>}
             {catalogueState === "empty" && <p className="catalogue-feedback">New pieces are being added. Contact us to ask about current arrivals and availability.</p>}
             {catalogueState === "ready" && <div className="product-grid">
-              {filteredProducts.slice(0,visibleProductCount).map((product) => (
+              {filteredProducts.slice(0,visibleProductCount).map((product) => {
+                const totalAvail = product.variants.reduce((sum, v) => sum + (v.available_quantity || 0), 0);
+                return (
                 <article className="product-card" key={product.id} role="link" tabIndex={0} aria-label={"View "+product.name} onClick={(event)=>{if((event.target as HTMLElement).closest("a,button,input,select,textarea,label"))return;window.location.href="/product/"+encodeURIComponent(product.slug);}} onKeyDown={(event)=>{if((event.target as HTMLElement).closest("a,button,input,select,textarea,label"))return;if(event.key==="Enter"||event.key===" "){event.preventDefault();window.location.href="/product/"+encodeURIComponent(product.slug);}}}>
                   {productGalleryImages(product, selectedVariants[product.id]).length ? <ProductGallery className="product-visual product-photo dv-gallery-card" detailsHref={"/product/" + encodeURIComponent(product.slug)} images={productGalleryImages(product, selectedVariants[product.id], selectedVariantOptions[product.id]?.color)} /> : <div className="product-visual" aria-hidden="true"><span>DE VERVE</span><div className="product-garment"><i /></div><small>{product.category}</small></div>}
                   <div className="product-info">
@@ -595,13 +636,14 @@ function Storefront() {
                     <span className="product-audience">{product.audience} · {product.category}</span>
                     <h4><a className="product-title-link" href={"/product/" + encodeURIComponent(product.slug)}>{product.name}</a></h4>
                     <p>{product.description || "Contact our team for product details and available options."}</p>
+                    {totalAvail > 0 && totalAvail <= 3 ? <span className="product-urgency-badge">🔥 Only {totalAvail} left</span> : totalAvail > 3 ? <span className="product-stock-badge">✓ In stock ({totalAvail})</span> : null}
                     {product.variants.length ? <ProductVariantPicker variants={product.variants} selectedVariantId={selectedVariants[product.id] || product.variants[0].id} selectedSize={selectedVariantOptions[product.id]?.size} selectedColor={selectedVariantOptions[product.id]?.color} onChange={(variantId,size,color) => {setSelectedVariants((current) => ({ ...current, [product.id]: variantId }));setSelectedVariantOptions((current)=>({...current,[product.id]:{size:size||"",color:color||""}}));}} compact /> : <span className="product-stock-note">Contact us for current availability</span>}
                     <div className="product-buy-row"><strong>{formatPrice(product.retail_price_paisa)}</strong><button type="button" className="product-details-button" onClick={() => { window.location.href = "/product/" + encodeURIComponent(product.slug); }}>View details</button>{product.variants.length > 0 && product.retail_price_paisa !== null && <button type="button" disabled={!product.variants.some((variant) => variant.available_quantity > 0)} onClick={() => addToCart(product)}>{product.variants.some((variant) => variant.available_quantity > 0) ? "Add to cart +" : "Sold out"}</button>}</div>
                   </div>
                 </article>
-              ))}
+              );})}
             </div>}
-            {catalogueState === "ready" && filteredProducts.length===0 && selectedCategory && <p className="catalogue-feedback">No published products are currently listed in “{selectedCategory}”. Browse all products or contact our team for availability.</p>}{catalogueState === "ready" && filteredProducts.length > visibleProductCount && <div className="catalogue-pagination"><span>Showing {Math.min(visibleProductCount,filteredProducts.length)} of {filteredProducts.length} listings</span><button type="button" className="button button-outline" onClick={() => setVisibleProductCount((count)=>Math.min(count+8,filteredProducts.length))}>Load more products</button></div>}
+            {catalogueState === "ready" && filteredProducts.length===0 && <p className="catalogue-feedback">No published products matched your criteria{search?` ("${search}")`:""}{selectedCategory?` in “${selectedCategory}”`:""}. Browse all products or contact our team for availability.</p>}{catalogueState === "ready" && filteredProducts.length > visibleProductCount && <div className="catalogue-pagination"><span>Showing {Math.min(visibleProductCount,filteredProducts.length)} of {filteredProducts.length} listings</span><button type="button" className="button button-outline" onClick={() => setVisibleProductCount((count)=>Math.min(count+8,filteredProducts.length))}>Load more products</button></div>}
           </div>
         </section>
 
@@ -623,6 +665,24 @@ function Storefront() {
         {cartOpen && <div className="checkout-backdrop cart-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setCartOpen(false); }}><section className="checkout-panel cart-panel" role="dialog" aria-modal="true" aria-labelledby="cart-title">
           <div className="checkout-heading"><div><p className="eyebrow">YOUR SHOPPING BAG</p><h2 id="cart-title">Your cart ({cart.reduce((sum,item)=>sum+item.quantity,0)})</h2><p>Review your selected products before continuing.</p></div><button type="button" aria-label="Close cart" onClick={() => setCartOpen(false)}>×</button></div>
           {cart.length===0 ? <div className="cart-empty-state"><strong>Your cart is waiting for something you love.</strong><p>Explore the collection and add a product to get started.</p><button type="button" className="button button-primary" onClick={()=>{setCartOpen(false);navigate("fashion");}}>Continue shopping <span>↗</span></button></div> : <>
+            <div className="cart-shipping-tracker">
+              {cartSubtotal < 500_000 ? (
+                <>
+                  <div className="cart-shipping-track-label">
+                    <span>Free Delivery across Pakistan</span>
+                    <strong>{formatPrice(500_000 - cartSubtotal)} away</strong>
+                  </div>
+                  <div className="cart-shipping-track">
+                    <div className="cart-shipping-fill" style={{ width: `${Math.min(100, Math.round((cartSubtotal / 500_000) * 100))}%` }} />
+                  </div>
+                  <small>Add {formatPrice(500_000 - cartSubtotal)} more to qualify for FREE delivery across Pakistan!</small>
+                </>
+              ) : (
+                <div className="cart-shipping-unlocked">
+                  <span>✨</span> You qualify for <strong>FREE Delivery</strong> across Pakistan!
+                </div>
+              )}
+            </div>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
               <div className="cart-line-image" aria-hidden="true">{item.image_url?<img src={item.image_url} alt="" loading="lazy"/>:<span>DV</span>}</div>
               <div className="cart-line-main"><strong>{item.name}</strong><small>{[item.size,item.color].filter(Boolean).join(" · ")||"Standard option"}{item.sku?" · "+item.sku:""}</small><b>{formatPrice(item.unit_price_paisa)}</b>

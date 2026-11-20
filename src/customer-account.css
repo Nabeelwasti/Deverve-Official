@@ -18,3 +18,42 @@
 .customer-order-doc-actions button{border:1px solid #cbd7e2;border-radius:7px;background:#fff;color:#163a5f;padding:8px 11px;font:600 11px Arial,sans-serif;cursor:pointer}
 .customer-order-doc-actions button:hover{background:#f1f5f9;border-color:#163a5f}
 @media(max-width:560px){.customer-order-doc-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.customer-order-doc-actions button{width:100%}}
+
+/* --- De VERVE Customer Account Luxury Futuristic Polish --- */
+.customer-panel, .customer-dashboard {
+  backdrop-filter: blur(12px);
+  border-radius: 18px;
+  border: 1px solid rgba(220, 230, 241, 0.85);
+  box-shadow: 0 20px 50px rgba(6, 35, 79, 0.05), 0 1px 3px rgba(6, 35, 79, 0.04);
+}
+.customer-record {
+  border-radius: 14px;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+}
+.customer-record:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(6, 35, 79, 0.08);
+  border-color: #bcd2e8;
+}
+.customer-status {
+  border-radius: 999px;
+  font-weight: 850;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.customer-order-event {
+  position: relative;
+  transition: border-color 0.2s ease;
+}
+.customer-order-event:hover {
+  border-left-color: #123f7a;
+}
+.customer-primary {
+  border-radius: 10px;
+  transition: transform 0.12s ease, background-color 0.15s ease, box-shadow 0.15s ease;
+}
+.customer-primary:not(:disabled):hover {
+  transform: translateY(-1px);
+  background: #061e3e;
+  box-shadow: 0 6px 18px rgba(10, 45, 92, 0.28);
+}
