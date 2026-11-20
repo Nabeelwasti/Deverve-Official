@@ -123,14 +123,14 @@ export default function ProductCsvImport({role,onImported}:Props){
  };
  const commit=async()=>{
    if(!products.length||busy)return;
-   setBusy(true);setReport([]);const completed:ImportedProduct[]=[];const createdProducts:ImportedProduct[]=[...importedProducts];
+   setBusy(true);setReport([]);const completed:string[]=[];const createdProducts:ImportedProduct[]=[...importedProducts];
    try{
      for(let index=resumeIndex;index<batches.length;index++){
        const batch=batches[index];setProgress("Importing catalogue batch "+(index+1)+" of "+batches.length+" · "+batch.length+" products…");
        const payload={products:batch.map(p=>({name:p.name,slug:p.slug,description:p.description,category:p.category,audience:p.audience,status:"draft",retail_price_paisa:p.retail,wholesale_price_paisa:p.wholesale,seo_title:p.seoTitle,seo_description:p.seoDescription,variants:p.variants.map(v=>({size:v.size,color:v.color,...(v.sku?{sku:v.sku}:{}),...(v.barcode?{barcode:v.barcode}:{}),initial_stock:v.stock,reorder_level:v.reorder,...(canSetCost?{cost_price_paisa:v.costPaisa}:{})}))}))};
        const result=await api<{imported:number;variants:number;atomic:boolean;products:ImportedProduct[]}>("/api/admin/products/import",{method:"POST",body:JSON.stringify(payload)});
        if(result.atomic!==true||result.imported!==batch.length||!Array.isArray(result.products)||result.products.length!==batch.length)throw new Error("The server did not confirm every product in batch "+(index+1)+". Stop here and verify the catalogue before retrying.");
-       completed.push(...result.products);createdProducts.push(...result.products);setImportedProducts([...createdProducts]);setResumeIndex(index+1);
+       completed.push(...result.products.map(product=>product.name));createdProducts.push(...result.products);setImportedProducts([...createdProducts]);setResumeIndex(index+1);
        setReport(current=>[...current,...completed.splice(0)]);
      }
      for(const imported of createdProducts){
