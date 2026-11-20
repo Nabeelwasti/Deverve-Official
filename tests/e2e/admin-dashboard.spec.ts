@@ -305,6 +305,23 @@ test("owner can publish a product through natural language in the normal chat co
   expect(executed).toEqual({ command: "publish product Everyday Hoodie" });
 });
 
+test("owner can request an order status transition through natural language", async ({ page }) => {
+  await mockAdminApi(page);
+  let executed: Record<string, unknown> | null = null;
+  await page.route("**/api/admin/ai/execute", async route => {
+    executed = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      ok: true, action: "update_order_status", order_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      status: "confirmed", message: "Updated the order to confirmed through the guarded order workflow."
+    }) });
+  });
+  await page.goto("/admin?section=ai");
+  await page.getByPlaceholder("Message De VERVE Assistant…").fill("Mark order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".admin-ai-live-status")).toContainText("Updated the order to confirmed");
+  expect(executed).toEqual({ command: "set order dddddddd-dddd-4ddd-8ddd-dddddddddddd status to confirmed" });
+});
+
 test("camera scanner keeps its video element mounted when permission is granted", async ({ page }) => {
   await mockAdminApi(page);
   await page.addInitScript(() => {
