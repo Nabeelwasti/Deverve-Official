@@ -691,5 +691,5 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.locator(".newsletter-form")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Keep in touch with De VERVE" })).toBeVisible();
   await expect(page.getByRole("link", { name: /Message us on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
-  await expect(body).toContainText("Delivery areas, charges and estimated timelines are confirmed by our team before dispatch.");
+  await expect(body).toContainText("Our team confirms the delivery area, charges and estimated timeline before an order is dispatched.");
 });
