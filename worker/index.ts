@@ -502,10 +502,11 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   const path = url.pathname;
   const isCollection = path === "/api/admin/products";
   const isImport = path === "/api/admin/products/import";
+  const isBulkPublish = path === "/api/admin/products/publish-bulk";
   const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";
   const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
   const isOverview = path === "/api/admin/overview";
-  if (!isCollection && !isImport && !productMatch && !isOverview) return null;
+  if (!isCollection && !isImport && !isBulkPublish && !productMatch && !isOverview) return null;
 
   let admin: SessionRow | null;
   try {
@@ -523,6 +524,33 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       return json({ overview: stats ?? { published_products: 0, draft_products: 0, new_enquiries: 0, pending_orders: 0, rental_requests: 0 } });
     } catch {
       return error("Dashboard summary is temporarily unavailable", 503);
+    }
+  }
+
+  if (isBulkPublish && request.method === "POST") {
+    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can publish a bulk catalogue", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 100_000);
+    const ids = body && Array.isArray(body.product_ids) ? body.product_ids : null;
+    if (!ids || ids.length < 1 || ids.length > 1000 || ids.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id)) || new Set(ids).size !== ids.length) {
+      return error("Choose 1–1,000 unique product IDs from the imported catalogue", 400);
+    }
+    const idsJson = JSON.stringify(ids);
+    const eligible = "p.id IN (SELECT value FROM json_each(?)) AND p.status='draft' AND length(trim(p.name))>=2 AND length(trim(p.category))>=2 AND p.retail_price_paisa IS NOT NULL AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=p.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity) AND EXISTS (SELECT 1 FROM product_media_assets pm JOIN media_assets m ON m.id=pm.media_asset_id WHERE pm.product_id=p.id AND pm.is_primary=1 AND pm.color='' AND m.media_type='image' AND m.status='ready')";
+    try {
+      const now = new Date().toISOString();
+      const written = await env.DB.batch([
+        env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND (SELECT COUNT(*) FROM products p WHERE " + eligible + ") = ?")
+          .bind(now, idsJson, idsJson, ids.length),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'product.bulk_published','product',NULL,? WHERE changes()=?")
+          .bind(crypto.randomUUID(), admin.admin_user_id, JSON.stringify({ source: "bulk_catalogue_import", requested_count: ids.length }), ids.length),
+      ]);
+      const published = Number(written[0]?.meta?.changes ?? 0);
+      const auditCount = Number(written[1]?.meta?.changes ?? 0);
+      if (published !== ids.length || auditCount !== 1) return error("No products were published because at least one item failed the complete catalogue checks. Ensure every product has a retail price, an active in-stock size/colour variant and an attached cover photo, then retry.", 409);
+      return json({ ok: true, published, atomic: true, message: "Published all " + published + " validated products." });
+    } catch {
+      return error("The bulk catalogue could not be published. Refresh the product list and audit history before retrying.", 503);
     }
   }
 
