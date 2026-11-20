@@ -95,3 +95,18 @@ test("CSV importer rejects duplicate supplier SKUs across different products bef
  await expect(page.getByText(/duplicate SKU DV-DUP-001 in this file/i)).toBeVisible();
  expect(requested).toBe(false);
 });
+
+test("admin catalogue loads more than the first 100 products with server pagination",async({page})=>{
+ await mockAdmin(page);
+ const makeProduct=(i:number)=>({id:String(i).padStart(8,"0")+"-aaaa-4aaa-8aaa-aaaaaaaaaaaa",slug:"product-"+i,name:"Product "+i,description:"",category:"Hoodies",audience:"unisex",status:"draft",retail_price_paisa:1000,wholesale_price_paisa:null,image_key:null,seo_title:"",seo_description:""});
+ await page.route("**/api/admin/products?*",async route=>{
+  const url=new URL(route.request().url());const offset=Number(url.searchParams.get("offset")||0);
+  const products=offset===0?Array.from({length:100},(_,i)=>makeProduct(i+1)):[makeProduct(101)];
+  await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({products,has_more:offset===0,next_offset:offset+products.length})});
+ });
+ await page.goto("/admin?section=products");
+ await expect(page.getByText("Showing 100 loaded products. More products are available.")).toBeVisible();
+ await page.getByRole("button",{name:"Load next 100 products"}).click();
+ await expect(page.getByText("Showing 101 loaded products.")).toBeVisible();
+ await expect(page.getByText("Product 101")).toBeVisible();
+});
