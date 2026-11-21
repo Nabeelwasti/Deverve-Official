@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS discount_coupons (
   label TEXT NOT NULL,
   purpose TEXT NOT NULL CHECK (purpose IN ('exchange_compensation','damaged_item','wrong_item','size_exchange','goodwill','first_order','loyalty','campaign','wholesale','manual_adjustment')),
   discount_type TEXT NOT NULL CHECK (discount_type IN ('percent','fixed','free_delivery')),
-  discount_value INTEGER NOT NULL DEFAULT 0 CHECK (discount_value >= 0),
+  discount_value INTEGER NOT NULL DEFAULT 0 CHECK (discount_value >= 0 AND (discount_type != 'percent' OR discount_value <= 10000) AND (discount_type != 'free_delivery' OR discount_value = 0)),
   max_discount_paisa INTEGER CHECK (max_discount_paisa IS NULL OR max_discount_paisa >= 0),
   min_subtotal_paisa INTEGER NOT NULL DEFAULT 0 CHECK (min_subtotal_paisa >= 0),
   customer_id TEXT REFERENCES customers(id) ON DELETE RESTRICT,
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS discount_coupons (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   CHECK (expires_at IS NULL OR expires_at > starts_at),
-  CHECK (purpose != 'exchange_compensation' OR (customer_id IS NOT NULL AND exchange_request_id IS NOT NULL AND max_redemptions = 1 AND per_customer_limit = 1))
+  CHECK (purpose NOT IN ('exchange_compensation','damaged_item','wrong_item','size_exchange') OR (customer_id IS NOT NULL AND exchange_request_id IS NOT NULL AND COALESCE(max_redemptions,0) = 1 AND per_customer_limit = 1))
 );
 
 CREATE TABLE IF NOT EXISTS discount_coupon_redemptions (
