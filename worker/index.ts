@@ -3345,7 +3345,7 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
   if(publicPath==="/api/storefront/settings" && request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets','site_design')").all<{setting_key:string;setting_value_json:string}>();
-      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};
+      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
     }catch{return error("Store settings are temporarily unavailable",503);}
