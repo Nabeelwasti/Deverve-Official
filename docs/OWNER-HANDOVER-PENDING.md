@@ -44,13 +44,14 @@ Only configure these after the final production hostname is confirmed. Never com
 
 ## 4. Backup, recovery and evidence protection
 
-- [ ] Keep CNIC originals private and immutable. Never upload raw CNIC files to public folders, GitHub, AI tools, email or public links.
+- [ ] Keep CNIC originals private and protected. Never upload raw CNIC files to public folders, GitHub, AI tools, email or public links.
+- [ ] Implement the owner-confirmed 90-day post-clearance deletion schedule only through a reviewed, tested migration and auditable workflow; do not leave the current permanent-retention trigger in place indefinitely once the replacement is safely accepted.
 - [ ] Export D1 and verify archive integrity. Store an encrypted copy outside the Cloudflare account and keep recovery credentials separately.
 - [ ] Back up private R2/media objects separately; a D1 export does not contain R2 image bytes.
-- [ ] Keep at least one independent off-account copy with access restricted to named custodians.
+- [ ] Keep at least one independent off-account copy with access restricted to named custodians, with a documented expiry/purge process for CNIC evidence.
 - [ ] Perform a restore drill into an isolated non-production environment. Verify D1 records and private R2 objects together, then document results and recovery time.
 - [ ] Decide and document backup frequency, retention, custodians, recovery-point objective and recovery-time objective.
-- [ ] Do not alter, overwrite or delete permanent CNIC evidence. Existing database immutability triggers and R2 retention safeguards must be re-verified during release.
+- [ ] Preserve existing CNIC evidence until the replacement retention, deletion-request and legal-hold workflows have passed isolated tests and counsel review. Do not bypass the current immutability triggers as a shortcut.
 
 ## 5. Release gates — do not bypass
 
