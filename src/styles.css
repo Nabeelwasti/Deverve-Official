@@ -1962,3 +1962,20 @@ h1 em,h2 em{color:#ad8955}
 .admin-category-artwork-grid .admin-secondary{width:100%;min-height:32px;font-size:10px}
 @media(max-width:760px){.admin-category-artwork-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:430px){.admin-category-artwork-grid{grid-template-columns:1fr 1fr}.admin-category-artwork-grid article{padding:8px}.admin-category-artwork-grid article>img,.admin-category-artwork-placeholder{height:88px}}
+
+@keyframes dvCardGlow{0%,100%{opacity:.16}50%{opacity:.46}}
+@keyframes dvIconLift{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+@keyframes dvArtworkDrift{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
+.trust-pillar-card:before{animation:dvCardGlow 7s ease-in-out infinite}
+.trust-pillar-card:nth-child(2):before{animation-delay:1.4s}
+.trust-pillar-card:nth-child(3):before{animation-delay:2.8s}
+.trust-pillar-card:nth-child(4):before{animation-delay:4.2s}
+.trust-pillar-icon{animation:dvIconLift 5s ease-in-out infinite}
+.trust-pillar-card:nth-child(2) .trust-pillar-icon{animation-delay:.8s}
+.trust-pillar-card:nth-child(3) .trust-pillar-icon{animation-delay:1.6s}
+.trust-pillar-card:nth-child(4) .trust-pillar-icon{animation-delay:2.4s}
+.category-custom-art{animation:dvArtworkDrift 12s ease-in-out infinite}
+.collection-card:nth-child(even) .category-custom-art{animation-delay:2s}
+.product-card{position:relative}
+.product-card:after{content:"";position:absolute;inset:0;pointer-events:none;border:1px solid transparent;border-radius:inherit;animation:dvCardGlow 8s ease-in-out infinite}
+@media(prefers-reduced-motion:reduce){.trust-pillar-card:before,.trust-pillar-icon,.category-custom-art,.product-card:after{animation:none!important}}
