@@ -100,3 +100,12 @@ Only configure these after the final production hostname is confirmed. Never com
 - [ ] Run the committed integration script from the owner's authorized environment and retain its output as a release artifact.
 - [ ] Expand the isolated integration suite against the complete current migration set and add SQL constraint-failure/rollback and concurrent duplicate webhook replay tests.
 - [ ] Keep first-class reservation records, durable async Safepay webhook ingestion, provider sandbox acceptance, backups/restore and production schema release sequencing as separate release gates.
+
+
+## 7. CNIC retention approval — required owner/legal decision
+
+- [ ] Complete the draft decision record in [CNIC-RETENTION-APPROVAL-RECORD.md](CNIC-RETENTION-APPROVAL-RECORD.md).
+- [ ] Owner confirms the business purpose, collection scope, mandatory/optional cases, authorized roles, customer notice, retention period, legal-hold exceptions and review date in writing.
+- [ ] Pakistan-qualified counsel reviews the actual rental workflow, privacy notice, rental agreement, cloud/storage locations, access controls and proposed retention schedule; obtain written advice.
+- [ ] Do not treat the historical indefinite-retention owner instruction as a legal requirement. Keep existing evidence private and protected while review is pending; do not make new indefinite-retention promises.
+- [ ] After approval, implement only the agreed policy through a reviewed, tested change. Preserve existing evidence unless counsel authorizes a lawful disposition process.
