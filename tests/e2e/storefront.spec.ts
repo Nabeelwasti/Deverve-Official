@@ -512,6 +512,9 @@ test("customer AI chat exposes file, camera, gallery, voice, speaker and copy co
   await expect(page.getByRole("menuitem", { name: "Attach a file" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Take a photo" })).toBeVisible();
   await expect(page.getByRole("menuitem", { name: "Choose from gallery" })).toBeVisible();
+  await expect(page.locator('.ai-chat-panel input[type="file"][capture="environment"]')).toHaveCount(1);
+  await expect(page.locator('.ai-chat-panel input[type="file"][accept*="image/jpeg"]')).toHaveAttribute("multiple", "");
+  await expect(page.locator('.ai-chat-panel input[type="file"][accept="application/pdf,text/plain,.pdf,.txt"]')).toHaveCount(1);
   await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy message" }).first()).toBeVisible();
@@ -519,6 +522,26 @@ test("customer AI chat exposes file, camera, gallery, voice, speaker and copy co
   await expect(page.locator(".ai-chat-launcher img")).toHaveAttribute("src", /brand\/de-verve-logo\.svg|\/media\//);
 });
 
+
+test("storefront places the golden quote below the top ribbon and offers common page translations", async ({ page }) => {
+  await page.goto("/");
+  const announcement = page.locator(".announcement");
+  const quote = page.locator(".top-quote-strip");
+  await expect(announcement).toBeVisible();
+  await expect(quote).toBeVisible();
+  const order = await page.evaluate(() => {
+    const ribbon = document.querySelector(".announcement");
+    const quoteStrip = document.querySelector(".top-quote-strip");
+    return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(order).toBeTruthy();
+  const languagePicker = quote.getByRole("combobox", { name: "Translate this page" });
+  await expect(languagePicker.locator("option")).toHaveCount(13);
+  await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
+  await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
+  await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
+  await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
+});
 
 test("customer AI chat compresses and sends an attached product photo", async ({ page }) => {
   const submitted: { images?: Array<{ name: string; mime_type: string; data: string }> } = {};
