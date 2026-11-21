@@ -682,7 +682,11 @@ test("storefront uses verified service wording instead of fabricated social proo
   await page.goto("/");
   const body = page.locator("body");
   await expect(page.locator(".trust-pillars-section")).toHaveCount(1);
-  await expect(page.locator(".trust-pillars-section")).toContainText("Choose your size & colour");
+  await expect(page.locator(".trust-pillars-section")).toContainText("Find your fit");
+  await expect(page.locator(".trust-pillars-section a[href=\"/?screen=fashion\"]")).toBeVisible();
+  await expect(page.locator(".trust-pillars-section a[href=\"/account\"]")).toBeVisible();
+  await expect(page.locator(".trust-pillars-section a[href=\"/?screen=wholesale\"]")).toBeVisible();
+  await expect(page.locator(".trust-pillars-section a[href=\"/?screen=mobility\"]")).toBeVisible();
   await expect(page.locator(".intro-strip")).toHaveCount(1);
   await expect(page.locator(".intro-strip")).toContainText("One local team.");
   await expect(page.locator(".collections-section")).toHaveCount(1);
@@ -718,6 +722,15 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.locator(".faq-section")).toContainText("Delivery areas, charges and estimated timelines are confirmed by our team before dispatch.");
   await expect(page.locator(".contact-section")).toBeVisible();
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
+});
+
+test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
+  await page.goto("/?screen=fashion&category=men");
+  await expect(page.locator(".collections-section")).toBeVisible();
+  await expect(page.locator(".collection-card")).toHaveCount(0);
+  await expect(page.locator(".live-catalogue")).toBeVisible();
+  await expect(page.locator(".live-catalogue-heading h3")).toContainText("men collection");
+  await expect(page.getByRole("button", { name: /Clear category/ })).toBeVisible();
 });
 
 test("cart does not invent an unconfigured free-delivery threshold", async ({ page }) => {
