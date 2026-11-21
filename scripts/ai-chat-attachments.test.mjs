@@ -42,5 +42,5 @@ test("customer chat extracts supported Office and OpenDocument package text with
 });
 
 test("Worker wraps extracted text with actual line boundaries", () => {
-  assert.match(worker, /BEGIN ATTACHED FILE CONTENT:[^\n]*\\n/);
+  assert.match(worker, /BEGIN ATTACHED FILE CONTENT:[^\n]*\\nEND ATTACHED FILE CONTENT/);
 });
