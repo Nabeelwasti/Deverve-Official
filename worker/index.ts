@@ -3332,7 +3332,15 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
-  if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
+  const publicPath=new URL(request.url).pathname;
+  if(publicPath==="/api/brand/logo"&&request.method==="GET"){
+    try{
+      const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
+      if(row){const assets=JSON.parse(row.setting_value_json) as {logo_id?:string|null};const id=assets.logo_id;if(typeof id==="string"&&/^[a-f0-9-]{36}$/i.test(id)){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(media)return Response.redirect(new URL("/media/"+id,request.url).toString(),302);}}
+    }catch{return error("Brand image is temporarily unavailable",503);}
+    return Response.redirect(new URL("/brand/de-verve-logo.svg",request.url).toString(),302);
+  }
+  if(publicPath==="/api/storefront/settings" && request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets','site_design')").all<{setting_key:string;setting_value_json:string}>();
       const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};
