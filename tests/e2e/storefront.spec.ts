@@ -685,6 +685,9 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.locator(".intro-strip")).toHaveCount(1);
   await expect(page.locator(".intro-strip")).toContainText("One local team.");
   await expect(page.locator(".collections-section")).toHaveCount(1);
+  await expect(page.locator(".testimonial-card")).toHaveCount(1);
+  await expect(page.locator(".testimonial-card")).toContainText("Browser Customer");
+  await expect(page.locator(".testimonial-card")).toContainText("Customer feedback");
   await page.goto("/?screen=fashion");
   await expect(page.locator(".collections-section")).toBeVisible();
   await expect(page.getByRole("link", { name: /Shop Men.s fashion collection/ }).first()).toHaveAttribute("href", /screen=fashion/);
@@ -702,9 +705,6 @@ test("storefront uses verified service wording instead of fabricated social proo
   ]) {
     await expect(body).not.toContainText(unsupportedClaim);
   }
-  await expect(page.locator(".testimonial-card")).toHaveCount(1);
-  await expect(page.locator(".testimonial-card")).toContainText("Browser Customer");
-  await expect(page.locator(".testimonial-card")).toContainText("Customer feedback");
   await expect(page.locator(".newsletter-form")).toHaveCount(0);
   await expect(page.locator(".newsletter-section")).toHaveCount(0);
   await expect(page.locator(".customer-feedback-invite")).toHaveCount(0);
