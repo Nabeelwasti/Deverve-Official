@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
+  await page.route("https://dummyjson.com/quotes/random", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({quote:"Elegance is when the inside is as beautiful as the outside.",author:"Coco Chanel"})}));
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
     await route.fulfill({
       status: 200,
@@ -68,6 +69,19 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
     phone: "+923001234567",
     website: "",
   });
+});
+
+test("AI support uses a compact in-composer control layout", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator(".golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await expect(chat).toBeVisible();
+  await expect(chat.getByLabel("Your message")).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Attach a product photo" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
+  await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
 });
 
 test("rental request requires both CNIC images and sends them with the request", async ({ page }) => {
