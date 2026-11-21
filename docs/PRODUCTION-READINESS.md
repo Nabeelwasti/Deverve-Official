@@ -578,3 +578,10 @@ The following UX work has been committed to main:
 The Cloudflare Pages builds for commits 9c49b5a, b8b7a18 and d1836a4 reached successful build stages; the deployment for d1836a4 completed successfully. Later commits 8a40720 and f1610e6 were still queued/building at the last status check. These Pages builds verify TypeScript/Vite compilation only; they do not substitute for the GitHub Actions Worker, schema, dependency and Playwright suites. Do not claim those suites are green without their run results.
 
 **Still not certified:** CNIC 90-day deletion remains technically unimplemented; independent off-account backup and full restore; real device scanner acceptance; live Turnstile, Safepay, email and WhatsApp tests; physical inventory/POS reconciliation; final rental workflow; named staff authorisations; formal owner signoff; and final customer-origin production smoke checks. The existing D1 deletion triggers and indefinite R2 locks must not be bypassed as a shortcut.
+
+
+### Live category artwork controls — 21 November 2026
+
+In addition to CMS category-grid artwork, the owner-only Admin → Website & brand settings panel now manages the six static storefront category cards (Men, Women, Kids, Everyday essentials, Hoodies & jackets, Trousers & pants). Uploads are validated as ready image assets, saved to the public `category_assets` setting, exposed by the storefront settings endpoint, and recorded in the audit log. Resetting a card removes its setting and restores the original artwork. Media archival checks now protect category images that are still referenced.
+
+The admin upload workflow and live card renderer are implemented in main. The latest frontend Pages build and the GitHub Actions Worker/schema/Playwright suite must still be checked before this change is considered fully release-verified. No actual category artwork has been uploaded by the owner yet; the cards use their existing default artwork until images are selected in Admin.
