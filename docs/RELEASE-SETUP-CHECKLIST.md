@@ -147,3 +147,23 @@ Keep secrets in the provider dashboard or Cloudflare encrypted secrets. Share on
 - Created private R2 bucket `deverve-db-backups` in APAC. It is currently empty. The completed D1 export artifact could not be downloaded through the available connector's outbound-host restrictions; no independent SQL backup/restore test is claimed.
 - Cloudflare Pages Git production deployments are enabled for `main` only. Preview deployments remain disabled. The next main-branch push triggers the production build/deployment.
 - Physical Android device acceptance remains intentionally scheduled after deployment, as requested.
+
+
+## Staged customer-care and voucher release (PR #7)
+
+This section describes the new staged voucher release. It is not production-active until the PR is merged, migration 0037 is applied after a verified backup, and the final Pages deployment passes smoke checks.
+
+- [ ] Require the exact PR head to pass build/type-check, production dependency audit, Worker tests, SQL binding checks, migration/schema tests and desktop/mobile browser tests.
+- [ ] Before applying migration 0037, create and verify a fresh D1 export and an independently controlled encrypted backup. Confirm the restore procedure and keep the backup encryption key separate.
+- [ ] Confirm the 0037 schema on a disposable D1 database, including one-voucher-per-order, one-voucher-per-exchange, immutable redemption history, max-use enforcement, per-customer limits, first-order-only eligibility and exchange-case ownership/status checks.
+- [ ] Apply migration 0037 once to production D1. Verify both voucher tables, indexes and triggers by exact schema read-back. Never rerun the migration blindly.
+- [ ] Deploy the merged main commit to Cloudflare Pages manually. Verify the deployment commit, successful build/deploy stages, canonical pages.dev HTTP 200, security headers, Worker API health and customer checkout.
+- [ ] In Admin → Sales → Discount vouchers, test a campaign code, fixed amount, percentage, free delivery, expiry, minimum basket, max redemptions, per-customer limit and revocation using test customer accounts/orders only.
+- [ ] Test first-order voucher against a customer with no non-cancelled orders and reject it for a customer with a previous non-cancelled order.
+- [ ] Complete a test exchange case for each supported reason (size issue, damaged item, wrong item/colour mismatch). Verify only a completed case can receive a customer-bound one-time voucher, that the reason mapping is correct, and that the prefilled WhatsApp link opens the correct customer's chat without sending automatically.
+- [ ] Redeem a voucher at checkout while signed in. Verify the server-calculated total, order discount fields, single redemption row, usage increment, audit history and customer-specific rejection. Test duplicate, expired, revoked, wrong-customer, wrong-case, under-minimum and concurrent redemption attempts.
+- [ ] Confirm no spend-based or advance-payment discounts are displayed or applied without a configured voucher. Confirm only one voucher can apply per order and that wholesale quotation redemption remains disabled.
+- [ ] Recheck the storefront's restored factual service cards and approved customer feedback. Unapproved reviews, unverified-purchase labels, fabricated testimonials, inactive newsletters and unsupported delivery/brand claims must not be published.
+- [ ] Confirm the visible Add product label in both the admin dashboard and catalogue workspace on desktop and a narrow mobile viewport.
+- [ ] Record owner acceptance of voucher amounts, expiry defaults, customer-care compensation policy, published exchange policy and privacy notice. Confirm the indefinite CNIC retention instruction with the owner and obtain qualified Pakistan legal review before representing it as legally approved.
+- [ ] Keep the release in a non-accepted state if any required backup, migration, checkout, security, device or owner-acceptance check fails. A successful Pages deployment alone is not production acceptance.
