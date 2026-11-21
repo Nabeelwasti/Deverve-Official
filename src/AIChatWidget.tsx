@@ -18,12 +18,83 @@ const TEXT_EXTENSIONS = new Set(["txt","md","markdown","csv","tsv","json","jsonl
 const MIME_BY_EXTENSION: Record<string,string> = { pdf:"application/pdf", txt:"text/plain", md:"text/plain", markdown:"text/plain", csv:"text/plain", tsv:"text/plain", json:"text/plain", jsonl:"text/plain", xml:"text/plain", html:"text/plain", htm:"text/plain", rtf:"text/plain", mp3:"audio/mpeg", m4a:"audio/mp4", wav:"audio/wav", aac:"audio/aac", flac:"audio/flac", opus:"audio/opus", mp4:"video/mp4", mov:"video/mov", avi:"video/avi", mpg:"video/mpeg", mpeg:"video/mpeg", jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", webp:"image/webp" };
 const DIRECT_MIME = new Set(["application/pdf","image/jpeg","image/png","image/webp","audio/aac","audio/flac","audio/mp3","audio/mp4","audio/mpeg","audio/mpga","audio/opus","audio/pcm","audio/wav","audio/webm","video/mov","video/mpeg","video/mp4","video/mpg","video/avi","video/wmv","video/mpegps","video/flv"]);
 function fileExtension(name: string): string { return name.toLowerCase().split(".").pop() || ""; }
+
+const OFFICE_EXTENSIONS = new Set(["docx","xlsx","pptx","odt","ods","odp"]);
+async function extractOfficeText(file: File, ext: string): Promise<string> {
+  // Read only the document XML entries we need. Bound entry count and expanded bytes
+  // to avoid ZIP bombs; never extract paths to the user's device.
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  for (let i = Math.max(0, bytes.length - 22 - 65_535); i <= bytes.length - 22; i++) {
+    if (view.getUint32(i, true) === 0x06054b50) eocd = i;
+  }
+  if (eocd < 0) throw new Error(file.name + " is not a valid Office/OpenDocument package.");
+  const entries = view.getUint16(eocd + 10, true);
+  const directorySize = view.getUint32(eocd + 12, true);
+  const directoryOffset = view.getUint32(eocd + 16, true);
+  if (entries > 500 || directoryOffset + directorySize > bytes.length) throw new Error(file.name + " contains an unsupported or unusually large document package.");
+  const wanted = (name: string) => {
+    if (ext === "docx") return name === "word/document.xml";
+    if (ext === "pptx") return /^ppt\/slides\/slide\d+\.xml$/.test(name);
+    if (ext === "xlsx") return name === "xl/sharedStrings.xml" || /^xl\/worksheets\/sheet\d+\.xml$/.test(name);
+    return name === "content.xml";
+  };
+  const decoder = new TextDecoder("utf-8", { fatal: false });
+  const chunks: string[] = [];
+  let cursor = directoryOffset, expanded = 0, extracted = 0;
+  for (let index = 0; index < entries; index++) {
+    if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) throw new Error("The document package directory is damaged.");
+    const method = view.getUint16(cursor + 10, true);
+    const compressedSize = view.getUint32(cursor + 20, true);
+    const uncompressedSize = view.getUint32(cursor + 24, true);
+    const nameLength = view.getUint16(cursor + 28, true);
+    const extraLength = view.getUint16(cursor + 30, true);
+    const commentLength = view.getUint16(cursor + 32, true);
+    const localOffset = view.getUint32(cursor + 42, true);
+    const name = decoder.decode(bytes.subarray(cursor + 46, cursor + 46 + nameLength));
+    cursor += 46 + nameLength + extraLength + commentLength;
+    if (!wanted(name)) continue;
+    if (++extracted > 120 || uncompressedSize > 2_000_000 || expanded + uncompressedSize > 8_000_000) throw new Error("The document expands beyond the safe text-extraction limit.");
+    if (method !== 0 && method !== 8) throw new Error("This document uses an unsupported compression method.");
+    if (localOffset + 30 > bytes.length || view.getUint32(localOffset, true) !== 0x04034b50) throw new Error("The document package contains a damaged file entry.");
+    const localNameLength = view.getUint16(localOffset + 26, true);
+    const localExtraLength = view.getUint16(localOffset + 28, true);
+    const start = localOffset + 30 + localNameLength + localExtraLength;
+    const end = start + compressedSize;
+    if (end > bytes.length) throw new Error("The document package contains an incomplete file entry.");
+    let output: Uint8Array;
+    if (method === 0) output = bytes.slice(start, end);
+    else {
+      if (typeof DecompressionStream === "undefined") throw new Error("This browser cannot safely extract Office documents. Export the file as PDF.");
+      const stream = new Blob([bytes.slice(start, end)]).stream().pipeThrough(new DecompressionStream("deflate-raw" as CompressionFormat));
+      output = new Uint8Array(await new Response(stream).arrayBuffer());
+    }
+    if (output.byteLength !== uncompressedSize) throw new Error("A document component failed its integrity-size check.");
+    expanded += output.byteLength;
+    const xml = decoder.decode(output);
+    const parsed = new DOMParser().parseFromString(xml, "application/xml");
+    if (parsed.querySelector("parsererror")) throw new Error("A document component contains invalid XML.");
+    const text = Array.from(parsed.getElementsByTagName("*"))
+      .filter(node => ["t","v"].includes(node.localName))
+      .map(node => node.textContent || "").filter(Boolean).join(" ");
+    if (text) chunks.push(text);
+  }
+  const result = chunks.join("\n").replace(/[ \t]+\n/g, "\n").trim();
+  if (!result) throw new Error(file.name + " contains no readable text, or is encrypted.");
+  if (result.length > 180_000) throw new Error(file.name + " contains too much extracted text. Split it into smaller documents.");
+  return result;
+}
 async function prepareAttachment(file: File): Promise<FileAttachment> {
   const ext = fileExtension(file.name);
   const mime = (file.type || MIME_BY_EXTENSION[ext] || "application/octet-stream").toLowerCase();
   if (!file.size) throw new Error(file.name + " is empty.");
   if (file.size > 4 * 1024 * 1024) throw new Error(file.name + " exceeds the 4 MB per-file limit. Compress it or export a smaller copy.");
   const safeName = file.name.replace(/[\\/]/g, "_").replace(/[\x00-\x1f]/g, "_").slice(0, 120) || "attachment";
+  if (OFFICE_EXTENSIONS.has(ext)) {
+    const text = await extractOfficeText(file, ext);
+    return { name: safeName, mime_type: "text/plain", text, size: file.size };
+  }
   if (mime.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || ["application/json","application/xml","application/rtf","application/x-ndjson"].includes(mime)) {
     const text = await file.text();
     if (text.includes(String.fromCharCode(0))) throw new Error(file.name + " appears to be binary. Export it as PDF or text and attach again.");
