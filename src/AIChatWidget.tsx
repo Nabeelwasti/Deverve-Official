@@ -23,7 +23,7 @@ async function prepareAttachment(file: File): Promise<FileAttachment> {
   const mime = (file.type || MIME_BY_EXTENSION[ext] || "application/octet-stream").toLowerCase();
   if (!file.size) throw new Error(file.name + " is empty.");
   if (file.size > 4 * 1024 * 1024) throw new Error(file.name + " exceeds the 4 MB per-file limit. Compress it or export a smaller copy.");
-  const safeName = file.name.replace(/[\\/\\u0000-\\u001f]/g, "_").slice(0, 120) || "attachment";
+  const safeName = file.name.replace(/[\\/]/g, "_").replace(/[\\x00-\\x1f]/g, "_").slice(0, 120) || "attachment";
   if (mime.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || ["application/json","application/xml","application/rtf","application/x-ndjson"].includes(mime)) {
     const text = await file.text();
     if (text.includes(String.fromCharCode(0))) throw new Error(file.name + " appears to be binary. Export it as PDF or text and attach again.");
