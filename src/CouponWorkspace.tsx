@@ -58,7 +58,19 @@ export default function CouponWorkspace({onClose}:{onClose:()=>void}){
  <label>Voucher purpose<select value={draft.purpose} onChange={e=>setDraft({...draft,...(purposePresets[e.target.value]??{}),purpose:e.target.value,exchange_request_id:""})}><option value="campaign">Marketing campaign</option><option value="first_order">First order</option><option value="loyalty">Loyalty reward</option><option value="goodwill">Customer goodwill</option><option value="exchange_compensation">Exchange compensation</option><option value="damaged_item">Damaged item compensation</option><option value="wrong_item">Wrong item / colour mismatch compensation</option><option value="size_exchange">Size exchange inconvenience</option><option value="manual_adjustment">Manual adjustment</option></select></label>
  <label>Discount type<select value={draft.discount_type} onChange={e=>setDraft({...draft,discount_type:e.target.value as Draft["discount_type"],discount_value:e.target.value==="free_delivery"?"0":e.target.value==="percent"?"5":"100"})}><option value="percent">Percentage</option><option value="fixed">Fixed PKR amount</option><option value="free_delivery">Free delivery</option></select></label>
  <label>Voucher title<input required minLength={3} maxLength={100} value={draft.label} onChange={e=>setDraft({...draft,label:e.target.value})}/></label>
-  {draft.discount_type!=="free_delivery"&&<label>{draft.discount_type==="percent"?"Discount percentage (1–90%)":"Discount amount (PKR)"}<input required type="number" min="1" max={draft.discount_type==="percent"?"90":"100000"} step={draft.discount_type==="percent"?"1":"0.01"} value={draft.discount_value} onChange={e=>setDraft({...draft,discount_value:e.target.value})}/></label>}{draft.discount_type==="percent"&&<label>Maximum discount cap (PKR)<input type="number" min="1" max="100000" step="1" value={draft.max_discount} onChange={e=>setDraft({...draft,max_discount:e.target.value})}/><small>Recommended cap is filled by the selected purpose. Adjust only when the manager approves the margin.</small></label>}
+  {draft.discount_type !== "free_delivery" && (
+    <label>
+      {draft.discount_type === "percent" ? "Discount percentage (1–90%)" : "Discount amount (PKR)"}
+      <input required type="number" min="1" max={draft.discount_type === "percent" ? "90" : "100000"} step={draft.discount_type === "percent" ? "1" : "0.01"} value={draft.discount_value} onChange={e => setDraft({ ...draft, discount_value: e.target.value })} />
+    </label>
+  )}
+  {draft.discount_type === "percent" && (
+    <label>
+      Maximum discount cap (PKR)
+      <input type="number" min="1" max="100000" step="1" value={draft.max_discount} onChange={e => setDraft({ ...draft, max_discount: e.target.value })} />
+      <small>Recommended cap is filled by the selected purpose. Adjust only when the manager approves the margin.</small>
+    </label>
+  )}
  <label>Minimum order subtotal (PKR)<input type="number" min="0" step="0.01" value={draft.min_subtotal} onChange={e=>setDraft({...draft,min_subtotal:e.target.value})}/></label>
  <label>Expiry (days)<input required type="number" min="1" max="365" value={draft.expiry_days} onChange={e=>setDraft({...draft,expiry_days:e.target.value})}/></label>
  {isExchangePurpose&&<label>Completed exchange case<select required value={draft.exchange_request_id} onChange={e=>setDraft({...draft,exchange_request_id:e.target.value})}><option value="">Select a completed case</option>{exchanges.map(item=><option key={item.id} value={item.id}>{item.exchange_number} · {item.customer_name} · {item.reason.replaceAll("_"," ")}</option>)}</select></label>}
