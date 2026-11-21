@@ -585,3 +585,20 @@ The Cloudflare Pages builds for commits 9c49b5a, b8b7a18 and d1836a4 reached suc
 In addition to CMS category-grid artwork, the owner-only Admin → Website & brand settings panel now manages the six static storefront category cards (Men, Women, Kids, Everyday essentials, Hoodies & jackets, Trousers & pants). Uploads are validated as ready image assets, saved to the public `category_assets` setting, exposed by the storefront settings endpoint, and recorded in the audit log. Resetting a card removes its setting and restores the original artwork. Media archival checks now protect category images that are still referenced.
 
 The admin upload workflow and live card renderer are implemented in main. The latest frontend Pages build and the GitHub Actions Worker/schema/Playwright suite must still be checked before this change is considered fully release-verified. No actual category artwork has been uploaded by the owner yet; the cards use their existing default artwork until images are selected in Admin.
+
+
+## Customer AI chat file attachments — 22 November 2026
+
+A draft implementation is under review on `feat/ai-chat-multifile-understanding` (stacked on the customer-chat/branding candidate). It changes the customer composer from photo-only selection to a general file picker and sends bounded attachments to the existing server-side Gemini integration.
+
+Current supported input paths:
+- Images: JPEG, PNG and WebP.
+- Documents: PDF and UTF-8 text files. Common text/code/data extensions (TXT, Markdown, CSV/TSV, JSON, XML, HTML, CSS, JavaScript/TypeScript, Python, SQL, YAML, logs and similar) are read as text before sending.
+- Audio: supported Gemini audio MIME types (one audio file per message).
+- Video: supported Gemini video MIME types (one video file per message).
+
+Limits in this implementation: at most three files, 4 MB per binary/PDF file, 6 MB combined, and 180,000 characters per text file. Attachments are processed transiently in the request and are not written to the shop database or media bucket. The Worker validates MIME type, encoded payload, selected file signatures for PDF and common images, aggregate size, and treats filenames/file content as untrusted data. Customer chat continues to warn customers not to send CNIC, OTP, passwords or payment-card details.
+
+**Not every conceivable file format is supported by the current Gemini model.** Legacy binary Office files and modern Office/OpenDocument ZIP packages (DOC/DOCX/XLS/XLSX/PPT/PPTX/ODT/ODS/ODP), archives, executables and proprietary formats are not currently parsed. The picker accepts arbitrary file selection, but the client gives a clear conversion instruction for unsupported binary formats rather than sending opaque bytes and pretending the model can understand them. Convert those files to PDF or plain text before attaching. Gemini's documented document input currently includes PDF and text for the general multimodal API; Office document support is model-family-specific, so it must not be assumed for the deployed fallback model list.
+
+This work is **not production-released** until the new CI run, browser upload tests, Worker validation tests and a real Gemini acceptance test with representative PDF, text, image, audio and video samples pass. Provider/API quotas, file size and model modality availability apply. No attachment content is retained by the application after the request, but the content is transmitted to the configured Gemini provider for inference.
