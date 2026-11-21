@@ -17,7 +17,7 @@ test("checkout resolves a server-side voucher and records redemption in the orde
  assert.match(worker,/async function resolveEligibleCoupon/);
  assert.match(worker,/resolveEligibleCoupon\(env\.DB, couponCode, signedInCustomer\.customer_id, subtotal\)/);
  assert.match(worker,/INSERT INTO discount_coupon_redemptions/);
- assert.match(worker,/coupon_not_eligible/);
+ assert.match(read("migrations/0037_discount_coupons.sql"),/coupon_not_eligible/);
 });
 
 test("customer checkout exposes an optional server-validated voucher field",()=>{
