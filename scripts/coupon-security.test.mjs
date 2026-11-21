@@ -12,6 +12,7 @@ test("voucher issuance is owner/manager-only, hashes codes and supports revocati
  assert.match(worker,/Only a completed exchange belonging to that customer/);
  assert.match(worker,/documentedColourMismatch=exchange\.reason==="other"&&\/colou\?r\|shade\|variant\/i\.test\(exchange\.details\)/);
  assert.match(read("src/CouponWorkspace.tsx"),/Wrong item \/ colour mismatch compensation/);
+ assert.match(read("src/CustomerAccount.tsx"),/Other \(including colour \/ variant mismatch\)/);
 });
 
 test("checkout resolves a server-side voucher and records redemption in the order batch",()=>{
