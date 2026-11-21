@@ -981,7 +981,7 @@ interface EligibleCoupon {
 async function resolveEligibleCoupon(db: D1Database, rawCode: string, customerId: string, subtotalPaisa: number): Promise<{coupon:EligibleCoupon;discountPaisa:number;freeDelivery:boolean}|null> {
   const code=cleanText(rawCode,64).toUpperCase();
   if(!/^[A-Z0-9-]{6,64}$/.test(code)||!Number.isSafeInteger(subtotalPaisa)||subtotalPaisa<0)return null;
-  const coupon=await db.prepare("SELECT c.*, (SELECT COUNT(*) FROM discount_coupon_redemptions r WHERE r.coupon_id=c.id AND r.customer_id=?) AS customer_redemptions FROM discount_coupons c WHERE c.code_hash=? LIMIT 1").bind(customerId,await sha256(code)).first<EligibleCoupon>();
+  const coupon=await db.prepare("SELECT c.*, (SELECT COUNT(*) FROM discount_coupon_redemptions r WHERE r.coupon_id=c.id AND r.customer_id=? AND r.status='redeemed') AS customer_redemptions FROM discount_coupons c WHERE c.code_hash=? LIMIT 1").bind(customerId,await sha256(code)).first<EligibleCoupon>();
   if(!coupon||coupon.is_active!==1||!Number.isFinite(Date.parse(coupon.starts_at))||Date.parse(coupon.starts_at)>Date.now()||coupon.expires_at&&Date.parse(coupon.expires_at)<=Date.now())return null;
   if(coupon.customer_id&&coupon.customer_id!==customerId)return null;
   if(coupon.purpose==="wholesale")return null;
@@ -1015,7 +1015,7 @@ async function adminCouponRoutes(request: Request, env: Env, url: URL): Promise<
     try{
       const [coupons,exchanges]=await Promise.all([
         env.DB.prepare("SELECT c.id,c.code_prefix,c.label,c.purpose,c.discount_type,c.discount_value,c.max_discount_paisa,c.min_subtotal_paisa,c.customer_id,c.exchange_request_id,c.starts_at,c.expires_at,c.max_redemptions,c.per_customer_limit,c.usage_count,c.is_active,c.created_at,cu.full_name AS customer_name,e.exchange_number FROM discount_coupons c LEFT JOIN customers cu ON cu.id=c.customer_id LEFT JOIN exchange_requests e ON e.id=c.exchange_request_id ORDER BY c.created_at DESC LIMIT 100").all<Record<string,unknown>>(),
-        env.DB.prepare("SELECT e.id,e.exchange_number,e.reason,e.customer_id,c.full_name AS customer_name,c.phone AS customer_phone,o.order_number FROM exchange_requests e JOIN customers c ON c.id=e.customer_id JOIN orders o ON o.id=e.order_id WHERE e.status='completed' AND NOT EXISTS(SELECT 1 FROM discount_coupons d WHERE d.exchange_request_id=e.id AND d.is_active=1) AND NOT EXISTS(SELECT 1 FROM discount_coupon_redemptions r WHERE r.exchange_request_id=e.id) ORDER BY e.completed_at DESC LIMIT 50").all<Record<string,unknown>>()
+        env.DB.prepare("SELECT e.id,e.exchange_number,e.reason,e.customer_id,c.full_name AS customer_name,c.phone AS customer_phone,o.order_number FROM exchange_requests e JOIN customers c ON c.id=e.customer_id JOIN orders o ON o.id=e.order_id WHERE e.status='completed' AND NOT EXISTS(SELECT 1 FROM discount_coupons d WHERE d.exchange_request_id=e.id AND d.is_active=1) AND NOT EXISTS(SELECT 1 FROM discount_coupon_redemptions r WHERE r.exchange_request_id=e.id AND r.status='redeemed') ORDER BY e.completed_at DESC LIMIT 50").all<Record<string,unknown>>()
       ]);
       return json({coupons:coupons.results??[],eligible_exchanges:exchanges.results??[]});
     }catch{return error("Voucher records could not be loaded.",503);}
