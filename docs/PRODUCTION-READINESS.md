@@ -556,6 +556,6 @@ Do not remove or weaken either lock until a replacement is designed and tested. 
 Latest main commit and CI/deployment status must be verified from GitHub Actions and Cloudflare Pages before this addendum is considered released.
 
 
-### Status clarification — 21 November 2026, 13:xx UTC
+### Status clarification — 21 November 2026, 13:24 UTC
 
 The preceding CNIC status paragraph is updated to distinguish the owner-confirmed operating policy from formal sign-off and optional external legal review. No lawyer review is claimed. The technical 90-day deletion gap described above remains open and must not be treated as resolved by consent capture or policy publication.
