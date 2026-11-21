@@ -342,7 +342,7 @@ function Storefront() {
   const [paymentMethods,setPaymentMethods]=useState<Array<{id:string;label:string;kind:string;provider:string;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>>([{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}]);
   const [selectedPaymentMethod,setSelectedPaymentMethod]=useState("cod");
   const emptyCheckoutForm = { customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "", coupon_code: "" };
-  const [checkoutForm, setCheckoutForm] = useState(() => readAppDraft("checkout", emptyCheckoutForm));
+  const [checkoutForm, setCheckoutForm] = useState(() => ({ ...readAppDraft("checkout", emptyCheckoutForm), coupon_code: "" }));
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || rentalOpen) { const vehicle = url.searchParams.get("vehicle") || rentalForm.vehicle_id || ""; void openRentalRequest(vehicle, true); } }, []);
