@@ -540,3 +540,17 @@ No production retention setting, R2 object, migration or customer CNIC record wa
 Cloudflare R2 API inspection on 21 November 2026 confirmed that bucket `deverve-media-private` has an enabled bucket-lock rule with prefix `rental-private/` and condition `Indefinite`. The `deverve-db-backups` bucket also has an enabled `rental-private/` indefinite lock rule. These provider-level locks are separate from the D1 trigger and Worker behavior. They currently prevent implementing the owner's 90-day deletion schedule by application code alone.
 
 Do not remove or weaken either lock until a replacement is designed and tested. An age-based 90-day bucket lock would be incorrect because the owner's clock starts after full rental clearance, not when an image is uploaded. The eventual design must preserve evidence during unresolved obligations and holds, then authorize deletion against the recorded clearance timestamp, while ensuring backup copies expire/purge consistently. The current encrypted CNIC backup UI is a manual browser download workflow; it does not automatically synchronize with Drive/Dropbox and cannot itself enforce a customer-specific deletion deadline.
+
+
+## Rental CNIC notice and consent capture — 21 November 2026
+
+- Published the revised English/Urdu customer privacy and rental CNIC policy in the website's Policies screen. It describes the owner's two-sided CNIC requirement, identity/fraud/security purposes, owner/relevant rental-staff access, access logging, 90-day post-clearance retention rule, customer deletion-request review and documented exception handling. It does not claim lawyer review or absolute security.
+- Rental submission now sends a fixed notice version, `rental-cnic-2026-11-21-v1`, in addition to the affirmative consent flag. The Worker rejects a missing or unrecognised version and writes the notice version and consent timestamp to the rental request and audit event.
+- Migration `0038_rental_cnic_consent_record.sql` adds the consent-version and timestamp fields. It labels pre-existing rows `legacy-unknown`; no historical consent is invented or backfilled.
+- Production D1 `deverve-production` was updated with the two additive columns and the consent lookup index. The update was verified against `PRAGMA table_info(rental_requests)`; no existing rental row was rewritten. A later read-only grouped verification attempt returned SQLITE_AUTH, so the record distribution was not independently re-counted in that check.
+- The admin rental workspace now displays the consent version and timestamp and warns staff that automated 90-day deletion is not yet active. The backup UI warns that browser-downloaded encrypted copies are external copies the website cannot track or remotely destroy.
+- Staff SOP: `docs/CNIC-STAFF-HANDLING-SOP.md`.
+
+**Important remaining gap:** migration 0038 records consent only. It does not implement financial clearance, deletion-request review/approval, legal holds, the 90-day scheduler or deletion from R2 and backups. D1 migration 0032 and the two R2 indefinite-lock rules still protect existing evidence. The public notice states the owner's retention policy, but the technical deletion mechanism must be completed and tested before the business tells a customer that a specific CNIC record has actually been deleted. Do not bypass existing locks/triggers as a shortcut.
+
+Latest main commit and CI/deployment status must be verified from GitHub Actions and Cloudflare Pages before this addendum is considered released.
