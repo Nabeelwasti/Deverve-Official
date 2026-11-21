@@ -19,7 +19,7 @@ required_tables = {
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
-    "order_inventory_reservations",
+    "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -254,3 +254,18 @@ assert "code_hash" in coupon_sql and "exchange_compensation" in coupon_sql and "
 redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
 unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
 assert ("order_id",) in unique_columns and ("exchange_request_id",) in unique_columns, "Orders and exchange cases must not receive duplicate voucher redemptions"
+
+
+# Customer voucher schema: hashed codes, strict exchange binding and atomic immutable redemption.
+coupon_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupons)")}
+assert {"code_hash", "code_prefix", "purpose", "discount_type", "discount_value", "max_discount_paisa", "min_subtotal_paisa", "customer_id", "exchange_request_id", "starts_at", "expires_at", "max_redemptions", "per_customer_limit", "usage_count", "is_active"} <= coupon_columns, "Voucher eligibility and usage fields are missing"
+assert "code" not in coupon_columns, "Plaintext voucher codes must never be persisted"
+redemption_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupon_redemptions)")}
+assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa"} <= redemption_columns, "Voucher redemption ledger fields are missing"
+coupon_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+assert {"trg_coupon_redemption_validate", "trg_coupon_redemption_increment", "trg_coupon_redemption_immutable_update", "trg_coupon_redemption_immutable_delete"} <= coupon_triggers, "Voucher redemption must be validated, counted and immutable inside D1"
+redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
+redemption_unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
+assert ("order_id",) in redemption_unique_columns and ("exchange_request_id",) in redemption_unique_columns, "An order or exchange case cannot redeem more than one voucher"
+coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
+assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 1" in coupon_sql, "Exchange vouchers must be customer/case bound and single-use"
