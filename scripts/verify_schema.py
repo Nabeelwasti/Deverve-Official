@@ -270,3 +270,5 @@ assert ("order_id",) in redemption_unique_columns and ("exchange_request_id",) i
 assert any(row[1] == "idx_discount_coupons_one_per_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupons)")), "An exchange case cannot receive multiple compensation vouchers"
 coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
 assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 1" in coupon_sql, "Exchange vouchers must be customer/case bound and single-use"
+coupon_trigger_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='trg_coupon_redemption_validate'").fetchone()[0]
+assert "c.purpose != 'wholesale'" in coupon_trigger_sql and "c.purpose != 'first_order'" in coupon_trigger_sql, "Wholesale vouchers must remain disabled and first-order vouchers must check prior orders"
