@@ -9,14 +9,20 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Customer account: https://deverve-official.pages.dev/account
 - Source: https://github.com/Nabeelwasti/Deverve-Official
 - Production branch: `main` only
-- Hosting: Cloudflare Pages (`deverve-official`)
-- Database: Cloudflare D1 (`deverve-production`, APAC)
-- Media: private Cloudflare R2 (`deverve-media-private`)
-- GitHub is connected to Cloudflare Pages, but source-triggered and production deployments are currently disabled intentionally. Preview deployments are also disabled. Do not describe a source merge as a production deployment.
-- Latest source commit: `73d8a679098aa5c795aa5a1ed4bf33716af4c9d1` (storefront claims and promotion logic corrected; Home trust and Contact FAQs exposed; inventory warnings added for legacy shared-stock rows; encrypted CNIC backup size limit corrected and guarded). This source commit is **not deployed**.
-- Latest verified Cloudflare Pages production deployment: commit `1bc020f089d46ff7452fb3eb0a44ba900543827d`, deployment `32aabada-c3b6-4003-a37b-749a9762466a`, created 20 November 2026 at 17:03 UTC. GitHub `main` is ahead of production. Source-triggered and production deployments remain disabled; do not describe a source commit as live.
-- Live D1 schema reconciliation on 20 November 2026 confirms the expected structures from migrations 0028–0036 are already reflected in production, including permanent CNIC protection triggers, the unique active variant index, order inventory reservations and AI task continuity tables. No migration ledger exists; reconcile exact schema signatures and do not rerun already-present migrations.
-- Production release is gated on an independently stored and restore-tested D1/R2 backup, legacy inventory reconciliation, payment/provider acceptance and live owner acceptance. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md), [the 20 November 2026 audit](docs/AUDIT-2026-11-20.md), [disaster recovery architecture and gates](docs/DISASTER-RECOVERY-IMPLEMENTATION.md) and [AI Command Centre capability record](docs/ADMIN-AI-COMMAND-CENTRE.md).
+- Hosting: Cloudflare Pages project `deverve-official`
+- Database: Cloudflare D1 `deverve-production` (APAC)
+- Media: private Cloudflare R2 `deverve-media-private`
+- **Latest source:** `8798eb8e43a6b78dd5226334ea158ab3af507edc` (includes the merged catalogue cleanup/bulk-import work and pins Pages builds to Node.js 24).
+- **Latest production deployment:** Cloudflare Pages deployment `03fd4f75-a5fa-4e03-804f-fa4cac529621`, built from `8798eb8e43a6b78dd5226334ea158ab3af507edc`. Cloudflare reports successful build and deploy stages. The canonical `deverve-official.pages.dev` address returned HTTP 200 in a Cloudflare browser-rendered production smoke check.
+- **Latest CI:** [run 44882915815](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44882915815) passed TypeScript/build, dependency audit, Worker tests, D1 schema checks and **114 desktop/mobile browser tests**. Remote D1 integration was skipped because dedicated Cloudflare test credentials are not configured.
+- Cloudflare Pages was configured to deploy for this release, then source-triggered/production deployments were returned to `false`; preview deployments remain `none`. Future code pushes do not publish automatically. This preserves controlled production releases.
+- The Pages build uses Node.js `24.22.1` from the repository's `.node-version`, matching the `@zxing/library` engine requirement and eliminating the prior Node 22 engine warning.
+- The production smoke check verified the public page title and CSP, HSTS and `nosniff` security headers. The public landing page no longer contains the four static trust-pillar cards or generic intro strip.
+- Production catalogue QA moved two placeholder listings, `Testing` (zero active variants) and `Choco` (description `Test`, no product image), to drafts. Both changes have `product.unpublished` audit-log entries; inventory, media and stock were retained. The public page was rechecked and no longer displays either listing.
+- The bulk catalogue importer supports up to **1,000 products / 25,000 size-colour rows / 50 MB per CSV**, with sequential atomic server batches (up to 20 products and 250 variants per transaction), resumable progress, filename-based image matching and owner/manager all-or-none bulk publication. These are deliberate safety limits, not a claim of literally unlimited uploads; larger catalogues must be split into files.
+- Production D1 contains 62 tables and the verified schema objects from migrations 0034–0036. Do not rerun these migrations. There is no migration-ledger table; reconcile by exact schema signatures.
+- Only `deverve-official.pages.dev` is configured; no custom domain is attached.
+- Production acceptance is **not complete**. Outstanding gates include independent off-account D1/R2 backup and isolated restore; physical size/colour stock reconciliation and SKU/barcode cleanup; owner verification of T2 brand authenticity and Tolaza's red/black photo/variant mismatch; CNIC retention approval; live Gemini/Turnstile/email/WhatsApp checks; physical Android camera/scanner tests; and POS/finance/rental acceptance. COD is the only active checkout method. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the production-readiness record](docs/PRODUCTION-READINESS.md).
 
 ## Implemented
 
