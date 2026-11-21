@@ -25,6 +25,8 @@ test("checkout resolves a server-side voucher and records redemption in the orde
  assert.ok(orderInsert>=0&&redemptionInsert>orderInsert,"customer-linked order must be created before the coupon redemption trigger runs");
  const migration=read("migrations/0037_discount_coupons.sql");
  assert.match(migration,/coupon_not_eligible/);
+ assert.match(migration,/trg_coupon_order_cancel_reversal/);
+ assert.match(migration,/trg_coupon_redemption_reversal_decrement/);
  assert.match(migration,/NEW\.discount_amount_paisa <= c\.max_discount_paisa/);
  assert.match(migration,/c\.discount_type != 'percent'/);
  assert.match(migration,/\(SELECT customer_id FROM orders WHERE id = NEW\.order_id\) = NEW\.customer_id/);
