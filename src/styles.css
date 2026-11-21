@@ -2079,3 +2079,8 @@ body{background:var(--dv-site-surface,#fbfaf7);color:var(--dv-site-text,#19324b)
 .ai-chat-attach-menu button span{display:grid;place-items:center;width:24px;height:24px}
 .ai-chat-attach-menu button span svg{width:19px;height:19px}
 .ai-chat-message-actions button svg{width:15px;height:15px}
+
+body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
+.button-primary,.header-cta,.ai-chat-send,.product-action-button{border-radius:var(--dv-site-button-radius,12px)!important}
+.product-card,.collection-card,.trust-pillar-card,.testimonial-card,.mobility-vehicle-card{box-shadow:var(--dv-site-shadow,0 8px 24px rgba(12,37,64,.06))}
+.home-section,.section-pad{padding-block:calc(36px * var(--dv-site-density,1))}
