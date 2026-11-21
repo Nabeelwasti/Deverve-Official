@@ -541,6 +541,28 @@ test("customer AI chat compresses and sends an attached product photo", async ({
   expect(submitted.images?.[0].data.startsWith("/9j/")).toBeTruthy();
 });
 
+test("customer AI chat accepts a PDF attachment and submits it to the assistant", async ({ page }) => {
+  let payload: { images?: Array<{ name: string; mime_type: string; data: string }> } = {};
+  await page.route("**/api/ai/chat", async route => {
+    payload = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "I can read the attached document." }) });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  await page.getByRole("button", { name: "Add attachment" }).click();
+  await page.locator('.ai-chat-panel input[type="file"][accept="application/pdf,text/plain,.pdf,.txt"]').setInputFiles({
+    name: "product-details.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from("%PDF-1.4\\n1 0 obj<</Type/Catalog>>endobj\\n%%EOF", "utf8")
+  });
+  await expect(page.getByText("product-details.pdf")).toBeVisible();
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.getByText("I can read the attached document.")).toBeVisible();
+  expect(payload.images).toHaveLength(1);
+  expect(payload.images?.[0].mime_type).toBe("application/pdf");
+  expect(payload.images?.[0].data.startsWith("JVBERi0")).toBeTruthy();
+});
+
 test("product card opens from its content and product cart merges by size and colour", async ({ page }) => {
   const product = {
     id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
