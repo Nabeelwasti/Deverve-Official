@@ -63,7 +63,7 @@ test("owner can import matching photos and request all-or-none publication",asyn
   await route.fulfill({status:201,contentType:"application/json",body:JSON.stringify({atomic:true,imported:1,variants:1,products:[{id:"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",name:"Premium Hoodie",slug:"premium-hoodie",variants:1}]})});
  });
  await page.route("**/api/admin/media/bulk",async route=>{
-  const body=route.request().postData()??route.request().postDataBuffer()?.toString("utf8")??"";const marker="name=\\\"asset_ids\\\""+String.fromCharCode(13,10).repeat(2);const start=body.indexOf(marker);const rawIds=start>=0?body.slice(start+marker.length).split(String.fromCharCode(13,10))[0]:"[]";const ids=JSON.parse(rawIds) as string[];
+  const body=route.request().postData()??route.request().postDataBuffer()?.toString("utf8")??"";const marker='name="asset_ids"'+String.fromCharCode(13,10).repeat(2);const start=body.indexOf(marker);const rawIds=start>=0?body.slice(start+marker.length).split(String.fromCharCode(13,10))[0]:"[]";const ids=JSON.parse(rawIds) as string[];
   await route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({uploaded:ids.length,failed:0,media:ids.map((id:string)=>({id,status:"ready"})),failures:[]})});
  });
  const mediaAttachments:Array<{media_id:string;color:string;is_primary:boolean;position:number}>=[];
