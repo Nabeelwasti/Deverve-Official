@@ -738,6 +738,16 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
+test("owner-managed category artwork replaces the default illustration on the live card", async ({ page }) => {
+  const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  await page.route("**/api/storefront/settings", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({social_links:{},brand_assets:{},category_assets:{men:mediaId}})}));
+  await page.goto("/");
+  const card = page.locator(".collection-card.men");
+  await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
+  await expect(card.locator(".category-garment")).toHaveCount(0);
+  await expect(card.getByRole("link", {name:/Shop Men's fashion collection/})).toBeVisible();
+});
+
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
   await page.goto("/?screen=fashion&category=men");
   await expect(page.locator(".collections-section")).toBeVisible();
