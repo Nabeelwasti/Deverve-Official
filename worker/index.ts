@@ -4270,8 +4270,8 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
       try {
         const product = await env.DB.prepare("SELECT id FROM products WHERE id = ? AND status = 'published' LIMIT 1").bind(productId).first<{id:string}>();
         if (!product) return error("Product not found",404);
-        const rows = await env.DB.prepare("SELECT r.id,r.rating,r.title,r.body,r.verified_purchase,r.created_at,substr(c.full_name,1,instr(c.full_name || ' ',' ')-1) AS reviewer_name FROM product_reviews r JOIN customers c ON c.id=r.customer_id WHERE r.product_id=? AND r.status IN ('approved','pending') ORDER BY r.created_at DESC LIMIT 100").bind(productId).all<Record<string,unknown>>();
-        const stats = await env.DB.prepare("SELECT COUNT(*) AS rating_count,ROUND(AVG(rating),1) AS average_rating FROM product_reviews WHERE product_id=? AND status IN ('approved','pending')").bind(productId).first<{rating_count:number;average_rating:number|null}>();
+        const rows = await env.DB.prepare("SELECT r.id,r.rating,r.title,r.body,r.verified_purchase,r.created_at,substr(c.full_name,1,instr(c.full_name || ' ',' ')-1) AS reviewer_name FROM product_reviews r JOIN customers c ON c.id=r.customer_id WHERE r.product_id=? AND r.status='approved' ORDER BY r.created_at DESC LIMIT 100").bind(productId).all<Record<string,unknown>>();
+        const stats = await env.DB.prepare("SELECT COUNT(*) AS rating_count,ROUND(AVG(rating),1) AS average_rating FROM product_reviews WHERE product_id=? AND status='approved'").bind(productId).first<{rating_count:number;average_rating:number|null}>();
         let customer: CustomerSessionRow | null = null;
         try { customer = await currentCustomer(request,env.DB); } catch { return error("Customer account service is temporarily unavailable",503); }
         let eligible: Array<Record<string,unknown>> = [];
