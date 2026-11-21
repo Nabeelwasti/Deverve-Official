@@ -806,3 +806,23 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
   await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
+
+test("storefront places the golden quote below the top ribbon and offers common page translations", async ({ page }) => {
+  await page.goto("/");
+  const announcement = page.locator(".announcement");
+  const quote = page.locator(".top-quote-strip");
+  await expect(announcement).toBeVisible();
+  await expect(quote).toBeVisible();
+  const order = await page.evaluate(() => {
+    const ribbon = document.querySelector(".announcement");
+    const quoteStrip = document.querySelector(".top-quote-strip");
+    return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
+  });
+  expect(order).toBeTruthy();
+  const languagePicker = quote.getByRole("combobox", { name: "Translate this page" });
+  await expect(languagePicker.locator("option")).toHaveCount(13);
+  await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
+  await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
+  await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
+  await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
+});
