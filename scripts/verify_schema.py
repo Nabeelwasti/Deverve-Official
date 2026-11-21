@@ -273,3 +273,4 @@ assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 
 coupon_trigger_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='trg_coupon_redemption_validate'").fetchone()[0]
 assert "c.purpose != 'wholesale'" in coupon_trigger_sql and "c.purpose != 'first_order'" in coupon_trigger_sql, "Wholesale vouchers must remain disabled and first-order vouchers must check prior orders"
 assert "NEW.discount_amount_paisa <= c.max_discount_paisa" in coupon_trigger_sql and "c.discount_type != 'percent'" in coupon_trigger_sql, "Database redemption must enforce voucher discount caps and percentage limits"
+assert "(SELECT customer_id FROM orders WHERE id = NEW.order_id) = NEW.customer_id" in coupon_trigger_sql, "Voucher redemption must be bound to the same customer as the order"
