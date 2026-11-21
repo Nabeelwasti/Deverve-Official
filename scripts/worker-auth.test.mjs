@@ -2451,7 +2451,7 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   const order=[...db.orders.values()][0];
   assert.equal(order.payment_method,"bank-transfer");
   assert.equal(order.payment_status,"pending");
-  assert.equal(order.delivery_fee_status,"accepted");
+  assert.equal(order.delivery_fee_status,"pending_quote");
   const confirmed=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"confirmed"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(confirmed.status,200);
   const blocked=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
@@ -3059,13 +3059,10 @@ test("bulk media uploads resume idempotently and reject reused identifiers with 
   assert.equal(db.mediaAssets.size,1);
 });
 
-test("server promotion selection keeps strict thresholds and never combines offers", () => {
-  assert.equal(selectOrderPromotion(500_000, false).code, "");
-  assert.equal(selectOrderPromotion(500_001, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2_000_000, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2_000_001, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(4_000_000, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(4_000_001, false).code, "ORDER_45");
-  assert.equal(selectOrderPromotion(2_000_001, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4_000_001, true).code, "ORDER_45");
+test("server promotion selection never grants an unconfigured offer", () => {
+  const none={code:"",label:"",discountPercent:0,discountAmountPaisa:0,freeDelivery:false};
+  assert.deepEqual(selectOrderPromotion(500_000,false),none);
+  assert.deepEqual(selectOrderPromotion(500_001,false),none);
+  assert.deepEqual(selectOrderPromotion(2_000_001,false),none);
+  assert.deepEqual(selectOrderPromotion(4_000_001,true),none);
 });
