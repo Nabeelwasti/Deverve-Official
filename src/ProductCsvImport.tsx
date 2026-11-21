@@ -93,7 +93,7 @@ function imageProductMatch(file:File,products:CsvProduct[]):ImageMatch|null{
   if(!product)return null;
   const suffix=base.slice(product.slug.length);
   if(!suffix.startsWith("--"))return {slug:product.slug,color:""};
-  const colorTail=suffix.slice(2);
+  const colorTail=suffix.replace(/^-+/,"");
   const colors=[...new Set(product.variants.map(variant=>variant.color.trim()).filter(Boolean))].sort((a,b)=>slugify(b).length-slugify(a).length);
   const color=colors.find(value=>{const normalized=slugify(value);return colorTail===normalized||colorTail.startsWith(normalized+"--");});
   return color?{slug:product.slug,color}:{slug:product.slug,color:"",error:file.name+" uses a colour-specific filename, but that colour is not present in "+product.name+" variants."};
