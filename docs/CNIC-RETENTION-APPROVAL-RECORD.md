@@ -63,9 +63,9 @@ The stated business purpose—identity matching, fraud prevention and protection
 
 This is a preliminary compliance assessment, not a legal opinion. No AI assistant, online research service or non-lawyer can sign a Pakistani legal opinion or guarantee that the policy is legally safe.
 
-## 4. Required Pakistan-qualified counsel review
+## 4. Optional independent legal review for additional assurance
 
-Before describing the CNIC policy as legally approved, counsel should review the actual website flow, rental agreement, privacy notice, staff practices and technical storage/backup configuration and provide written advice on:
+The owner may choose to obtain an independent Pakistan-qualified legal review for additional assurance. The business must not claim that lawyers have reviewed or approved this policy unless a real review has taken place and written evidence is retained. The following topics are suitable for that review:
 
 1. Whether a full front-and-back CNIC copy is necessary for every rental request, and whether less intrusive identity checks or partial masking can achieve the same purpose.
 2. The legal basis and adequacy of customer notice/affirmative acknowledgement for collection, verification, storage, access, retention and disclosures.
@@ -81,11 +81,8 @@ Bar enrolment / jurisdiction: ________________________
 
 Written advice date and secure matter reference: _________________________________
 
-- [ ] Counsel reviewed the actual end-to-end CNIC data flow and both-sided image requirement.
-- [ ] Counsel reviewed and approved the customer notice, affirmative acknowledgement and rental agreement.
-- [ ] Counsel reviewed the 90-day retention clock, deletion requests and legal-hold exceptions.
-- [ ] Counsel reviewed cloud hosting, backups, staff access and incident response.
-- [ ] Counsel issued written advice and required actions have been implemented and tested.
+- [ ] Optional independent review completed and written advice retained (if commissioned).
+- [ ] If no external review is commissioned, no public or internal statement claims that lawyers reviewed or approved this policy.
 
 Counsel name and signature: _________________________
 
@@ -137,4 +134,4 @@ The policy above is not proof that the website currently implements every requir
 
 Any implementation change must include a reviewed plan, migration/rollback, isolated restore test, regression tests, production verification and updated staff/customer documentation. Never use real customer CNICs in test fixtures.
 
-**Final status: OWNER POLICY CAPTURED; FORMAL OWNER SIGNATURE, PAKISTAN-QUALIFIED LEGAL OPINION, TECHNICAL ACCEPTANCE AND PRODUCTION EVIDENCE REMAIN PENDING.**
+**Final status: OWNER POLICY CAPTURED IN WRITING; FORMAL OWNER SIGNATURE AND TECHNICAL ACCEPTANCE REMAIN PENDING. No external lawyer review is claimed or recorded. The business may operate its stated policy subject to applicable law, without representing this document as a legal opinion or guarantee.**
