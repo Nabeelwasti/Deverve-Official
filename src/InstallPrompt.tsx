@@ -158,7 +158,6 @@ export default function InstallPrompt() {
   return <>
     <button type="button" className="install-app" aria-label="Install De VERVE app" title="Install De VERVE" onClick={() => void install()} disabled={installing}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 17v3h14v-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-      <span>{installing ? "Opening…" : "Install"}</span>
     </button>
     {helpOpen && <div className="install-help-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setHelpOpen(false); }}>
       <section className="install-help-panel" role="dialog" aria-modal="true" aria-labelledby="install-help-title">
