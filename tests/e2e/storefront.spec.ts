@@ -32,6 +32,10 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ social_links: {}, brand_assets: {} }) });
       return;
     }
+    if (url.pathname === "/api/reviews/featured" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reviews: [{ id: "review-e2e-1", rating: 5, title: "Lovely", body: "A real approved customer review used in this browser test.", verified_purchase: 0, reviewer_name: "Browser Customer", product_name: "Trouser", product_slug: "trouser" }] }) });
+      return;
+    }
     await route.continue();
   });
 });
@@ -676,8 +680,10 @@ test("cart shows the image belonging to the selected product colour", async ({ p
 test("storefront uses verified service wording instead of fabricated social proof or inactive offers", async ({ page }) => {
   await page.goto("/");
   const body = page.locator("body");
-  await expect(page.locator(".trust-pillars-section")).toHaveCount(0);
-  await expect(page.locator(".intro-strip")).toHaveCount(0);
+  await expect(page.locator(".trust-pillars-section")).toHaveCount(1);
+  await expect(page.locator(".trust-pillars-section")).toContainText("Choose your size & colour");
+  await expect(page.locator(".intro-strip")).toHaveCount(1);
+  await expect(page.locator(".intro-strip")).toContainText("One local team.");
   await expect(page.locator(".collections-section")).toHaveCount(1);
   await page.goto("/?screen=fashion");
   await expect(page.locator(".collections-section")).toBeVisible();
@@ -696,7 +702,9 @@ test("storefront uses verified service wording instead of fabricated social proo
   ]) {
     await expect(body).not.toContainText(unsupportedClaim);
   }
-  await expect(page.locator(".testimonial-card")).toHaveCount(0);
+  await expect(page.locator(".testimonial-card")).toHaveCount(1);
+  await expect(page.locator(".testimonial-card")).toContainText("Browser Customer");
+  await expect(page.locator(".testimonial-card")).toContainText("Customer feedback");
   await expect(page.locator(".newsletter-form")).toHaveCount(0);
   await expect(page.locator(".newsletter-section")).toHaveCount(0);
   await expect(page.locator(".customer-feedback-invite")).toHaveCount(0);
