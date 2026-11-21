@@ -57,8 +57,22 @@ BEGIN
       AND (c.expires_at IS NULL OR c.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       AND (c.max_redemptions IS NULL OR c.usage_count < c.max_redemptions)
       AND (c.customer_id IS NULL OR c.customer_id = NEW.customer_id)
-      AND (c.exchange_request_id IS NULL OR c.exchange_request_id = NEW.exchange_request_id)
-      AND (c.min_subtotal_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id))
+      AND c.exchange_request_id IS NEW.exchange_request_id
+      AND EXISTS (
+        SELECT 1 FROM orders o
+        WHERE o.id = NEW.order_id
+          AND o.customer_id = NEW.customer_id
+          AND o.subtotal_paisa >= c.min_subtotal_paisa
+          AND o.discount_amount_paisa = NEW.discount_amount_paisa
+          AND NEW.discount_amount_paisa = CASE
+            WHEN c.discount_type = 'percent' THEN MIN(
+              CAST(o.subtotal_paisa * c.discount_value / 10000 AS INTEGER),
+              COALESCE(c.max_discount_paisa, o.subtotal_paisa)
+            )
+            WHEN c.discount_type = 'fixed' THEN MIN(c.discount_value, o.subtotal_paisa)
+            ELSE 0
+          END
+      )
       AND NEW.discount_amount_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id)
       AND (c.max_discount_paisa IS NULL OR NEW.discount_amount_paisa <= c.max_discount_paisa)
       AND (c.discount_type != 'fixed' OR NEW.discount_amount_paisa <= c.discount_value)
