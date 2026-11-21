@@ -84,7 +84,6 @@ export default function AIChatWidget() {
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
-  const logoUrl = "/api/brand/logo";
   const markUrl = "/brand/de-verve-mark.svg";
   const listRef = useRef<HTMLDivElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
