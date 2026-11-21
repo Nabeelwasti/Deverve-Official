@@ -32,6 +32,10 @@ test.beforeEach(async ({ page }) => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ social_links: {}, brand_assets: {} }) });
       return;
     }
+    if (url.pathname === "/api/reviews/featured" && request.method() === "GET") {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reviews: [{ id: "review-e2e-1", rating: 5, title: "Lovely", body: "A real approved customer review used in this browser test.", verified_purchase: 0, reviewer_name: "Browser Customer", product_name: "Trouser", product_slug: "trouser" }] }) });
+      return;
+    }
     await route.continue();
   });
 });
@@ -676,9 +680,14 @@ test("cart shows the image belonging to the selected product colour", async ({ p
 test("storefront uses verified service wording instead of fabricated social proof or inactive offers", async ({ page }) => {
   await page.goto("/");
   const body = page.locator("body");
-  await expect(page.locator(".trust-pillars-section")).toHaveCount(0);
-  await expect(page.locator(".intro-strip")).toHaveCount(0);
+  await expect(page.locator(".trust-pillars-section")).toHaveCount(1);
+  await expect(page.locator(".trust-pillars-section")).toContainText("Choose your size & colour");
+  await expect(page.locator(".intro-strip")).toHaveCount(1);
+  await expect(page.locator(".intro-strip")).toContainText("One local team.");
   await expect(page.locator(".collections-section")).toHaveCount(1);
+  await expect(page.locator(".testimonial-card")).toHaveCount(1);
+  await expect(page.locator(".testimonial-card")).toContainText("Browser Customer");
+  await expect(page.locator(".testimonial-card")).toContainText("Customer feedback");
   await page.goto("/?screen=fashion");
   await expect(page.locator(".collections-section")).toBeVisible();
   await expect(page.getByRole("link", { name: /Shop Men.s fashion collection/ }).first()).toHaveAttribute("href", /screen=fashion/);
@@ -696,7 +705,6 @@ test("storefront uses verified service wording instead of fabricated social proo
   ]) {
     await expect(body).not.toContainText(unsupportedClaim);
   }
-  await expect(page.locator(".testimonial-card")).toHaveCount(0);
   await expect(page.locator(".newsletter-form")).toHaveCount(0);
   await expect(page.locator(".newsletter-section")).toHaveCount(0);
   await expect(page.locator(".customer-feedback-invite")).toHaveCount(0);
@@ -711,7 +719,7 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
-test("cart does not show free delivery at the exact Rs. 5,000 threshold", async ({ page }) => {
+test("cart does not invent an unconfigured free-delivery threshold", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("deverve-cart", JSON.stringify([{
       variant_id: "11111111-1111-4111-8111-111111111111",
@@ -722,13 +730,12 @@ test("cart does not show free delivery at the exact Rs. 5,000 threshold", async 
   });
   await page.goto("/");
   await page.locator(".header-cart").click();
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("1");
-  await expect(page.locator(".cart-shipping-fill")).toHaveAttribute("style", /99%/);
+  await expect(page.locator(".cart-shipping-info")).toContainText("Delivery charges are confirmed separately");
+  await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
 });
 
-test("cart tracker follows the selected percentage promotion instead of also promising free delivery", async ({ page }) => {
+test("cart does not promise spend-based discounts or free delivery at high subtotals", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("deverve-cart", JSON.stringify([{
       variant_id: "11111111-1111-4111-8111-111111111111",
@@ -739,7 +746,7 @@ test("cart tracker follows the selected percentage promotion instead of also pro
   });
   await page.goto("/");
   await page.locator(".header-cart").click();
-  const tracker = page.locator(".cart-shipping-unlocked");
-  await expect(tracker).toContainText("30% order discount");
-  await expect(tracker).not.toContainText("free-delivery offer");
+  await expect(page.locator(".cart-shipping-info")).toContainText("No free-delivery offer is applied unless a valid voucher is shown");
+  await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
+  await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
 });

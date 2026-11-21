@@ -19,7 +19,7 @@ required_tables = {
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
-    "order_inventory_reservations",
+    "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -240,3 +240,83 @@ for statement, values in [
     else:
         raise AssertionError(f"Permanent CNIC evidence protection failed to reject: {statement}")
 assert db.execute("SELECT object_key FROM rental_documents WHERE id='cnic-retention-doc'").fetchone()[0] == "rental-private/cnic-retention-test/front.jpg"
+
+
+# Discount vouchers are stored as one-way hashes and exchange compensation is case/customer bound.
+coupon_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupons)")}
+assert {"code_hash", "purpose", "discount_type", "discount_value", "max_discount_paisa", "min_subtotal_paisa", "customer_id", "exchange_request_id", "starts_at", "expires_at", "max_redemptions", "per_customer_limit", "usage_count", "is_active"} <= coupon_columns, "Discount voucher eligibility and audit fields are missing"
+redemption_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupon_redemptions)")}
+assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa"} <= redemption_columns, "Coupon redemption ledger fields are missing"
+assert any(row[1] == "idx_discount_coupons_active_window" for row in db.execute("PRAGMA index_list(discount_coupons)")), "Active voucher lookup index is missing"
+assert any(row[1] == "idx_coupon_redemptions_coupon_customer" for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Per-customer redemption lookup index is missing"
+coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
+assert "code_hash" in coupon_sql and "exchange_compensation" in coupon_sql and "per_customer_limit" in coupon_sql, "Voucher storage must enforce hashed codes and exchange restrictions"
+redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
+unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
+assert ("order_id",) in unique_columns and ("exchange_request_id",) in unique_columns, "Orders and exchange cases must not receive duplicate voucher redemptions"
+
+
+# Customer voucher schema: hashed codes, strict exchange binding and atomic immutable redemption.
+coupon_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupons)")}
+assert {"code_hash", "code_prefix", "purpose", "discount_type", "discount_value", "max_discount_paisa", "min_subtotal_paisa", "customer_id", "exchange_request_id", "starts_at", "expires_at", "max_redemptions", "per_customer_limit", "usage_count", "is_active"} <= coupon_columns, "Voucher eligibility and usage fields are missing"
+assert "code" not in coupon_columns, "Plaintext voucher codes must never be persisted"
+redemption_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupon_redemptions)")}
+assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa", "status", "reversed_at", "reversal_reason"} <= redemption_columns, "Voucher redemption ledger and cancellation reversal fields are missing"
+coupon_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+assert {"trg_coupon_redemption_validate", "trg_coupon_redemption_increment", "trg_coupon_redemption_immutable_update", "trg_coupon_redemption_immutable_delete", "trg_coupon_redemption_reversal_decrement", "trg_coupon_order_cancel_reversal"} <= coupon_triggers, "Voucher redemption must be validated, counted and immutable inside D1"
+redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
+redemption_unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
+assert ("order_id",) in redemption_unique_columns and ("exchange_request_id",) in redemption_unique_columns, "An order or exchange case cannot redeem more than one voucher"
+assert any(row[1] == "idx_discount_coupons_one_per_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupons)")), "An exchange case cannot receive multiple compensation vouchers"
+assert any(row[1] == "idx_coupon_redemptions_one_active_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Only one active redemption can exist per exchange case"
+coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
+assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 1" in coupon_sql, "Exchange vouchers must be customer/case bound and single-use"
+coupon_trigger_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='trg_coupon_redemption_validate'").fetchone()[0]
+assert "c.purpose != 'wholesale'" in coupon_trigger_sql and "c.purpose != 'first_order'" in coupon_trigger_sql, "Wholesale vouchers must remain disabled and first-order vouchers must check prior orders"
+assert "o.customer_id = NEW.customer_id" in coupon_trigger_sql and "o.discount_amount_paisa = NEW.discount_amount_paisa" in coupon_trigger_sql and "c.exchange_request_id IS NEW.exchange_request_id" in coupon_trigger_sql, "Redemption must match the order customer, exact discount and exchange binding"
+assert "r.status='redeemed'" in coupon_trigger_sql and "trg_coupon_order_cancel_reversal" in coupon_triggers, "Cancelled orders must reverse coupon usage and release customer limits"
+assert "NEW.discount_amount_paisa <= c.max_discount_paisa" in coupon_trigger_sql and "c.discount_type != 'percent'" in coupon_trigger_sql, "Database redemption must enforce voucher discount caps and percentage limits"
+assert "(SELECT customer_id FROM orders WHERE id = NEW.order_id) = NEW.customer_id" in coupon_trigger_sql, "Voucher redemption must be bound to the same customer as the order"
+
+
+# Exercise one-time exchange voucher redemption, order-cancel reversal, and safe reuse.
+db.execute(
+    "INSERT INTO customers (id,email,password_hash,full_name,phone) VALUES (?,?,?,?,?)",
+    ("coupon-customer", "coupon-customer@example.test", "test-hash", "Coupon Customer", "+923000000001"),
+)
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-source-order", "DV-COUPON-SOURCE", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 10000, "coupon-customer", "delivered"),
+)
+db.execute(
+    "INSERT INTO exchange_requests (id,order_id,customer_id,exchange_number,reason,details,status,completed_at) VALUES (?,?,?,?,?,?,?,?)",
+    ("coupon-exchange", "coupon-source-order", "coupon-customer", "EX-COUPON-TEST", "size_issue", "Size exchange test", "completed", "2026-11-21T00:00:00.000Z"),
+)
+db.execute(
+    "INSERT INTO discount_coupons (id,code_hash,code_prefix,label,purpose,discount_type,discount_value,max_discount_paisa,min_subtotal_paisa,customer_id,exchange_request_id,starts_at,expires_at,max_redemptions,per_customer_limit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-test", "sha256-test", "DV-TEST…", "Size exchange support", "size_exchange", "percent", 500, 500, 0, "coupon-customer", "coupon-exchange", "2026-11-20T00:00:00.000Z", "2026-12-21T00:00:00.000Z", 1, 1),
+)
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status,discount_amount_paisa,discount_code,discount_label) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-order-one", "DV-COUPON-ONE", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 9500, "coupon-customer", "pending", 500, "DV-TEST…", "Size exchange support"),
+)
+db.execute(
+    "INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) VALUES (?,?,?,?,?,?)",
+    ("coupon-redemption-one", "coupon-test", "coupon-order-one", "coupon-customer", "coupon-exchange", 500),
+)
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 1
+db.execute("UPDATE orders SET order_status='cancelled' WHERE id='coupon-order-one'")
+reversed_redemption = db.execute("SELECT status,reversed_at,reversal_reason FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone()
+assert reversed_redemption[0] == "reversed" and reversed_redemption[1] and reversed_redemption[2] == "order_cancelled"
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 0
+
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status,discount_amount_paisa,discount_code,discount_label) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-order-two", "DV-COUPON-TWO", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 9500, "coupon-customer", "pending", 500, "DV-TEST…", "Size exchange support"),
+)
+db.execute(
+    "INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) VALUES (?,?,?,?,?,?)",
+    ("coupon-redemption-two", "coupon-test", "coupon-order-two", "coupon-customer", "coupon-exchange", 500),
+)
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 1
+assert db.execute("SELECT COUNT(*) FROM discount_coupon_redemptions WHERE exchange_request_id='coupon-exchange' AND status='redeemed'").fetchone()[0] == 1

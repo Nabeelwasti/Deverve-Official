@@ -1366,14 +1366,14 @@ class FakeStatement {
       this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO orders")) {
-      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status] = v;
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status, customer_id] = v;
       if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
-      const checks = v.slice(17);
+      const checks = v.slice(18);
       for (let i = 0; i < checks.length; i += 2) {
         const variant = this.db.variants.get(checks[i]);
         if (!variant || variant.is_active !== 1 || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } };
       }
-      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_provider: "manual", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_provider: "manual", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, customer_id, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET payment_method = ?")) {
@@ -2337,17 +2337,14 @@ test("Safepay checkout URL always matches the selected merchant environment", ()
 });
 
 
-test("order promotion selection grants exactly one offer and respects strict spend thresholds", () => {
-  assert.deepEqual(selectOrderPromotion(500000, false), { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false });
-  assert.equal(selectOrderPromotion(500001, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2000000, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2000001, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(2000001, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4000000, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4000001, true).code, "ORDER_45");
-  const advance = selectOrderPromotion(2500000, true);
-  assert.equal(advance.discountAmountPaisa, 1000000);
-  assert.equal(advance.freeDelivery, false);
+test("checkout never grants unconfigured spend or payment discounts", () => {
+  const none = { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false };
+  assert.deepEqual(selectOrderPromotion(500000, false), none);
+  assert.deepEqual(selectOrderPromotion(500001, false), none);
+  assert.deepEqual(selectOrderPromotion(2000001, false), none);
+  assert.deepEqual(selectOrderPromotion(2500000, true), none);
+  assert.deepEqual(selectOrderPromotion(4000001, true), none);
+  assert.throws(() => selectOrderPromotion(-1, false), /Invalid order subtotal/);
 });
 
 
@@ -2454,13 +2451,20 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   const order=[...db.orders.values()][0];
   assert.equal(order.payment_method,"bank-transfer");
   assert.equal(order.payment_status,"pending");
-  assert.equal(order.delivery_fee_status,"accepted");
+  assert.equal(order.delivery_fee_status,"pending_quote");
   const confirmed=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"confirmed"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(confirmed.status,200);
   const blocked=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(blocked.status,409);
   const verified=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-ORDER-1",financial_account_id:"bank-clearing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(verified.status,200);
+  const quote=await handleRequest(request("/api/admin/orders/"+order.id+"/delivery-fee","POST",{delivery_fee_paisa:0},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(quote.status,200);
+  const quoteBody=await quote.json();
+  const approvalToken=new URL(quoteBody.approval_url).searchParams.get("token");
+  assert.ok(approvalToken);
+  const accepted=await handleRequest(request("/api/delivery-fee/"+approvalToken,"POST",{decision:"accept"}),env(db));
+  assert.equal(accepted.status,200);
   const processing=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(processing.status,200);
 });
@@ -3062,13 +3066,10 @@ test("bulk media uploads resume idempotently and reject reused identifiers with 
   assert.equal(db.mediaAssets.size,1);
 });
 
-test("server promotion selection keeps strict thresholds and never combines offers", () => {
-  assert.equal(selectOrderPromotion(500_000, false).code, "");
-  assert.equal(selectOrderPromotion(500_001, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2_000_000, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2_000_001, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(4_000_000, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(4_000_001, false).code, "ORDER_45");
-  assert.equal(selectOrderPromotion(2_000_001, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4_000_001, true).code, "ORDER_45");
+test("server promotion selection never grants an unconfigured offer", () => {
+  const none={code:"",label:"",discountPercent:0,discountAmountPaisa:0,freeDelivery:false};
+  assert.deepEqual(selectOrderPromotion(500_000,false),none);
+  assert.deepEqual(selectOrderPromotion(500_001,false),none);
+  assert.deepEqual(selectOrderPromotion(2_000_001,false),none);
+  assert.deepEqual(selectOrderPromotion(4_000_001,true),none);
 });

@@ -257,6 +257,8 @@ function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
+  useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -329,6 +331,7 @@ function Storefront() {
   const [cartOpen, setCartOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:cart-open") === "1"; } catch { return false; } });
   const [checkoutOpen, setCheckoutOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:checkout-open") === "1"; } catch { return false; } });
   const [checkoutBusy, setCheckoutBusy] = useState(false);
+  const [couponPreview,setCouponPreview]=useState<{code:string;label:string;discount_amount_paisa:number;free_delivery:boolean;subtotal:number}|null>(null);
   const initialCheckoutResult = readAppDraft("checkout-result", { result: "", message: "" });
   const [checkoutMessage, setCheckoutMessage] = useState(initialCheckoutResult.message);
   const [checkoutResult, setCheckoutResult] = useState(initialCheckoutResult.result);
@@ -338,8 +341,8 @@ function Storefront() {
   const [paymentProvider, setPaymentProvider] = useState<"manual" | "safepay">("manual");
   const [paymentMethods,setPaymentMethods]=useState<Array<{id:string;label:string;kind:string;provider:string;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>>([{id:"cod",label:"Cash on delivery",kind:"cod",provider:"",account_title:"",bank_name:"",account_number:"",iban:"",payment_url:"",instructions:"Pay when your order is delivered.",qr_media_id:null}]);
   const [selectedPaymentMethod,setSelectedPaymentMethod]=useState("cod");
-  const emptyCheckoutForm = { customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "" };
-  const [checkoutForm, setCheckoutForm] = useState(() => readAppDraft("checkout", emptyCheckoutForm));
+  const emptyCheckoutForm = { customer_name: "", phone: "", email: "", delivery_address: "", city: "Jhelum", customer_note: "", website: "", coupon_code: "" };
+  const [checkoutForm, setCheckoutForm] = useState(() => ({ ...readAppDraft("checkout", emptyCheckoutForm), coupon_code: "" }));
   const [catalogueState, setCatalogueState] = useState<"loading" | "ready" | "empty" | "error">("loading");
 
   useEffect(() => { const url = new URL(window.location.href); if (url.searchParams.get("cart") === "open") setCartOpen(true); if (url.searchParams.get("checkout") === "open") { setCartOpen(true); setCheckoutOpen(true); } if (url.searchParams.get("rental") === "open" || rentalOpen) { const vehicle = url.searchParams.get("vehicle") || rentalForm.vehicle_id || ""; void openRentalRequest(vehicle, true); } }, []);
@@ -353,7 +356,7 @@ function Storefront() {
   useEffect(() => { try { sessionStorage.setItem("deverve:checkout-token", checkoutToken); } catch { /* Storage may be unavailable. */ } }, [checkoutToken]);
   const updateEnquiry = (next: typeof emptyEnquiry) => { setEnquiry(next); writeAppDraft("enquiry", next); };
   const updateRentalForm = (next: typeof emptyRentalForm) => { setRentalForm(next); writeAppDraft("rental", next); };
-  const updateCheckoutForm = (next: typeof emptyCheckoutForm) => { setCheckoutForm(next); writeAppDraft("checkout", next); };
+  const updateCheckoutForm = (next: typeof emptyCheckoutForm) => { setCheckoutForm(next); writeAppDraft("checkout", { ...next, coupon_code: "" }); };
 
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
@@ -401,15 +404,24 @@ function Storefront() {
     : new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(paisa / 100);
 
   const cartSubtotal = cart.reduce((sum, item) => sum + item.unit_price_paisa * item.quantity, 0);
-  const promotionPreview = cartSubtotal > 4_000_000
-    ? { label: "45% order discount", amount: Math.floor(cartSubtotal * 0.45), freeDelivery: false }
-    : paymentProvider === "safepay" && onlinePaymentEnvironment === "production"
-      ? { label: "40% advance payment discount", amount: Math.floor(cartSubtotal * 0.40), freeDelivery: false }
-      : cartSubtotal > 2_000_000
-        ? { label: "30% order discount", amount: Math.floor(cartSubtotal * 0.30), freeDelivery: false }
-        : cartSubtotal > 500_000
-          ? { label: "Free delivery", amount: 0, freeDelivery: true }
-          : null;
+  const promotionPreview = couponPreview && couponPreview.subtotal === cartSubtotal && couponPreview.code === checkoutForm.coupon_code.trim().toUpperCase()
+    ? { label: couponPreview.label, amount: couponPreview.discount_amount_paisa, freeDelivery: couponPreview.free_delivery }
+    : null;
+  useEffect(()=>{if(couponPreview&&couponPreview.subtotal!==cartSubtotal){setCouponPreview(null);setCheckoutForm(current=>current.coupon_code?{...current,coupon_code:""}:current);setCheckoutMessage("Your cart changed. Reapply the voucher to confirm it for the updated order.");}},[cartSubtotal,couponPreview]);
+  const applyCheckoutCoupon = async () => {
+    const code=checkoutForm.coupon_code.trim().toUpperCase();
+    if(!code){setCouponPreview(null);setCheckoutMessage("Enter a voucher code first.");return;}
+    if(!cart.length){setCheckoutMessage("Add an item before applying a voucher.");return;}
+    setCheckoutBusy(true);setCheckoutMessage("");setCouponPreview(null);
+    try{
+      const response=await fetch("/api/coupons/validate",{method:"POST",credentials:"same-origin",headers:{"content-type":"application/json",accept:"application/json"},body:JSON.stringify({code,subtotal_paisa:cartSubtotal})});
+      const result=await response.json() as {valid?:boolean;label?:string;discount_amount_paisa?:number;free_delivery?:boolean;error?:string};
+      if(!response.ok||!result.valid)throw new Error(result.error||"This voucher cannot be applied.");
+      setCouponPreview({code,label:result.label||"Voucher discount",discount_amount_paisa:result.discount_amount_paisa||0,free_delivery:result.free_delivery===true,subtotal:cartSubtotal});
+      setCheckoutMessage("Voucher applied. The server will verify it again when you place your order.");
+    }catch(error){setCheckoutMessage(error instanceof Error?error.message:"Voucher could not be checked.");}
+    finally{setCheckoutBusy(false);}
+  };
   const cartLineKey = cartIdentity;
   const addToCart = (product: StoreProduct) => {
     playLuxuryChime("add");
@@ -435,7 +447,7 @@ function Storefront() {
       const response = await fetch("/api/orders", { method: "POST", headers: { "content-type": "application/json", accept: "application/json" }, body: JSON.stringify({ ...checkoutForm, turnstile_token: checkoutTurnstileToken, checkout_token: checkoutToken, payment_provider: paymentProvider, payment_method: selectedPaymentMethod, items: cart.map((item) => ({ variant_id: item.variant_id, size: item.size, color: item.color, quantity: item.quantity })) }) });
       const result = await response.json() as { accepted?: boolean; error?: string; order_number?: string };
       if (!response.ok || !result.accepted || !result.order_number) throw new Error(result.error || "Your order could not be placed.");
-      setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID()); setPaymentProvider("manual");
+      setCheckoutResult(result.order_number); setCart([]); setCheckoutToken(crypto.randomUUID()); setPaymentProvider("manual"); setCouponPreview(null);
       clearAppDraft("checkout");
       clearFormDraft("storefront-checkout");
       setCheckoutForm({ ...emptyCheckoutForm });
@@ -613,6 +625,20 @@ function Storefront() {
           <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><button type="button" onClick={() => navigate("fashion")}>EXPLORE COLLECTIONS ↗</button></div>
         </section>
 
+        {activeScreen==="home"&&<>
+          <section className="intro-strip" aria-label="De VERVE services introduction">
+            <p>One local team.<br/><strong>Three ways to connect.</strong></p>
+            <p>Explore garments for everyday wear, request a wholesale quotation, or enquire about vehicle rental. <strong>Orders and rental requests are confirmed by our team before fulfilment.</strong></p>
+            <div className="intro-mark" aria-hidden="true">DV<span>.</span></div>
+          </section>
+          <section className="trust-pillars-section" aria-label="How De VERVE works">
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Choose your size & colour</h4><p>Product pages show the size and colour combinations currently listed as available.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Manage your orders</h4><p>Use your customer account to review order updates and submit eligible exchange requests.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Ask about wholesale</h4><p>Share your required products and quantities so our team can prepare a tailored quotation.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Enquire about rentals</h4><p>Vehicle requests are confirmed only after availability, rates and terms are agreed in writing.</p></div></article>
+          </section>
+        </>}
+
         <section className="section collections-section" id="collections">
           <div className="section-heading">
             <div><p className="eyebrow">01 — THE FASHION EDIT</p><h2>Find your<br /><em>everyday favourite.</em></h2></div>
@@ -636,7 +662,7 @@ function Storefront() {
             {visibleCategories.length === 0 && <p className="empty-search">No matching category. Try “hoodies”, “kids” or “trousers”.</p>}
           </div>
           {!search && <button className="catalogue-more" type="button" onClick={() => setShowAll(!showAll)}>{showAll ? "Show less ↑" : "Explore all categories ↓"}</button>}
-          <p className="catalogue-note">Category artwork is illustrative. Product photographs, prices, sizes and live stock will be added to the catalogue after the inventory is entered.</p>
+          <p className="catalogue-note">Select a product to review its listed price, available sizes, colours and stock. Contact our team if you need help confirming a particular variant.</p>
           <div className="live-catalogue" aria-live="polite">
             <div className="live-catalogue-heading">
               <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>{selectedCategory?selectedCategory+" collection":"Featured pieces"}</h3>{selectedCategory&&<button type="button" className="text-link" onClick={()=>{const url=new URL(window.location.href);url.searchParams.delete("category");window.history.replaceState({screen:"fashion"},"",url.pathname+url.search);setSelectedCategory("");}}>Clear category ×</button>}</div>
@@ -739,16 +765,10 @@ function Storefront() {
                   <span>✨</span> <strong>{promotionPreview.label}</strong> is selected for this order. Promotions cannot be combined.
                 </div>
               ) : (
-                <>
-                  <div className="cart-shipping-track-label">
-                    <span>Free-delivery offer</span>
-                    <strong>{formatPrice(Math.max(100, 500_100 - cartSubtotal))} away</strong>
-                  </div>
-                  <div className="cart-shipping-track">
-                    <div className="cart-shipping-fill" style={{ width: `${Math.min(99, Math.floor((cartSubtotal / 500_100) * 100))}%` }} />
-                  </div>
-                  <small>Add {formatPrice(Math.max(100, 500_100 - cartSubtotal))} more to qualify for the free-delivery offer. Delivery coverage is confirmed before dispatch.</small>
-                </>
+                <div className="cart-shipping-info">
+                  <strong>Delivery charges are confirmed separately</strong>
+                  <small>Our team will confirm the delivery area, fee and estimated timeline before dispatch. No free-delivery offer is applied unless a valid voucher is shown at checkout.</small>
+                </div>
               )}
             </div>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
@@ -765,6 +785,7 @@ function Storefront() {
           <div className="checkout-heading"><div><p className="eyebrow">SECURE ORDER REQUEST</p><h2 id="checkout-title">Choose how to pay</h2><p>Review your items and enter your delivery details.</p></div><button type="button" aria-label="Close checkout" onClick={() => setCheckoutOpen(false)}>×</button></div>
           {checkoutResult ? <div className="checkout-success"><strong>Order received</strong><span>{checkoutResult}</span><p>{checkoutMessage}</p>{selectedPaymentMethod!=="cod"&&paymentProvider!=="safepay"&&paymentMethods.find(method=>method.id===selectedPaymentMethod)&&<div className="checkout-payment-instructions"><strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label}</strong><p><b>Important:</b> Wait until De VERVE confirms the final payable amount, including delivery, before transferring money. Use the order number above as your payment reference.</p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title&&<p>Account title: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name&&<p>Bank: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number&&<p>Account / wallet: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban&&<p>IBAN: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions&&<p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url&&<a href={paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url} target="_blank" rel="noreferrer">Open payment link ↗</a>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id&&<img src={"/media/"+paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id} alt="Payment QR code" loading="lazy"/>}<small>Your order remains unpaid until the owner verifies the transfer. Keep your transaction receipt.</small></div>}<button type="button" className="button button-primary" onClick={() => setCheckoutOpen(false)}>Continue shopping</button></div> : <form className="checkout-form" data-draft-key="storefront-checkout" onSubmit={submitCheckout}>
             <div className="checkout-items">{cart.map((item) => <div className="checkout-item" key={cartLineKey(item)}><div><strong>{item.name}</strong><span>{[item.size, item.color].filter(Boolean).join(" / ") || item.sku || "Standard"}</span><small>{formatPrice(item.unit_price_paisa)} each</small></div><div className="checkout-quantity"><button type="button" aria-label="Decrease quantity" onClick={() => item.quantity === 1 ? removeCartItem(item) : changeCartQuantity(item, item.quantity - 1)}>−</button><span>{item.quantity}</span><button type="button" aria-label="Increase quantity" disabled={item.quantity >= item.available_quantity} onClick={() => changeCartQuantity(item, item.quantity + 1)}>+</button></div><strong>{formatPrice(item.unit_price_paisa * item.quantity)}</strong></div>)}</div>
+            <div className="checkout-coupon-field"><label htmlFor="checkout-coupon-code">Voucher code (optional)</label><div><input id="checkout-coupon-code" autoComplete="off" maxLength={64} value={checkoutForm.coupon_code} onChange={(event)=>{updateCheckoutForm({...checkoutForm,coupon_code:event.target.value.toUpperCase()});setCouponPreview(null);}} placeholder="Enter your De VERVE voucher"/><button type="button" className="button button-secondary" disabled={checkoutBusy||!checkoutForm.coupon_code.trim()} onClick={()=>void applyCheckoutCoupon()}>Apply voucher</button></div><small>Vouchers are customer-specific where applicable and cannot be combined.</small></div>
             <div className="checkout-total"><span>Subtotal</span><strong>{formatPrice(cartSubtotal)}</strong>{promotionPreview && <><span>{promotionPreview.label}</span><strong>{promotionPreview.freeDelivery ? "FREE" : "−"+formatPrice(promotionPreview.amount)}</strong></>}<span>Estimated total before delivery</span><strong>{formatPrice(cartSubtotal-(promotionPreview?.amount??0))}</strong><span>Delivery</span><strong>{promotionPreview?.freeDelivery ? "FREE" : "Confirmed before dispatch"}</strong><span>Payment</span><strong>{paymentProvider === "safepay" ? (onlinePaymentEnvironment === "production" ? "Card / online payment" : "Card / online payment (sandbox)") : (paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label??"Cash on delivery")}</strong></div>
             <fieldset className="checkout-payment-options"><legend>Payment method</legend>{paymentMethods.map(method=><label key={method.id}><input type="radio" name="payment_method" checked={paymentProvider==="manual"&&selectedPaymentMethod===method.id} onChange={()=>{setPaymentProvider("manual");setSelectedPaymentMethod(method.id);}}/> {method.label}{method.provider&&<small> · {method.provider}</small>}</label>)}{onlinePaymentAvailable&&<label><input type="radio" name="payment_method" checked={paymentProvider==="safepay"} onChange={()=>{setPaymentProvider("safepay");setSelectedPaymentMethod(paymentMethods.find(method=>method.kind==="cod")?.id??"cod");}}/> Safepay secure checkout <small>{onlinePaymentEnvironment==="production"?"Live gateway":"Sandbox"}</small></label>}{paymentProvider==="safepay"&&<p className="checkout-policy-note">Safepay checkout requires a De VERVE customer account. <a href="/account">Sign in or create an account</a>.</p>}{paymentProvider==="manual"&&paymentMethods.find(method=>method.id===selectedPaymentMethod&&method.kind!=="cod")&&<div className="checkout-payment-instructions"><strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.label}</strong>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title&&<p>Account title: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_title}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name&&<p>Bank: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.bank_name}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number&&<p>Account / wallet: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.account_number}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban&&<p>IBAN: {paymentMethods.find(method=>method.id===selectedPaymentMethod)?.iban}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions&&<p>{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.instructions}</p>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url&&<a href={paymentMethods.find(method=>method.id===selectedPaymentMethod)?.payment_url} target="_blank" rel="noreferrer">Open payment link ↗</a>}{paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id&&<img src={"/media/"+paymentMethods.find(method=>method.id===selectedPaymentMethod)?.qr_media_id} alt="Payment QR code" loading="lazy"/>}<small>Orders paid by direct transfer remain pending until De VERVE verifies the payment. Include your order number in the transfer reference.</small></div>}</fieldset><div className="checkout-fields">
               <label>Full name<input required minLength={2} maxLength={100} autoComplete="name" value={checkoutForm.customer_name} onChange={(event) => updateCheckoutForm({ ...checkoutForm, customer_name: event.target.value })} /></label>
@@ -903,6 +924,10 @@ function Storefront() {
         </form>}
       </section></div>}
       {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
+      {activeScreen==="home"&&featuredReviews.length>0&&<section className="testimonials-section" aria-label="Published customer feedback">
+        <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Only feedback approved for public display appears here. Reviews are shown with their actual verification status.</p></div>
+        <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
+      </section>}
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">{brandAssets.logo_id?<img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE"/>:"De VERVE."}</a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
