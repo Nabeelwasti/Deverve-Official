@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 type Message = { role: "user" | "model"; text: string };
-type ImageAttachment = { name: string; mime_type: "image/jpeg"; data: string; preview: string };
+type FileAttachment = { name: string; mime_type: string; data?: string; text?: string; preview?: string; size: number };
 type SpeechRecognitionResult = { 0?: { transcript?: string } };
 type SpeechRecognitionEventLike = Event & { results?: ArrayLike<SpeechRecognitionResult> };
 type SpeechRecognitionLike = {
@@ -12,36 +12,38 @@ type SpeechRecognitionLike = {
 };
 type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
-const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. You can type, speak, or share a product photo. How may I help?" };
+const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. You can type, speak, or attach files for me to understand. How may I help?" };
 
-async function prepareImage(file: File): Promise<ImageAttachment> {
-  if (!file.type.startsWith("image/")) throw new Error("Please choose an image file. Documents are not supported in customer chat yet.");
-  if (file.size > 12 * 1024 * 1024) throw new Error("Choose an image smaller than 12 MB.");
-  let bitmap: ImageBitmap | null = null;
-  let source: CanvasImageSource;
-  let width = 0, height = 0, objectUrl = "";
-  try {
-    if (typeof createImageBitmap === "function") {
-      try { bitmap = await createImageBitmap(file); } catch { /* use HTML image fallback */ }
-    }
-    if (bitmap) { source = bitmap; width = bitmap.width; height = bitmap.height; }
-    else {
-      objectUrl = URL.createObjectURL(file);
-      const image = new Image(); image.decoding = "async"; image.src = objectUrl; await image.decode();
-      source = image; width = image.naturalWidth; height = image.naturalHeight;
-    }
-    if (!width || !height) throw new Error("The image could not be decoded. Please choose another photo.");
-    const scale = Math.min(1, 1600 / Math.max(width, height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale)); canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("This browser could not prepare the image.");
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    let dataUrl = canvas.toDataURL("image/jpeg", 0.82);
-    if (dataUrl.length > 2_000_000) dataUrl = canvas.toDataURL("image/jpeg", 0.68);
-    if (dataUrl.length > 2_000_000) throw new Error("This image is still too large. Please crop it and try again.");
-    return { name: file.name.slice(0, 120), mime_type: "image/jpeg", data: dataUrl.split(",")[1], preview: dataUrl };
-  } finally { bitmap?.close(); if (objectUrl) URL.revokeObjectURL(objectUrl); }
+const TEXT_EXTENSIONS = new Set(["txt","md","markdown","csv","tsv","json","jsonl","xml","html","htm","css","js","jsx","ts","tsx","py","java","c","cpp","h","hpp","cs","go","rs","php","sql","yaml","yml","toml","ini","log","rtf","svg","sh","bat","ps1"]);
+const MIME_BY_EXTENSION: Record<string,string> = { pdf:"application/pdf", txt:"text/plain", md:"text/plain", markdown:"text/plain", csv:"text/plain", tsv:"text/plain", json:"text/plain", jsonl:"text/plain", xml:"text/plain", html:"text/plain", htm:"text/plain", rtf:"text/plain", mp3:"audio/mpeg", m4a:"audio/mp4", wav:"audio/wav", aac:"audio/aac", flac:"audio/flac", ogg:"audio/ogg", opus:"audio/opus", mp4:"video/mp4", mov:"video/mov", webm:"video/webm", avi:"video/avi", mpg:"video/mpeg", mpeg:"video/mpeg", jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", webp:"image/webp", gif:"image/gif" };
+const DIRECT_MIME = new Set(["application/pdf","image/jpeg","image/png","image/webp","audio/aac","audio/flac","audio/mp3","audio/mp4","audio/mpeg","audio/mpga","audio/ogg","audio/opus","audio/pcm","audio/wav","audio/webm","video/mov","video/mpeg","video/mp4","video/mpg","video/avi","video/wmv","video/mpegps","video/flv","video/webm"]);
+function fileExtension(name: string): string { return name.toLowerCase().split(".").pop() || ""; }
+async function prepareAttachment(file: File): Promise<FileAttachment> {
+  const ext = fileExtension(file.name);
+  const mime = (file.type || MIME_BY_EXTENSION[ext] || "application/octet-stream").toLowerCase();
+  if (!file.size) throw new Error(file.name + " is empty.");
+  if (file.size > 4 * 1024 * 1024) throw new Error(file.name + " exceeds the 4 MB per-file limit. Compress it or export a smaller copy.");
+  const safeName = file.name.replace(/[\\/\\u0000-\\u001f]/g, "_").slice(0, 120) || "attachment";
+  if (mime.startsWith("text/") || TEXT_EXTENSIONS.has(ext) || ["application/json","application/xml","application/rtf","application/x-ndjson"].includes(mime)) {
+    const text = await file.text();
+    if (text.includes("\\u0000")) throw new Error(file.name + " appears to be binary. Export it as PDF or text and attach again.");
+    if (text.length > 180_000) throw new Error(file.name + " contains too much text for one chat attachment. Split it into smaller files.");
+    return { name: safeName, mime_type: "text/plain", text: text.slice(0,180_000), size: file.size };
+  }
+  if (!DIRECT_MIME.has(mime)) {
+    throw new Error(file.name + " (" + (mime || "unknown format") + ") cannot be interpreted directly by the current Gemini model. Export it as PDF, plain text, image, audio or video and attach that version.");
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  if (mime === "application/pdf" && !(bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46)) throw new Error(file.name + " is not a valid PDF file.");
+  if (mime === "image/jpeg" && !(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff)) throw new Error(file.name + " is not a valid JPEG image.");
+  if (mime === "image/png" && !(bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)) throw new Error(file.name + " is not a valid PNG image.");
+  if (mime === "image/webp" && (String.fromCharCode(...bytes.slice(0,4)) !== "RIFF" || String.fromCharCode(...bytes.slice(8,12)) !== "WEBP")) throw new Error(file.name + " is not a valid WebP image.");
+  let binary = ""; for (let offset=0; offset<bytes.length; offset+=0x8000) binary += String.fromCharCode(...bytes.subarray(offset,Math.min(offset+0x8000,bytes.length)));
+  const data = btoa(binary);
+  if (data.length > 5_700_000) throw new Error(file.name + " is too large after encoding. Compress it and try again.");
+  let preview: string | undefined;
+  if (mime.startsWith("image/")) preview = "data:"+mime+";base64,"+data;
+  return { name:safeName, mime_type:mime, data, preview, size:file.size };
 }
 
 export default function AIChatWidget() {
@@ -49,7 +51,7 @@ export default function AIChatWidget() {
   const [messages, setMessages] = useState<Message[]>([greeting]);
   const [history, setHistory] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
-  const [images, setImages] = useState<ImageAttachment[]>([]);
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
@@ -76,16 +78,18 @@ export default function AIChatWidget() {
     return () => { active = false; };
   }, []);
 
-  useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, images]);
+  useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, attachments]);
   useEffect(() => () => { recognitionRef.current?.abort(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }, []);
 
   const attach = async (files: FileList | null) => {
     if (!files?.length) return;
-    const remaining = 3 - images.length;
-    if (remaining <= 0) { setNotice("You can attach up to three photos per message."); return; }
+    const remaining = 3 - attachments.length;
+    if (remaining <= 0) { setNotice("You can attach up to three files per message."); return; }
     try {
-      const prepared = await Promise.all(Array.from(files).slice(0, remaining).map(prepareImage));
-      setImages(current => [...current, ...prepared].slice(0, 3)); setNotice("");
+      const prepared = await Promise.all(Array.from(files).slice(0, remaining).map(prepareAttachment));
+      const total = [...attachments, ...prepared].reduce((sum,item)=>sum+item.size,0);
+      if (total > 6 * 1024 * 1024) throw new Error("Keep all attachments together under 6 MB.");
+      setAttachments(current => [...current, ...prepared].slice(0, 3)); setNotice("");
     } catch (error) { setNotice(error instanceof Error ? error.message : "The image could not be attached."); }
     if (galleryRef.current) galleryRef.current.value = "";
     if (cameraRef.current) cameraRef.current.value = "";
@@ -140,17 +144,17 @@ export default function AIChatWidget() {
 
   const send = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const text = draft.trim() || (images.length ? "Please inspect these photo(s) and help me understand the product or item." : "");
+    const text = draft.trim() || (attachments.length ? "Please inspect and explain the attached file(s)." : "");
     if (!text || sending) return;
     const nextHistory = [...history, { role: "user" as const, text }];
     while (nextHistory.length > 12) nextHistory.splice(0, 2);
-    const attached = images;
-    setMessages(current => [...current, { role: "user", text }]); setDraft(""); setImages([]); setSending(true); setNotice("");
+    const attached = attachments;
+    setMessages(current => [...current, { role: "user", text }]); setDraft(""); setAttachments([]); setSending(true); setNotice("");
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST", credentials: "same-origin",
         headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ messages: nextHistory, images: attached.map(({ name, mime_type, data }) => ({ name, mime_type, data })) })
+        body: JSON.stringify({ messages: nextHistory, attachments: attached.map(({ name, mime_type, data, text }) => ({ name, mime_type, data, text })) })
       });
       const result = await response.json() as { reply?: string; error?: string };
       if (!response.ok) throw new Error(result.error || "The assistant is temporarily unavailable.");
@@ -187,29 +191,29 @@ export default function AIChatWidget() {
         </article>)}
         {sending && <span className="ai-chat-typing" role="status"><i/><i/><i/> Thinking…</span>}
       </div>
-      {images.length > 0 && <div className="ai-chat-attachments" aria-label="Attached photos">{images.map((item, index) => <figure key={item.name + index}><img src={item.preview} alt={"Photo attachment " + (index + 1)} /><button type="button" aria-label="Remove photo" onClick={() => setImages(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
+      {attachments.length > 0 && <div className="ai-chat-attachments" aria-label="Attached files">{attachments.map((item,index)=><figure key={item.name+index}>{item.preview?<img src={item.preview} alt={"Image attachment "+(index+1)}/>:<div className="ai-chat-file-preview" aria-hidden="true">{item.mime_type==="application/pdf"?"PDF":item.mime_type.startsWith("audio/")?"♪":item.mime_type.startsWith("video/")?"▶":"TXT"}</div>}<button type="button" aria-label={"Remove "+item.name} onClick={()=>setAttachments(current=>current.filter((_,i)=>i!==index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
       <form className="ai-chat-form" onSubmit={send}>
         <div className="ai-chat-composer">
           <div className="ai-chat-attach-wrap">
-            <button type="button" className="ai-chat-icon-button ai-chat-plus" aria-label="Add attachment" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(value => !value)} disabled={sending || images.length >= 3}>＋</button>
+            <button type="button" className="ai-chat-icon-button ai-chat-plus" aria-label="Add attachment" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(value => !value)} disabled={sending || attachments.length >= 3}>＋</button>
             {attachMenuOpen && <div className="ai-chat-attach-menu" role="menu" aria-label="Attachment options">
               <button type="button" role="menuitem" onClick={() => cameraRef.current?.click()}><span>▣</span> Take a photo</button>
               <button type="button" role="menuitem" onClick={() => galleryRef.current?.click()}><span>▧</span> Choose from gallery</button>
-              <button type="button" role="menuitem" onClick={() => fileRef.current?.click()}><span>↥</span> Attach image file</button>
+              <button type="button" role="menuitem" onClick={() => fileRef.current?.click()}><span>↥</span> Attach any file</button>
             </div>}
             <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={event => void attach(event.currentTarget.files)} />
-            <input ref={galleryRef} type="file" accept="image/*" multiple hidden onChange={event => void attach(event.currentTarget.files)} />
-            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/*" multiple hidden onChange={event => void attach(event.currentTarget.files)} />
+            <input ref={galleryRef} type="file" multiple hidden onChange={event => void attach(event.currentTarget.files)} />
+            <input ref={fileRef} type="file" multiple hidden onChange={event => void attach(event.currentTarget.files)} />
           </div>
           <textarea rows={1} maxLength={1800} value={draft} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder="Message De VERVE…" aria-label="Your message" disabled={sending}/>
           <button type="button" className={"ai-chat-icon-button ai-chat-mic " + (listening ? "is-active" : "")} onClick={toggleVoice} disabled={sending} aria-pressed={listening} aria-label={listening ? "Stop voice input" : "Speak your message"} title={listening ? "Stop recording" : "Voice input"}>
             {listening ? <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg> : <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21m-3 0h6"/></svg>}
           </button>
-          <button type="submit" className="ai-chat-send" disabled={sending || (!draft.trim() && !images.length)} aria-label="Send message" title="Send message">
+          <button type="submit" className="ai-chat-send" disabled={sending || (!draft.trim() && !attachments.length)} aria-label="Send message" title="Send message">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 16 8-16 8 3-8-3-8Zm3 8h13"/></svg>
           </button>
         </div>
-        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><span>Up to 3 photos</span></div>
+        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><span>Up to 3 files</span></div>
       </form>
       {notice && <p className="ai-chat-note" role="status">{notice}</p>}
       <div className="ai-chat-note">Avoid sending CNIC images, OTPs, passwords or payment-card details in chat. Orders and rentals are completed through secure website forms.</div>
