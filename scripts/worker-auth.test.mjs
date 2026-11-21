@@ -2337,17 +2337,14 @@ test("Safepay checkout URL always matches the selected merchant environment", ()
 });
 
 
-test("order promotion selection grants exactly one offer and respects strict spend thresholds", () => {
-  assert.deepEqual(selectOrderPromotion(500000, false), { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false });
-  assert.equal(selectOrderPromotion(500001, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2000000, false).code, "FREE_DELIVERY");
-  assert.equal(selectOrderPromotion(2000001, false).code, "ORDER_30");
-  assert.equal(selectOrderPromotion(2000001, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4000000, true).code, "ADVANCE_40");
-  assert.equal(selectOrderPromotion(4000001, true).code, "ORDER_45");
-  const advance = selectOrderPromotion(2500000, true);
-  assert.equal(advance.discountAmountPaisa, 1000000);
-  assert.equal(advance.freeDelivery, false);
+test("checkout never grants unconfigured spend or payment discounts", () => {
+  const none = { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false };
+  assert.deepEqual(selectOrderPromotion(500000, false), none);
+  assert.deepEqual(selectOrderPromotion(500001, false), none);
+  assert.deepEqual(selectOrderPromotion(2000001, false), none);
+  assert.deepEqual(selectOrderPromotion(2500000, true), none);
+  assert.deepEqual(selectOrderPromotion(4000001, true), none);
+  assert.throws(() => selectOrderPromotion(-1, false), /Invalid order subtotal/);
 });
 
 
