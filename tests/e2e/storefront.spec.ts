@@ -79,7 +79,7 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   await expect(chat).toBeVisible();
   await expect(chat.getByRole("textbox", { name: "Your message" })).toBeVisible();
-  await expect(chat.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
