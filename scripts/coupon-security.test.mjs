@@ -37,12 +37,13 @@ test("admin voucher workspace requires a completed case for exchange compensatio
  assert.match(ui,/Deactivate/);
 });
 
-test("restored storefront guidance uses factual service information and approved feedback only",()=>{
+test("restored storefront guidance uses factual service information and exposes approved customer feedback only",()=>{
  const worker=read("worker/index.ts");
  const app=read("src/App.tsx");
- assert.match(worker,/\/api\/reviews\/featured/);
- assert.match(worker,/r\.status='approved' AND p\.status='published'/);
- assert.match(app,/trust-pillars-section/);
+ const reviewRoute=worker.slice(worker.indexOf("async function productReviewRoutes"),worker.indexOf("type GeminiKeyRow"));
+ assert.match(reviewRoute,/\/api\/products\/\(\[a-f0-9-\]\{36\}\)\/reviews/);
+ assert.match(reviewRoute,/r\.status='approved'/);
+ assert.doesNotMatch(reviewRoute,/status IN \('approved','pending'\)/);
  assert.match(app,/featuredReviews\.length>0/);
  assert.match(app,/verified_purchase===1\?"Verified purchase":"Customer feedback"/);
  assert.doesNotMatch(app,/VIP Club Newsletter/);
