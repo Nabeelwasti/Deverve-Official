@@ -499,3 +499,19 @@ The current POS sale handler always inserts `customer_email`, `email_receipt_req
 - This work is on PR #6 and must not be treated as deployed until the PR CI run passes, it is merged, and the Cloudflare Pages deployment is independently verified. No production business records or stock were changed by this code work.
 
 - The admin product catalogue now paginates in deterministic 100-product pages, including status-filtered pages, so imports larger than the first 100 products remain browsable. The UI labels its loaded count accurately and provides a Load next 100 products action.
+
+
+## Final release reconciliation — 21 November 2026, 12:20 UTC
+
+This addendum supersedes earlier deployment, migration 0037 and D1 restore status statements above.
+
+- Latest main commit: `b575306e0ed251d81079a54f8fc61f9d0ecbbc8d`.
+- Exact-main CI run [44902016578](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44902016578) completed successfully.
+- Production D1 migration `0037_discount_coupons.sql` is applied. Both coupon tables, six coupon indexes and six coupon triggers are present; `PRAGMA foreign_key_check` returned zero violations.
+- The private 21 November D1 SQL backup was restored into a separate disposable D1 database: 62 application tables, 217 inserted rows, 96 indexes/triggers and zero foreign-key violations. Migration 0037 also succeeded on that isolated restored copy. All temporary databases were deleted.
+- Cloudflare Pages production deployment `7cc647dd-b275-4682-b46d-ae8455c1493d` successfully deployed exact main commit `b575306e0ed251d81079a54f8fc61f9d0ecbbc8d`. Project `deverve-official` is connected to GitHub `main`, production deployment is enabled, preview deployment is disabled. Only `deverve-official.pages.dev` is configured; no custom domain is present.
+- No new customer-browser smoke test against this exact deployment was completed in this session. Cloudflare's deployment-stage success is not a substitute for HTTP/API/browser acceptance.
+- Full operational acceptance remains blocked by independent off-account backup/restore, physical Android scanner acceptance, real Gemini key/decryption response, production Turnstile acceptance, Safepay sandbox and live-provider approval, Resend/WhatsApp delivery, physical stock/catalogue reconciliation, POS/finance reconciliation, rental workflow acceptance and owner/legal CNIC approval.
+
+### CNIC retention approval status
+A draft approval record is now tracked in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`. It is not signed. The previous indefinite-retention instruction must not be represented as a legal requirement. Keep existing evidence protected while the owner and Pakistan-qualified counsel review purpose, necessity, notice/consent, retention period, exceptions/legal holds, cloud storage locations and customer rights. Do not make new indefinite-retention promises or change locks/triggers before that review.
