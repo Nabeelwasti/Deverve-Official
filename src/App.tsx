@@ -574,9 +574,13 @@ function Storefront() {
   return (
     <div className="site-shell">
       <div className="announcement">
-        <span>JHELUM, PAKISTAN</span>
-        <span>FASHION · WHOLESALE · CAR RENTALS</span>
-        <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
+        <span className="announcement-location">JHELUM, PAKISTAN</span>
+        <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
+        <div className="announcement-golden-quote" aria-label="Inspirational quote"><span>“</span><p>{goldenQuote.text}</p><cite>— {goldenQuote.author}</cite></div>
+        <div className="announcement-actions">
+          <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span><select aria-label="Translate this page" defaultValue="" onChange={event => { const language=event.currentTarget.value; if(language) window.open("https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+encodeURIComponent(window.location.href),"_blank","noopener,noreferrer"); event.currentTarget.value=""; }}><option value="" disabled>Translate</option><option value="ur">اردو</option><option value="ar">العربية</option><option value="hi">हिन्दी</option><option value="en">English</option><option value="zh-CN">中文</option><option value="es">Español</option><option value="fr">Français</option><option value="de">Deutsch</option><option value="tr">Türkçe</option><option value="bn">বাংলা</option></select></label>
+          <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
+        </div>
       </div>
 
       <header className="site-header">
@@ -602,7 +606,7 @@ function Storefront() {
             <p className="eyebrow"><span className="eyebrow-line" /> FASHION · LIFESTYLE · MOBILITY</p>
             <h1>Elevate<br /><em>your style.</em></h1>
             <p className="hero-description">Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.</p>
-            <blockquote className="golden-quote" aria-label="Inspirational quote"><span>“</span><p>{goldenQuote.text}</p><cite>— {goldenQuote.author}</cite></blockquote>
+            
             <div className="hero-actions">
               <button className="button button-primary" type="button" onClick={() => navigate("fashion")}>Explore fashion <span>↗</span></button>
               <button className="text-link" type="button" onClick={() => navigate("wholesale")}>Wholesale enquiries →</button>
