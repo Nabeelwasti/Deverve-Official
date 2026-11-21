@@ -59,6 +59,11 @@ BEGIN
       AND (c.customer_id IS NULL OR c.customer_id = NEW.customer_id)
       AND (c.exchange_request_id IS NULL OR c.exchange_request_id = NEW.exchange_request_id)
       AND (c.min_subtotal_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id))
+      AND NEW.discount_amount_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id)
+      AND (c.max_discount_paisa IS NULL OR NEW.discount_amount_paisa <= c.max_discount_paisa)
+      AND (c.discount_type != 'fixed' OR NEW.discount_amount_paisa <= c.discount_value)
+      AND (c.discount_type != 'percent' OR NEW.discount_amount_paisa <= (((SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id) * c.discount_value + 5000) / 10000))
+      AND (c.discount_type != 'free_delivery' OR NEW.discount_amount_paisa = 0)
       AND c.purpose != 'wholesale'
       AND (c.purpose != 'first_order' OR NOT EXISTS (SELECT 1 FROM orders prior WHERE prior.customer_id=NEW.customer_id AND prior.id<>NEW.order_id AND prior.order_status<>'cancelled'))
       AND (
