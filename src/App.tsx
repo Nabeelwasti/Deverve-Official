@@ -591,7 +591,7 @@ function Storefront() {
 
       <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
-          {brandAssets.logo_id ? <img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE" /> : <span className="brand-symbol">DV</span>}
+          <img className="brand-logo-image" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/brand/de-verve-logo.svg"} alt="De VERVE" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
         <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
@@ -946,7 +946,7 @@ function Storefront() {
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
       <footer className="site-footer">
-        <a className="footer-wordmark" href="#home">{brandAssets.logo_id?<img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE"/>:"De VERVE."}</a>
+        <a className="footer-wordmark" href="#home"><img className="brand-logo-image" src={brandAssets.logo_id?"/media/"+brandAssets.logo_id:"/brand/de-verve-logo.svg"} alt="De VERVE"/></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
         {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
