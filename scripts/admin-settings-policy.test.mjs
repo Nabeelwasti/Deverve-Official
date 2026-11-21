@@ -20,5 +20,8 @@ test("owner-managed category artwork is persisted and exposed without weakening 
   assert.match(admin, /uploadCategoryAsset/, "category image upload workflow must exist");
   assert.match(worker, /const allowed=new Set\(\["men","women","kids","essentials","layers","bottoms"\]\)/, "only the six supported category keys may be written");
   assert.match(worker, /website\.category_assets_updated/, "category image changes must be audited");
-  assert.match(worker, /setting_key IN \('social_links','brand_assets','category_assets'\)/, "public storefront settings must include category images");
+  assert.match(worker, /setting_key IN \\('social_links','brand_assets','category_assets','site_design'\\)/, "public storefront settings must include category images and owner design tokens");
+  assert.match(admin, /Website visual design studio/, "owner must have a live website visual design workspace");
+  assert.match(worker, /website\\.site_design_updated/, "global website design changes must be audited");
+  assert.match(worker, /const allowedImages=new Set\\(\\["hero","feature_fashion","feature_account","feature_wholesale","feature_mobility","wholesale","mobility","testimonials","footer"\\]\\)/, "only supported homepage artwork slots may be saved");
 });
