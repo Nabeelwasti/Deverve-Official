@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS discount_coupon_redemptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_discount_coupons_active_window ON discount_coupons(is_active, starts_at, expires_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_coupons_one_per_exchange ON discount_coupons(exchange_request_id) WHERE exchange_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_discount_coupons_customer ON discount_coupons(customer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_customer ON discount_coupon_redemptions(coupon_id, customer_id);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_exchange ON discount_coupon_redemptions(exchange_request_id);
