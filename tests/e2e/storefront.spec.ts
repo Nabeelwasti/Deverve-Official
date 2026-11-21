@@ -750,6 +750,7 @@ test("owner-managed category artwork replaces the default illustration on the li
   await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
   await expect(card.locator(".category-garment")).toHaveCount(0);
   await expect(artworkLink).toHaveAttribute("href", "/?screen=fashion&category=men");
+});
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
   await page.goto("/?screen=fashion&category=men");
