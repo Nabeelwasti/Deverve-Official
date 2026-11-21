@@ -11,11 +11,11 @@ export default function BrandHead(){
     const faviconId=data.brand_assets?.favicon_id??null;
     const logoId=data.brand_assets?.logo_id??null;
     const appIconId=faviconId??logoId;
-    document.documentElement.style.setProperty("--deverve-logo-image", logoId ? "url('/media/"+logoId+"')" : "url('/brand/de-verve-logo.svg')");
+    document.documentElement.style.setProperty("--deverve-logo-image", "url('/api/brand/logo')");
     const iconUrl=faviconId?"/media/"+faviconId+"?v="+encodeURIComponent(faviconId):"/icons/icon-192.svg";
     let icon=document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if(!icon){icon=document.createElement("link");icon.rel="icon";document.head.appendChild(icon);}
-    icon.href=iconUrl;icon.type=faviconId?"":"image/svg+xml";
+    icon.href=iconUrl;icon.type=faviconId?"":"";
     let touch=document.head.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
     if(!touch){touch=document.createElement("link");touch.rel="apple-touch-icon";document.head.appendChild(touch);}
     touch.href=appIconId?"/media/"+appIconId+"?v="+encodeURIComponent(appIconId):iconUrl;
