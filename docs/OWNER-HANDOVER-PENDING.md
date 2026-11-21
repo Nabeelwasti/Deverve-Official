@@ -15,7 +15,7 @@ This file is the owner-side pending register. It is intentionally safe to keep i
 - [ ] Physically count stock by exact size/colour combination. Reconcile old shared-stock variants before deactivating them or generating new individual variants. Never copy one shared aggregate quantity into every new variant.
 - [ ] Supply verified vehicle/fleet data: registration/identifiers, make/model/year, photos, availability, self-drive and with-driver rates, deposits, mileage/fuel terms, insurance/driver requirements and service/maintenance status.
 - [ ] Approve delivery coverage, delivery charges, dispatch/courier process, cash-on-delivery rules, order cancellation rules and customer support process.
-- [ ] Approve privacy notice, terms, return/exchange/refund policy, rental agreement, damage/deposit policy, CNIC notice and complaint handling. Owner-confirmed CNIC policy is recorded in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`: both CNIC sides required for rental requests; identity/rental verification and fraud/security purposes; owner and specifically authorized rental manager/staff access; deletion after 90 days from full clearance of all rental amounts/obligations; customer deletion requests reviewed by staff and decided by owner/authorized manager. Formal owner signature, named authorized users and written Pakistan-qualified legal review remain outstanding.
+- [ ] Approve privacy notice, terms, return/exchange/refund policy, rental agreement, damage/deposit policy, CNIC notice and complaint handling. Owner-confirmed CNIC policy is recorded in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`: both CNIC sides required for rental requests; identity/rental verification and fraud/security purposes; owner and specifically authorized rental manager/staff access; deletion after 90 days from full clearance of all rental amounts/obligations; customer deletion requests reviewed by staff and decided by owner/authorized manager. Formal owner signature and named authorized users remain outstanding; no external lawyer review is claimed or recorded.
 - [ ] Confirm staff roles and named authorized users. Use individual accounts; do not share the owner login.
 
 ## 2. Provider accounts and credentials — owner action
@@ -51,12 +51,12 @@ Only configure these after the final production hostname is confirmed. Never com
 - [ ] Keep at least one independent off-account copy with access restricted to named custodians, with a documented expiry/purge process for CNIC evidence.
 - [ ] Perform a restore drill into an isolated non-production environment. Verify D1 records and private R2 objects together, then document results and recovery time.
 - [ ] Decide and document backup frequency, retention, custodians, recovery-point objective and recovery-time objective.
-- [ ] Preserve existing CNIC evidence until the replacement retention, deletion-request and legal-hold workflows have passed isolated tests and counsel review. Do not bypass the current immutability triggers as a shortcut.
+- [ ] Preserve existing CNIC evidence until the replacement retention, deletion-request and legal-hold workflows have passed isolated tests and production acceptance. Do not bypass the current immutability triggers as a shortcut.
 
 ## 5. Release gates — do not bypass
 
 - [ ] Reconcile live production schema immediately before release. Production has no migration-ledger table; inspect actual tables, columns, indexes and triggers.
-- [ ] Verify and back up production before applying the pending additive migrations. The documented sequence is 0028 → 0029 → 0030 → 0031 → 0033; verify CNIC protections from 0032 remain intact. Migration 0034 is branch-only and also requires reviewed release sequencing.
+- [ ] Verify and back up production before applying the pending additive migrations. The documented production sequence must be reconciled against current main and the migration ledger; migrations 0032, 0037 and 0038 have been applied/verified. Do not replay additive migrations without checking the live schema first.
 - [ ] Complete a real D1 integration test for simultaneous online/POS stock contention and full rollback of all dependent sale/payment/ledger/outbox records.
 - [ ] Resolve and test reservation lifecycle/payment reconciliation. Do not expire a reservation solely by elapsed time while a payment can still succeed or a webhook can be retried.
 - [ ] Obtain a green CI run for the exact release commit and review the complete diff.
@@ -103,7 +103,7 @@ Only configure these after the final production hostname is confirmed. Never com
 - [ ] Keep first-class reservation records, durable async Safepay webhook ingestion, provider sandbox acceptance, backups/restore and production schema release sequencing as separate release gates.
 
 
-## 7. CNIC retention approval — required owner/legal decision
+## 7. CNIC retention — owner policy and technical implementation
 
 - [ ] Complete the draft decision record in [CNIC-RETENTION-APPROVAL-RECORD.md](CNIC-RETENTION-APPROVAL-RECORD.md).
 - [ ] Owner confirms the business purpose, collection scope, mandatory/optional cases, authorized roles, customer notice, retention period, legal-hold exceptions and review date in writing.
