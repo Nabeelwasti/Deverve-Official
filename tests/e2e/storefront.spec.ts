@@ -489,7 +489,7 @@ test("install app control remains visible when the browser does not expose a nat
 });
 
 test("AI chat sends only real alternating conversation turns to Gemini", async ({ page }) => {
-  const submitted: { payload: { messages: Array<{ role: string; text: string }>; images?: unknown[] } | null } = { payload: null };
+  const submitted: { payload: { messages: Array<{ role: string; text: string }>; attachments?: unknown[] } | null } = { payload: null };
   await page.route("**/api/ai/chat", async (route) => {
     submitted.payload = route.request().postDataJSON();
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "Test assistant reply" }) });
@@ -500,7 +500,7 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("Test assistant reply")).toBeVisible();
   expect(submitted.payload?.messages).toEqual([{ role: "user", text: "Hello De VERVE" }]);
-  expect(submitted.payload?.images).toEqual([]);
+  expect(submitted.payload?.attachments).toEqual([]);
 });
 
 test("customer AI chat provides camera, gallery, image-file, copy and per-message speaker actions", async ({ page }) => {
@@ -512,7 +512,7 @@ test("customer AI chat provides camera, gallery, image-file, copy and per-messag
   await chat.getByRole("button", { name: "Add attachment" }).click();
   await expect(chat.getByRole("menuitem", { name: "Take a photo" })).toBeVisible();
   await expect(chat.getByRole("menuitem", { name: "Choose from gallery" })).toBeVisible();
-  await expect(chat.getByRole("menuitem", { name: "Attach image file" })).toBeVisible();
+  await expect(chat.getByRole("menuitem", { name: "Attach any file" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Copy assistant message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
@@ -521,8 +521,8 @@ test("customer AI chat provides camera, gallery, image-file, copy and per-messag
 });
 
 
-test("customer AI chat compresses and sends an attached product photo", async ({ page }) => {
-  const submitted: { images?: Array<{ name: string; mime_type: string; data: string }> } = {};
+test("customer AI chat attaches and sends a product photo", async ({ page }) => {
+  const submitted: { attachments?: Array<{ name: string; mime_type: string; data: string }> } = {};
   await page.route("**/api/ai/chat", async route => {
     Object.assign(submitted, route.request().postDataJSON());
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "I can inspect the visible garment details." }) });
@@ -534,12 +534,12 @@ test("customer AI chat compresses and sends an attached product photo", async ({
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=", "base64")
   });
-  await expect(page.getByAltText("Photo attachment 1")).toBeVisible();
+  await expect(page.getByAltText("Image attachment 1")).toBeVisible();
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("I can inspect the visible garment details.")).toBeVisible();
-  expect(submitted.images).toHaveLength(1);
-  expect(submitted.images?.[0].mime_type).toBe("image/jpeg");
-  expect(submitted.images?.[0].data.startsWith("/9j/")).toBeTruthy();
+  expect(submitted.attachments).toHaveLength(1);
+  expect(submitted.attachments?.[0].mime_type).toBe("image/png");
+  expect(submitted.attachments?.[0].data.startsWith("iVBORw0KGgo")).toBeTruthy();
 });
 
 test("product card opens from its content and product cart merges by size and colour", async ({ page }) => {
