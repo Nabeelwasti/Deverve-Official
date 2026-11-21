@@ -73,7 +73,8 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
 
 test("AI support uses a compact in-composer control layout", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
+  await expect(page.locator(".top-quote-strip p")).toHaveText(/.+/);
+  await expect(page.locator(".top-quote-strip cite")).toHaveText(/— .+/);
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   await expect(chat).toBeVisible();
@@ -519,7 +520,7 @@ test("customer AI chat exposes file, camera, gallery, voice, speaker and copy co
   await expect(page.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy message" }).first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Speak message" }).first()).toBeVisible();
-  await expect(page.locator(".ai-chat-launcher img")).toHaveAttribute("src", /brand\/de-verve-logo\.svg|\/media\//);
+  await expect(page.locator(".ai-chat-launcher img")).toHaveAttribute("src", "/brand/de-verve-mark.svg");
 });
 
 
