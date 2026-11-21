@@ -356,7 +356,7 @@ function Storefront() {
   useEffect(() => { try { sessionStorage.setItem("deverve:checkout-token", checkoutToken); } catch { /* Storage may be unavailable. */ } }, [checkoutToken]);
   const updateEnquiry = (next: typeof emptyEnquiry) => { setEnquiry(next); writeAppDraft("enquiry", next); };
   const updateRentalForm = (next: typeof emptyRentalForm) => { setRentalForm(next); writeAppDraft("rental", next); };
-  const updateCheckoutForm = (next: typeof emptyCheckoutForm) => { setCheckoutForm(next); writeAppDraft("checkout", next); };
+  const updateCheckoutForm = (next: typeof emptyCheckoutForm) => { setCheckoutForm(next); writeAppDraft("checkout", { ...next, coupon_code: "" }); };
 
   useEffect(() => { localStorage.setItem("deverve-favourites", JSON.stringify(favourites)); }, [favourites]);
   useEffect(() => { localStorage.setItem("deverve-cart", JSON.stringify(cart)); }, [cart]);
