@@ -24,6 +24,7 @@ test("checkout resolves a server-side voucher and records redemption in the orde
  assert.match(migration,/coupon_not_eligible/);
  assert.match(migration,/NEW\.discount_amount_paisa <= c\.max_discount_paisa/);
  assert.match(migration,/c\.discount_type != 'percent'/);
+ assert.match(migration,/\(SELECT customer_id FROM orders WHERE id = NEW\.order_id\) = NEW\.customer_id/);
 });
 
 test("customer checkout exposes an optional server-validated voucher field",()=>{
