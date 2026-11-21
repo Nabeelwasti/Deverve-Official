@@ -105,6 +105,8 @@ Only configure these after the final production hostname is confirmed. Never com
 
 ## 7. CNIC retention — owner policy and technical implementation
 
+- Staff handling procedure: [CNIC-STAFF-HANDLING-SOP.md](CNIC-STAFF-HANDLING-SOP.md).
+
 - [ ] Complete the draft decision record in [CNIC-RETENTION-APPROVAL-RECORD.md](CNIC-RETENTION-APPROVAL-RECORD.md).
 - [ ] Owner confirms the business purpose, collection scope, mandatory/optional cases, authorized roles, customer notice, retention period, legal-hold exceptions and review date in writing.
 - [ ] Pakistan-qualified counsel reviews the actual rental workflow, privacy notice, rental agreement, cloud/storage locations, access controls and proposed retention schedule; obtain written advice.
