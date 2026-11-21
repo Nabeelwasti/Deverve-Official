@@ -27,3 +27,17 @@ test("rental upload and scheduled maintenance code never delete CNIC evidence ob
   assert.doesNotMatch(workerSource, /env\.MEDIA\.delete\(object\.key\)/);
   assert.match(workerSource, /rental-private\//);
 });
+
+
+test("rental submission requires a versioned CNIC notice and stores acknowledgement metadata", () => {
+  const workerSource = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
+  const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
+  const migration = readFileSync(new URL("../migrations/0038_rental_cnic_consent_record.sql", import.meta.url), "utf8");
+  assert.match(workerSource, /cnic_consent_version/);
+  assert.match(workerSource, /rental-cnic-2026-11-21-v1/);
+  assert.match(workerSource, /cnic_consent_at/);
+  assert.match(appSource, /cnic_consent_version/);
+  assert.match(appSource, /90 days after all rental payments/);
+  assert.match(migration, /cnic_consent_version TEXT NOT NULL DEFAULT 'legacy-unknown'/);
+  assert.match(migration, /cnic_consent_at TEXT/);
+});
