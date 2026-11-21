@@ -259,6 +259,8 @@ function Storefront() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
+  const [goldenQuote,setGoldenQuote]=useState({text:"Style is a way to say who you are without having to speak.",author:"Rachel Zoe"});
+  useEffect(()=>{const controller=new AbortController();const fallback=[{text:"The secret of getting ahead is getting started.",author:"Mark Twain"},{text:"Great things are done by a series of small things brought together.",author:"Vincent van Gogh"},{text:"Simplicity is the ultimate sophistication.",author:"Leonardo da Vinci"}];setGoldenQuote(fallback[Math.floor(Math.random()*fallback.length)]);void fetch("https://dummyjson.com/quotes/random",{signal:controller.signal,headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)throw new Error("Quote service unavailable");const item=await response.json() as {quote?:string;author?:string};if(item.quote&&item.author)setGoldenQuote({text:item.quote.slice(0,180),author:item.author.slice(0,70)});}).catch(()=>{});return()=>controller.abort();},[]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -599,6 +601,7 @@ function Storefront() {
             <p className="eyebrow"><span className="eyebrow-line" /> FASHION · LIFESTYLE · MOBILITY</p>
             <h1>Elevate<br /><em>your style.</em></h1>
             <p className="hero-description">Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.</p>
+            <blockquote className="golden-quote" aria-label="Inspirational quote"><span>“</span><p>{goldenQuote.text}</p><cite>— {goldenQuote.author}</cite></blockquote>
             <div className="hero-actions">
               <button className="button button-primary" type="button" onClick={() => navigate("fashion")}>Explore fashion <span>↗</span></button>
               <button className="text-link" type="button" onClick={() => navigate("wholesale")}>Wholesale enquiries →</button>
@@ -944,18 +947,20 @@ function Storefront() {
   );
 }
 
+function BrandLoadingScreen(){return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><div className="brand-loader-mark">DV<span>.</span></div><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>}
+
 function HomePageRoute() {
   const requestedScreen=new URLSearchParams(window.location.search).get("screen");
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
   useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
   if(requestedScreen&&["fashion","wholesale","mobility","contact","favourites","policies"].includes(requestedScreen))return <Storefront/>;
-  if(hasCmsHome===null)return <main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>;
+  if(hasCmsHome===null)return <BrandLoadingScreen/>;
   return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
 }
 
 export default function App() {
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<main className="public-page" role="status" aria-live="polite">Loading De VERVE…</main>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoadingScreen/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
 }
 
