@@ -515,3 +515,21 @@ This addendum supersedes earlier deployment, migration 0037 and D1 restore statu
 
 ### CNIC retention approval status
 A draft approval record is now tracked in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`. It is not signed. The previous indefinite-retention instruction must not be represented as a legal requirement. Keep existing evidence protected while the owner and Pakistan-qualified counsel review purpose, necessity, notice/consent, retention period, exceptions/legal holds, cloud storage locations and customer rights. Do not make new indefinite-retention promises or change locks/triggers before that review.
+
+
+## Owner-confirmed CNIC policy update — 21 November 2026
+
+The owner has confirmed that rental applicants must submit both sides of the CNIC for identity matching, rental approval, fraud prevention/security for premium and high-value vehicles, and legitimate rental-history verification. Access is limited to the owner and specifically authorized relevant rental managers/staff. The owner-selected retention period is 90 days after all payments, damages, charges, challans (if any) and other relevant fees/obligations are fully cleared and reconciled. Customer deletion requests are reviewed by staff and decided by the owner or authorized manager, with reasons recorded.
+
+The policy is documented in:
+- `docs/CNIC-RETENTION-APPROVAL-RECORD.md`
+- `docs/CUSTOMER-CARE-COUPONS-CNIC-POLICY.md`
+- `docs/OWNER-HANDOVER-PENDING.md`
+
+**Critical implementation gap discovered during source review:** production migration `0032_permanent_cnic_evidence.sql` still creates triggers that block deletion and material updates to `rental_documents`. The current `workers/deverve-cnic-retention.js` only expires upload tokens, reports `document_retention: "indefinite"`, and never deletes CNIC objects. The admin document DELETE route returns HTTP 409 and says deletion is disabled. There is no verified production workflow yet for recording full financial/incident clearance, calculating the 90-day clock, reviewing customer deletion requests, authorizing legal holds, or securely purging both D1 metadata and R2 objects/backups.
+
+**Do not deploy a quick trigger removal or scheduled object deletion.** A safe implementation requires an additive migration, a controlled owner/manager workflow for clearance and deletion requests, an audited legal-hold mechanism, an idempotent R2-first/metadata-second deletion process with retry/reconciliation, backup expiry/purge handling, authorization tests and a full isolated restore/retention rehearsal. Existing customer evidence must remain protected until this change is reviewed and tested.
+
+Owner policy confirmation is recorded in writing in the project conversation, but formal owner signature and written advice from a Pakistan-qualified lawyer remain outstanding. The legal research is preliminary only. PECA 2016 sections 16 and 41, as amended, are relevant to identity-information authorization and confidentiality. As of the DLA Piper Pakistan guide updated 17 March 2026, a comprehensive standalone personal-data statute had not been enacted and the 2023 Personal Data Protection Bill remained a draft; counsel must re-check the Gazette, Parliament and Ministry listings on the advice date. Do not describe this AI research as a legal opinion or legal sign-off.
+
+No production retention setting, R2 object, migration or customer CNIC record was changed as part of this documentation update.
