@@ -533,3 +533,10 @@ The policy is documented in:
 Owner policy confirmation is recorded in writing in the project conversation, but formal owner signature and written advice from a Pakistan-qualified lawyer remain outstanding. The legal research is preliminary only. PECA 2016 sections 16 and 41, as amended, are relevant to identity-information authorization and confidentiality. As of the DLA Piper Pakistan guide updated 17 March 2026, a comprehensive standalone personal-data statute had not been enacted and the 2023 Personal Data Protection Bill remained a draft; counsel must re-check the Gazette, Parliament and Ministry listings on the advice date. Do not describe this AI research as a legal opinion or legal sign-off.
 
 No production retention setting, R2 object, migration or customer CNIC record was changed as part of this documentation update.
+
+
+### Additional storage-lock verification
+
+Cloudflare R2 API inspection on 21 November 2026 confirmed that bucket `deverve-media-private` has an enabled bucket-lock rule with prefix `rental-private/` and condition `Indefinite`. The `deverve-db-backups` bucket also has an enabled `rental-private/` indefinite lock rule. These provider-level locks are separate from the D1 trigger and Worker behavior. They currently prevent implementing the owner's 90-day deletion schedule by application code alone.
+
+Do not remove or weaken either lock until a replacement is designed and tested. An age-based 90-day bucket lock would be incorrect because the owner's clock starts after full rental clearance, not when an image is uploaded. The eventual design must preserve evidence during unresolved obligations and holds, then authorize deletion against the recorded clearance timestamp, while ensuring backup copies expire/purge consistently. The current encrypted CNIC backup UI is a manual browser download workflow; it does not automatically synchronize with Drive/Dropbox and cannot itself enforce a customer-specific deletion deadline.
