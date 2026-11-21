@@ -54,5 +54,5 @@ test("customer AI chat rejects unsupported legacy binary documents with clear gu
     buffer: Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
   });
   await expect(chat.getByRole("status")).toContainText(/cannot be interpreted directly|Export it as PDF/i);
-  await expect(chat.getByText("legacy-document.doc")).toHaveCount(0);
+  await expect(chat.locator(".ai-chat-attachments figure")).toHaveCount(0);
 });
