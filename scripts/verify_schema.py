@@ -261,17 +261,19 @@ coupon_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupo
 assert {"code_hash", "code_prefix", "purpose", "discount_type", "discount_value", "max_discount_paisa", "min_subtotal_paisa", "customer_id", "exchange_request_id", "starts_at", "expires_at", "max_redemptions", "per_customer_limit", "usage_count", "is_active"} <= coupon_columns, "Voucher eligibility and usage fields are missing"
 assert "code" not in coupon_columns, "Plaintext voucher codes must never be persisted"
 redemption_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupon_redemptions)")}
-assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa"} <= redemption_columns, "Voucher redemption ledger fields are missing"
+assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa", "status", "reversed_at", "reversal_reason"} <= redemption_columns, "Voucher redemption ledger and cancellation reversal fields are missing"
 coupon_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
-assert {"trg_coupon_redemption_validate", "trg_coupon_redemption_increment", "trg_coupon_redemption_immutable_update", "trg_coupon_redemption_immutable_delete"} <= coupon_triggers, "Voucher redemption must be validated, counted and immutable inside D1"
+assert {"trg_coupon_redemption_validate", "trg_coupon_redemption_increment", "trg_coupon_redemption_immutable_update", "trg_coupon_redemption_immutable_delete", "trg_coupon_redemption_reversal_decrement", "trg_coupon_order_cancel_reversal"} <= coupon_triggers, "Voucher redemption must be validated, counted and immutable inside D1"
 redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
 redemption_unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
 assert ("order_id",) in redemption_unique_columns and ("exchange_request_id",) in redemption_unique_columns, "An order or exchange case cannot redeem more than one voucher"
 assert any(row[1] == "idx_discount_coupons_one_per_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupons)")), "An exchange case cannot receive multiple compensation vouchers"
+assert any(row[1] == "idx_coupon_redemptions_one_active_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Only one active redemption can exist per exchange case"
 coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
 assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 1" in coupon_sql, "Exchange vouchers must be customer/case bound and single-use"
 coupon_trigger_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='trigger' AND name='trg_coupon_redemption_validate'").fetchone()[0]
 assert "c.purpose != 'wholesale'" in coupon_trigger_sql and "c.purpose != 'first_order'" in coupon_trigger_sql, "Wholesale vouchers must remain disabled and first-order vouchers must check prior orders"
 assert "o.customer_id = NEW.customer_id" in coupon_trigger_sql and "o.discount_amount_paisa = NEW.discount_amount_paisa" in coupon_trigger_sql and "c.exchange_request_id IS NEW.exchange_request_id" in coupon_trigger_sql, "Redemption must match the order customer, exact discount and exchange binding"
+assert "r.status='redeemed'" in coupon_trigger_sql and "trg_coupon_order_cancel_reversal" in coupon_triggers, "Cancelled orders must reverse coupon usage and release customer limits"
 assert "NEW.discount_amount_paisa <= c.max_discount_paisa" in coupon_trigger_sql and "c.discount_type != 'percent'" in coupon_trigger_sql, "Database redemption must enforce voucher discount caps and percentage limits"
 assert "(SELECT customer_id FROM orders WHERE id = NEW.order_id) = NEW.customer_id" in coupon_trigger_sql, "Voucher redemption must be bound to the same customer as the order"
