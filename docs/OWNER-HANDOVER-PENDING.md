@@ -15,7 +15,7 @@ This file is the owner-side pending register. It is intentionally safe to keep i
 - [ ] Physically count stock by exact size/colour combination. Reconcile old shared-stock variants before deactivating them or generating new individual variants. Never copy one shared aggregate quantity into every new variant.
 - [ ] Supply verified vehicle/fleet data: registration/identifiers, make/model/year, photos, availability, self-drive and with-driver rates, deposits, mileage/fuel terms, insurance/driver requirements and service/maintenance status.
 - [ ] Approve delivery coverage, delivery charges, dispatch/courier process, cash-on-delivery rules, order cancellation rules and customer support process.
-- [ ] Approve privacy notice, terms, return/exchange/refund policy, rental agreement, damage/deposit policy, CNIC consent/retention notice and complaint handling. Obtain local legal advice where required.
+- [ ] Approve privacy notice, terms, return/exchange/refund policy, rental agreement, damage/deposit policy, CNIC notice and complaint handling. Owner-confirmed CNIC policy is recorded in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`: both CNIC sides required for rental requests; identity/rental verification and fraud/security purposes; owner and specifically authorized rental manager/staff access; deletion after 90 days from full clearance of all rental amounts/obligations; customer deletion requests reviewed by staff and decided by owner/authorized manager. Formal owner signature, named authorized users and written Pakistan-qualified legal review remain outstanding.
 - [ ] Confirm staff roles and named authorized users. Use individual accounts; do not share the owner login.
 
 ## 2. Provider accounts and credentials — owner action
