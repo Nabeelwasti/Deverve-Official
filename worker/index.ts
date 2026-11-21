@@ -4564,7 +4564,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
   // Files are processed transiently for this request only. Never persist customer chat attachments.
   const attachments=Array.isArray(body.attachments)?body.attachments:(Array.isArray(body.images)?body.images:[]);
   if(attachments.length>3)return error("Attach no more than three files per message",400);
-  const supportedMime=new Set(["image/jpeg","image/png","image/webp","application/pdf","audio/aac","audio/flac","audio/mp3","audio/mp4","audio/mpeg","audio/mpga","audio/ogg","audio/opus","audio/pcm","audio/wav","audio/webm","video/mov","video/mpeg","video/mp4","video/mpg","video/avi","video/wmv","video/mpegps","video/flv","video/webm"]);
+  const supportedMime=new Set(["image/jpeg","image/png","image/webp","application/pdf","audio/aac","audio/flac","audio/mp3","audio/mp4","audio/mpeg","audio/mpga","audio/opus","audio/pcm","audio/wav","audio/webm","video/mov","video/mpeg","video/mp4","video/mpg","video/avi","video/wmv","video/mpegps","video/flv","video/webm"]);
   let attachmentBytes=0,audioCount=0,videoCount=0,textAttachmentChars=0;
   for(const item of attachments){
     if(!item||typeof item!=="object")return error("Invalid file attachment",400);
