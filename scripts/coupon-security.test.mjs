@@ -37,14 +37,17 @@ test("admin voucher workspace requires a completed case for exchange compensatio
  assert.match(ui,/Deactivate/);
 });
 
-test("restored storefront guidance uses factual service information and exposes approved customer feedback only",()=>{
+test("restored storefront guidance publishes only owner-approved customer feedback",()=>{
  const worker=read("worker/index.ts");
- const app=read("src/App.tsx");
- const reviewRoute=worker.slice(worker.indexOf("async function productReviewRoutes"),worker.indexOf("type GeminiKeyRow"));
- assert.match(reviewRoute,/\/api\/products\/\(\[a-f0-9-\]\{36\}\)\/reviews/);
- assert.match(reviewRoute,/r\.status='approved'/);
- assert.doesNotMatch(reviewRoute,/status IN \('approved','pending'\)/);
- assert.match(app,/featuredReviews\.length>0/);
- assert.match(app,/verified_purchase===1\?"Verified purchase":"Customer feedback"/);
- assert.doesNotMatch(app,/VIP Club Newsletter/);
+ const productPage=read("src/ProductPage.tsx");
+ const route=worker.slice(worker.indexOf("async function productReviewRoutes"),worker.indexOf("type GeminiKeyRow"));
+ assert.match(route,/r\.status='approved'/);
+ assert.doesNotMatch(route,/status IN \('approved','pending'\)/);
+ assert.match(route,/VALUES \(\?,\?,\?,\?,\?,\?,\?,\?,\?,'pending'\)/);
+ assert.match(route,/status:"pending"/);
+ assert.match(route,/async function productReviewRoutes/);
+ assert.match(productPage,/Approved comments from the De VERVE community/);
+ assert.match(productPage,/Your feedback will appear after our team reviews it/);
+ assert.match(productPage,/verified_purchase/);
+ assert.doesNotMatch(productPage,/published immediately/);
 });
