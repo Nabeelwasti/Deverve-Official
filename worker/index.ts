@@ -4577,7 +4577,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
       textAttachmentChars+=text.length;if(textAttachmentChars>300_000)return error("Combined text attachments are too large. Split them into smaller files.",413);
       attachmentBytes+=new TextEncoder().encode(text).byteLength;
       if(name)contents[contents.length-1].parts.push({text:"Attached text file name (untrusted metadata): "+name});
-      contents[contents.length-1].parts.push({text:"BEGIN ATTACHED FILE CONTENT: "+(name||"text file")+"\\n"+text+"\\nEND ATTACHED FILE CONTENT"});
+      contents[contents.length-1].parts.push({text:"BEGIN ATTACHED FILE CONTENT: "+(name||"text file")+"\n"+text+"\\nEND ATTACHED FILE CONTENT"});
       continue;
     }
     if(!data||!supportedMime.has(mime)||!/^[A-Za-z0-9+/]+={0,2}$/.test(data)||data.length>5_700_000)return error("This file type is not supported by the current AI model, or the file is too large. Supported: PDF, plain text, images, audio and video.",415);
@@ -4657,7 +4657,7 @@ async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{
     return last;
    }
    const blocks=(payload.steps??[]).filter(step=>step.type==="model_output").flatMap(step=>step.content??[]);
-   const summary=(typeof payload.output_text==="string"?payload.output_text:blocks.filter(block=>block.type==="text").map(block=>block.text??"").join("\\n")).trim();
+   const summary=(typeof payload.output_text==="string"?payload.output_text:blocks.filter(block=>block.type==="text").map(block=>block.text??"").join("\n")).trim();
    const sources:GeminiResearchSource[]=[];
    const seen=new Set<string>();
    for(const block of blocks)for(const annotation of block.annotations??[]){
