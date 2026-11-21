@@ -27,6 +27,7 @@ test("customer checkout exposes an optional server-validated voucher field",()=>
  assert.match(app,/\/api\/coupons\/validate/);
  assert.match(app,/checkoutForm\.coupon_code/);
  assert.match(app,/Voucher applied\. The server will verify it again/);
+ assert.match(app,/writeAppDraft\("checkout", \{ \.\.\.next, coupon_code: "" \}\)/);
 });
 
 test("admin voucher workspace requires a completed case for exchange compensation",()=>{
