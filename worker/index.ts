@@ -3655,7 +3655,10 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   if (auditLogResponse) return auditLogResponse;
 
 
-  const couponResponse = await adminCouponRoutes(request, env, url);\n  if (couponResponse) return couponResponse;\n\n  const exchangeResponse = await adminExchangeRoutes(request, env, url);
+  const couponResponse = await adminCouponRoutes(request, env, url);
+  if (couponResponse) return couponResponse;
+
+  const exchangeResponse = await adminExchangeRoutes(request, env, url);
   if (exchangeResponse) return exchangeResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
