@@ -711,7 +711,7 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
-test("cart does not show free delivery at the exact Rs. 5,000 threshold", async ({ page }) => {
+test("cart does not invent an unconfigured free-delivery threshold", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("deverve-cart", JSON.stringify([{
       variant_id: "11111111-1111-4111-8111-111111111111",
@@ -722,13 +722,12 @@ test("cart does not show free delivery at the exact Rs. 5,000 threshold", async 
   });
   await page.goto("/");
   await page.locator(".header-cart").click();
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("1");
-  await expect(page.locator(".cart-shipping-fill")).toHaveAttribute("style", /99%/);
+  await expect(page.locator(".cart-shipping-info")).toContainText("Delivery charges are confirmed separately");
+  await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
 });
 
-test("cart does not promise inactive spend-based discounts or free delivery", async ({ page }) => {
+test("cart does not promise spend-based discounts or free delivery at high subtotals", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("deverve-cart", JSON.stringify([{
       variant_id: "11111111-1111-4111-8111-111111111111",
@@ -739,8 +738,7 @@ test("cart does not promise inactive spend-based discounts or free delivery", as
   });
   await page.goto("/");
   await page.locator(".header-cart").click();
+  await expect(page.locator(".cart-shipping-info")).toContainText("No free-delivery offer is applied unless a valid voucher is shown");
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
-  await expect(page.locator(".cart-shipping-track-label")).toContainText("100");
-  await expect(page.locator(".cart-shipping-fill")).toHaveAttribute("style", /99%/);
+  await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
 });
