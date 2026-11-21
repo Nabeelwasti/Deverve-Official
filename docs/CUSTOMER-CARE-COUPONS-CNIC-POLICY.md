@@ -2,40 +2,46 @@
 
 ## Voucher operating model
 
-The voucher schema in migration 0037 is the persistence foundation, not a live checkout feature by itself. The customer-facing validation, staff workspace, transactional redemption, and notification flows must ship together before vouchers are advertised or enabled.
+The voucher workflow is implemented in the current feature branch and is intended to ship as one controlled release with migration 0037. It includes an owner/manager workspace, secure code generation and hash-only storage, one-time code display, revocation, customer checkout validation, server-side revalidation, atomic redemption, database eligibility triggers, audit history and an explicit WhatsApp share hand-off. The production database and live storefront must not be treated as updated until the PR is merged, migration 0037 is applied, and the controlled Pages deployment succeeds.
 
 ### Voucher purposes
 
-- **Exchange compensation:** one customer, one exchange case, one redemption. Use when a customer returns an item because of a verified size issue, damaged item, wrong item, or colour/item mismatch and the business chooses store credit instead of a replacement or cash refund.
+- **Exchange compensation:** one customer, one completed exchange case, one redemption. Use for verified size issues, damaged items, wrong items and documented colour/variant mismatches when a manager chooses store credit instead of a replacement or cash refund.
 - **Goodwill:** service recovery for a documented complaint.
-- **First order / loyalty / campaign:** controlled marketing offers with expiry, minimum basket, usage cap and per-customer limit.
-- **Wholesale:** wholesale voucher redemption is reserved for a later phase; do not issue wholesale-purpose codes until quotation discounts are implemented and tested.
-- **Manual adjustment:** owner/manager-approved correction with a mandatory reason and audit event.
+- **First order / loyalty / campaign:** controlled offers with an expiry, minimum basket, total usage cap and per-customer limit.
+- **Wholesale:** wholesale voucher redemption remains disabled until quotation discounts are implemented and tested.
+- **Manual adjustment:** owner/manager-approved correction. The voucher title and audit record must describe the reason.
 
-### Safe defaults
+### Purpose-based starting presets
 
-- No automatic stacking: one promotion per order, consistent with the existing order discount columns.
-- Exchange compensation vouchers are customer-bound, case-bound, single-use, and must be issued only after an authorised staff member records the case outcome.
-- A damaged/wrong-item case should default to replacement or a staff-approved resolution; a voucher is optional compensation, not an automatic denial of refund rights.
-- Size/colour exchanges should first offer a verified in-stock replacement. If the requested variant is unavailable, staff may issue a voucher or follow the published refund policy.
-- Never create a voucher merely because an exchange request was submitted. Require review and a documented decision.
-- Percent discounts are stored in basis points (1000 = 10%, 10000 = 100%). Fixed discounts and caps are stored in paisa.
-- Checkout must validate eligibility and redeem atomically with order creation; do not rely on browser-side price calculations.
-- Do not expose a voucher's customer identity or exchange details to another customer. Store only a hash of the full code; display the generated plaintext code once at issue time.
-- The schema is intentionally limited to a single redemption per order and unique exchange-case redemption. Server-side race-safe usage increments and audit records are required in the API implementation.
+The workspace prefills these conservative starting values when a manager selects a purpose. They are editable before issue, are not automatic customer promises, and require the authorised manager to review the margin and click Generate voucher.
 
-### Suggested operational presets (not activated automatically)
-
-| Purpose | Suggested default | Guardrails |
+| Purpose | Prefilled starting offer | Expiry and limits |
 |---|---:|---|
-| Size exchange inconvenience | 5% | One customer, one exchange case, 30 days |
-| Verified wrong/damaged item goodwill | 10% | One customer, one exchange case, 30 days; manager approval |
-| First order | 5% | One use per customer, 14 days, minimum basket set by owner |
-| Loyalty thank-you | 5% | One use per customer, 30 days |
-| Campaign | Owner-defined | Start/end date, total cap, per-customer cap |
-| Wholesale | Not enabled | Do not issue until wholesale quotation redemption is implemented |
+| Size exchange | 5%, capped at Rs. 500 | 30 days; one customer, one completed case, one use |
+| Damaged item | 10%, capped at Rs. 1,000 | 30 days; one customer, one completed case, one use |
+| Wrong item / colour mismatch | 10%, capped at Rs. 1,000 | 30 days; one customer, one completed case, one use |
+| General exchange compensation | 5%, capped at Rs. 500 | 30 days; one customer, one completed case, one use |
+| First order | 5%, capped at Rs. 500 | 30 days; 1 use per customer; 1,000 total uses by default |
+| Loyalty | 5%, capped at Rs. 500 | 30 days; 1 use per customer; 1,000 total uses by default |
+| Goodwill | 5%, capped at Rs. 500 | 30 days; 1 use per customer; 100 total uses by default |
+| Campaign | 5%, capped at Rs. 500 | 30 days; 1 use per customer; 100 total uses by default |
+| Manual adjustment | 5%, capped at Rs. 500 | 30 days; single use by default |
 
-These percentages and durations are recommendations for configuration, not promises to customers. The owner should confirm margins and published terms before any campaign is activated.
+Managers can adjust these values before issue. Do not promise the presets in marketing material until the owner confirms margin and campaign terms. Wholesale is not available in the voucher workspace.
+
+### Safeguards
+
+- One voucher per order; promotions never stack.
+- Exchange vouchers are linked to a specific customer and completed exchange case, and are single-use. A submitted or merely approved request is not enough; the case must reach completed status.
+- A damaged/wrong-item case should default to replacement or a staff-approved resolution. A voucher is optional compensation, not a way to deny statutory or published refund rights.
+- Size/colour exchanges should first offer a verified in-stock replacement. If the requested variant is unavailable, an authorised manager may issue compensation or follow the published refund policy.
+- First-order vouchers are rejected if the customer has any previous non-cancelled order.
+- Wholesale voucher redemption is rejected by the database trigger until a separate quote-to-order discount workflow exists.
+- Percent discounts are stored in basis points; fixed amounts and caps are stored in paisa.
+- Checkout validates the signed-in customer, start/expiry, minimum subtotal, customer/case binding and usage limits again on the server. Redemption is inserted in the same D1 checkout batch as order creation; database triggers validate eligibility, increment usage and make redemption history immutable.
+- The browser does not persist voucher codes in checkout drafts. Plaintext codes are shown once when issued; only a hash and short prefix are stored.
+- The WhatsApp action opens a prefilled message for a staff member to review and send. The system does not silently send a message or assume customer consent.
 
 ## CNIC evidence handling
 
@@ -55,12 +61,10 @@ Minimum safeguards:
 
 ## Release status
 
-Migration 0037 is only the database foundation. Do not apply it to production or expose a coupon input until the following are implemented and tested together:
-- owner/manager coupon management UI with permission checks;
-- secure code generation, hashing, one-time plaintext display and revocation;
-- customer-bound exchange voucher issue flow with case linkage;
-- checkout validation, atomic redemption and race-condition tests;
-- audit history and customer notification templates;
-- migration validation on a disposable D1 database and production backup/restore readiness.
+PR #7 contains the voucher UI, API, checkout and policy implementation. Migration 0037 is not yet applied to production. The feature must not be exposed on the live site until:
+- the exact latest PR head passes CI;
+- a fresh production D1 export and recovery bookmark are recorded;
+- migration 0037 is applied and its tables, indexes, triggers and foreign keys are verified;
+- the exact merged main commit is deployed to Pages and smoke-tested.
 
-Until then, existing checkout pricing and exchange workflow remain unchanged.
+Independent off-account D1/R2 disaster recovery, physical Android camera/scanner acceptance, stock reconciliation, real provider integration tests, POS/finance reconciliation, rental acceptance and owner/legal CNIC approval remain separate production-acceptance gates.
