@@ -77,7 +77,7 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   await expect(chat).toBeVisible();
-  await expect(chat.getByLabel("Your message")).toBeVisible();
+  await expect(chat.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(chat.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
@@ -508,7 +508,7 @@ test("customer AI chat exposes accessible photo, voice input and spoken response
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   await expect(page.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
-  await expect(page.getByText("＋ Photo")).toBeVisible();
+  await expect(page.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Browse garments" })).toHaveAttribute("href", "/?screen=fashion");
   await expect(page.getByRole("link", { name: "Wholesale enquiry" })).toHaveAttribute("href", "/?screen=wholesale");
@@ -745,7 +745,8 @@ test("owner-managed category artwork replaces the default illustration on the li
   const card = page.locator(".collection-card.men");
   await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
   await expect(card.locator(".category-garment")).toHaveCount(0);
-  await expect(card.getByRole("link", {name:/Shop Men's fashion collection/}).first()).toBeVisible();
+  await expect(card.locator(".collection-art")).toBeVisible();
+  await expect(card.locator(".collection-art")).toHaveAttribute("href", "/?screen=fashion&category=men");
 });
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
