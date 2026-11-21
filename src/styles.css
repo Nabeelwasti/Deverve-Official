@@ -2075,3 +2075,7 @@ body{background:var(--dv-site-surface,#fbfaf7);color:var(--dv-site-text,#19324b)
 .site-credit strong{color:#fff!important}
 .brand-logo-image{object-fit:contain;max-width:100%;height:auto}
 @media(prefers-reduced-motion:reduce){.product-card,.trust-pillar-card,.collection-card{transition:none!important;animation:none!important}}
+
+.ai-chat-attach-menu button span{display:grid;place-items:center;width:24px;height:24px}
+.ai-chat-attach-menu button span svg{width:19px;height:19px}
+.ai-chat-message-actions button svg{width:15px;height:15px}
