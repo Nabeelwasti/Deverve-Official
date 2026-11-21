@@ -530,7 +530,7 @@ The policy is documented in:
 
 **Do not deploy a quick trigger removal or scheduled object deletion.** A safe implementation requires an additive migration, a controlled owner/manager workflow for clearance and deletion requests, an audited legal-hold mechanism, an idempotent R2-first/metadata-second deletion process with retry/reconciliation, backup expiry/purge handling, authorization tests and a full isolated restore/retention rehearsal. Existing customer evidence must remain protected until this change is reviewed and tested.
 
-Owner policy confirmation is recorded in writing in the project conversation, but formal owner signature and written advice from a Pakistan-qualified lawyer remain outstanding. The legal research is preliminary only. PECA 2016 sections 16 and 41, as amended, are relevant to identity-information authorization and confidentiality. As of the DLA Piper Pakistan guide updated 17 March 2026, a comprehensive standalone personal-data statute had not been enacted and the 2023 Personal Data Protection Bill remained a draft; counsel must re-check the Gazette, Parliament and Ministry listings on the advice date. Do not describe this AI research as a legal opinion or legal sign-off.
+Owner policy confirmation is recorded in the project conversation and in the current CNIC approval record. A formal owner signature and named staff authorisations remain operational handover items. External legal review is optional/recommended, not represented as completed or as a prerequisite the owner has accepted. The legal research is preliminary only. PECA 2016 sections 16 and 41, as amended, are potentially relevant to identity-information authorisation and confidentiality. As of the DLA Piper Pakistan guide updated 17 March 2026, a comprehensive standalone personal-data statute had not been enacted and the 2023 Personal Data Protection Bill remained a draft; current Gazette, Parliament and Ministry status must be rechecked before relying on it. Do not describe this AI research as a legal opinion or legal sign-off.
 
 No production retention setting, R2 object, migration or customer CNIC record was changed as part of this documentation update.
 
@@ -554,3 +554,8 @@ Do not remove or weaken either lock until a replacement is designed and tested. 
 **Important remaining gap:** migration 0038 records consent only. It does not implement financial clearance, deletion-request review/approval, legal holds, the 90-day scheduler or deletion from R2 and backups. D1 migration 0032 and the two R2 indefinite-lock rules still protect existing evidence. The public notice states the owner's retention policy, but the technical deletion mechanism must be completed and tested before the business tells a customer that a specific CNIC record has actually been deleted. Do not bypass existing locks/triggers as a shortcut.
 
 Latest main commit and CI/deployment status must be verified from GitHub Actions and Cloudflare Pages before this addendum is considered released.
+
+
+### Status clarification — 21 November 2026, 13:xx UTC
+
+The preceding CNIC status paragraph is updated to distinguish the owner-confirmed operating policy from formal sign-off and optional external legal review. No lawyer review is claimed. The technical 90-day deletion gap described above remains open and must not be treated as resolved by consent capture or policy publication.
