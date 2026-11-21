@@ -4350,6 +4350,12 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
     }
     return error("Method not allowed",405);
   }
+  if(url.pathname==="/api/reviews/featured"&&request.method==="GET"){
+    try{
+      const rows=await env.DB.prepare("SELECT r.id,r.rating,r.title,r.body,r.verified_purchase,r.created_at,substr(c.full_name,1,instr(c.full_name || ' ',' ')-1) AS reviewer_name,p.name AS product_name,p.slug AS product_slug FROM product_reviews r JOIN customers c ON c.id=r.customer_id JOIN products p ON p.id=r.product_id WHERE r.status='approved' AND p.status='published' ORDER BY r.created_at DESC LIMIT 6").all<Record<string,unknown>>();
+      return json({reviews:rows.results??[]});
+    }catch{return error("Customer feedback is temporarily unavailable.",503);}
+  }
   return null;
 }
 
