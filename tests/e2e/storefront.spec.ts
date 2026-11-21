@@ -728,7 +728,7 @@ test("cart does not show free delivery at the exact Rs. 5,000 threshold", async 
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
 });
 
-test("cart tracker follows the selected percentage promotion instead of also promising free delivery", async ({ page }) => {
+test("cart does not promise inactive spend-based discounts or free delivery", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("deverve-cart", JSON.stringify([{
       variant_id: "11111111-1111-4111-8111-111111111111",
@@ -739,7 +739,8 @@ test("cart tracker follows the selected percentage promotion instead of also pro
   });
   await page.goto("/");
   await page.locator(".header-cart").click();
-  const tracker = page.locator(".cart-shipping-unlocked");
-  await expect(tracker).toContainText("30% order discount");
-  await expect(tracker).not.toContainText("free-delivery offer");
+  await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
+  await expect(page.locator(".cart-shipping-track-label")).toContainText("Free-delivery offer");
+  await expect(page.locator(".cart-shipping-track-label")).toContainText("100");
+  await expect(page.locator(".cart-shipping-fill")).toHaveAttribute("style", /99%/);
 });
