@@ -9,7 +9,6 @@ export default function BrandHead(){
     const data=await response.json() as {brand_assets?:{logo_id?:string|null;favicon_id?:string|null}};
     if(!active)return;
     const faviconId=data.brand_assets?.favicon_id??null;
-    const logoId=data.brand_assets?.logo_id??null;
     const appIconId=faviconId;
     document.documentElement.style.setProperty("--deverve-logo-image", "url('/brand/de-verve-mark.svg')");
     const iconUrl=appIconId?"/media/"+appIconId+"?v="+encodeURIComponent(appIconId):"/brand/de-verve-mark.svg";
