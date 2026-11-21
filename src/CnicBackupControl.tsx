@@ -36,13 +36,13 @@ export default function CnicBackupControl({referenceCode,sides,fetchDocument}:{r
   finally{setBusy(false);setRestorePassword("");}
  };
  return <div className="admin-cnic-backup">
-  <div><strong>Encrypted offline backup</strong><small>Creates a password-protected AES-256-GCM copy in this browser. No CNIC image or password is sent to another service. Keep the password separately from the backup file.</small></div>
+  <div><strong>Encrypted offline backup</strong><small>Creates a password-protected AES-256-GCM copy in this browser. No CNIC image or password is sent to another service. Each downloaded backup is a separate copy outside the website: record its authorised custodian and securely destroy it when the related retention period ends or a deletion decision requires it. This tool cannot track or remotely delete copies stored in Drive, Dropbox or on a device. Keep the password separately from the backup file.</small></div>
   <div className="admin-cnic-backup-destination">
    <strong>Business backup destinations · Google Drive and Dropbox</strong>
    <small>Business account: <b>deverve61@gmail.com</b>. Google Drive and Dropbox are separate services even when they use the same email address. Dropbox is connected to ChatGPT, but this website does not yet have direct Dropbox API authorization. Create or verify a restricted folder named “De VERVE Business Vault / 01 - CNIC Evidence (Encrypted Only)” in the business account, then manually upload only encrypted .dvbackup files; never email CNIC images or upload decrypted recovery ZIPs.</small>
    <a href="https://www.dropbox.com/home" target="_blank" rel="noopener noreferrer">Open Dropbox Business Vault</a>
    <a href="https://drive.google.com/drive/u/0/my-drive" target="_blank" rel="noopener noreferrer">Open Google Drive</a>
-   <small>Uploads are currently manual owner actions. The website is not connected to either cloud account and never receives their passwords. Google Drive's ChatGPT connection is disabled by the workspace administrator. Keep the backup password in a separate password manager or sealed offline record, not beside the backup.</small>
+   <small>Uploads are currently manual owner actions. The website is not connected to either cloud account and never receives their passwords. Google Drive's ChatGPT connection is disabled by the workspace administrator. Do not upload decrypted recovery ZIPs or share a backup with staff who are not authorised to handle rental identity evidence. Keep the backup password in a separate password manager or sealed offline record, not beside the backup.</small>
   </div>
   <div className="admin-form-actions">
    <button type="button" className="admin-secondary" disabled={busy||!sides.length} onClick={()=>{setMessage("");setMode(mode==="backup"?null:"backup");setRestoreFile(null);}}>Create encrypted backup</button>
