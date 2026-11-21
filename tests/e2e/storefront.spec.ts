@@ -73,12 +73,12 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
 
 test("AI support uses a compact in-composer control layout", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
+  await expect(page.locator(".announcement-golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   await expect(chat).toBeVisible();
   await expect(chat.getByLabel("Your message")).toBeVisible();
-  await expect(chat.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
@@ -503,18 +503,21 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   expect(submitted.payload?.images).toEqual([]);
 });
 
-test("customer AI chat exposes accessible photo, voice input and spoken response controls", async ({ page }) => {
+test("customer AI chat provides camera, gallery, image-file, copy and per-message speaker actions", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
-  await expect(page.getByRole("button", { name: "Speak your message" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
-  await expect(page.getByText("＋ Photo")).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Browse garments" })).toHaveAttribute("href", "/?screen=fashion");
-  await expect(page.getByRole("link", { name: "Wholesale enquiry" })).toHaveAttribute("href", "/?screen=wholesale");
-  await expect(page.getByRole("link", { name: "Car rental" })).toHaveAttribute("href", "/?screen=mobility");
-  await expect(page.getByRole("link", { name: "Contact team" })).toHaveAttribute("href", "/?screen=contact");
-  await expect(page.getByRole("link", { name: "My account" })).toHaveAttribute("href", "/account");
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
+  await chat.getByRole("button", { name: "Add attachment" }).click();
+  await expect(chat.getByRole("menuitem", { name: "Take a photo" })).toBeVisible();
+  await expect(chat.getByRole("menuitem", { name: "Choose from gallery" })).toBeVisible();
+  await expect(chat.getByRole("menuitem", { name: "Attach image file" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Copy assistant message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Speak message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
+  await expect(chat.getByRole("combobox", { name: "Voice recognition language" })).toHaveCount(0);
+  await expect(chat.getByText("＋ Photo")).toHaveCount(0);
 });
 
 
