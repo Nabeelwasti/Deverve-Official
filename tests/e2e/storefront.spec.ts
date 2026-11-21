@@ -114,13 +114,14 @@ test("rental request requires both CNIC images and sends them with the request",
   };
   await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
   await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
-  await dialog.getByLabel(/I confirm these are my documents/).check();
+  await dialog.getByLabel(/I confirm that I am authorised to submit these documents/).check();
   await submitButton.click();
 
   await expect(dialog.getByText("DV-R-TEST-123456789012")).toBeVisible();
   expect(submitted).toContain("cnic_front");
   expect(submitted).toContain("cnic_back");
   expect(submitted).toContain("cnic_consent");
+  expect(submitted).toContain("rental-cnic-2026-11-21-v1");
   expect(submitted).toContain("e2e-turnstile-token");
   await expect.poll(() => page.evaluate(() => sessionStorage.getItem("deverve:app-draft:v1:rental-result"))).toContain("DV-R-TEST-123456789012");
 
@@ -188,7 +189,7 @@ test("rental form explains blocked Turnstile and keeps the request safely blocke
   const png = { name: "cnic.png", mimeType: "image/png", buffer: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]) };
   await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
   await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
-  await dialog.getByLabel(/I confirm these are my documents/).check();
+  await dialog.getByLabel(/I confirm that I am authorised to submit these documents/).check();
   await dialog.getByRole("button", { name: /Submit rental request/ }).click();
   await expect(dialog.getByRole("alert")).toContainText(/Security verification is not complete/i);
   await expect(page.locator(".dv-toast")).toContainText(/Security verification is not complete/i);
@@ -247,7 +248,7 @@ test.describe("Pakistan rental time handling", () => {
     const png = { name: "cnic.png", mimeType: "image/png", buffer: Buffer.from([137,80,78,71,13,10,26,10,0,0,0,0]) };
     await dialog.getByLabel(/CNIC front image/).setInputFiles(png);
     await dialog.getByLabel(/CNIC back image/).setInputFiles({ ...png, name: "cnic-back.png" });
-    await dialog.getByLabel(/I confirm these are my documents/).check();
+    await dialog.getByLabel(/I confirm that I am authorised to submit these documents/).check();
     await dialog.getByRole("button", { name: /Submit rental request/ }).click();
     await expect(dialog.getByText("DV-R-TZ-TEST-123456789012")).toBeVisible();
     expect(submitted).toContain("2026-12-10T10:00");
