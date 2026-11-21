@@ -745,7 +745,7 @@ test("owner-managed category artwork replaces the default illustration on the li
   const card = page.locator(".collection-card.men");
   await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
   await expect(card.locator(".category-garment")).toHaveCount(0);
-  await expect(card.getByRole("link", {name:/Shop Men's fashion collection/})).toBeVisible();
+  await expect(card.getByRole("link", {name:/Shop Men's fashion collection/}).first()).toBeVisible();
 });
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
