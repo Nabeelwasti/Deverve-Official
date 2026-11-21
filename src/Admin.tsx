@@ -1452,11 +1452,11 @@ export default function Admin() {
 type SiteDesignSettings = {
   preset:"midnight-gold"|"ivory-blue"|"monochrome"|"custom";
   primary_color:string;accent_color:string;surface_color:string;text_color:string;
-  corner_radius:number;hero_title:string;hero_subtitle:string;section_images:Record<string,string>;
+  corner_radius:number;font_family:"dm-sans"|"inter"|"serif";density:"compact"|"comfortable"|"airy";button_style:"rounded"|"pill"|"square";card_shadow:"soft"|"bold"|"flat";hero_title:string;hero_subtitle:string;section_images:Record<string,string>;
 };
 const DEFAULT_SITE_DESIGN:SiteDesignSettings={
   preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",
-  corner_radius:16,hero_title:"Elevate your style.",
+  corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",
   hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",
   section_images:{}
 };
@@ -1522,9 +1522,15 @@ function SiteVisualDesigner(){
       {([{key:"primary_color",label:"Primary brand colour"},{key:"accent_color",label:"Accent / gold colour"},{key:"surface_color",label:"Page surface colour"},{key:"text_color",label:"Main text colour"}] as const).map(item=><label key={item.key}>{item.label}<span><input type="color" value={design[item.key]} onChange={event=>setDesign(current=>({...current,preset:"custom",[item.key]:event.target.value}))}/><code>{design[item.key]}</code></span></label>)}
       <label>Card corner radius <strong>{design.corner_radius}px</strong><input type="range" min="0" max="28" step="2" value={design.corner_radius} onChange={event=>setDesign(current=>({...current,corner_radius:Number(event.target.value)}))}/></label>
     </div>
+    <div className="admin-design-controls admin-design-selects">
+      <label>Website typography<select value={design.font_family} onChange={event=>setDesign(current=>({...current,font_family:event.target.value as SiteDesignSettings["font_family"]}))}><option value="dm-sans">DM Sans — modern</option><option value="inter">Inter — clean corporate</option><option value="serif">Elegant editorial serif</option></select></label>
+      <label>Content spacing<select value={design.density} onChange={event=>setDesign(current=>({...current,density:event.target.value as SiteDesignSettings["density"]}))}><option value="compact">Compact</option><option value="comfortable">Comfortable</option><option value="airy">Airy / spacious</option></select></label>
+      <label>Button shape<select value={design.button_style} onChange={event=>setDesign(current=>({...current,button_style:event.target.value as SiteDesignSettings["button_style"]}))}><option value="rounded">Rounded</option><option value="pill">Pill</option><option value="square">Square</option></select></label>
+      <label>Card depth<select value={design.card_shadow} onChange={event=>setDesign(current=>({...current,card_shadow:event.target.value as SiteDesignSettings["card_shadow"]}))}><option value="soft">Soft luxury</option><option value="bold">Bold depth</option><option value="flat">Flat minimal</option></select></label>
+    </div>
     <div className="admin-design-copy"><label>Homepage headline<input maxLength={120} value={design.hero_title} onChange={event=>setDesign(current=>({...current,hero_title:event.target.value}))}/></label><label>Homepage description<textarea rows={3} maxLength={300} value={design.hero_subtitle} onChange={event=>setDesign(current=>({...current,hero_subtitle:event.target.value}))}/></label></div>
     <div className="admin-design-artwork"><div><h4>Section and feature artwork</h4><p className="admin-muted">Upload imagery for all listed home-page cards and visual sections. Use wide, high-quality JPG, PNG or WebP artwork, up to 5 MB each.</p></div><div className="admin-design-artwork-grid">{slots.map(slot=><article key={slot.id}><div className="admin-design-artwork-preview">{previews[slot.id]?<img src={previews[slot.id]} alt={slot.label+" preview"}/>:<span>DE VERVE</span>}</div><strong>{slot.label}</strong><small>{slot.hint}</small><label>Choose image<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={event=>{void upload(slot.id,event.currentTarget.files?.[0]??null);event.currentTarget.value="";}}/></label><button type="button" className="admin-secondary" disabled={busy||!design.section_images[slot.id]} onClick={()=>{setDesign(current=>{const section_images={...current.section_images};delete section_images[slot.id];return {...current,section_images};});setPreviews(current=>{const next={...current};delete next[slot.id];return next;});}}>Reset artwork</button></article>)}</div></div>
     {message&&<p className="admin-muted" role="status">{message}</p>}
-    <div className="admin-design-actions"><button type="button" className="admin-primary" disabled={busy} onClick={()=>void save()}>{busy?"Saving…":"Save website visual design"}</button><span>Changes are applied through the public storefront settings API.</span></div>
+    <div className="admin-design-actions"><button type="button" className="admin-primary" disabled={busy} onClick={()=>void save()}>{busy?"Saving…":"Save website visual design"}</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>window.open("/","_blank","noopener,noreferrer")}>Preview storefront</button><button type="button" className="admin-secondary" disabled={busy} onClick={()=>{setDesign(DEFAULT_SITE_DESIGN);setPreviews({});setMessage("Default design loaded. Save to publish it.");}}>Reset design</button><span>Changes are published to the live storefront after a successful save.</span></div>
   </section>;
 }
