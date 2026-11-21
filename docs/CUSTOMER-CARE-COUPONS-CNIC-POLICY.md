@@ -59,12 +59,12 @@ Minimum safeguards:
 
 **Important:** permanent retention is the currently recorded owner instruction, not a legal opinion that indefinite retention is required or lawful. Do not change the deployed bucket lock, database triggers, or delete existing evidence as part of routine development. Any future retention change requires a separately reviewed migration and a controlled R2 lifecycle/lock plan.
 
-## Release status
+## Release status — verified 21 November 2026
 
-PR #7 contains the voucher UI, API, checkout and policy implementation. Migration 0037 is not yet applied to production. The feature must not be exposed on the live site until:
-- the exact latest PR head passes CI;
-- a fresh production D1 export and recovery bookmark are recorded;
-- migration 0037 is applied and its tables, indexes, triggers and foreign keys are verified;
-- the exact merged main commit is deployed to Pages and smoke-tested.
+- Migration `0037_discount_coupons.sql` has been applied to production D1 `deverve-production`.
+- Production verification confirmed both coupon tables, all six coupon indexes, all six coupon triggers and zero foreign-key violations.
+- The restored copy of the 21 November D1 SQL backup was also tested with migration 0037 in an isolated disposable D1 database; that temporary database was deleted after verification.
+- GitHub main commit `b575306e0ed251d81079a54f8fc61f9d0ecbbc8d` passed CI run [44902016578](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44902016578).
+- Cloudflare Pages production deployment `7cc647dd-b275-4682-b46d-ae8455c1493d` successfully deployed that exact commit to [https://7cc647dd.deverve-official.pages.dev](https://7cc647dd.deverve-official.pages.dev).
 
-Independent off-account D1/R2 disaster recovery, physical Android camera/scanner acceptance, stock reconciliation, real provider integration tests, POS/finance reconciliation, rental acceptance and owner/legal CNIC approval remain separate production-acceptance gates.
+The voucher database foundation is live. Do not infer that a real voucher has been issued, that checkout has been smoke-tested against the public origin, or that email/WhatsApp delivery is automatic. Independent off-account disaster recovery, physical Android camera/scanner acceptance, stock reconciliation, real provider integration tests, POS/finance reconciliation, rental acceptance and owner/legal CNIC approval remain separate operational gates.
