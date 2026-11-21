@@ -257,6 +257,8 @@ function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
+  const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
+  useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -622,6 +624,20 @@ function Storefront() {
           <div className="hero-bottom"><span>DE VERVE / 001</span><span>FASHION · WHOLESALE · MOBILITY</span><button type="button" onClick={() => navigate("fashion")}>EXPLORE COLLECTIONS ↗</button></div>
         </section>
 
+        {activeScreen==="home"&&<>
+          <section className="intro-strip" aria-label="De VERVE services introduction">
+            <p>One local team.<br/><strong>Three ways to connect.</strong></p>
+            <p>Explore garments for everyday wear, request a wholesale quotation, or enquire about vehicle rental. <strong>Orders and rental requests are confirmed by our team before fulfilment.</strong></p>
+            <div className="intro-mark" aria-hidden="true">DV<span>.</span></div>
+          </section>
+          <section className="trust-pillars-section" aria-label="How De VERVE works">
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Choose your size & colour</h4><p>Product pages show the size and colour combinations currently listed as available.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Manage your orders</h4><p>Use your customer account to review order updates and submit eligible exchange requests.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Ask about wholesale</h4><p>Share your required products and quantities so our team can prepare a tailored quotation.</p></div></article>
+            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Enquire about rentals</h4><p>Vehicle requests are confirmed only after availability, rates and terms are agreed in writing.</p></div></article>
+          </section>
+        </>}
+
         <section className="section collections-section" id="collections">
           <div className="section-heading">
             <div><p className="eyebrow">01 — THE FASHION EDIT</p><h2>Find your<br /><em>everyday favourite.</em></h2></div>
@@ -645,7 +661,7 @@ function Storefront() {
             {visibleCategories.length === 0 && <p className="empty-search">No matching category. Try “hoodies”, “kids” or “trousers”.</p>}
           </div>
           {!search && <button className="catalogue-more" type="button" onClick={() => setShowAll(!showAll)}>{showAll ? "Show less ↑" : "Explore all categories ↓"}</button>}
-          <p className="catalogue-note">Category artwork is illustrative. Product photographs, prices, sizes and live stock will be added to the catalogue after the inventory is entered.</p>
+          <p className="catalogue-note">Select a product to review its listed price, available sizes, colours and stock. Contact our team if you need help confirming a particular variant.</p>
           <div className="live-catalogue" aria-live="polite">
             <div className="live-catalogue-heading">
               <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>{selectedCategory?selectedCategory+" collection":"Featured pieces"}</h3>{selectedCategory&&<button type="button" className="text-link" onClick={()=>{const url=new URL(window.location.href);url.searchParams.delete("category");window.history.replaceState({screen:"fashion"},"",url.pathname+url.search);setSelectedCategory("");}}>Clear category ×</button>}</div>
@@ -913,6 +929,10 @@ function Storefront() {
         </form>}
       </section></div>}
       {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
+      {activeScreen==="home"&&featuredReviews.length>0&&<section className="testimonials-section" aria-label="Published customer feedback">
+        <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Only feedback approved for public display appears here. Reviews are shown with their actual verification status.</p></div>
+        <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
+      </section>}
       <footer className="site-footer">
         <a className="footer-wordmark" href="#home">{brandAssets.logo_id?<img className="brand-logo-image" src={"/media/"+brandAssets.logo_id} alt="De VERVE"/>:"De VERVE."}</a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
