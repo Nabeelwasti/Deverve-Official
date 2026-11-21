@@ -20,6 +20,9 @@ test("checkout resolves a server-side voucher and records redemption in the orde
  assert.match(worker,/async function resolveEligibleCoupon/);
  assert.match(worker,/resolveEligibleCoupon\(env\.DB, couponCode, signedInCustomer\.customer_id, subtotal\)/);
  assert.match(worker,/INSERT INTO discount_coupon_redemptions/);
+ const orderInsert=worker.indexOf("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status, customer_id)");
+ const redemptionInsert=worker.indexOf("INSERT INTO discount_coupon_redemptions");
+ assert.ok(orderInsert>=0&&redemptionInsert>orderInsert,"customer-linked order must be created before the coupon redemption trigger runs");
  const migration=read("migrations/0037_discount_coupons.sql");
  assert.match(migration,/coupon_not_eligible/);
  assert.match(migration,/NEW\.discount_amount_paisa <= c\.max_discount_paisa/);
