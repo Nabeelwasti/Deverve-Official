@@ -103,6 +103,13 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
   await expect(page.locator(".admin-topbar .admin-brand-logo")).toHaveAttribute("src", "/brand/de-verve-logo.svg");
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
+  const addProductActions = page.locator(".admin-add-product-button");
+  await expect(addProductActions).toHaveCount(2);
+  for (const action of await addProductActions.all()) {
+    await expect(action).toBeVisible();
+    await expect(action.locator(".admin-add-product-label")).toHaveText("Add product");
+    await expect(action.locator(".admin-add-product-label")).toHaveCSS("visibility", "visible");
+  }
   await page.getByRole("button", { name: "Create with AI" }).click();
   await expect(page.locator(".admin-dashboard")).toHaveAttribute("data-admin-screen", "ai");
   await expect(page.locator(".admin-ai-chat-context").getByRole("heading", { name: "How can I help today?" })).toBeVisible();
