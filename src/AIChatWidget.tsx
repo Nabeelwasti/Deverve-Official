@@ -85,6 +85,7 @@ export default function AIChatWidget() {
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const logoUrl = "/api/brand/logo";
+  const markUrl = "/brand/de-verve-mark.svg";
   const listRef = useRef<HTMLDivElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
@@ -172,11 +173,11 @@ export default function AIChatWidget() {
 
   return <>
     <button type="button" className="ai-chat-launcher" aria-label={open ? "Close De VERVE AI chat" : "Open De VERVE AI chat"} onClick={() => setOpen(value => !value)}>
-      <img src={logoUrl} alt="" aria-hidden="true" />
+      <img src={markUrl} alt="" aria-hidden="true" />
     </button>
     {open && <section className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head">
-        <img className="ai-chat-brand-logo" src={logoUrl} alt="De VERVE" />
+        <img className="ai-chat-brand-logo" src={markUrl} alt="De VERVE" />
         <div className="ai-chat-identity"><strong>De VERVE assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
         <button type="button" aria-label="Close chat" onClick={() => { setOpen(false); recognitionRef.current?.stop(); }}>×</button>
       </header>
