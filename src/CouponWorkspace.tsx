@@ -17,22 +17,32 @@ export default function CouponWorkspace({onClose}:{onClose:()=>void}){
  const [busy,setBusy]=useState(false);
  const [message,setMessage]=useState("");
  const [issuedCode,setIssuedCode]=useState("");
+ const [issuedWhatsAppUrl,setIssuedWhatsAppUrl]=useState("");
+ const [issuedCustomerName,setIssuedCustomerName]=useState("");
  const load=async()=>{const data=await adminRequest<{coupons:Coupon[];eligible_exchanges:EligibleExchange[]}>("/api/admin/coupons");setCoupons(data.coupons);setExchanges(data.eligible_exchanges);};
  useEffect(()=>{void load().catch(e=>setMessage(e instanceof Error?e.message:"Voucher workspace could not load."));},[]);
  const selectedExchange=exchanges.find(item=>item.id===draft.exchange_request_id);
  const isExchangePurpose=exchangePurposes.includes(draft.purpose);
  const copyCode=async()=>{try{await navigator.clipboard.writeText(issuedCode);setMessage("Voucher code copied. Share it only with the intended customer.");}catch{setMessage("Clipboard access was unavailable. Select and copy the displayed voucher code manually.");}};
- const submit=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);setMessage("");setIssuedCode("");try{
-  if(isExchangePurpose&&!selectedExchange)throw new Error("Choose a completed exchange case before issuing compensation.");
+ const submit=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);setMessage("");setIssuedCode("");setIssuedWhatsAppUrl("");setIssuedCustomerName("");try{
+  const recipient=selectedExchange;
+  if(isExchangePurpose&&!recipient)throw new Error("Choose a completed exchange case before issuing compensation.");
   const isExchange=isExchangePurpose;
-  const payload={purpose:draft.purpose,discount_type:draft.discount_type,label:draft.label.trim(),discount_value:draft.discount_type==="fixed"?Math.round(Number(draft.discount_value)*100):draft.discount_type==="free_delivery"?0:Number(draft.discount_value),min_subtotal_paisa:Math.round(Number(draft.min_subtotal)*100),expiry_days:Number(draft.expiry_days),max_redemptions:isExchange?1:Number(draft.max_redemptions),per_customer_limit:isExchange?1:Number(draft.per_customer_limit),...(isExchange?{customer_id:selectedExchange!.customer_id,exchange_request_id:selectedExchange!.id}:{})};
-  const result=await adminRequest<{created:boolean;coupon:{code:string}}>("/api/admin/coupons",{method:"POST",body:JSON.stringify(payload)});
-  setIssuedCode(result.coupon.code);setMessage("Voucher created. Copy and share this code securely; it is shown only once.");setDraft(emptyDraft);await load();
+  const payload={purpose:draft.purpose,discount_type:draft.discount_type,label:draft.label.trim(),discount_value:draft.discount_type==="fixed"?Math.round(Number(draft.discount_value)*100):draft.discount_type==="free_delivery"?0:Number(draft.discount_value),min_subtotal_paisa:Math.round(Number(draft.min_subtotal)*100),expiry_days:Number(draft.expiry_days),max_redemptions:isExchange?1:Number(draft.max_redemptions),per_customer_limit:isExchange?1:Number(draft.per_customer_limit),...(isExchange?{customer_id:recipient!.customer_id,exchange_request_id:recipient!.id}:{})};
+  const result=await adminRequest<{created:boolean;coupon:{code:string;expires_at:string}}>("/api/admin/coupons",{method:"POST",body:JSON.stringify(payload)});
+  setIssuedCode(result.coupon.code);setMessage("Voucher created. Copy and share this code securely; it is shown only once.");
+  if(recipient){
+    const rawPhone=recipient.customer_phone.replace(/\D/g,"");
+    const whatsappPhone=rawPhone.startsWith("0")?"92"+rawPhone.slice(1):rawPhone;
+    setIssuedCustomerName(recipient.customer_name);
+    if(whatsappPhone.startsWith("92"))setIssuedWhatsAppUrl("https://wa.me/"+whatsappPhone+"?text="+encodeURIComponent("Assalamu Alaikum "+recipient.customer_name+", De VERVE has issued your exchange support voucher ("+result.coupon.code+"). It is valid until "+new Date(result.coupon.expires_at).toLocaleDateString("en-PK")+". Please sign in to your De VERVE account and enter this code at checkout. This voucher is linked to your account and can be used once."));
+  }
+  setDraft(emptyDraft);await load();
  }catch(e){setMessage(e instanceof Error?e.message:"Voucher could not be created.");}finally{setBusy(false);}};
  const revoke=async(coupon:Coupon)=>{if(!window.confirm("Deactivate this voucher? Existing orders and redemption history will remain unchanged."))return;setBusy(true);try{await adminRequest("/api/admin/coupons/"+coupon.id,{method:"PATCH",body:JSON.stringify({is_active:false,reason:"Deactivated by authorised administrator"})});await load();setMessage("Voucher deactivated. Previous redemption history was preserved.");}catch(e){setMessage(e instanceof Error?e.message:"Voucher could not be deactivated.");}finally{setBusy(false);}};
  return <main className="admin-screen coupon-workspace"><header className="admin-topbar"><div><strong>DE VERVE · CUSTOMER CARE</strong><small>VOUCHER & PROMOTION MANAGEMENT</small></div><button type="button" className="admin-secondary" onClick={onClose}>Back to dashboard</button></header><section className="coupon-content"><div className="coupon-heading"><div><p className="admin-eyebrow">CONTROLLED PROMOTIONS</p><h1>Discount vouchers</h1><p className="admin-muted">Issue customer-specific exchange compensation and controlled marketing offers. Codes are hashed in storage and shown only once.</p></div></div>
  {message&&<p className="admin-message" role="status">{message}</p>}
- {issuedCode&&<div className="coupon-issued"><div><small>NEW VOUCHER · COPY NOW</small><strong>{issuedCode}</strong><p>This code cannot be retrieved again after leaving this screen.</p></div><button type="button" className="admin-primary" onClick={()=>void copyCode()}>Copy code</button></div>}
+ {issuedCode&&<div className="coupon-issued"><div><small>NEW VOUCHER · COPY NOW</small><strong>{issuedCode}</strong><p>This code cannot be retrieved again after leaving this screen.</p>{issuedCustomerName&&<small>Prepared for {issuedCustomerName}</small>}</div><div className="coupon-issued-actions"><button type="button" className="admin-primary" onClick={()=>void copyCode()}>Copy code</button>{issuedWhatsAppUrl&&<a className="admin-secondary" href={issuedWhatsAppUrl} target="_blank" rel="noreferrer">Open WhatsApp chat ↗</a>}</div></div>}
  <section className="admin-panel coupon-create"><h2>Create a voucher</h2><form className="coupon-form" onSubmit={submit}>
  <label>Voucher purpose<select value={draft.purpose} onChange={e=>setDraft({...draft,purpose:e.target.value,exchange_request_id:""})}><option value="campaign">Marketing campaign</option><option value="first_order">First order</option><option value="loyalty">Loyalty reward</option><option value="goodwill">Customer goodwill</option><option value="exchange_compensation">Exchange compensation</option><option value="damaged_item">Damaged item compensation</option><option value="wrong_item">Wrong item / colour mismatch compensation</option><option value="size_exchange">Size exchange inconvenience</option><option value="manual_adjustment">Manual adjustment</option></select></label>
  <label>Discount type<select value={draft.discount_type} onChange={e=>setDraft({...draft,discount_type:e.target.value as Draft["discount_type"],discount_value:e.target.value==="free_delivery"?"0":e.target.value==="percent"?"5":"100"})}><option value="percent">Percentage</option><option value="fixed">Fixed PKR amount</option><option value="free_delivery">Free delivery</option></select></label>
