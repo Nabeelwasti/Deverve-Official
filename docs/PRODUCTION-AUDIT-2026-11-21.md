@@ -1,3 +1,5 @@
+> **Historical snapshot:** This audit records the evidence available at commit `3b200665a49e16524cdf4a4080d92fc9d818f0fb` before the customer-chat release was merged. It is not a statement of the current `main` or live deployment state. The reconciliation branch based on the newer `main` is tracked separately in PR #13; re-run the relevant production checks before relying on any current-state conclusion below.
+
 # Production audit — 21 November 2026
 
 ## Scope and evidence
