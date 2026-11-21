@@ -1366,14 +1366,14 @@ class FakeStatement {
       this.db.audits.push(v); return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO orders")) {
-      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status] = v;
+      const [id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status, customer_id] = v;
       if ([...this.db.orders.values()].some((row) => row.checkout_token === checkout_token)) return { success: true, meta: { changes: 0 } };
-      const checks = v.slice(17);
+      const checks = v.slice(18);
       for (let i = 0; i < checks.length; i += 2) {
         const variant = this.db.variants.get(checks[i]);
         if (!variant || variant.is_active !== 1 || variant.stock_on_hand - (variant.reserved_quantity ?? 0) < checks[i + 1]) return { success: true, meta: { changes: 0 } };
       }
-      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_provider: "manual", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
+      this.db.orders.set(id, { id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, payment_method: "cod", payment_provider: "manual", payment_status: "pending", order_status: "pending", customer_note, checkout_token, delivery_fee_status, customer_id, delivery_fee_token_hash: null, delivery_fee_expires_at: null, created_at: new Date().toISOString(), updated_at: new Date().toISOString() });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("UPDATE orders SET payment_method = ?")) {
