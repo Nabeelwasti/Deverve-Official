@@ -36,6 +36,10 @@ test("admin voucher workspace requires a completed case for exchange compensatio
  assert.match(ui,/Completed exchange case<select required/);
  assert.match(ui,/Copy code/);
  assert.match(ui,/Deactivate/);
+ assert.match(ui,/purposePresets/);
+ assert.match(ui,/max_discount_paisa/);
+ assert.match(ui,/Maximum discount cap \(PKR\)/);
+ assert.match(ui,/Damaged item support/);
 });
 
 test("restored storefront guidance publishes only owner-approved customer feedback",()=>{
