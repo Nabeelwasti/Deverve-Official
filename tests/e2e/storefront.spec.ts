@@ -529,7 +529,7 @@ test("customer AI chat compresses and sends an attached product photo", async ({
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
-  await page.locator(".ai-chat-panel input[type=file]").setInputFiles({
+  await page.locator(".ai-chat-panel input[type=file]").nth(1).setInputFiles({
     name: "garment-label.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=", "base64")
