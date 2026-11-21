@@ -45,19 +45,21 @@ Managers can adjust these values before issue. Do not promise the presets in mar
 
 ## CNIC evidence handling
 
-The current production implementation has a dedicated private R2 bucket, a retention Worker, upload-token expiry cleanup, and database protections against deleting or mutating rental-document records. The current project handover records the owner's instruction to retain rental CNIC evidence permanently. The app must therefore not invent an automatic purge date or delete identity evidence on a timer.
+The owner has now confirmed a defined rental-CNIC policy. Every customer requesting a vehicle rental must submit both sides of the CNIC for identity matching, rental approval, fraud prevention/security for premium and high-value vehicles, and legitimate rental-history verification. Only the owner and specifically authorized relevant rental manager/staff may view it.
+
+**Owner-selected retention rule:** delete CNIC images after 90 days from successful clearance of all payments, damages, charges, challans (if any), penalties and other relevant fees. The clock must not start until an authorized staff member records full reconciliation. A customer may request deletion; staff review and the owner or specifically authorized manager decides and records reasons. Legal holds and unresolved obligations must be assessed before deletion. This policy is captured in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`; formal owner signature and Pakistan-qualified legal review remain pending.
 
 Minimum safeguards:
 1. Keep CNIC objects private; never serve them from public product/media routes.
-2. Require explicit customer consent before upload and explain the rental verification purpose.
-3. Restrict retrieval to the smallest authorised rental-staff roles; log every view, download, and administrative action.
-4. Use short-lived, one-time preview/download tokens and expire upload tokens promptly.
-5. Never include CNIC images, raw object keys, or full identity numbers in email, WhatsApp, analytics, logs, exports, or general audit metadata.
-6. Keep encrypted independent backups with access logging and a tested restore process.
-7. Provide a documented process for access/correction complaints and legal holds.
-8. Reconfirm the permanent-retention instruction with the owner and obtain Pakistan-qualified legal advice on lawful basis, customer notice, and retention duties before expanding collection.
+2. Show a clear customer notice and obtain recorded affirmative acknowledgement before upload; disclose purposes, access roles, retention rule and request process.
+3. Restrict retrieval to named owner/rental roles; enforce authorization server-side and log every view, download, decision and administrative action.
+4. Use short-lived authenticated preview/download access; expire upload tokens promptly.
+5. Never include CNIC images, raw object keys, or full identity numbers in email, WhatsApp, analytics, logs, exports, AI prompts or general audit metadata.
+6. Keep encrypted independent backups with access logging and a tested restore and deletion-expiry process.
+7. Provide a documented deletion-request review, customer response and legal-hold workflow.
+8. Do not extend retention or destroy evidence outside the recorded schedule and approved exception process.
 
-**Important:** permanent retention is the currently recorded owner instruction, not a legal opinion that indefinite retention is required or lawful. Do not change the deployed bucket lock, database triggers, or delete existing evidence as part of routine development. Any future retention change requires a separately reviewed migration and a controlled R2 lifecycle/lock plan.
+**Important:** the 90-day rule is the owner's business policy, not a legal opinion that this exact period is required or lawful. PECA 2016 (as amended) and other applicable law require careful authorization and confidentiality handling. Obtain written Pakistan-qualified legal advice on the full-copy requirement, customer notice, retention, exceptions, cloud processing and deletion rights. Do not change deployed bucket locks, database triggers or delete existing evidence until a separately reviewed migration and tested R2 lifecycle/hold plan is ready.
 
 ## Release status — verified 21 November 2026
 
