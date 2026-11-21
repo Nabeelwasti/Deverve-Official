@@ -267,5 +267,6 @@ assert {"trg_coupon_redemption_validate", "trg_coupon_redemption_increment", "tr
 redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
 redemption_unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
 assert ("order_id",) in redemption_unique_columns and ("exchange_request_id",) in redemption_unique_columns, "An order or exchange case cannot redeem more than one voucher"
+assert any(row[1] == "idx_discount_coupons_one_per_exchange" and row[2] == 1 for row in db.execute("PRAGMA index_list(discount_coupons)")), "An exchange case cannot receive multiple compensation vouchers"
 coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
 assert "exchange_compensation" in coupon_sql and "COALESCE(max_redemptions,0) = 1" in coupon_sql, "Exchange vouchers must be customer/case bound and single-use"
