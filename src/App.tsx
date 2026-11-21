@@ -302,7 +302,7 @@ function Storefront() {
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
-  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
+  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
@@ -410,6 +410,10 @@ function Storefront() {
     root.style.setProperty("--dv-site-surface",siteDesign.surface_color);
     root.style.setProperty("--dv-site-text",siteDesign.text_color);
     root.style.setProperty("--dv-site-radius",siteDesign.corner_radius+"px");
+    root.style.setProperty("--dv-site-font",siteDesign.font_family==="inter"?"Inter,Arial,sans-serif":siteDesign.font_family==="serif"?"Georgia,'Times New Roman',serif":"'DM Sans',Arial,sans-serif");
+    root.style.setProperty("--dv-site-density",siteDesign.density==="compact"?"0.9":siteDesign.density==="airy"?"1.12":"1");
+    root.style.setProperty("--dv-site-button-radius",siteDesign.button_style==="pill"?"999px":siteDesign.button_style==="square"?"4px":"12px");
+    root.style.setProperty("--dv-site-shadow",siteDesign.card_shadow==="flat"?"none":siteDesign.card_shadow==="bold"?"0 14px 38px rgba(12,37,64,.16)":"0 8px 24px rgba(12,37,64,.06)");
     for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
   },[siteDesign]);
   const formatPrice = (paisa: number | null) => paisa === null
