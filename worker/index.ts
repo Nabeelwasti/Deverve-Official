@@ -3209,14 +3209,43 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   const hasLinks=body?.social_links!==undefined;
   const hasBrand=body?.brand_assets!==undefined;
   const hasCategoryAssets=body?.category_assets!==undefined;
+  const hasSiteDesign=body?.site_design!==undefined;
   const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
   const hasNotificationEmails=body?.notification_emails!==undefined;
   const hasPaymentMethods=body?.payment_methods!==undefined;
-  if(!hasLinks&&!hasBrand&&!hasCategoryAssets&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
+  if(!hasLinks&&!hasBrand&&!hasCategoryAssets&&!hasSiteDesign&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
    if(hasCnicUploads&&body?.cnic_uploads_enabled!==true)return error("CNIC uploads are mandatory and cannot be disabled",409);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
   if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!isSafeNotificationRecipient(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid business-owned primary email (the legacy placeholder is blocked), up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!isSafeNotificationRecipient(address))return error("One of the secondary email addresses is invalid or is the blocked legacy placeholder",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
+  let siteDesign:{preset:string;primary_color:string;accent_color:string;surface_color:string;text_color:string;corner_radius:number;hero_title:string;hero_subtitle:string;section_images:Record<string,string>}|undefined;
+  if(hasSiteDesign){
+    const raw=body?.site_design;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid visual design settings",400);
+    const source=raw as Record<string,unknown>;
+    const preset=cleanText(source.preset,32);
+    if(!["midnight-gold","ivory-blue","monochrome"].includes(preset))return error("Choose a supported design preset",400);
+    const color=(value:unknown)=>typeof value==="string"&&/^#[0-9a-f]{6}$/i.test(value)?value.toLowerCase():"";
+    const primary_color=color(source.primary_color),accent_color=color(source.accent_color),surface_color=color(source.surface_color),text_color=color(source.text_color);
+    if(!primary_color||!accent_color||!surface_color||!text_color)return error("Choose valid six-digit HEX colours",400);
+    const corner_radius=Number(source.corner_radius);
+    if(!Number.isInteger(corner_radius)||corner_radius<0||corner_radius>28)return error("Corner radius must be between 0 and 28",400);
+    const hero_title=cleanText(source.hero_title,120),hero_subtitle=cleanText(source.hero_subtitle,300);
+    if(!hero_title||!hero_subtitle)return error("Add a homepage headline and description",400);
+    const rawImages=source.section_images;
+    if(!rawImages||typeof rawImages!=="object"||Array.isArray(rawImages))return error("Submit valid homepage section artwork",400);
+    const allowedImages=new Set(["hero","feature_fashion","feature_account","feature_wholesale","feature_mobility","wholesale","mobility","testimonials","footer"]);
+    const section_images:Record<string,string>={};
+    for(const [key,value] of Object.entries(rawImages as Record<string,unknown>)){
+      if(!allowedImages.has(key))return error("One of the homepage artwork slots is not supported",400);
+      if(value===null||value==="")continue;
+      if(typeof value!=="string"||!/^[a-f0-9-]{36}$/i.test(value))return error("Choose a valid homepage image",400);
+      const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(value).first<{id:string}>();
+      if(!media)return error("A selected homepage image is unavailable",404);
+      section_images[key]=value;
+    }
+    siteDesign={preset,primary_color,accent_color,surface_color,text_color,corner_radius,hero_title,hero_subtitle,section_images};
+  }
   let paymentMethods: {methods:Array<{id:string;label:string;kind:string;provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>}|undefined;
   if(hasPaymentMethods){
     const raw=body?.payment_methods;
@@ -3277,6 +3306,10 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.brand_assets_updated','store_settings','brand_assets',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({logo_set:Boolean(logoId),favicon_set:Boolean(faviconId)})));
   }
   let categoryAssets:Record<string,string> | undefined;
+  if(siteDesign){
+    statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('site_design',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(siteDesign),admin.admin_user_id,now));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.site_design_updated','store_settings','site_design',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({preset:siteDesign.preset,section_image_count:Object.keys(siteDesign.section_images).length})));
+  }
   if(hasCategoryAssets){
     const raw=body?.category_assets;
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid category image settings",400);
@@ -3295,14 +3328,14 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(categoryAssets?{category_assets:categoryAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(categoryAssets?{category_assets:categoryAssets}:{}),...(siteDesign?{site_design:siteDesign}:{}),...(hasCnicUploads?{cnic_uploads_enabled:true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
     try{
-      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets')").all<{setting_key:string;setting_value_json:string}>();
-      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{}};
+      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets','site_design')").all<{setting_key:string;setting_value_json:string}>();
+      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
     }catch{return error("Store settings are temporarily unavailable",503);}
