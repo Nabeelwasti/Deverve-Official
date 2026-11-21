@@ -51,7 +51,7 @@ async function prepareAttachment(file: File): Promise<Attachment> {
     } finally { bitmap?.close(); if (objectUrl) URL.revokeObjectURL(objectUrl); }
   }
   if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
-    if (file.size > 5 * 1024 * 1024) throw new Error("PDF files must be 5 MB or smaller.");
+    if (file.size > 3 * 1024 * 1024) throw new Error("PDF files must be 3 MB or smaller.");
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (new TextDecoder().decode(bytes.subarray(0, 5)) !== "%PDF-") throw new Error("This PDF file appears to be invalid.");
     return { name: file.name.slice(0, 120), mime_type: "application/pdf", data: toBase64(bytes) };
@@ -199,9 +199,9 @@ export default function AIChatWidget() {
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
             </button>
             {attachMenuOpen && <div className="ai-chat-attach-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => fileRef.current?.click()}><span>▤</span> Attach a file</button>
-              <button type="button" role="menuitem" onClick={() => cameraRef.current?.click()}><span>◎</span> Take a photo</button>
-              <button type="button" role="menuitem" onClick={() => galleryRef.current?.click()}><span>▧</span> Choose from gallery</button>
+              <button type="button" role="menuitem" onClick={() => fileRef.current?.click()}><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm7 0v5h5M9 13h6m-6 4h6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></span> Attach a file</button>
+              <button type="button" role="menuitem" onClick={() => cameraRef.current?.click()}><span aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h3l1.5-2h7L17 7h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><circle cx="12" cy="13" r="3.2" fill="none" stroke="currentColor" strokeWidth="1.6"/></svg></span> Take a photo</button>
+              <button type="button" role="menuitem" onClick={() => galleryRef.current?.click()}><span aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6"/><circle cx="8" cy="9" r="1.4" fill="currentColor"/><path d="m5 17 5-5 3 3 2-2 4 4" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg></span> Choose from gallery</button>
             </div>}
           </div>
           <input ref={fileRef} type="file" accept="application/pdf,text/plain,.pdf,.txt" hidden onChange={event => void attach(event.currentTarget.files)} />
