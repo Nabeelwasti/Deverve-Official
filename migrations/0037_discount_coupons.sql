@@ -73,6 +73,7 @@ BEGIN
             ELSE 0
           END
       )
+      AND (SELECT customer_id FROM orders WHERE id = NEW.order_id) = NEW.customer_id
       AND NEW.discount_amount_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id)
       AND (c.max_discount_paisa IS NULL OR NEW.discount_amount_paisa <= c.max_discount_paisa)
       AND (c.discount_type != 'fixed' OR NEW.discount_amount_paisa <= c.discount_value)
