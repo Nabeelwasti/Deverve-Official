@@ -1,7 +1,27 @@
 # De VERVE release and owner setup checklist
 
-Last reconciled: 20 November 2026 — production migration verification and deployment activation  
+Last reconciled: 21 November 2026 — catalogue release deployed; owner/operational acceptance still open  
 Target: Pakistan-first storefront, garments catalogue, rentals, POS and AI-assisted operations.
+
+
+## Latest production release — 21 November 2026
+
+- [x] Merge reviewed catalogue cleanup and bulk-import hardening (PR #6).
+- [x] Exact-main CI run [44882915815](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44882915815) passed 114 desktop/mobile browser tests plus build/type-check, dependency audit, Worker tests, D1 schema checks and security-header checks.
+- [x] Pin Cloudflare Pages build to Node.js 24 with `.node-version`; latest Pages build used Node.js 24.22.1 and completed without the prior ZXing engine warning.
+- [x] Deploy exact source commit `8798eb8e43a6b78dd5226334ea158ab3af507edc` to Pages deployment `03fd4f75-a5fa-4e03-804f-fa4cac529621`. Cloudflare reports successful build and deploy stages.
+- [x] Production browser smoke: canonical `https://deverve-official.pages.dev/` returned HTTP 200, expected De VERVE title, CSP, HSTS and `nosniff` headers.
+- [x] Remove non-functional Home trust-pillar cards and generic intro strip; keep functional category navigation.
+- [x] Unpublish obvious placeholder catalogue entries `Testing` (zero active variants) and `Choco` (description `Test`, no product image). Added audit-log entries; underlying stock and media were retained. Rechecked the public Home page and confirmed neither placeholder is shown.
+- [x] Restore Cloudflare source-triggered and production auto-deploy settings to disabled after the controlled release; preview deployments remain disabled.
+- [ ] Complete independent off-account D1/R2 backup and isolated restore.
+- [ ] Reconcile physical stock by exact size/colour; correct the legacy Trouser aggregate row, Tolaza colour/photo mismatch and missing SKU/barcodes.
+- [ ] Verify T2 product identity and brand authenticity before relying on the PULL&BEAR claim; attach verified product photos and details to incomplete published listings.
+- [ ] Obtain owner/legal approval for CNIC retention.
+- [ ] Verify real Gemini key decryption/provider response, Turnstile challenge acceptance, Resend delivery and Meta WhatsApp opt-in/templates.
+- [ ] Complete physical Android camera/barcode/QR acceptance, POS/finance reconciliation, checkout and rental acceptance.
+- [ ] Configure GitHub Actions Cloudflare test credentials and run the isolated remote D1 integration suite; ordinary CI currently skips it.
+
 
 This checklist separates source-code work from account configuration and production operations. A passing build does not complete an external provider integration. Do not enable a provider until its test transaction and callback/delivery path have been verified.
 
