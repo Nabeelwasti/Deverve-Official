@@ -277,3 +277,45 @@ assert "o.customer_id = NEW.customer_id" in coupon_trigger_sql and "o.discount_a
 assert "r.status='redeemed'" in coupon_trigger_sql and "trg_coupon_order_cancel_reversal" in coupon_triggers, "Cancelled orders must reverse coupon usage and release customer limits"
 assert "NEW.discount_amount_paisa <= c.max_discount_paisa" in coupon_trigger_sql and "c.discount_type != 'percent'" in coupon_trigger_sql, "Database redemption must enforce voucher discount caps and percentage limits"
 assert "(SELECT customer_id FROM orders WHERE id = NEW.order_id) = NEW.customer_id" in coupon_trigger_sql, "Voucher redemption must be bound to the same customer as the order"
+
+
+# Exercise one-time exchange voucher redemption, order-cancel reversal, and safe reuse.
+db.execute(
+    "INSERT INTO customers (id,email,password_hash,full_name,phone) VALUES (?,?,?,?,?)",
+    ("coupon-customer", "coupon-customer@example.test", "test-hash", "Coupon Customer", "+923000000001"),
+)
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status) VALUES (?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-source-order", "DV-COUPON-SOURCE", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 10000, "coupon-customer", "delivered"),
+)
+db.execute(
+    "INSERT INTO exchange_requests (id,order_id,customer_id,exchange_number,reason,details,status,completed_at) VALUES (?,?,?,?,?,?,?,?)",
+    ("coupon-exchange", "coupon-source-order", "coupon-customer", "EX-COUPON-TEST", "size_issue", "Size exchange test", "completed", "2026-11-21T00:00:00.000Z"),
+)
+db.execute(
+    "INSERT INTO discount_coupons (id,code_hash,code_prefix,label,purpose,discount_type,discount_value,max_discount_paisa,min_subtotal_paisa,customer_id,exchange_request_id,starts_at,expires_at,max_redemptions,per_customer_limit) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-test", "sha256-test", "DV-TEST…", "Size exchange support", "size_exchange", "percent", 500, 500, 0, "coupon-customer", "coupon-exchange", "2026-11-20T00:00:00.000Z", "2026-12-21T00:00:00.000Z", 1, 1),
+)
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status,discount_amount_paisa,discount_code,discount_label) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-order-one", "DV-COUPON-ONE", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 9500, "coupon-customer", "pending", 500, "DV-TEST…", "Size exchange support"),
+)
+db.execute(
+    "INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) VALUES (?,?,?,?,?,?)",
+    ("coupon-redemption-one", "coupon-test", "coupon-order-one", "coupon-customer", "coupon-exchange", 500),
+)
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 1
+db.execute("UPDATE orders SET order_status='cancelled' WHERE id='coupon-order-one'")
+assert db.execute("SELECT status,reversed_at,reversal_reason FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone() == ("reversed", db.execute("SELECT reversed_at FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone()[0], "order_cancelled")
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 0
+
+db.execute(
+    "INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,customer_id,order_status,discount_amount_paisa,discount_code,discount_label) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    ("coupon-order-two", "DV-COUPON-TWO", "Coupon Customer", "+923000000001", "Test address", "Jhelum", 10000, 9500, "coupon-customer", "pending", 500, "DV-TEST…", "Size exchange support"),
+)
+db.execute(
+    "INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) VALUES (?,?,?,?,?,?)",
+    ("coupon-redemption-two", "coupon-test", "coupon-order-two", "coupon-customer", "coupon-exchange", 500),
+)
+assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 1
+assert db.execute("SELECT COUNT(*) FROM discount_coupon_redemptions WHERE exchange_request_id='coupon-exchange' AND status='redeemed'").fetchone()[0] == 1
