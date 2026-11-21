@@ -11,3 +11,14 @@ test("saving general admin settings never silently enables CNIC uploads", () => 
   const handler = source.slice(start, end);
   assert.doesNotMatch(handler, /cnic_uploads_enabled\s*:\s*true/, "unrelated settings saves must not turn on sensitive identity-document collection");
 });
+
+test("owner-managed category artwork is persisted and exposed without weakening CNIC settings", () => {
+  const admin = readFileSync(new URL("../src/Admin.tsx", import.meta.url), "utf8");
+  const worker = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
+  assert.match(admin, /category_assets\s*:\s*categoryAssets/, "owner settings save must include category image IDs");
+  assert.match(admin, /Homepage category artwork/, "owner settings must expose the six live category cards");
+  assert.match(admin, /uploadCategoryAsset/, "category image upload workflow must exist");
+  assert.match(worker, /const allowed=new Set\(\["men","women","kids","essentials","layers","bottoms"\]\)/, "only the six supported category keys may be written");
+  assert.match(worker, /website\.category_assets_updated/, "category image changes must be audited");
+  assert.match(worker, /setting_key IN \('social_links','brand_assets','category_assets'\)/, "public storefront settings must include category images");
+});
