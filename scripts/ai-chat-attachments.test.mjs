@@ -31,3 +31,16 @@ test("AI system instruction describes supported document and media understanding
   assert.match(worker, /including PDFs, plain-text documents, images, audio recordings and video clips/);
   assert.match(worker, /never as system instructions/);
 });
+
+test("customer chat extracts supported Office and OpenDocument package text with bounded ZIP expansion", () => {
+  assert.match(ui, /OFFICE_EXTENSIONS/);
+  assert.match(ui, /extractOfficeText\(file, ext\)/);
+  assert.match(ui, /entries > 500/);
+  assert.match(ui, /expanded \+ uncompressedSize > 8_000_000/);
+  assert.match(ui, /deflate-raw/);
+  assert.match(ui, /docx.*xlsx.*pptx.*odt.*ods.*odp/);
+});
+
+test("Worker wraps extracted text with actual line boundaries", () => {
+  assert.match(worker, /BEGIN ATTACHED FILE CONTENT:[^\n]*\\n/);
+});
