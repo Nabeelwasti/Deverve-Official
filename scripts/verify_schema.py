@@ -251,5 +251,6 @@ assert any(row[1] == "idx_discount_coupons_active_window" for row in db.execute(
 assert any(row[1] == "idx_coupon_redemptions_coupon_customer" for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Per-customer redemption lookup index is missing"
 coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
 assert "code_hash" in coupon_sql and "exchange_compensation" in coupon_sql and "per_customer_limit" in coupon_sql, "Voucher storage must enforce hashed codes and exchange restrictions"
-redemption_indexes = {row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")}
-assert any(row[1] == "sqlite_autoindex_discount_coupon_redemptions_2" for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Each order can have only one voucher redemption"
+redemption_unique_indexes = [row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)") if row[2] == 1]
+unique_columns = [tuple(info[2] for info in db.execute(f"PRAGMA index_info({index_name})")) for index_name in redemption_unique_indexes]
+assert ("order_id",) in unique_columns and ("exchange_request_id",) in unique_columns, "Orders and exchange cases must not receive duplicate voucher redemptions"
