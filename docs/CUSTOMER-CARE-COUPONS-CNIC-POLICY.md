@@ -9,7 +9,7 @@ The voucher schema in migration 0037 is the persistence foundation, not a live c
 - **Exchange compensation:** one customer, one exchange case, one redemption. Use when a customer returns an item because of a verified size issue, damaged item, wrong item, or colour/item mismatch and the business chooses store credit instead of a replacement or cash refund.
 - **Goodwill:** service recovery for a documented complaint.
 - **First order / loyalty / campaign:** controlled marketing offers with expiry, minimum basket, usage cap and per-customer limit.
-- **Wholesale:** separate targeted offers; never silently apply retail promotions to wholesale quotes.
+- **Wholesale:** wholesale voucher redemption is reserved for a later phase; do not issue wholesale-purpose codes until quotation discounts are implemented and tested.
 - **Manual adjustment:** owner/manager-approved correction with a mandatory reason and audit event.
 
 ### Safe defaults
@@ -33,7 +33,7 @@ The voucher schema in migration 0037 is the persistence foundation, not a live c
 | First order | 5% | One use per customer, 14 days, minimum basket set by owner |
 | Loyalty thank-you | 5% | One use per customer, 30 days |
 | Campaign | Owner-defined | Start/end date, total cap, per-customer cap |
-| Wholesale | Owner-defined | Wholesale-only eligibility; cannot combine with retail offers |
+| Wholesale | Not enabled | Do not issue until wholesale quotation redemption is implemented |
 
 These percentages and durations are recommendations for configuration, not promises to customers. The owner should confirm margins and published terms before any campaign is activated.
 
