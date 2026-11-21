@@ -1,6 +1,6 @@
 import type { Env } from "../worker/index";
 export async function onRequest(context:{request:Request;env:Env}):Promise<Response>{
- let icon="/icons/icon-192.svg";let iconType="image/svg+xml";
+ let icon="/brand/de-verve-mark.svg";let iconType="image/svg+xml";
  try{
   const row=await context.env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
   if(row){const assets=JSON.parse(row.setting_value_json) as {favicon_id?:string|null;logo_id?:string|null};const id=assets.favicon_id||assets.logo_id;if(typeof id==="string"&&/^[a-f0-9-]{36}$/i.test(id)){const media=await context.env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND status = ? LIMIT 1").bind(id,"ready").first<{mime_type:string}>();if(media){icon="/media/"+id;iconType=media.mime_type;}}}
