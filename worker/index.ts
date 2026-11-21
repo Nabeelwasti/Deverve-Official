@@ -2331,7 +2331,7 @@ async function adminMediaRoutes(request: Request, env: Env, url: URL): Promise<R
   if (assetMatch && request.method === "DELETE") {
     if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can archive media", 403);
     try {
-      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? UNION ALL SELECT product_id AS id FROM product_media_assets WHERE media_asset_id = ? UNION ALL SELECT id FROM vehicles WHERE image_key = ? UNION ALL SELECT vehicle_id AS id FROM vehicle_media_assets WHERE media_asset_id = ? UNION ALL SELECT setting_key AS id FROM store_settings WHERE setting_key='brand_assets' AND (json_extract(setting_value_json,'$.logo_id')=? OR json_extract(setting_value_json,'$.favicon_id')=?) UNION ALL SELECT s.setting_key AS id FROM store_settings s, json_each(s.setting_value_json,'$.methods') pm WHERE s.setting_key='payment_methods' AND json_extract(pm.value,'$.qr_media_id')=? UNION ALL SELECT ps.page_id AS id FROM site_page_sections ps JOIN site_pages p ON p.id=ps.page_id WHERE (json_extract(ps.content_json,'$.image_url')='/media/'||? OR json_extract(ps.content_json,'$.video_url')='/media/'||? OR instr(char(10)||coalesce(json_extract(ps.content_json,'$.images'),'')||char(10),char(10)||'/media/'||?||char(10))>0) UNION ALL SELECT entity_id AS id FROM content_revisions WHERE entity_type IN ('page','section') AND instr(snapshot_json,'/media/'||?)>0 LIMIT 1").bind(assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1]).first<{ id: string }>();
+      const used = await env.DB.prepare("SELECT id FROM products WHERE image_key = ? UNION ALL SELECT product_id AS id FROM product_media_assets WHERE media_asset_id = ? UNION ALL SELECT id FROM vehicles WHERE image_key = ? UNION ALL SELECT vehicle_id AS id FROM vehicle_media_assets WHERE media_asset_id = ? UNION ALL SELECT setting_key AS id FROM store_settings WHERE setting_key='brand_assets' AND (json_extract(setting_value_json,'$.logo_id')=? OR json_extract(setting_value_json,'$.favicon_id')=?) UNION ALL SELECT setting_key AS id FROM store_settings WHERE setting_key='category_assets' AND (json_extract(setting_value_json,'$.men')=? OR json_extract(setting_value_json,'$.women')=? OR json_extract(setting_value_json,'$.kids')=? OR json_extract(setting_value_json,'$.essentials')=? OR json_extract(setting_value_json,'$.layers')=? OR json_extract(setting_value_json,'$.bottoms')=?) UNION ALL SELECT s.setting_key AS id FROM store_settings s, json_each(s.setting_value_json,'$.methods') pm WHERE s.setting_key='payment_methods' AND json_extract(pm.value,'$.qr_media_id')=? UNION ALL SELECT ps.page_id AS id FROM site_page_sections ps JOIN site_pages p ON p.id=ps.page_id WHERE (json_extract(ps.content_json,'$.image_url')='/media/'||? OR json_extract(ps.content_json,'$.video_url')='/media/'||? OR instr(char(10)||coalesce(json_extract(ps.content_json,'$.images'),'')||char(10),char(10)||'/media/'||?||char(10))>0) UNION ALL SELECT entity_id AS id FROM content_revisions WHERE entity_type IN ('page','section') AND instr(snapshot_json,'/media/'||?)>0 LIMIT 1").bind(assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1],assetMatch[1]).first<{ id: string }>();
       if (used) return error("This media item is still used by a product, vehicle, brand setting, payment method or website page. Remove its references before archiving.", 409);
       const result = await env.DB.prepare("UPDATE media_assets SET status = 'archived', updated_at = ? WHERE id = ? AND status <> 'archived'").bind(new Date().toISOString(), assetMatch[1]).run();
       if ((result.meta?.changes ?? 0) !== 1) return error("Media item not found", 404);
@@ -3201,17 +3201,18 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:true,notification_emails:{primary:"",secondary:[],enabled:false}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else if(row.setting_key==="cnic_uploads_enabled")settings.cnic_uploads_enabled=true;else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:true,notification_emails:{primary:"",secondary:[],enabled:false},category_assets:{}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else if(row.setting_key==="cnic_uploads_enabled")settings.cnic_uploads_enabled=true;else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
   const body=await readJson(request);
   const hasLinks=body?.social_links!==undefined;
   const hasBrand=body?.brand_assets!==undefined;
+  const hasCategoryAssets=body?.category_assets!==undefined;
   const hasCnicUploads=body?.cnic_uploads_enabled!==undefined;
   const hasNotificationEmails=body?.notification_emails!==undefined;
   const hasPaymentMethods=body?.payment_methods!==undefined;
-  if(!hasLinks&&!hasBrand&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
+  if(!hasLinks&&!hasBrand&&!hasCategoryAssets&&!hasCnicUploads&&!hasNotificationEmails&&!hasPaymentMethods)return error("Submit website settings to save",400);
   if(hasCnicUploads&&typeof body?.cnic_uploads_enabled!=="boolean")return error("Choose a valid CNIC upload setting",400);
    if(hasCnicUploads&&body?.cnic_uploads_enabled!==true)return error("CNIC uploads are mandatory and cannot be disabled",409);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
@@ -3275,16 +3276,33 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('brand_assets',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(brandAssets),admin.admin_user_id,now));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.brand_assets_updated','store_settings','brand_assets',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({logo_set:Boolean(logoId),favicon_set:Boolean(faviconId)})));
   }
+  let categoryAssets:Record<string,string> | undefined;
+  if(hasCategoryAssets){
+    const raw=body?.category_assets;
+    if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid category image settings",400);
+    const allowed=new Set(["men","women","kids","essentials","layers","bottoms"]);
+    categoryAssets={};
+    for(const [key,value] of Object.entries(raw as Record<string,unknown>)){
+      if(!allowed.has(key))return error("One of the category image keys is not supported",400);
+      if(value===null||value==="")continue;
+      if(typeof value!=="string"||!/^[a-f0-9-]{36}$/i.test(value))return error("Choose a valid category image",400);
+      const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(value).first<{id:string}>();
+      if(!media)return error("A selected category image is unavailable",404);
+      categoryAssets[key]=value;
+    }
+    statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('category_assets',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(categoryAssets),admin.admin_user_id,now));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.category_assets_updated','store_settings','category_assets',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({categories:Object.keys(categoryAssets)})));
+  }
   try{
     await env.DB.batch(statements);
-    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
+    return json({updated:true,...(links?{social_links:links}:{}),...(brandAssets?{brand_assets:brandAssets}:{}),...(categoryAssets?{category_assets:categoryAssets}:{}),...(hasCnicUploads?{cnic_uploads_enabled:true}:{}),...(notificationEmails?{notification_emails:notificationEmails}:{})});
   }catch{return error("Website settings could not be saved",503);}
 }
 async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Response|null>{
   if(request.url && new URL(request.url).pathname==="/api/storefront/settings" && request.method==="GET"){
     try{
-      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets')").all<{setting_key:string;setting_value_json:string}>();
-      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null}};
+      const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets')").all<{setting_key:string;setting_value_json:string}>();
+      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
     }catch{return error("Store settings are temporarily unavailable",503);}
