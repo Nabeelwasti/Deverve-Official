@@ -759,10 +759,9 @@ export function isWithinExchangeWindow(deliveredAt: string | null, now = Date.no
 }
 export function selectOrderPromotion(subtotalPaisa: number, advancePayment: boolean): OrderPromotion {
   if (!Number.isSafeInteger(subtotalPaisa) || subtotalPaisa < 0) throw new Error("Invalid order subtotal");
-  if (subtotalPaisa > 4_000_000) return { code: "ORDER_45", label: "45% order discount", discountPercent: 45, discountAmountPaisa: Math.floor(subtotalPaisa * 0.45), freeDelivery: false };
-  if (advancePayment) return { code: "ADVANCE_40", label: "40% advance payment discount", discountPercent: 40, discountAmountPaisa: Math.floor(subtotalPaisa * 0.40), freeDelivery: false };
-  if (subtotalPaisa > 2_000_000) return { code: "ORDER_30", label: "30% order discount", discountPercent: 30, discountAmountPaisa: Math.floor(subtotalPaisa * 0.30), freeDelivery: false };
-  if (subtotalPaisa > 500_000) return { code: "FREE_DELIVERY", label: "Free delivery", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: true };
+  // Never promise arbitrary discounts based on spend or payment method.
+  // All offers must be explicitly configured, customer-eligible vouchers.
+  void advancePayment;
   return { code: "", label: "", discountPercent: 0, discountAmountPaisa: 0, freeDelivery: false };
 }
 
@@ -852,17 +851,31 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     for (const reservation of reservations.values()) {
       if (reservation.variant.stock_on_hand - reservation.variant.reserved_quantity < reservation.quantity) return error("There is not enough combined stock for the selected sizes and colours. Please update your cart.", 409);
     }
-    const advancePayment = requestedPaymentProvider !== "manual" && env.SAFEPAY_ENV === "production";
-    const promotion = selectOrderPromotion(subtotal, advancePayment);
+    const promotion = selectOrderPromotion(subtotal, false);
+    const couponCode = cleanText(body.coupon_code, 64).toUpperCase();
+    let couponRedemption: { coupon: EligibleCoupon; discountPaisa: number; freeDelivery: boolean } | null = null;
+    let appliedPromotion = promotion;
+    if (couponCode) {
+      if (!signedInCustomer) return error("Sign in to use a customer voucher.", 401);
+      couponRedemption = await resolveEligibleCoupon(env.DB, couponCode, signedInCustomer.customer_id, subtotal);
+      if (!couponRedemption) return error("This voucher is invalid, expired, already used, or does not apply to this order.", 400);
+      appliedPromotion = {
+        code: couponRedemption.coupon.code_prefix,
+        label: couponRedemption.coupon.label,
+        discountPercent: couponRedemption.coupon.discount_type === "percent" ? couponRedemption.coupon.discount_value / 100 : 0,
+        discountAmountPaisa: couponRedemption.discountPaisa,
+        freeDelivery: couponRedemption.freeDelivery,
+      };
+    }
     const deliveryFee = 0;
-    const total = subtotal - promotion.discountAmountPaisa + deliveryFee;
+    const total = subtotal - appliedPromotion.discountAmountPaisa + deliveryFee;
     const id = crypto.randomUUID();
     const randomPart = base64Url(crypto.getRandomValues(new Uint8Array(5))).toUpperCase().replace(/[-_]/g, "").slice(0, 7);
     const orderNumber = "DV-" + new Date().toISOString().slice(0, 10).replace(/-/g, "") + "-" + randomPart;
     const now = new Date().toISOString();
     const reservationLines = [...reservations.values()];
     const conditions = reservationLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, promotion.code, promotion.label, promotion.discountAmountPaisa, promotion.freeDelivery ? 1 : 0, note, token, promotion.freeDelivery ? "accepted" : "pending_quote"];
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, appliedPromotion.code, appliedPromotion.label, appliedPromotion.discountAmountPaisa, appliedPromotion.freeDelivery ? 1 : 0, note, token, appliedPromotion.freeDelivery ? "accepted" : "pending_quote"];
     for (const reservation of reservationLines) orderValues.push(reservation.variant.id, reservation.quantity);
     const statements = [
       env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
@@ -881,6 +894,9 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     for (const reservation of reservationLines) {
       statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, ?, ? FROM orders WHERE id = ? AND order_status = 'pending'").bind(crypto.randomUUID(), id, reservation.variant.id, reservation.quantity, now, now, id));
     }
+    if (couponRedemption) {
+      statements.push(env.DB.prepare("INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)").bind(crypto.randomUUID(), couponRedemption.coupon.id, id, signedInCustomer!.customer_id, couponRedemption.coupon.exchange_request_id, couponRedemption.discountPaisa, id));
+    }
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
     statements.push(env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?,?,'email','owner_order_created')").bind(crypto.randomUUID(),id));
@@ -893,7 +909,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
       return error("Your order requires staff reconciliation before payment. Contact De VERVE with reference " + orderNumber + ".", 503);
     }
     if ((results[results.length - 1]?.meta?.changes ?? 0) !== 1) return error("Your order was created, but could not be linked to your account. Please contact De VERVE with reference " + orderNumber + ".", 503);
-    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: promotion.code, discount_label: promotion.label, discount_amount_paisa: promotion.discountAmountPaisa, free_delivery: promotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
+    return json({ accepted: true, order_number: orderNumber, subtotal_paisa: subtotal, discount_code: appliedPromotion.code, discount_label: appliedPromotion.label, discount_amount_paisa: appliedPromotion.discountAmountPaisa, free_delivery: appliedPromotion.freeDelivery, delivery_fee_paisa: deliveryFee, total_paisa: total, order_status: "pending", payment_provider: requestedPaymentProvider }, 201);
   } catch (caught) {
     console.error("[checkout] failed", caught instanceof Error ? caught.message : "unknown error");
     try {
@@ -5232,6 +5248,8 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
   const publicWholesaleResponse = await publicWholesaleQuoteRoutes(request, env, url);
   if (publicWholesaleResponse) return publicWholesaleResponse;
 
+  const couponValidationResponse = await publicCouponRoutes(request, env, url);
+  if (couponValidationResponse) return couponValidationResponse;
   const publicDeliveryFeeResponse = await publicDeliveryFeeRoutes(request, env, url);
   if (publicDeliveryFeeResponse) return publicDeliveryFeeResponse;
 
