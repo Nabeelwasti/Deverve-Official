@@ -602,3 +602,12 @@ Limits in this implementation: at most three files, 4 MB per binary/PDF file, 6 
 **Not every conceivable file format is supported.** Modern Office/OpenDocument packages (DOCX, XLSX, PPTX, ODT, ODS, ODP) are parsed locally in the browser by reading only selected XML entries, with entry-count, per-entry and total expanded-size bounds. Extracted text is sent to Gemini as plain text. This is not full-fidelity document rendering: charts, formulas, images, comments, tracked changes, layout, macros, embedded objects and some spreadsheet relationships may be omitted. Legacy DOC/XLS/PPT, encrypted documents, archives, executables and proprietary formats remain unsupported; convert them to PDF or plain text. The app does not upload opaque ZIP bytes to Gemini.
 
 This work is **not production-released** until the new CI run, browser upload tests, Worker validation tests and a real Gemini acceptance test with representative PDF, text, image, audio and video samples pass. Provider/API quotas, file size and model modality availability apply. No attachment content is retained by the application after the request, but the content is transmitted to the configured Gemini provider for inference.
+
+
+Attachment acceptance checklist for the combined PR:
+- Run the full repository CI against the main-targeting pull request, including frontend/Worker TypeScript checks, Worker tests, schema validation and existing Playwright suite.
+- Add/execute browser-level upload coverage for PDF, plain text and Office/OpenDocument files, plus rejection of encrypted, malformed and oversized packages.
+- In a non-production test environment, exercise the actual configured Gemini fallback chain with representative PDF, image, audio and video fixtures; verify model capability errors fail clearly and never report a false successful analysis.
+- Verify on a physical Android browser that the camera, gallery, general file picker, attachment removal, progress, errors and message submission work at supported viewport sizes.
+- Confirm attachment payloads are absent from D1/R2, logs, analytics and error telemetry; inspect only redacted request metadata.
+- Keep production release blocked until the above evidence is attached to the PR and owner accepts the operational/privacy wording.
