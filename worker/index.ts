@@ -1001,7 +1001,7 @@ async function resolveEligibleCoupon(db: D1Database, rawCode: string, customerId
 
 async function adminCouponRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection=url.pathname==="/api/admin/coupons";
-  const match=url.pathname.match(/^\\/api\\/admin\\/coupons\\/([a-f0-9-]{36})$/i);
+  const match = url.pathname.match(/^\/api\/admin\/coupons\/([a-f0-9-]{36})$/i);
   if(!collection&&!match)return null;
   let admin:SessionRow|null;
   try{admin=await currentAdmin(request,env.DB);}catch{return error("Voucher management is temporarily unavailable.",503);}
