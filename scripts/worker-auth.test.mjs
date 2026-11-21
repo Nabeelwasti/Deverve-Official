@@ -2250,6 +2250,12 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   assert.equal(missingDocuments.status, 400);
   assert.equal(db.rentalRequests.size, 0);
 
+  const missingNoticeVersion = makeForm(vehicleOne, "Missing notice version");
+  missingNoticeVersion.delete("cnic_consent_version");
+  const unversionedConsent = await sendForm(missingNoticeVersion);
+  assert.equal(unversionedConsent.status, 400);
+  assert.equal(db.rentalRequests.size, 0);
+
   const first = await sendForm(makeForm(vehicleOne, "Rental Customer", "with_driver"));
   assert.equal(first.status, 201);
   const firstPayload = await first.json();
