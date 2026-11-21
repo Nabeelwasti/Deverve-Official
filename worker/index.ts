@@ -983,7 +983,7 @@ async function resolveEligibleCoupon(db: D1Database, rawCode: string, customerId
   const code=cleanText(rawCode,64).toUpperCase();
   if(!/^[A-Z0-9-]{6,64}$/.test(code)||!Number.isSafeInteger(subtotalPaisa)||subtotalPaisa<0)return null;
   const coupon=await db.prepare("SELECT c.*, (SELECT COUNT(*) FROM discount_coupon_redemptions r WHERE r.coupon_id=c.id AND r.customer_id=?) AS customer_redemptions FROM discount_coupons c WHERE c.code_hash=? LIMIT 1").bind(customerId,await sha256(code)).first<EligibleCoupon>();
-  if(!coupon||coupon.is_active!==1||coupon.starts_at>Date.now().toString()&&Date.parse(coupon.starts_at)>Date.now()||coupon.expires_at&&Date.parse(coupon.expires_at)<=Date.now())return null;
+  if(!coupon||coupon.is_active!==1||!Number.isFinite(Date.parse(coupon.starts_at))||Date.parse(coupon.starts_at)>Date.now()||coupon.expires_at&&Date.parse(coupon.expires_at)<=Date.now())return null;
   if(coupon.customer_id&&coupon.customer_id!==customerId)return null;
   if(subtotalPaisa<coupon.min_subtotal_paisa||coupon.max_redemptions!==null&&coupon.usage_count>=coupon.max_redemptions||coupon.customer_redemptions>=coupon.per_customer_limit)return null;
   if(coupon.exchange_request_id){
