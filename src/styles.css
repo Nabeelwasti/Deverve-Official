@@ -1891,3 +1891,52 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .content-category-image-row img{width:64px;height:54px;object-fit:cover;border-radius:7px;background:#e8edf3}
 @media(max-width:600px){.content-category-image-row{grid-template-columns:1fr 1fr}.content-category-image-row img{grid-column:1/-1;width:100%;height:100px}.golden-quote{margin-top:18px}}
 @media(prefers-reduced-motion:reduce){.brand-loading-screen:before,.brand-loading-screen:after,.brand-loader-mark,.brand-loader-track i{animation:none!important}.public-category-grid>a,.public-category-grid>a>img{transition:none!important}}
+
+
+/* De VERVE editorial commerce system — consistent premium palette and catalogue hierarchy */
+:root{--blue:#173b55;--deep-blue:#071d31;--bright-blue:#b08b55;--pale-blue:#f2ede4;--ice:#f7f4ee;--ink:#142e43;--muted:#718091;--line:#e8e0d4}
+.announcement{background:#071d31!important}
+.site-header{background:rgba(255,253,248,.96)!important;border-color:#e8e0d4!important}
+.wordmark,.brand-type strong{color:#071d31}
+.wordmark>span:first-child,.wordmark-dot{color:#b08b55}
+.main-nav button:hover,.main-nav a:hover{color:#9a7748!important;background:#f3eee5!important}
+.header-cta{border-color:#c9b58f;color:#82663e}
+.header-cta:hover{background:#071d31;color:#f5dfb6}
+.hero{background:radial-gradient(ellipse at 82% 46%,rgba(191,164,120,.13),transparent 42%),linear-gradient(115deg,#fffefa 0%,#fbf8f1 55%,#f1ece2 100%)}
+.hero h1,.section-heading h2,.wholesale-copy h2,.contact-section h2{color:#071d31}
+h1 em,h2 em{color:#ad8955}
+.hero-description{color:#687889}
+.hero-art-glow{background:radial-gradient(circle,rgba(191,164,120,.22),transparent 68%)}
+.button-primary{background:#0a243a;color:#f3dfb9}
+.button-primary:hover{background:#173f5b}
+.text-link{color:#987748}
+.intro-strip,.mobility-section{background:linear-gradient(115deg,#071a2d,#102f49)!important}
+.intro-strip strong,.mobility-section h2 em{color:#dfc18b}
+.collection-grid{gap:20px}
+.collection-card{border-radius:16px}
+.collection-art{border-radius:16px 16px 0 0}
+.live-catalogue{border-color:#e6dece}
+.live-catalogue-heading h3{color:#102b42}
+.live-catalogue-meta-chips{gap:7px}
+.category-filter-chip{border-radius:999px;border-color:#e2d9ca;background:#fffdfa;color:#5e6b78}
+.category-filter-chip.is-active{border-color:#b08b55;background:#f5eee2;color:#785b31}
+.catalogue-sort-select{border-color:#e1d8c8;border-radius:10px;background:#fffdfa}
+.product-grid{gap:20px}
+.product-card{overflow:hidden;border:1px solid #e9e2d7;border-radius:15px;background:#fffdfa;box-shadow:0 5px 22px rgba(8,29,49,.035);transition:transform .28s var(--dv-ease-out),box-shadow .28s,border-color .28s}
+.product-card:hover{transform:translateY(-4px);border-color:#c9b48f;box-shadow:0 17px 40px rgba(8,29,49,.10)}
+.product-visual{background:linear-gradient(145deg,#f7f4ed,#ebe5da)}
+.product-visual img{transition:transform .55s var(--dv-ease-out)}
+.product-card:hover .product-visual img{transform:scale(1.045)}
+.product-info h4{color:#0c2941}
+.product-buy-row{border-color:#eee7dc}
+.product-buy-row a,.product-buy-row button{color:#987748}
+.product-info .button-primary{border-radius:8px}
+.testimonials-section{background:#fbf8f2}
+.testimonial-card{border-radius:15px}
+.site-footer{background:#071d31!important;color:#d8d1c5!important;border-color:#233d52!important}
+.site-footer p,.site-footer>span{color:#c0b7a7}
+.footer-wordmark{color:#f3e6cf}
+.footer-wordmark span{color:#c4a16b}
+.mobile-dock{background:rgba(255,253,248,.97)!important;border-color:#e8e0d4!important;backdrop-filter:blur(18px)}
+.mobile-dock button.active{color:#9b7948!important}
+@media(max-width:520px){.product-grid{gap:11px}.product-card{border-radius:12px}.product-info{padding:12px}.product-info h4{font-size:13px}}
