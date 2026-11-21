@@ -764,17 +764,11 @@ function Storefront() {
                   <span>✨</span> <strong>{promotionPreview.label}</strong> is selected for this order. Promotions cannot be combined.
                 </div>
               ) : (
-                <>
-                  <div className="cart-shipping-track-label">
-                    <span>Free-delivery offer</span>
-                    <strong>{formatPrice(Math.max(100, 500_100 - cartSubtotal))} away</strong>
-                  </div>
-                  <div className="cart-shipping-track">
-                    <div className="cart-shipping-fill" style={{ width: `${Math.min(99, Math.floor((cartSubtotal / 500_100) * 100))}%` }} />
-                  </div>
-                  <small>Add {formatPrice(Math.max(100, 500_100 - cartSubtotal))} more to qualify for the free-delivery offer. Delivery coverage is confirmed before dispatch.</small>
-                </>
-              )}
+                <div className="cart-shipping-info">
+                  <strong>Delivery charges are confirmed separately</strong>
+                  <small>Our team will confirm the delivery area, fee and estimated timeline before dispatch. No free-delivery offer is applied unless a valid voucher is shown at checkout.</small>
+                </div>
+              )})}
             </div>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
               <div className="cart-line-image" aria-hidden="true">{item.image_url?<img src={item.image_url} alt="" loading="lazy"/>:<span>DV</span>}</div>
