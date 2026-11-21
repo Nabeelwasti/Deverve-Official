@@ -792,7 +792,7 @@ test("owner website settings exposes the visual design studio and saves validate
   await page.getByLabel("Homepage headline").fill("A better De VERVE experience");
   await page.getByLabel("Website typography").selectOption("inter");
   await page.getByRole("button", { name: "Save website visual design" }).click();
-  await expect(page.getByRole("status")).toContainText("Website visual settings saved");
+  await expect(page.locator(".admin-site-design-studio").getByRole("status")).toContainText("Website visual settings saved");
   expect(saved?.site_design?.hero_title).toBe("A better De VERVE experience");
   expect(saved?.site_design?.font_family).toBe("inter");
 });
