@@ -1225,3 +1225,7 @@
 .admin-design-actions>span{color:#74869a;font-size:10px}
 @media(max-width:760px){.admin-design-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-design-artwork-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.admin-design-copy{grid-template-columns:1fr}}
 @media(max-width:480px){.admin-site-design-studio{padding:14px}.admin-site-design-heading{flex-direction:column}.admin-design-presets{grid-template-columns:1fr}.admin-design-artwork-grid{grid-template-columns:1fr}}
+
+.admin-design-selects select{width:100%;min-width:0;padding:10px;border:1px solid #d5dee8;border-radius:9px;background:#fff;color:#24415d;font:12px inherit}
+.admin-design-actions .admin-secondary{padding:10px 14px;border:1px solid #d4deea;border-radius:10px;background:#fff;color:#24415d;font-size:11px;font-weight:750;cursor:pointer}
+.admin-design-actions .admin-secondary:disabled{opacity:.55;cursor:not-allowed}
