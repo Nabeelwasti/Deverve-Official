@@ -632,15 +632,16 @@ function Storefront() {
             <p>Explore garments for everyday wear, request a wholesale quotation, or enquire about vehicle rental. <strong>Orders and rental requests are confirmed by our team before fulfilment.</strong></p>
             <div className="intro-mark" aria-hidden="true">DV<span>.</span></div>
           </section>
-          <section className="trust-pillars-section" aria-label="How De VERVE works">
-            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Choose your size & colour</h4><p>Product pages show the size and colour combinations currently listed as available.</p></div></article>
-            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Manage your orders</h4><p>Use your customer account to review order updates and submit eligible exchange requests.</p></div></article>
-            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Ask about wholesale</h4><p>Share your required products and quantities so our team can prepare a tailored quotation.</p></div></article>
-            <article className="trust-pillar-card"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Enquire about rentals</h4><p>Vehicle requests are confirmed only after availability, rates and terms are agreed in writing.</p></div></article>
+          <section className="trust-pillars-section" aria-label="Explore De VERVE services">
+            <a className="trust-pillar-card" href="/?screen=fashion"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Find your fit</h4><p>Explore garments, product details and available size–colour combinations.</p><small>Explore fashion ↗</small></div></a>
+            <a className="trust-pillar-card" href="/account"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Your orders, together</h4><p>Sign in to follow order updates and manage eligible exchange requests.</p><small>Open your account ↗</small></div></a>
+            <a className="trust-pillar-card" href="/?screen=wholesale"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Wholesale made clear</h4><p>Share product requirements and quantities for a tailored quotation.</p><small>Request a quote ↗</small></div></a>
+            <a className="trust-pillar-card" href="/?screen=mobility"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Plan your journey</h4><p>Explore vehicle options and send a rental enquiry to our team.</p><small>Explore rentals ↗</small></div></a>
           </section>
         </>}
 
         <section className="section collections-section" id="collections">
+          {!selectedCategory && <>
           <div className="section-heading">
             <div><p className="eyebrow">01 — THE FASHION EDIT</p><h2>Find your<br /><em>everyday favourite.</em></h2></div>
             <div className="catalogue-tools">
@@ -664,6 +665,7 @@ function Storefront() {
           </div>
           {!search && <button className="catalogue-more" type="button" onClick={() => setShowAll(!showAll)}>{showAll ? "Show less ↑" : "Explore all categories ↓"}</button>}
           <p className="catalogue-note">Select a product to review its listed price, available sizes, colours and stock. Contact our team if you need help confirming a particular variant.</p>
+          </>}
           <div className="live-catalogue" aria-live="polite">
             <div className="live-catalogue-heading">
               <div><p className="eyebrow">LIVE FROM OUR CATALOGUE</p><h3>{selectedCategory?selectedCategory+" collection":"Featured pieces"}</h3>{selectedCategory&&<button type="button" className="text-link" onClick={()=>{const url=new URL(window.location.href);url.searchParams.delete("category");window.history.replaceState({screen:"fashion"},"",url.pathname+url.search);setSelectedCategory("");}}>Clear category ×</button>}</div>
@@ -926,7 +928,7 @@ function Storefront() {
       </section></div>}
       {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
       {activeScreen==="home"&&featuredReviews.length>0&&<section className="testimonials-section" aria-label="Published customer feedback">
-        <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Only feedback approved for public display appears here. Reviews are shown with their actual verification status.</p></div>
+        <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Customer experiences, shared in their own words.</p></div>
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
       <footer className="site-footer">
