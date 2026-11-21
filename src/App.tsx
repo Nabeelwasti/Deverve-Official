@@ -768,7 +768,7 @@ function Storefront() {
                   <strong>Delivery charges are confirmed separately</strong>
                   <small>Our team will confirm the delivery area, fee and estimated timeline before dispatch. No free-delivery offer is applied unless a valid voucher is shown at checkout.</small>
                 </div>
-              )})}
+              )}
             </div>
             <div className="cart-line-list">{cart.map((item)=> <article className="cart-line-item" key={cartLineKey(item)}>
               <div className="cart-line-image" aria-hidden="true">{item.image_url?<img src={item.image_url} alt="" loading="lazy"/>:<span>DV</span>}</div>
