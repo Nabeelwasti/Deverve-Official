@@ -11,7 +11,7 @@ type SpeechRecognitionLike = {
   start(): void; stop(): void; abort(): void;
 };
 type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
-type BrandSettings = { brand_assets?: { logo_id?: string | null } };
+
 const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. How may I help?" };
 
 function toBase64(bytes: Uint8Array): string {
@@ -84,7 +84,7 @@ export default function AIChatWidget() {
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
-  const [logoUrl, setLogoUrl] = useState("/brand/de-verve-logo.svg");
+  const logoUrl = "/api/brand/logo";
   const listRef = useRef<HTMLDivElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
@@ -92,14 +92,6 @@ export default function AIChatWidget() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceDraftPrefixRef = useRef("");
 
-  useEffect(() => {
-    let active = true;
-    void fetch("/api/storefront/settings", { headers: { accept: "application/json" }, cache: "no-store" })
-      .then(async response => response.ok ? response.json() as Promise<BrandSettings> : null)
-      .then(data => { if (active && data?.brand_assets?.logo_id) setLogoUrl("/media/" + data.brand_assets.logo_id); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, attachments]);
   useEffect(() => () => { recognitionRef.current?.abort(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }, []);
 
