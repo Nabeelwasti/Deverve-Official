@@ -15,6 +15,7 @@ import AdminAIAssistant from "./AdminAIAssistant";
 import ImageCropper from "./ImageCropper";
 import CnicBackupControl from "./CnicBackupControl";
 import ProductCsvImport from "./ProductCsvImport";
+import CouponWorkspace from "./CouponWorkspace";
 
 type AdminUser = { id: string; email: string; role: string };
 type AdminPaymentMethod = {id:string;label:string;kind:"cod"|"bank"|"wallet"|"link"|"qr";provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null};
@@ -1059,6 +1060,7 @@ export default function Admin() {
   const canEditProducts = ["owner", "manager", "catalogue"].includes(admin.role);
   if (activeAdminScreen === "content" && ["owner", "manager"].includes(admin.role)) return <ContentStudio onClose={() => navigateAdminScreen("overview")} />;
   if (activeAdminScreen === "notifications" && admin.role === "owner") return <NotificationCenter onClose={() => navigateAdminScreen("overview")} />;
+  if (activeAdminScreen === "coupons" && ["owner","manager"].includes(admin.role)) return <CouponWorkspace onClose={() => navigateAdminScreen("overview")} />;
   return (
     <main className="admin-screen admin-dashboard" data-admin-screen={activeAdminScreen}>
       <header className="admin-topbar">
@@ -1081,7 +1083,7 @@ export default function Admin() {
           </details>
           {["owner","manager","orders"].includes(admin.role)&&<details className="admin-ribbon-group" open={openAdminMenu==="sales"}>
             <summary aria-expanded={openAdminMenu==="sales"} onClick={event=>toggleAdminMenu("sales",event)}><span className="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 3h14v18l-2-1-2 1-3-1-3 1-2-1-2 1V3zM8 8h8M8 12h8M8 16h5"/></svg></span><span>Sales & finance</span><span className="admin-nav-chevron" aria-hidden="true">⌄</span></summary>
-            {openAdminMenu==="sales" && adminMenuPosition && createPortal(<div className="admin-ribbon-popover" style={{position:"fixed",top:adminMenuPosition.top,left:adminMenuPosition.left,width:adminMenuPosition.width,maxHeight:"min(70dvh,520px)",overflowY:"auto"}}><button type="button" className={activeAdminScreen==="orders"?"is-current":""} onClick={()=>navigateAdminScreen("orders")}>Orders & payments</button><button type="button" className={activeAdminScreen==="wholesale"?"is-current":""} onClick={()=>navigateAdminScreen("wholesale")}>Wholesale quotations</button><button type="button" className={activeAdminScreen==="exchanges"?"is-current":""} onClick={()=>navigateAdminScreen("exchanges")}>Exchanges</button><button type="button" className={activeAdminScreen==="returns"?"is-current":""} onClick={()=>navigateAdminScreen("returns")}>Legacy return records</button></div>,document.body)}
+            {openAdminMenu==="sales" && adminMenuPosition && createPortal(<div className="admin-ribbon-popover" style={{position:"fixed",top:adminMenuPosition.top,left:adminMenuPosition.left,width:adminMenuPosition.width,maxHeight:"min(70dvh,520px)",overflowY:"auto"}}><button type="button" className={activeAdminScreen==="orders"?"is-current":""} onClick={()=>navigateAdminScreen("orders")}>Orders & payments</button><button type="button" className={activeAdminScreen==="wholesale"?"is-current":""} onClick={()=>navigateAdminScreen("wholesale")}>Wholesale quotations</button><button type="button" className={activeAdminScreen==="exchanges"?"is-current":""} onClick={()=>navigateAdminScreen("exchanges")}>Exchanges</button><button type="button" className={activeAdminScreen==="returns"?"is-current":""} onClick={()=>navigateAdminScreen("returns")}>Legacy return records</button>{["owner","manager"].includes(admin.role)&&<button type="button" className={activeAdminScreen==="coupons"?"is-current":""} onClick={()=>navigateAdminScreen("coupons")}>Discount vouchers</button>}</div>,document.body)}
           </details>}
           {["owner","manager","orders","rental"].includes(admin.role)&&<details className="admin-ribbon-group" open={openAdminMenu==="customers"}>
             <summary aria-expanded={openAdminMenu==="customers"} onClick={event=>toggleAdminMenu("customers",event)}><span className="admin-nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3 20v-1.4A4.6 4.6 0 0 1 7.6 14h2.8a4.6 4.6 0 0 1 4.6 4.6V20M16 5.2a3.2 3.2 0 0 1 0 5.6M17 14h.4a3.6 3.6 0 0 1 3.6 3.6V20"/></svg></span><span>Customers & service</span><span className="admin-nav-chevron" aria-hidden="true">⌄</span></summary>
