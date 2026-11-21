@@ -589,7 +589,7 @@ The admin upload workflow and live card renderer are implemented in main. The la
 
 ## Customer AI chat file attachments — 22 November 2026
 
-A draft implementation is under review on `feat/ai-chat-multifile-understanding` (stacked on the customer-chat/branding candidate). It changes the customer composer from photo-only selection to a general file picker and sends bounded attachments to the existing server-side Gemini integration.
+The customer AI chat attachment implementation was merged into `main` in PR #12 (`3812cb4e26f5cdb03f8564e32e7036b9bee7da04`) and deployed to Cloudflare Pages. It changes the customer composer from photo-only selection to a general file picker and sends bounded attachments to the existing server-side Gemini integration. The additional owner visual-design studio and brand refinements are being validated separately in PR #13.
 
 Current supported input paths:
 - Images: JPEG, PNG and WebP.
@@ -611,3 +611,12 @@ Attachment acceptance checklist for the combined PR:
 - Verify on a physical Android browser that the camera, gallery, general file picker, attachment removal, progress, errors and message submission work at supported viewport sizes.
 - Confirm attachment payloads are absent from D1/R2, logs, analytics and error telemetry; inspect only redacted request metadata.
 - Keep production release blocked until the above evidence is attached to the PR and owner accepts the operational/privacy wording.
+
+
+## Owner visual design studio and brand system — 22 November 2026
+
+The reconciliation branch for PR #13 adds an owner-only visual design workspace under Admin → Website & brand settings. It provides validated colour presets and custom HEX colours, typography, spacing density, button shape, card shadows, homepage headline/subtitle, and image slots for the hero, service cards, wholesale, mobility, testimonials and footer. Uploaded artwork is restricted to ready image assets; settings are validated server-side, saved as the public `site_design` setting, and recorded in the audit log. Referenced design artwork is protected from media archival while in use.
+
+The storefront reads the public design settings and applies the selected tokens and artwork without replacing catalogue/product/vehicle image management. The latest merged AI attachment route from PR #12 is retained; the older attachment implementation from the audit branch is not copied over it. Original De VERVE logo and DV monogram assets are used for browser/PWA branding, and the logo endpoint is shared by exports and inventory labels.
+
+**Release gate:** PR #13 must pass the current-head GitHub Actions build, dependency audit, Worker/security tests, schema checks and desktop/mobile Playwright tests before merge. Owner review of the design studio and actual uploaded artwork are still required. This visual designer controls the documented global tokens and selected artwork slots; it is not an arbitrary drag-and-drop editor for every page element.

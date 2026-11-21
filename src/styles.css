@@ -2079,3 +2079,44 @@ h1 em,h2 em{color:#ad8955}
 .ai-chat-attachments .ai-chat-file-preview{display:grid;place-items:center;width:76px;height:68px;border:1px solid #dce5ee;border-radius:8px;background:linear-gradient(145deg,#f7f9fc,#e8eef5);color:#173b5b;font-size:13px;font-weight:850;letter-spacing:.06em}
 .ai-chat-attachments figcaption{max-width:76px}
 .ai-chat-attach-menu button:focus-visible,.ai-chat-plus:focus-visible{outline:2px solid #c49a45;outline-offset:2px}
+
+
+/* Owner-controlled live website design tokens and section artwork. */
+body{background:var(--dv-site-surface,#fbfaf7);color:var(--dv-site-text,#19324b)}
+.site-shell{background:var(--dv-site-surface,#fbfaf7);color:var(--dv-site-text,#19324b)}
+.site-header,.collection-card,.product-card,.trust-pillar-card,.testimonial-card,.wholesale-art,.mobility-vehicle-card{border-radius:var(--dv-site-radius,16px)}
+.button-primary,.header-cta,.ai-chat-send{background:var(--dv-site-primary,#102d49)!important}
+.button-primary,.header-cta{border-color:var(--dv-site-primary,#102d49)!important}
+.eyebrow,.category-arrow,.testimonial-rating{color:var(--dv-site-accent,#c8a96d)}
+.hero-art.has-owner-art{background-image:linear-gradient(180deg,rgba(5,18,32,.05),rgba(5,18,32,.25)),var(--dv-section-hero-image);background-size:cover;background-position:center}
+.hero-art.has-owner-art>.hero-art-glow,.hero-art.has-owner-art>.hero-art-word,.hero-art.has-owner-art>.hero-garment{display:none}
+.hero-art.has-owner-art>.hero-art-label{background:rgba(8,28,47,.82);color:#fff;border:1px solid rgba(238,218,178,.35);backdrop-filter:blur(12px)}
+.trust-pillar-card.has-owner-art{position:relative;isolation:isolate;overflow:hidden;color:#fff;background-size:cover;background-position:center}
+.trust-pillar-card.has-owner-art:before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(145deg,rgba(5,18,32,.28),rgba(5,18,32,.82))}
+.trust-pillar-card.feature-fashion{background-image:var(--dv-section-feature_fashion-image)}
+.trust-pillar-card.feature-account{background-image:var(--dv-section-feature_account-image)}
+.trust-pillar-card.feature-wholesale{background-image:var(--dv-section-feature_wholesale-image)}
+.trust-pillar-card.feature-mobility{background-image:var(--dv-section-feature_mobility-image)}
+.trust-pillar-card.has-owner-art h4,.trust-pillar-card.has-owner-art p,.trust-pillar-card.has-owner-art small,.trust-pillar-card.has-owner-art .trust-pillar-icon{color:#fff}
+.wholesale-art.has-owner-art{background-image:linear-gradient(145deg,rgba(5,18,32,.12),rgba(5,18,32,.64)),var(--dv-section-wholesale-image);background-size:cover;background-position:center;color:#fff}
+.wholesale-art.has-owner-art .wholesale-art-mark,.wholesale-art.has-owner-art .wholesale-caption{color:#fff;background:rgba(8,28,47,.55);backdrop-filter:blur(10px)}
+.mobility-section.has-owner-art{position:relative;isolation:isolate;background-image:linear-gradient(100deg,rgba(5,18,32,.8),rgba(5,18,32,.45)),var(--dv-section-mobility-image);background-size:cover;background-position:center;color:#fff}
+.mobility-section.has-owner-art .eyebrow,.mobility-section.has-owner-art h2,.mobility-section.has-owner-art p{color:#fff}
+.testimonials-section.has-owner-art{padding:clamp(24px,5vw,56px);border-radius:var(--dv-site-radius,16px);background-image:linear-gradient(100deg,rgba(5,18,32,.78),rgba(5,18,32,.46)),var(--dv-section-testimonials-image);background-size:cover;background-position:center;color:#fff}
+.testimonials-section.has-owner-art .eyebrow,.testimonials-section.has-owner-art h2,.testimonials-section.has-owner-art .section-aside{color:#fff}
+.site-footer.has-owner-art{background-image:linear-gradient(100deg,rgba(5,18,32,.9),rgba(5,18,32,.68)),var(--dv-section-footer-image);background-size:cover;background-position:center}
+.site-footer.has-owner-art,.site-footer.has-owner-art p,.site-footer.has-owner-art span,.site-footer.has-owner-art .site-credit{color:#fff}
+.site-footer{background:#102d49;color:#dce8f4}
+.site-credit{color:#dce8f4!important}
+.site-credit strong{color:#fff!important}
+.brand-logo-image{object-fit:contain;max-width:100%;height:auto}
+@media(prefers-reduced-motion:reduce){.product-card,.trust-pillar-card,.collection-card{transition:none!important;animation:none!important}}
+
+.ai-chat-attach-menu button span{display:grid;place-items:center;width:24px;height:24px}
+.ai-chat-attach-menu button span svg{width:19px;height:19px}
+.ai-chat-message-actions button svg{width:15px;height:15px}
+
+body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
+.button-primary,.header-cta,.ai-chat-send,.product-action-button{border-radius:var(--dv-site-button-radius,12px)!important}
+.product-card,.collection-card,.trust-pillar-card,.testimonial-card,.mobility-vehicle-card{box-shadow:var(--dv-site-shadow,0 8px 24px rgba(12,37,64,.06))}
+.home-section,.section-pad{padding-block:calc(36px * var(--dv-site-density,1))}

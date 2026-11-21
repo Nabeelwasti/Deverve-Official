@@ -13,11 +13,11 @@ export default function BrandHead(){
     // Use the official uploaded logo as the tab icon when a dedicated favicon
     // has not been supplied. Never leave the generic placeholder in that case.
     const iconAssetId=faviconId??logoId;
-    const iconUrl=iconAssetId?"/media/"+encodeURIComponent(iconAssetId)+"?v="+encodeURIComponent(iconAssetId):"/icons/icon-192.svg";
+    const iconUrl=iconAssetId?"/media/"+encodeURIComponent(iconAssetId)+"?v="+encodeURIComponent(iconAssetId):"/brand/de-verve-mark.svg";
     let icon=document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if(!icon){icon=document.createElement("link");icon.rel="icon";document.head.appendChild(icon);}
     icon.href=iconUrl;icon.type=iconAssetId?"":"image/svg+xml";
-    icon.onerror=()=>{icon!.href="/icons/icon-192.svg";icon!.type="image/svg+xml";};
+    icon.onerror=()=>{icon!.href="/brand/de-verve-mark.svg";icon!.type="image/svg+xml";};
     let touch=document.head.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
     if(!touch){touch=document.createElement("link");touch.rel="apple-touch-icon";document.head.appendChild(touch);}
     touch.href=iconAssetId?"/media/"+encodeURIComponent(iconAssetId)+"?v="+encodeURIComponent(iconAssetId):iconUrl;
