@@ -576,7 +576,7 @@ test("customer AI chat accepts a PDF attachment and submits it to the assistant"
   await page.locator('.ai-chat-panel input[type="file"][accept="application/pdf,text/plain,.pdf,.txt"]').setInputFiles({
     name: "product-details.pdf",
     mimeType: "application/pdf",
-    buffer: Buffer.from("%PDF-1.4\\n1 0 obj<</Type/Catalog>>endobj\\n%%EOF", "utf8")
+    buffer: Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\n%%EOF", "utf8")
   });
   await expect(page.getByText("product-details.pdf")).toBeVisible();
   await page.getByRole("button", { name: "Send message" }).click();
