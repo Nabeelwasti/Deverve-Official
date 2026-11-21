@@ -407,6 +407,7 @@ function Storefront() {
   const promotionPreview = couponPreview && couponPreview.subtotal === cartSubtotal && couponPreview.code === checkoutForm.coupon_code.trim().toUpperCase()
     ? { label: couponPreview.label, amount: couponPreview.discount_amount_paisa, freeDelivery: couponPreview.free_delivery }
     : null;
+  useEffect(()=>{if(couponPreview&&couponPreview.subtotal!==cartSubtotal){setCouponPreview(null);setCheckoutForm(current=>current.coupon_code?{...current,coupon_code:""}:current);setCheckoutMessage("Your cart changed. Reapply the voucher to confirm it for the updated order.");}},[cartSubtotal,couponPreview]);
   const applyCheckoutCoupon = async () => {
     const code=checkoutForm.coupon_code.trim().toUpperCase();
     if(!code){setCouponPreview(null);setCheckoutMessage("Enter a voucher code first.");return;}
