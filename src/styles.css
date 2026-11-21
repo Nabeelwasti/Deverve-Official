@@ -1786,3 +1786,11 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
   .hero-stats-strip strong { font-size: 15px; }
   .hero-stats-strip small { font-size: 9px; }
 }
+
+.checkout-coupon-field{display:grid;gap:8px;margin:16px 0;padding:14px;border:1px solid #e3e8ef;border-radius:12px;background:#fbfcfe}
+.checkout-coupon-field>label{font-size:13px;font-weight:750;color:#253b56}
+.checkout-coupon-field>div{display:flex;gap:8px;align-items:stretch}
+.checkout-coupon-field input{flex:1;min-width:0;border:1px solid #d5deea;border-radius:9px;padding:11px 12px;font:inherit;font-size:14px;text-transform:uppercase}
+.checkout-coupon-field button{flex:0 0 auto;white-space:nowrap}
+.checkout-coupon-field small{color:#74839a;font-size:11px;line-height:1.5}
+@media(max-width:520px){.checkout-coupon-field>div{flex-direction:column}.checkout-coupon-field button{width:100%}}
