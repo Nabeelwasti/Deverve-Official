@@ -953,7 +953,11 @@ function Storefront() {
   );
 }
 
-function BrandLoadingScreen(){return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><div className="brand-loader-mark">DV<span>.</span></div><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>}
+function BrandLoadingScreen(){
+  const [logoUrl,setLogoUrl]=useState("/brand/de-verve-logo.svg");
+  useEffect(()=>{let active=true;void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(response=>response.ok?response.json():null).then((data:{brand_assets?:{logo_id?:string|null}}|null)=>{const id=data?.brand_assets?.logo_id;if(active&&id)setLogoUrl("/media/"+encodeURIComponent(id));}).catch(()=>{});return()=>{active=false;};},[]);
+  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><img className="brand-loader-logo" src={logoUrl} alt="De VERVE"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
+}
 
 function HomePageRoute() {
   const requestedScreen=new URLSearchParams(window.location.search).get("screen");
