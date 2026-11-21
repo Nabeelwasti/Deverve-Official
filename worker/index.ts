@@ -4308,10 +4308,10 @@ async function productReviewRoutes(request: Request, env: Env, url: URL): Promis
         }
         const id = crypto.randomUUID();
         await env.DB.batch([
-          env.DB.prepare("INSERT INTO product_reviews (id,product_id,customer_id,order_id,order_item_id,verified_purchase,rating,title,body,status) VALUES (?,?,?,?,?,?,?,?,?,'approved')").bind(id,productId,customer.customer_id,orderId,orderItemId || null,verifiedPurchase,Number(rating),title,reviewBody),
+          env.DB.prepare("INSERT INTO product_reviews (id,product_id,customer_id,order_id,order_item_id,verified_purchase,rating,title,body,status) VALUES (?,?,?,?,?,?,?,?,?,'pending')").bind(id,productId,customer.customer_id,orderId,orderItemId || null,verifiedPurchase,Number(rating),title,reviewBody),
           env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'product_review.submitted','product_review',?,?)").bind(crypto.randomUUID(),id,JSON.stringify({product_id:productId,customer_id:customer.customer_id,rating:Number(rating),verified_purchase:Boolean(verifiedPurchase)})),
         ]);
-        return json({submitted:true,status:"approved",message:"Thank you for sharing your feedback. It is now visible to everyone."},201);
+        return json({submitted:true,status:"pending",message:"Thank you for sharing your feedback. It will appear after our team reviews it."},201);
       } catch (caught) {
         const message = caught instanceof Error ? caught.message : "";
         if (/unique|constraint/i.test(message)) return error("You have already reviewed this delivered item.",409);
