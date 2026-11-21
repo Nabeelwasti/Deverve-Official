@@ -32,9 +32,12 @@ CREATE TABLE IF NOT EXISTS discount_coupon_redemptions (
   customer_id TEXT NOT NULL REFERENCES customers(id) ON DELETE RESTRICT,
   exchange_request_id TEXT REFERENCES exchange_requests(id) ON DELETE RESTRICT,
   discount_amount_paisa INTEGER NOT NULL CHECK (discount_amount_paisa >= 0),
+  status TEXT NOT NULL DEFAULT 'redeemed' CHECK (status IN ('redeemed','reversed')),
+  reversed_at TEXT,
+  reversal_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   UNIQUE(coupon_id, customer_id, order_id),
-  UNIQUE(exchange_request_id)
+  CHECK ((status='redeemed' AND reversed_at IS NULL AND reversal_reason IS NULL) OR (status='reversed' AND reversed_at IS NOT NULL AND reversal_reason IS NOT NULL))
 );
 
 CREATE INDEX IF NOT EXISTS idx_discount_coupons_active_window ON discount_coupons(is_active, starts_at, expires_at);
@@ -42,6 +45,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_discount_coupons_one_per_exchange ON disco
 CREATE INDEX IF NOT EXISTS idx_discount_coupons_customer ON discount_coupons(customer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_customer ON discount_coupon_redemptions(coupon_id, customer_id);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_exchange ON discount_coupon_redemptions(exchange_request_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_coupon_redemptions_one_active_exchange ON discount_coupon_redemptions(exchange_request_id) WHERE exchange_request_id IS NOT NULL AND status='redeemed';
 
 
 -- Enforce voucher eligibility and usage accounting inside D1's transaction.
@@ -91,7 +95,7 @@ BEGIN
       )
       AND (
         SELECT COUNT(*) FROM discount_coupon_redemptions r
-        WHERE r.coupon_id = c.id AND r.customer_id = NEW.customer_id
+        WHERE r.coupon_id = c.id AND r.customer_id = NEW.customer_id AND r.status='redeemed'
       ) < c.per_customer_limit
   ) THEN RAISE(ABORT, 'coupon_not_eligible') END;
 END;
@@ -107,8 +111,42 @@ END;
 
 CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_immutable_update
 BEFORE UPDATE ON discount_coupon_redemptions
+WHEN NOT (
+  OLD.status='redeemed'
+  AND NEW.status='reversed'
+  AND NEW.reversed_at IS NOT NULL
+  AND NEW.reversal_reason IS NOT NULL
+  AND NEW.id=OLD.id
+  AND NEW.coupon_id=OLD.coupon_id
+  AND NEW.order_id=OLD.order_id
+  AND NEW.customer_id=OLD.customer_id
+  AND NEW.exchange_request_id IS OLD.exchange_request_id
+  AND NEW.discount_amount_paisa=OLD.discount_amount_paisa
+  AND NEW.created_at=OLD.created_at
+)
 BEGIN
   SELECT RAISE(ABORT, 'coupon_redemption_immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_reversal_decrement
+AFTER UPDATE OF status ON discount_coupon_redemptions
+WHEN OLD.status='redeemed' AND NEW.status='reversed'
+BEGIN
+  UPDATE discount_coupons
+  SET usage_count=MAX(0,usage_count-1),
+      updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE id=NEW.coupon_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_coupon_order_cancel_reversal
+AFTER UPDATE OF order_status ON orders
+WHEN NEW.order_status='cancelled' AND OLD.order_status!='cancelled'
+BEGIN
+  UPDATE discount_coupon_redemptions
+  SET status='reversed',
+      reversed_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),
+      reversal_reason='order_cancelled'
+  WHERE order_id=NEW.id AND status='redeemed';
 END;
 
 CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_immutable_delete
