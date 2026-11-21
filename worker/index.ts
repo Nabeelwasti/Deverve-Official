@@ -4573,7 +4573,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     const text=typeof (item as {text?:unknown}).text==="string"?(item as {text:string}).text:undefined;
     const data=typeof (item as {data?:unknown}).data==="string"?(item as {data:string}).data:undefined;
     if(text!==undefined){
-      if(mime!=="text/plain"||text.length<1||text.length>180_000||text.includes("\\u0000"))return error("Text attachments must be valid UTF-8 plain text under 180,000 characters",400);
+      if(mime!=="text/plain"||text.length<1||text.length>180_000||text.includes(String.fromCharCode(0)))return error("Text attachments must be valid UTF-8 plain text under 180,000 characters",400);
       textAttachmentChars+=text.length;if(textAttachmentChars>300_000)return error("Combined text attachments are too large. Split them into smaller files.",413);
       attachmentBytes+=new TextEncoder().encode(text).byteLength;
       if(name)contents[contents.length-1].parts.push({text:"Attached text file name (untrusted metadata): "+name});
