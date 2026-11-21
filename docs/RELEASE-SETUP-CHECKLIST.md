@@ -168,3 +168,17 @@ This section describes the new staged voucher release. It is not production-acti
 - [ ] Confirm the visible Add product label in both the admin dashboard and catalogue workspace on desktop and a narrow mobile viewport.
 - [ ] Record owner acceptance of voucher amounts, expiry defaults, customer-care compensation policy, published exchange policy and privacy notice. Confirm the indefinite CNIC retention instruction with the owner and obtain qualified Pakistan legal review before representing it as legally approved.
 - [ ] Keep the release in a non-accepted state if any required backup, migration, checkout, security, device or owner-acceptance check fails. A successful Pages deployment alone is not production acceptance.
+
+
+## Final reconciliation — 21 November 2026
+
+- [x] Apply production migration 0037 and verify two coupon tables, six indexes, six triggers and zero foreign-key violations.
+- [x] Restore the 21 November D1 SQL backup into a disposable D1 database; verify 62 tables, 217 rows, 96 indexes/triggers and zero FK violations; run migration 0037 on the restored copy; delete all temporary databases.
+- [x] Push final main commit `b575306e0ed251d81079a54f8fc61f9d0ecbbc8d`; exact-main CI [44902016578](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44902016578) passed.
+- [x] Deploy exact main commit to Cloudflare Pages production deployment `7cc647dd-b275-4682-b46d-ae8455c1493d`: https://7cc647dd.deverve-official.pages.dev.
+- [x] Confirm GitHub `main` integration, production deployments enabled and preview deployments disabled.
+- [ ] Run customer-origin HTTP/API/browser smoke tests against the exact latest deployment; deployment success alone is not a browser acceptance test.
+- [ ] Establish independent off-account D1/R2 backups and verify a full D1 + R2 restore. Same-account R2/D1 restore drill does not meet this gate.
+- [ ] Complete written owner and Pakistan-qualified legal review using [CNIC-RETENTION-APPROVAL-RECORD.md](CNIC-RETENTION-APPROVAL-RECORD.md). Indefinite retention is not legally approved merely because it was previously requested.
+- [ ] Complete physical Android camera/barcode/QR acceptance, real Gemini key/decryption response, Turnstile token acceptance, Safepay sandbox acceptance, Resend/WhatsApp delivery, stock reconciliation, POS/finance and rental acceptance.
+
