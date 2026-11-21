@@ -2044,3 +2044,8 @@ h1 em,h2 em{color:#ad8955}
 @media(max-width:800px){.announcement{padding:4px 4%;min-height:48px;flex-wrap:wrap;gap:3px 10px}.announcement-location{font-size:8px}.announcement-services{display:none}.announcement-golden-quote{order:3;flex-basis:100%;justify-content:flex-start;padding-left:2px}.announcement-golden-quote p{font-size:9px}.announcement-actions{margin-left:auto;gap:9px}.announcement-actions>a{font-size:8px}.announcement-translate select{max-width:74px}.ai-chat-launcher{right:15px;bottom:max(26px,calc(env(safe-area-inset-bottom) + 18px));width:54px;height:54px}.ai-chat-panel{right:8px;bottom:calc(max(86px,env(safe-area-inset-bottom) + 78px));width:calc(100vw - 16px);height:min(620px,calc(100dvh - 108px))}}
 @media(max-width:420px){.announcement-golden-quote cite{display:none}.ai-chat-panel{height:min(590px,calc(100dvh - 104px))}.ai-chat-composer-caption{font-size:7px}.ai-chat-message-wrap{max-width:95%}}
 @media(prefers-reduced-motion:reduce){.ai-chat-typing i{animation:none}}
+
+.install-app-icon-only{width:34px!important;height:34px!important;min-width:34px!important;padding:0!important;display:inline-grid!important;place-items:center!important;border-radius:10px!important}
+.install-app-icon-only svg{width:17px!important;height:17px!important}
+.brand-loader-logo{position:relative;z-index:1;width:100px;height:100px;object-fit:contain;border-radius:50%;background:#fff;box-shadow:0 0 55px rgba(209,174,111,.17);padding:4px;animation:dvLoaderBreath 2.4s ease-in-out infinite}
+@media(max-width:800px){.install-app-icon-only{width:31px!important;height:31px!important;min-width:31px!important}.install-app-icon-only svg{width:16px!important;height:16px!important}}
