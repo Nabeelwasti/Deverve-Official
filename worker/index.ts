@@ -1055,9 +1055,10 @@ async function adminCouponRoutes(request: Request, env: Env, url: URL): Promise<
   if(!isExchange&&(customerId||exchangeId))return error("Customer and exchange case binding is reserved for exchange compensation vouchers.",400);
   if(isExchange){
     try{
-      const exchange=await env.DB.prepare("SELECT id,customer_id,status,reason FROM exchange_requests WHERE id=? LIMIT 1").bind(exchangeId).first<{id:string;customer_id:string;status:string;reason:string}>();
+      const exchange=await env.DB.prepare("SELECT id,customer_id,status,reason,details FROM exchange_requests WHERE id=? LIMIT 1").bind(exchangeId).first<{id:string;customer_id:string;status:string;reason:string;details:string}>();
       if(!exchange||exchange.status!=="completed"||exchange.customer_id!==customerId)return error("Only a completed exchange belonging to that customer can receive compensation.",409);
-      if(purpose==="damaged_item"&&exchange.reason!=="damaged"||purpose==="wrong_item"&&exchange.reason!=="wrong_item"||purpose==="size_exchange"&&exchange.reason!=="size_issue")return error("Voucher purpose does not match the recorded exchange reason.",409);
+      const documentedColourMismatch=exchange.reason==="other"&&/colou?r|shade|variant/i.test(exchange.details);
+      if(purpose==="damaged_item"&&exchange.reason!=="damaged"||purpose==="wrong_item"&&exchange.reason!=="wrong_item"&&!documentedColourMismatch||purpose==="size_exchange"&&exchange.reason!=="size_issue")return error("Voucher purpose does not match the recorded exchange reason. Colour mismatch cases must be documented in the exchange details.",409);
     }catch{return error("Exchange case could not be verified.",503);}
   }
   const now=new Date().toISOString();
