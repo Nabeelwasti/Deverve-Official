@@ -1944,3 +1944,21 @@ h1 em,h2 em{color:#ad8955}
 .content-preview-category-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:12px}
 .content-preview-category-grid>div{display:grid;gap:6px;align-content:start;overflow:hidden;border:1px solid #e1e8f1;border-radius:9px;background:#fff;padding:7px;color:#173b63;font-size:11px}
 .content-preview-category-grid img{width:100%;height:85px;object-fit:cover;border-radius:6px}
+
+.category-custom-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .7s var(--dv-ease-out);z-index:0}
+.collection-card:hover .category-custom-art{transform:scale(1.055)}
+.collection-art:has(.category-custom-art){background:#0b2137!important}
+.collection-art:has(.category-custom-art):after{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(180deg,rgba(4,16,29,.04),rgba(4,16,29,.72))}
+.collection-art:has(.category-custom-art) .category-tag,.collection-art:has(.category-custom-art) .category-arrow,.collection-art:has(.category-custom-art) .category-art-word{z-index:1;color:#f3dfb9}
+.admin-category-artwork{display:grid;gap:15px;margin:20px 0;padding:18px;border:1px solid #dce5ef;border-radius:14px;background:linear-gradient(145deg,#f9fbfd,#f1f5f9)}
+.admin-category-artwork h3{margin:0;color:#183b5e;font-size:15px}
+.admin-category-artwork-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.admin-category-artwork-grid article{display:grid;align-content:start;gap:9px;min-width:0;padding:12px;border:1px solid #e0e7ef;border-radius:11px;background:#fff}
+.admin-category-artwork-grid article>strong{color:#1c3b58;font-size:12px}
+.admin-category-artwork-grid article>img,.admin-category-artwork-placeholder{width:100%;height:118px;object-fit:cover;border-radius:8px;background:#102c48}
+.admin-category-artwork-placeholder{display:grid;place-items:center;color:#d8bd8b;font:700 11px Manrope;letter-spacing:.2em}
+.admin-category-artwork-grid label{display:grid;gap:5px;color:#62768a;font-size:10px;font-weight:700}
+.admin-category-artwork-grid input[type=file]{width:100%;min-width:0;font-size:10px}
+.admin-category-artwork-grid .admin-secondary{width:100%;min-height:32px;font-size:10px}
+@media(max-width:760px){.admin-category-artwork-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:430px){.admin-category-artwork-grid{grid-template-columns:1fr 1fr}.admin-category-artwork-grid article{padding:8px}.admin-category-artwork-grid article>img,.admin-category-artwork-placeholder{height:88px}}
