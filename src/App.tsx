@@ -302,6 +302,7 @@ function Storefront() {
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
+  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
@@ -389,7 +390,7 @@ function Storefront() {
       }
     };
     void loadProducts();
-    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};category_assets?:Record<string,string>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);}).catch(()=>undefined);
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};category_assets?:Record<string,string>;site_design?:Partial<typeof siteDesign>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);if(payload.site_design&&typeof payload.site_design==="object")setSiteDesign(current=>({...current,...payload.site_design,section_images:{...current.section_images,...(payload.site_design?.section_images||{})}}));}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
@@ -402,6 +403,15 @@ function Storefront() {
     return () => { active = false; };
   }, []);
 
+  useEffect(()=>{
+    const root=document.documentElement;
+    root.style.setProperty("--dv-site-primary",siteDesign.primary_color);
+    root.style.setProperty("--dv-site-accent",siteDesign.accent_color);
+    root.style.setProperty("--dv-site-surface",siteDesign.surface_color);
+    root.style.setProperty("--dv-site-text",siteDesign.text_color);
+    root.style.setProperty("--dv-site-radius",siteDesign.corner_radius+"px");
+    for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
+  },[siteDesign]);
   const formatPrice = (paisa: number | null) => paisa === null
     ? "Ask for price"
     : new Intl.NumberFormat("en-PK", { style: "currency", currency: "PKR", maximumFractionDigits: 0 }).format(paisa / 100);
@@ -610,8 +620,8 @@ function Storefront() {
               <span>De VERVE · Jhelum, Pakistan · Fashion / Wholesale / Mobility</span>
             </div>
             <p className="eyebrow"><span className="eyebrow-line" /> FASHION · LIFESTYLE · MOBILITY</p>
-            <h1>Elevate<br /><em>your style.</em></h1>
-            <p className="hero-description">Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.</p>
+            <h1>{siteDesign.hero_title}</h1>
+            <p className="hero-description">{siteDesign.hero_subtitle}</p>
             <div className="hero-actions">
               <button className="button button-primary" type="button" onClick={() => navigate("fashion")}>Explore fashion <span>↗</span></button>
               <button className="text-link" type="button" onClick={() => navigate("wholesale")}>Wholesale enquiries →</button>
@@ -627,7 +637,7 @@ function Storefront() {
             </div>
             <div className="hero-footnote"><span className="blue-dot" /> YOUR EVERYDAY VERVE · JHELUM, PAKISTAN</div>
           </div>
-          <div className="hero-art" aria-label="De VERVE apparel collection artwork">
+          <div className={"hero-art"+(siteDesign.section_images.hero?" has-owner-art":"")} aria-label="De VERVE apparel collection artwork">
             <div className="hero-art-glow" />
             <div className="hero-art-word">VERVE<span>.</span></div>
             <div className="hero-garment hero-garment-one"><i /></div>
@@ -646,10 +656,10 @@ function Storefront() {
             <div className="intro-mark" aria-hidden="true">DV<span>.</span></div>
           </section>
           <section className="trust-pillars-section" aria-label="Explore De VERVE services">
-            <a className="trust-pillar-card" href="/?screen=fashion"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Find your fit</h4><p>Explore garments, product details and available size–colour combinations.</p><small>Explore fashion ↗</small></div></a>
-            <a className="trust-pillar-card" href="/account"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Your orders, together</h4><p>Sign in to follow order updates and manage eligible exchange requests.</p><small>Open your account ↗</small></div></a>
-            <a className="trust-pillar-card" href="/?screen=wholesale"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Wholesale made clear</h4><p>Share product requirements and quantities for a tailored quotation.</p><small>Request a quote ↗</small></div></a>
-            <a className="trust-pillar-card" href="/?screen=mobility"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Plan your journey</h4><p>Explore vehicle options and send a rental enquiry to our team.</p><small>Explore rentals ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_fashion?" has-owner-art feature-fashion":"")} href="/?screen=fashion"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Find your fit</h4><p>Explore garments, product details and available size–colour combinations.</p><small>Explore fashion ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_account?" has-owner-art feature-account":"")} href="/account"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Your orders, together</h4><p>Sign in to follow order updates and manage eligible exchange requests.</p><small>Open your account ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_wholesale?" has-owner-art feature-wholesale":"")} href="/?screen=wholesale"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Wholesale made clear</h4><p>Share product requirements and quantities for a tailored quotation.</p><small>Request a quote ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_mobility?" has-owner-art feature-mobility":"")} href="/?screen=mobility"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Plan your journey</h4><p>Explore vehicle options and send a rental enquiry to our team.</p><small>Explore rentals ↗</small></div></a>
           </section>
         </>}
 
@@ -822,7 +832,7 @@ function Storefront() {
         </section></div>}
 
         <section className="wholesale-section" id="wholesale">
-          <div className="wholesale-art">
+          <div className={"wholesale-art"+(siteDesign.section_images.wholesale?" has-owner-art":"")}>
             <div className="wholesale-art-mark">DV<span>.</span></div>
             <span className="wholesale-caption">YOUR STORE. YOUR STYLE.<br />YOUR BUSINESS PARTNER.</span>
           </div>
@@ -841,7 +851,7 @@ function Storefront() {
           </div>
         </section>
 
-        <section className="mobility-section" id="mobility">
+        <section className={"mobility-section"+(siteDesign.section_images.mobility?" has-owner-art":"")} id="mobility">
           <div><p className="eyebrow">03 — DE VERVE MOBILITY</p><h2>Make room for<br /><em>the journey.</em></h2></div>
           <div className="mobility-copy"><span className="mobility-icon">↗</span><p>Browse the available fleet or send a date-based rental request. Availability, rates, documents and rental terms are confirmed by our team before any booking is accepted.</p><button type="button" className="button button-light" onClick={() => openRentalRequest()}>Request a rental <span>↗</span></button></div>
           {vehicles.length > 0 && <div className="mobility-fleet"><div className="mobility-fleet-heading"><span>AVAILABLE FLEET</span><p>Choose a vehicle to start your request.</p></div><div className="mobility-vehicle-grid">{vehicles.map((vehicle) => <article className="mobility-vehicle-card" key={vehicle.id} role="link" tabIndex={0} aria-label={"View " + vehicle.name + " details"} onClick={(event)=>{if((event.target as HTMLElement).closest("button,a,input,select,textarea,label"))return;setVehicleDetail(vehicle);}} onKeyDown={(event)=>{if((event.target as HTMLElement).closest("button,a,input,select,textarea,label"))return;if(event.key==="Enter"||event.key===" "){event.preventDefault();setVehicleDetail(vehicle);}}}>
@@ -941,11 +951,11 @@ function Storefront() {
         </form>}
       </section></div>}
       {rentalNotice && <div className={`dv-toast ${rentalNotice.kind === "success" ? "is-success" : "is-error"}`} role={rentalNotice.kind === "error" ? "alert" : "status"} aria-live={rentalNotice.kind === "error" ? "assertive" : "polite"}><span aria-hidden="true">{rentalNotice.kind === "success" ? "✓" : "!"}</span><p>{rentalNotice.message}</p><button type="button" onClick={() => setRentalNotice(null)} aria-label="Dismiss notification">×</button></div>}
-      {activeScreen==="home"&&featuredReviews.length>0&&<section className="testimonials-section" aria-label="Published customer feedback">
+      {activeScreen==="home"&&featuredReviews.length>0&&<section className={"testimonials-section"+(siteDesign.section_images.testimonials?" has-owner-art":"")} aria-label="Published customer feedback">
         <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Customer experiences, shared in their own words.</p></div>
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
-      <footer className="site-footer">
+      <footer className={"site-footer"+(siteDesign.section_images.footer?" has-owner-art":"")}>
         <a className="footer-wordmark" href="#home"><img className="brand-logo-image" src={brandAssets.logo_id?"/media/"+brandAssets.logo_id:"/brand/de-verve-logo.svg"} alt="De VERVE"/></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
