@@ -240,3 +240,16 @@ for statement, values in [
     else:
         raise AssertionError(f"Permanent CNIC evidence protection failed to reject: {statement}")
 assert db.execute("SELECT object_key FROM rental_documents WHERE id='cnic-retention-doc'").fetchone()[0] == "rental-private/cnic-retention-test/front.jpg"
+
+
+# Discount vouchers are stored as one-way hashes and exchange compensation is case/customer bound.
+coupon_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupons)")}
+assert {"code_hash", "purpose", "discount_type", "discount_value", "max_discount_paisa", "min_subtotal_paisa", "customer_id", "exchange_request_id", "starts_at", "expires_at", "max_redemptions", "per_customer_limit", "usage_count", "is_active"} <= coupon_columns, "Discount voucher eligibility and audit fields are missing"
+redemption_columns = {row[1] for row in db.execute("PRAGMA table_info(discount_coupon_redemptions)")}
+assert {"coupon_id", "order_id", "customer_id", "exchange_request_id", "discount_amount_paisa"} <= redemption_columns, "Coupon redemption ledger fields are missing"
+assert any(row[1] == "idx_discount_coupons_active_window" for row in db.execute("PRAGMA index_list(discount_coupons)")), "Active voucher lookup index is missing"
+assert any(row[1] == "idx_coupon_redemptions_coupon_customer" for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Per-customer redemption lookup index is missing"
+coupon_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='discount_coupons'").fetchone()[0]
+assert "code_hash" in coupon_sql and "exchange_compensation" in coupon_sql and "per_customer_limit" in coupon_sql, "Voucher storage must enforce hashed codes and exchange restrictions"
+redemption_indexes = {row[1] for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")}
+assert any(row[1] == "sqlite_autoindex_discount_coupon_redemptions_2" for row in db.execute("PRAGMA index_list(discount_coupon_redemptions)")), "Each order can have only one voucher redemption"
