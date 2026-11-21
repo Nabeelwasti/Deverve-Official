@@ -69,8 +69,8 @@ export default function AIChatWidget() {
       .then(response => response.ok ? response.json() : null)
       .then((value: unknown) => {
         if (!active || !value || typeof value !== "object") return;
-        const data = value as { settings?: { logo_id?: string | null }; logo_id?: string | null };
-        const id = data.settings?.logo_id ?? data.logo_id;
+        const data = value as { brand_assets?: { logo_id?: string | null }; settings?: { brand_assets?: { logo_id?: string | null } }; logo_id?: string | null };
+        const id = data.brand_assets?.logo_id ?? data.settings?.brand_assets?.logo_id ?? data.logo_id;
         if (typeof id === "string" && id.trim()) setLogoUrl("/media/" + encodeURIComponent(id));
       }).catch(() => { /* keep the bundled brand fallback */ });
     return () => { active = false; };
