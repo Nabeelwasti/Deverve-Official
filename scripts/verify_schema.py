@@ -306,7 +306,8 @@ db.execute(
 )
 assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 1
 db.execute("UPDATE orders SET order_status='cancelled' WHERE id='coupon-order-one'")
-assert db.execute("SELECT status,reversed_at,reversal_reason FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone() == ("reversed", db.execute("SELECT reversed_at FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone()[0], "order_cancelled")
+reversed_redemption = db.execute("SELECT status,reversed_at,reversal_reason FROM discount_coupon_redemptions WHERE id='coupon-redemption-one'").fetchone()
+assert reversed_redemption[0] == "reversed" and reversed_redemption[1] and reversed_redemption[2] == "order_cancelled"
 assert db.execute("SELECT usage_count FROM discount_coupons WHERE id='coupon-test'").fetchone()[0] == 0
 
 db.execute(
