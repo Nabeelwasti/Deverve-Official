@@ -1450,7 +1450,7 @@ export default function Admin() {
 
 
 type SiteDesignSettings = {
-  preset:"midnight-gold"|"ivory-blue"|"monochrome";
+  preset:"midnight-gold"|"ivory-blue"|"monochrome"|"custom";
   primary_color:string;accent_color:string;surface_color:string;text_color:string;
   corner_radius:number;hero_title:string;hero_subtitle:string;section_images:Record<string,string>;
 };
@@ -1519,7 +1519,7 @@ function SiteVisualDesigner(){
     <div className="admin-site-design-heading"><div><p className="admin-eyebrow">OWNER VISUAL WORKSPACE</p><h3>Website visual design studio</h3><p className="admin-muted">Control the global colour system, homepage message and artwork across the main website sections. Product and vehicle photography remains managed in their respective catalogues. Changes are not public until saved.</p></div><span className="admin-design-badge">LIVE SITE SETTINGS</span></div>
     <div className="admin-design-presets">{presets.map(preset=><button type="button" key={preset.id} className={design.preset===preset.id?"is-active":""} onClick={()=>setDesign(current=>({...current,preset:preset.id,primary_color:preset.colors[0],accent_color:preset.colors[1],surface_color:preset.colors[2],text_color:preset.colors[3]}))}><span>{preset.colors.map(color=><i key={color} style={{background:color}}/>)}</span>{preset.label}</button>)}</div>
     <div className="admin-design-controls">
-      {([{key:"primary_color",label:"Primary brand colour"},{key:"accent_color",label:"Accent / gold colour"},{key:"surface_color",label:"Page surface colour"},{key:"text_color",label:"Main text colour"}] as const).map(item=><label key={item.key}>{item.label}<span><input type="color" value={design[item.key]} onChange={event=>setDesign(current=>({...current,preset:"midnight-gold",[item.key]:event.target.value}))}/><code>{design[item.key]}</code></span></label>)}
+      {([{key:"primary_color",label:"Primary brand colour"},{key:"accent_color",label:"Accent / gold colour"},{key:"surface_color",label:"Page surface colour"},{key:"text_color",label:"Main text colour"}] as const).map(item=><label key={item.key}>{item.label}<span><input type="color" value={design[item.key]} onChange={event=>setDesign(current=>({...current,preset:"custom",[item.key]:event.target.value}))}/><code>{design[item.key]}</code></span></label>)}
       <label>Card corner radius <strong>{design.corner_radius}px</strong><input type="range" min="0" max="28" step="2" value={design.corner_radius} onChange={event=>setDesign(current=>({...current,corner_radius:Number(event.target.value)}))}/></label>
     </div>
     <div className="admin-design-copy"><label>Homepage headline<input maxLength={120} value={design.hero_title} onChange={event=>setDesign(current=>({...current,hero_title:event.target.value}))}/></label><label>Homepage description<textarea rows={3} maxLength={300} value={design.hero_subtitle} onChange={event=>setDesign(current=>({...current,hero_subtitle:event.target.value}))}/></label></div>
