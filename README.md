@@ -12,8 +12,8 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Hosting: Cloudflare Pages project `deverve-official`
 - Database: Cloudflare D1 `deverve-production` (APAC)
 - Media: private Cloudflare R2 `deverve-media-private`
-- **Latest source:** `8798eb8e43a6b78dd5226334ea158ab3af507edc` (includes the merged catalogue cleanup/bulk-import work and pins Pages builds to Node.js 24).
-- **Latest production deployment:** Cloudflare Pages deployment `03fd4f75-a5fa-4e03-804f-fa4cac529621`, built from `8798eb8e43a6b78dd5226334ea158ab3af507edc`. Cloudflare reports successful build and deploy stages. The canonical `deverve-official.pages.dev` address returned HTTP 200 in a Cloudflare browser-rendered production smoke check.
+- **Latest application source:** `8798eb8e43a6b78dd5226334ea158ab3af507edc` (includes the merged catalogue cleanup/bulk-import work and pins Pages builds to Node.js 24). Documentation-only reconciliation commits follow on `main`.
+- **Verified application release:** Cloudflare Pages deployment `03fd4f75-a5fa-4e03-804f-fa4cac529621` built application commit `8798eb8e43a6b78dd5226334ea158ab3af507edc` with successful build/deploy stages. The canonical `deverve-official.pages.dev` address returned HTTP 200 in a Cloudflare browser-rendered production smoke check. Later main-branch changes in this release sequence are documentation-only.
 - **Latest CI:** [run 44882915815](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44882915815) passed TypeScript/build, dependency audit, Worker tests, D1 schema checks and **114 desktop/mobile browser tests**. Remote D1 integration was skipped because dedicated Cloudflare test credentials are not configured.
 - Cloudflare Pages was configured to deploy for this release, then source-triggered/production deployments were returned to `false`; preview deployments remain `none`. Future code pushes do not publish automatically. This preserves controlled production releases.
 - The Pages build uses Node.js `24.22.1` from the repository's `.node-version`, matching the `@zxing/library` engine requirement and eliminating the prior Node 22 engine warning.
