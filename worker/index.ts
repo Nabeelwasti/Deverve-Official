@@ -875,10 +875,11 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     const now = new Date().toISOString();
     const reservationLines = [...reservations.values()];
     const conditions = reservationLines.map(() => "EXISTS (SELECT 1 FROM product_variants v JOIN products p ON p.id = v.product_id WHERE v.id = ? AND v.is_active = 1 AND p.status = 'published' AND v.stock_on_hand - v.reserved_quantity >= ?)").join(" AND ");
-    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, appliedPromotion.code, appliedPromotion.label, appliedPromotion.discountAmountPaisa, appliedPromotion.freeDelivery ? 1 : 0, note, token, appliedPromotion.freeDelivery ? "accepted" : "pending_quote"];
+    if (!signedInCustomer) return error("Please sign in to your De VERVE account before placing an order.", 401);
+    const orderValues: unknown[] = [id, orderNumber, customerName, phone, email || null, address, city, subtotal, deliveryFee, total, appliedPromotion.code, appliedPromotion.label, appliedPromotion.discountAmountPaisa, appliedPromotion.freeDelivery ? 1 : 0, note, token, appliedPromotion.freeDelivery ? "accepted" : "pending_quote", signedInCustomer.customer_id];
     for (const reservation of reservationLines) orderValues.push(reservation.variant.id, reservation.quantity);
     const statements = [
-      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
+      env.DB.prepare("INSERT INTO orders (id, order_number, customer_name, phone, email, delivery_address, city, subtotal_paisa, delivery_fee_paisa, total_paisa, discount_code, discount_label, discount_amount_paisa, free_delivery, customer_note, checkout_token, delivery_fee_status, customer_id) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE " + conditions).bind(...orderValues),
     ];
     for (const reservation of reservationLines) {
       statements.push(env.DB.prepare("UPDATE product_variants SET reserved_quantity = reserved_quantity + ?, updated_at = ? WHERE id = ? AND is_active = 1 AND stock_on_hand - reserved_quantity >= ? AND EXISTS (SELECT 1 FROM orders WHERE id = ?)")
@@ -900,8 +901,6 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     statements.push(env.DB.prepare("INSERT INTO order_status_events (id, order_id, from_status, to_status, actor_type, note) SELECT ?, ?, NULL, 'pending', 'system', 'Order received' WHERE EXISTS (SELECT 1 FROM orders WHERE id = ? AND order_status = 'pending')").bind(crypto.randomUUID(), id, id));
     statements.push(env.DB.prepare("INSERT INTO owner_notifications (id,event_type,title,body,entity_type,entity_id) SELECT ?, 'order.created', ?, ?, 'order', ? WHERE EXISTS (SELECT 1 FROM orders WHERE id=?)").bind(crypto.randomUUID(),"New order "+orderNumber,"A new website order has been received. Review its delivery quotation and payment status.",id,id));
     statements.push(env.DB.prepare("INSERT INTO notification_outbox (id,order_id,channel,template_key) VALUES (?,?,'email','owner_order_created')").bind(crypto.randomUUID(),id));
-    if (!signedInCustomer) return error("Please sign in to your De VERVE account before placing an order.", 401);
-    statements.push(env.DB.prepare("UPDATE orders SET customer_id = ? WHERE id = ? AND customer_id IS NULL").bind(signedInCustomer.customer_id, id));
     const results = await env.DB.batch(statements);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || reservationLines.some((_, index) => (results[index + 1]?.meta?.changes ?? 0) !== 1)) return error("Stock changed while you were checking out. Please review your cart and try again.", 409);
     if (reservationLines.some((_, index) => (results[reservationStatementStart + index]?.meta?.changes ?? 0) !== 1)) {
