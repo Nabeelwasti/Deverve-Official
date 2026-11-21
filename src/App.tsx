@@ -301,6 +301,7 @@ function Storefront() {
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
+  const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
@@ -388,7 +389,7 @@ function Storefront() {
       }
     };
     void loadProducts();
-    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null}};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});}).catch(()=>undefined);
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};category_assets?:Record<string,string>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
@@ -657,7 +658,8 @@ function Storefront() {
               <article className={`collection-card ${item.tone}`} key={item.id}>
                 <a className="collection-art" data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
-                  <span className="category-garment"><i /></span>
+                  {categoryAssets[item.id]&&<img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy"/>}
+                  {!categoryAssets[item.id]&&<span className="category-garment"><i /></span>}
                   <span className="category-art-word">{item.id === "essentials" ? "DAILY" : item.id.toUpperCase()}</span>
                   <span className="category-arrow">↗</span>
                 </a>
