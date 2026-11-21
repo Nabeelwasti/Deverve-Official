@@ -20,7 +20,6 @@ export default function CouponWorkspace({onClose}:{onClose:()=>void}){
  useEffect(()=>{void load().catch(e=>setMessage(e instanceof Error?e.message:"Voucher workspace could not load."));},[]);
  const selectedExchange=exchanges.find(item=>item.id===draft.exchange_request_id);
  const isExchangePurpose=["exchange_compensation","damaged_item","wrong_item","size_exchange"].includes(draft.purpose);
- const exchangePurpose=selectedExchange?.reason==="damaged"?"damaged_item":selectedExchange?.reason==="wrong_item"?"wrong_item":selectedExchange?.reason==="size_issue"?"size_exchange":"exchange_compensation";
  const submit=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);setMessage("");setIssuedCode("");try{
   const isExchange=Boolean(selectedExchange);
   const payload={purpose:isExchange?exchangePurpose:draft.purpose,discount_type:draft.discount_type,label:draft.label.trim(),discount_value:draft.discount_type==="fixed"?Math.round(Number(draft.discount_value)*100):draft.discount_type==="free_delivery"?0:Number(draft.discount_value),min_subtotal_paisa:Math.round(Number(draft.min_subtotal)*100),expiry_days:Number(draft.expiry_days),max_redemptions:isExchange?1:Number(draft.max_redemptions),per_customer_limit:isExchange?1:Number(draft.per_customer_limit),...(isExchange?{customer_id:selectedExchange!.customer_id,exchange_request_id:selectedExchange!.id}:{})};
