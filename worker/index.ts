@@ -3224,7 +3224,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid visual design settings",400);
     const source=raw as Record<string,unknown>;
     const preset=cleanText(source.preset,32);
-    if(!["midnight-gold","ivory-blue","monochrome"].includes(preset))return error("Choose a supported design preset",400);
+    if(!["midnight-gold","ivory-blue","monochrome","custom"].includes(preset))return error("Choose a supported design preset",400);
     const color=(value:unknown)=>typeof value==="string"&&/^#[0-9a-f]{6}$/i.test(value)?value.toLowerCase():"";
     const primary_color=color(source.primary_color),accent_color=color(source.accent_color),surface_color=color(source.surface_color),text_color=color(source.text_color);
     if(!primary_color||!accent_color||!surface_color||!text_color)return error("Choose valid six-digit HEX colours",400);
