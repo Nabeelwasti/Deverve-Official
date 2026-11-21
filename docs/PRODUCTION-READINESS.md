@@ -585,3 +585,29 @@ The Cloudflare Pages builds for commits 9c49b5a, b8b7a18 and d1836a4 reached suc
 In addition to CMS category-grid artwork, the owner-only Admin → Website & brand settings panel now manages the six static storefront category cards (Men, Women, Kids, Everyday essentials, Hoodies & jackets, Trousers & pants). Uploads are validated as ready image assets, saved to the public `category_assets` setting, exposed by the storefront settings endpoint, and recorded in the audit log. Resetting a card removes its setting and restores the original artwork. Media archival checks now protect category images that are still referenced.
 
 The admin upload workflow and live card renderer are implemented in main. The latest frontend Pages build and the GitHub Actions Worker/schema/Playwright suite must still be checked before this change is considered fully release-verified. No actual category artwork has been uploaded by the owner yet; the cards use their existing default artwork until images are selected in Admin.
+
+
+## Customer AI chat file attachments — 22 November 2026
+
+A draft implementation is under review on `feat/ai-chat-multifile-understanding` (stacked on the customer-chat/branding candidate). It changes the customer composer from photo-only selection to a general file picker and sends bounded attachments to the existing server-side Gemini integration.
+
+Current supported input paths:
+- Images: JPEG, PNG and WebP.
+- Documents: PDF and UTF-8 text files. Common text/code/data extensions (TXT, Markdown, CSV/TSV, JSON, XML, HTML, CSS, JavaScript/TypeScript, Python, SQL, YAML, logs and similar) are read as text before sending.
+- Audio: supported Gemini audio MIME types (one audio file per message).
+- Video: supported Gemini video MIME types (one video file per message).
+
+Limits in this implementation: at most three files, 4 MB per binary/PDF file, 6 MB combined, and 180,000 characters per text file. Attachments are processed transiently in the request and are not written to the shop database or media bucket. The Worker validates MIME type, encoded payload, selected file signatures for PDF and common images, aggregate size, and treats filenames/file content as untrusted data. Customer chat continues to warn customers not to send CNIC, OTP, passwords or payment-card details.
+
+**Not every conceivable file format is supported.** Modern Office/OpenDocument packages (DOCX, XLSX, PPTX, ODT, ODS, ODP) are parsed locally in the browser by reading only selected XML entries, with entry-count, per-entry and total expanded-size bounds. Extracted text is sent to Gemini as plain text. This is not full-fidelity document rendering: charts, formulas, images, comments, tracked changes, layout, macros, embedded objects and some spreadsheet relationships may be omitted. Legacy DOC/XLS/PPT, encrypted documents, archives, executables and proprietary formats remain unsupported; convert them to PDF or plain text. The app does not upload opaque ZIP bytes to Gemini.
+
+This work is **not production-released** until the new CI run, browser upload tests, Worker validation tests and a real Gemini acceptance test with representative PDF, text, image, audio and video samples pass. Provider/API quotas, file size and model modality availability apply. No attachment content is retained by the application after the request, but the content is transmitted to the configured Gemini provider for inference.
+
+
+Attachment acceptance checklist for the combined PR:
+- Run the full repository CI against the main-targeting pull request, including frontend/Worker TypeScript checks, Worker tests, schema validation and existing Playwright suite.
+- Add/execute browser-level upload coverage for PDF, plain text and Office/OpenDocument files, plus rejection of encrypted, malformed and oversized packages.
+- In a non-production test environment, exercise the actual configured Gemini fallback chain with representative PDF, image, audio and video fixtures; verify model capability errors fail clearly and never report a false successful analysis.
+- Verify on a physical Android browser that the camera, gallery, general file picker, attachment removal, progress, errors and message submission work at supported viewport sizes.
+- Confirm attachment payloads are absent from D1/R2, logs, analytics and error telemetry; inspect only redacted request metadata.
+- Keep production release blocked until the above evidence is attached to the PR and owner accepts the operational/privacy wording.

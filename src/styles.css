@@ -1979,3 +1979,103 @@ h1 em,h2 em{color:#ad8955}
 .product-card{position:relative}
 .product-card:after{content:"";position:absolute;inset:0;pointer-events:none;border:1px solid transparent;border-radius:inherit;animation:dvCardGlow 8s ease-in-out infinite}
 @media(prefers-reduced-motion:reduce){.trust-pillar-card:before,.trust-pillar-icon,.category-custom-art,.product-card:after{animation:none!important}}
+
+
+/* Customer AI chat: accessible compact composer, attachment menu and per-message actions. */
+.ai-chat-launcher{right:max(16px,env(safe-area-inset-right));bottom:max(26px,calc(env(safe-area-inset-bottom) + 18px));width:58px;height:58px;border:2px solid #e3c98e;background:#071f43;box-shadow:0 12px 34px #061b36aa;z-index:1400}
+.ai-chat-launcher img{width:39px;height:39px;object-fit:contain;border-radius:50%;background:#fff}
+.ai-chat-panel{right:max(14px,env(safe-area-inset-right));bottom:calc(max(94px,env(safe-area-inset-bottom) + 84px));width:min(410px,calc(100vw - 28px));height:min(620px,calc(100dvh - 120px));grid-template-rows:auto minmax(0,1fr) auto auto auto;z-index:1400}
+.ai-chat-head{min-height:68px;background:linear-gradient(115deg,#061d3d,#123f70);padding:12px 15px}
+.ai-chat-brand-logo{width:42px;height:42px;flex:0 0 42px;object-fit:contain;border-radius:50%;background:#fff}
+.ai-chat-identity{flex:1;min-width:0}
+.ai-chat-online-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#80d6a1;margin-right:6px}
+.ai-chat-messages{gap:12px;padding:14px 12px}
+.ai-chat-message-wrap{display:flex;flex-direction:column;gap:4px;max-width:91%;min-width:0}
+.ai-chat-message-wrap.user{align-self:flex-end;align-items:flex-end}
+.ai-chat-message-wrap.model{align-self:flex-start;align-items:flex-start}
+.ai-chat-message{max-width:100%;padding:10px 12px;border-radius:14px;white-space:normal}
+.ai-chat-message>span{display:block;margin-bottom:4px;font-size:8px;font-weight:800;letter-spacing:.13em;opacity:.62}
+.ai-chat-message p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;line-height:1.65}
+.ai-chat-message-actions{display:flex;gap:4px;padding:0 3px}
+.ai-chat-message-actions button{width:29px;height:27px;display:grid;place-items:center;border:1px solid #dce5ef;border-radius:8px;background:#fff;color:#526b84;cursor:pointer}
+.ai-chat-message-actions button:hover,.ai-chat-message-actions button:focus-visible{background:#edf3fa;color:#0b3767;outline:2px solid #a9c8e9;outline-offset:1px}
+.ai-chat-message-actions svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+.ai-chat-form{display:block;padding:10px 11px 7px;border-top:1px solid #e4ebf3}
+.ai-chat-composer{display:flex;align-items:flex-end;gap:6px;min-height:48px;padding:5px;border:1px solid #d6e1ed;border-radius:16px;background:#fbfdff;box-shadow:0 3px 12px #0b2b4c0b}
+.ai-chat-composer textarea{flex:1;min-width:0;min-height:36px;max-height:112px;resize:vertical;padding:9px 5px;border:0!important;outline:0!important;box-shadow:none!important;background:transparent;color:#173e63;font:inherit;font-size:12px}
+.ai-chat-icon-button,.ai-chat-send{flex:0 0 36px;width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:11px;background:transparent;color:#234b73;cursor:pointer}
+.ai-chat-icon-button svg,.ai-chat-send svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ai-chat-plus{font-size:25px;font-weight:400;line-height:1}
+.ai-chat-mic{flex-basis:30px;width:30px;height:30px;margin-bottom:3px;color:#5c7187}
+.ai-chat-mic svg{width:15px;height:15px}
+.ai-chat-mic.is-active{background:#fff0ed;color:#b33c32}
+.ai-chat-send{flex-basis:36px;width:36px;height:36px;background:#0b3767;color:#fff}
+.ai-chat-send:disabled{opacity:.4}
+.ai-chat-attach-wrap{position:relative;flex:0 0 36px}
+.ai-chat-attach-menu{position:absolute;left:0;bottom:45px;z-index:10;width:218px;padding:6px;border:1px solid #dce5ef;border-radius:13px;background:#fff;box-shadow:0 15px 38px #082b5530}
+.ai-chat-attach-menu button{width:100%;display:flex;align-items:center;gap:10px;padding:11px 10px;border:0;border-radius:8px;background:transparent;color:#183d63;text-align:left;font-size:11px;cursor:pointer}
+.ai-chat-attach-menu button:hover,.ai-chat-attach-menu button:focus-visible{background:#eef4fa;outline:0}
+.ai-chat-attach-menu button span{width:19px;color:#9b7b45;text-align:center;font-size:15px}
+.ai-chat-composer-caption{display:flex;justify-content:space-between;gap:8px;padding:6px 3px 0;color:#8a98a8;font-size:8px}
+.ai-chat-note{padding:4px 12px 8px;font-size:9px;line-height:1.5}
+.ai-chat-attachments{display:flex;gap:8px;overflow-x:auto;padding:8px 12px;background:#fff}
+.ai-chat-attachments figure{position:relative;flex:0 0 66px;width:66px;margin:0}
+.ai-chat-attachments img{width:66px;height:66px;object-fit:cover;border-radius:9px}
+.ai-chat-attachments figcaption{max-width:66px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8px;color:#61758a}
+.ai-chat-attachments figure button{position:absolute;right:-5px;top:-5px;width:21px;height:21px;border:0;border-radius:50%;background:#082b55;color:#fff}
+.ai-chat-typing{display:flex;align-items:center;gap:4px}
+.ai-chat-typing i{width:5px;height:5px;border-radius:50%;background:#8da3ba;animation:dvTyping .9s infinite alternate}
+.ai-chat-typing i:nth-child(2){animation-delay:.2s}.ai-chat-typing i:nth-child(3){animation-delay:.4s}
+@keyframes dvTyping{to{opacity:.25;transform:translateY(-3px)}}
+.site-credit{color:#fff!important}
+.site-credit strong{color:#fff!important;font-weight:800}
+.announcement{position:relative;min-height:42px;gap:12px}
+.announcement-golden-quote{display:flex;align-items:center;justify-content:center;gap:6px;min-width:0;flex:1;color:#f1d8a4;text-align:center}
+.announcement-golden-quote>span{font:italic 23px Georgia,serif;line-height:1;color:#d6b46f}
+.announcement-golden-quote p{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:600 10px Manrope,serif;letter-spacing:.015em}
+.announcement-golden-quote cite{flex:0 0 auto;color:#c9b58e;font-size:8px;font-style:normal}
+.announcement-actions{display:flex;align-items:center;gap:13px;flex:0 0 auto}
+.announcement-translate{display:inline-flex;align-items:center;gap:5px;color:#f1d8a4}
+.announcement-translate>span:first-child{font-size:14px}
+.announcement-translate select{max-width:84px;border:0;background:transparent;color:#f1d8a4;font:600 9px "DM Sans",sans-serif;cursor:pointer}
+.announcement-translate option{background:#082b55;color:#fff}
+.announcement-actions>a{color:#f1d8a4;white-space:nowrap}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:800px){.announcement{padding:4px 4%;min-height:48px;flex-wrap:wrap;gap:3px 10px}.announcement-location{font-size:8px}.announcement-services{display:none}.announcement-golden-quote{order:3;flex-basis:100%;justify-content:flex-start;padding-left:2px}.announcement-golden-quote p{font-size:9px}.announcement-actions{margin-left:auto;gap:9px}.announcement-actions>a{font-size:8px}.announcement-translate select{max-width:74px}.ai-chat-launcher{right:15px;bottom:max(26px,calc(env(safe-area-inset-bottom) + 18px));width:54px;height:54px}.ai-chat-panel{right:8px;bottom:calc(max(86px,env(safe-area-inset-bottom) + 78px));width:calc(100vw - 16px);height:min(620px,calc(100dvh - 108px))}}
+@media(max-width:420px){.announcement-golden-quote cite{display:none}.ai-chat-panel{height:min(590px,calc(100dvh - 104px))}.ai-chat-composer-caption{font-size:7px}.ai-chat-message-wrap{max-width:95%}}
+@media(prefers-reduced-motion:reduce){.ai-chat-typing i{animation:none}}
+
+.install-app-icon-only{width:34px!important;height:34px!important;min-width:34px!important;padding:0!important;display:inline-grid!important;place-items:center!important;border-radius:10px!important}
+.install-app-icon-only svg{width:17px!important;height:17px!important}
+.brand-loader-logo{position:relative;z-index:1;width:100px;height:100px;object-fit:contain;border-radius:50%;background:#fff;box-shadow:0 0 55px rgba(209,174,111,.17);padding:4px;animation:dvLoaderBreath 2.4s ease-in-out infinite}
+@media(max-width:800px){.install-app-icon-only{width:31px!important;height:31px!important;min-width:31px!important}.install-app-icon-only svg{width:16px!important;height:16px!important}}
+
+
+/* Catalogue card rhythm: identical visual, information and action alignment. */
+.product-grid{align-items:stretch;grid-auto-rows:1fr;gap:clamp(12px,1.6vw,20px)}
+.product-card{display:flex;flex-direction:column;min-width:0;height:100%;overflow:hidden;border:1px solid #e0e7ef;border-radius:13px;background:#fff;box-shadow:0 8px 26px rgba(6,35,79,.055);transition:transform .2s ease,box-shadow .2s ease,border-color .2s ease}
+.product-card:hover{transform:translateY(-3px);border-color:#c4d3e4;box-shadow:0 16px 34px rgba(6,35,79,.11)}
+.product-card:focus-visible{outline:3px solid #9dc2e8;outline-offset:3px}
+.product-card .product-visual{flex:0 0 auto;width:100%;height:clamp(210px,23vw,290px);aspect-ratio:4/5;background:#f2f5f9}
+.product-card .product-visual img,.product-card .product-visual .dv-gallery-stage img{width:100%;height:100%;object-fit:cover;object-position:center}
+.product-card .product-info{display:flex;flex:1;flex-direction:column;align-items:stretch;gap:9px;padding:14px 15px 15px}
+.product-card .favourite-toggle{align-self:flex-end;min-height:30px;padding:5px 10px;border:1px solid #e0e7ef;border-radius:999px;background:#fff;color:#526a83;font-size:9px;font-weight:700}
+.product-card .product-audience{display:block;min-height:12px;margin-top:-2px;font-size:8px;line-height:1.4;letter-spacing:.12em}
+.product-card .product-info h4{display:-webkit-box;min-height:40px;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:14px;line-height:1.4}
+.product-card .product-info h4 a{color:inherit}
+.product-card .product-info>p{display:-webkit-box;min-height:42px;max-height:42px;margin:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:2;font-size:10px;line-height:1.55}
+.product-card .product-stock-badge,.product-card .product-urgency-badge,.product-card .product-stock-note{min-height:20px;display:flex;align-items:center;font-size:9px}
+.product-card .product-variant-picker,.product-card .variant-picker{margin-top:2px}
+.product-card .product-card-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:auto}
+.product-card .product-card-quick-actions button{min-width:0;min-height:34px;padding:6px 8px;border:1px solid #dce5ef;border-radius:8px;background:#f8fafc;color:#294d72;font-size:9px;font-weight:700}
+.product-card .product-buy-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;margin-top:2px;padding-top:11px;align-items:center}
+.product-card .product-buy-row strong{font-size:13px;white-space:nowrap}
+.product-card .product-buy-row button{min-height:35px;padding:7px 10px;border:0;border-radius:8px;background:#0a2b55;color:#fff;font-size:9px;font-weight:800;white-space:nowrap}
+.product-card .product-buy-row .product-details-button{grid-column:1/-1;width:100%;border:1px solid #d5e1ed;background:#eef4fa;color:#123f70}
+@media(max-width:800px){.product-card .product-visual{height:clamp(190px,32vw,245px)}.product-card .product-info{padding:12px}}
+@media(max-width:520px){.product-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.product-card .product-visual{height:auto;aspect-ratio:4/5}.product-card .product-info{gap:7px;padding:10px}.product-card .product-info h4{min-height:38px;font-size:12px}.product-card .product-info>p{min-height:39px;max-height:39px;font-size:9px}.product-card .product-buy-row{grid-template-columns:1fr;gap:6px}.product-card .product-buy-row strong{font-size:12px}.product-card .product-buy-row button{width:100%;grid-column:1}.product-card .product-card-quick-actions button{font-size:8px;padding:5px 4px}}
+
+/* Generic AI-chat attachment preview */
+.ai-chat-attachments .ai-chat-file-preview{display:grid;place-items:center;width:76px;height:68px;border:1px solid #dce5ee;border-radius:8px;background:linear-gradient(145deg,#f7f9fc,#e8eef5);color:#173b5b;font-size:13px;font-weight:850;letter-spacing:.06em}
+.ai-chat-attachments figcaption{max-width:76px}
+.ai-chat-attach-menu button:focus-visible,.ai-chat-plus:focus-visible{outline:2px solid #c49a45;outline-offset:2px}

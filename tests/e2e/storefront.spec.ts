@@ -73,12 +73,12 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
 
 test("AI support uses a compact in-composer control layout", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
+  await expect(page.locator(".announcement-golden-quote")).toContainText("Elegance is when the inside is as beautiful as the outside.");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   await expect(chat).toBeVisible();
-  await expect(chat.getByLabel("Your message")).toBeVisible();
-  await expect(chat.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
+  await expect(chat.getByRole("textbox", { name: "Your message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
@@ -489,7 +489,7 @@ test("install app control remains visible when the browser does not expose a nat
 });
 
 test("AI chat sends only real alternating conversation turns to Gemini", async ({ page }) => {
-  const submitted: { payload: { messages: Array<{ role: string; text: string }>; images?: unknown[] } | null } = { payload: null };
+  const submitted: { payload: { messages: Array<{ role: string; text: string }>; attachments?: unknown[] } | null } = { payload: null };
   await page.route("**/api/ai/chat", async (route) => {
     submitted.payload = route.request().postDataJSON();
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "Test assistant reply" }) });
@@ -500,43 +500,46 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("Test assistant reply")).toBeVisible();
   expect(submitted.payload?.messages).toEqual([{ role: "user", text: "Hello De VERVE" }]);
-  expect(submitted.payload?.images).toEqual([]);
+  expect(submitted.payload?.attachments).toEqual([]);
 });
 
-test("customer AI chat exposes accessible photo, voice input and spoken response controls", async ({ page }) => {
+test("customer AI chat provides camera, gallery, image-file, copy and per-message speaker actions", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
-  await expect(page.getByRole("button", { name: "Speak your message" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
-  await expect(page.getByText("＋ Photo")).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Browse garments" })).toHaveAttribute("href", "/?screen=fashion");
-  await expect(page.getByRole("link", { name: "Wholesale enquiry" })).toHaveAttribute("href", "/?screen=wholesale");
-  await expect(page.getByRole("link", { name: "Car rental" })).toHaveAttribute("href", "/?screen=mobility");
-  await expect(page.getByRole("link", { name: "Contact team" })).toHaveAttribute("href", "/?screen=contact");
-  await expect(page.getByRole("link", { name: "My account" })).toHaveAttribute("href", "/account");
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
+  await chat.getByRole("button", { name: "Add attachment" }).click();
+  await expect(chat.getByRole("menuitem", { name: "Take a photo" })).toBeVisible();
+  await expect(chat.getByRole("menuitem", { name: "Choose from gallery" })).toBeVisible();
+  await expect(chat.getByRole("menuitem", { name: "Attach any file" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Copy assistant message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Speak message" })).toBeVisible();
+  await expect(chat.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
+  await expect(chat.getByRole("combobox", { name: "Voice recognition language" })).toHaveCount(0);
+  await expect(chat.getByText("＋ Photo")).toHaveCount(0);
 });
 
 
-test("customer AI chat compresses and sends an attached product photo", async ({ page }) => {
-  const submitted: { images?: Array<{ name: string; mime_type: string; data: string }> } = {};
+test("customer AI chat attaches and sends a product photo", async ({ page }) => {
+  const submitted: { attachments?: Array<{ name: string; mime_type: string; data: string }> } = {};
   await page.route("**/api/ai/chat", async route => {
     Object.assign(submitted, route.request().postDataJSON());
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ reply: "I can inspect the visible garment details." }) });
   });
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
-  await page.locator(".ai-chat-panel input[type=file]").setInputFiles({
+  await page.locator(".ai-chat-panel input[type=file]").nth(1).setInputFiles({
     name: "garment-label.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=", "base64")
   });
-  await expect(page.getByAltText("Photo attachment 1")).toBeVisible();
+  await expect(page.getByAltText("Image attachment 1")).toBeVisible();
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.getByText("I can inspect the visible garment details.")).toBeVisible();
-  expect(submitted.images).toHaveLength(1);
-  expect(submitted.images?.[0].mime_type).toBe("image/jpeg");
-  expect(submitted.images?.[0].data.startsWith("/9j/")).toBeTruthy();
+  expect(submitted.attachments).toHaveLength(1);
+  expect(submitted.attachments?.[0].mime_type).toBe("image/png");
+  expect(submitted.attachments?.[0].data.startsWith("iVBORw0KGgo")).toBeTruthy();
 });
 
 test("product card opens from its content and product cart merges by size and colour", async ({ page }) => {
@@ -742,10 +745,11 @@ test("owner-managed category artwork replaces the default illustration on the li
   const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   await page.route("**/api/storefront/settings", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({social_links:{},brand_assets:{},category_assets:{men:mediaId}})}));
   await page.goto("/");
-  const card = page.locator(".collection-card.men");
+  const artworkLink = page.getByTestId("collection-men-art");
+  const card = artworkLink.locator("..");
   await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
   await expect(card.locator(".category-garment")).toHaveCount(0);
-  await expect(card.getByRole("link", {name:/Shop Men's fashion collection/}).first()).toBeVisible();
+  await expect(artworkLink).toHaveAttribute("href", "/?screen=fashion&category=men");
 });
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
@@ -787,4 +791,18 @@ test("cart does not promise spend-based discounts or free delivery at high subto
   await expect(page.locator(".cart-shipping-info")).toContainText("No free-delivery offer is applied unless a valid voucher is shown");
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
   await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
+});
+
+test("uses the uploaded brand logo as the browser tab icon when no dedicated favicon is set", async ({ page }) => {
+  const logoId = "22222222-2222-4222-8222-222222222222";
+  await page.route("**/api/storefront/settings", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ social_links: {}, brand_assets: { logo_id: logoId, favicon_id: null } }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
