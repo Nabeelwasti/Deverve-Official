@@ -1764,9 +1764,14 @@ test("owner can create, edit, publish and archive products with an audit entry",
   assert.equal(updated.status, 200);
   assert.equal((await updated.json()).product.status, "published");
 
-  const listed = await handleRequest(new Request(origin + "/api/admin/products?status=published", { headers: { cookie } }), env(db));
+  const listed = await handleRequest(new Request(origin + "/api/admin/products?status=published&limit=1&offset=0", { headers: { cookie } }), env(db));
   assert.equal(listed.status, 200);
-  assert.equal((await listed.json()).products.length, 1);
+  const listedBody = await listed.json();
+  assert.equal(listedBody.products.length, 1);
+  assert.equal(listedBody.has_more, false);
+  assert.equal(listedBody.next_offset, 1);
+  const nextPage = await handleRequest(new Request(origin + "/api/admin/products?status=published&limit=1&offset=1", { headers: { cookie } }), env(db));
+  assert.equal((await nextPage.json()).products.length, 0);
 
   const archived = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
   assert.equal(archived.status, 200);
