@@ -15,10 +15,10 @@ async function loadBrandLogoPng(): Promise<Uint8Array> {
   context.fillRect(0,0,512,512);
   let rendered=false;
   try{
-    const response=await fetch("/brand/de-verve-logo.svg",{credentials:"same-origin",cache:"force-cache"});
+    const response=await fetch("/api/brand/logo",{credentials:"same-origin",cache:"no-store"});
     if(!response.ok)throw new Error("The official brand logo could not be loaded.");
-    const svg=await response.text();
-    const objectUrl=URL.createObjectURL(new Blob([svg],{type:"image/svg+xml"}));
+    const blob=await response.blob();
+    const objectUrl=URL.createObjectURL(blob);
     try{
       const image=new Image();
       image.src=objectUrl;
