@@ -954,6 +954,123 @@ async function publicDeliveryFeeRoutes(request: Request, env: Env, url: URL): Pr
   } catch { return error("Your decision could not be saved. Please contact De VERVE.", 503); }
 }
 
+
+interface EligibleCoupon {
+  id: string; code_hash: string; code_prefix: string; label: string; purpose: string;
+  discount_type: "percent" | "fixed" | "free_delivery"; discount_value: number;
+  max_discount_paisa: number | null; min_subtotal_paisa: number; customer_id: string | null;
+  exchange_request_id: string | null; starts_at: string; expires_at: string | null;
+  max_redemptions: number | null; per_customer_limit: number; usage_count: number;
+  is_active: number; customer_redemptions: number;
+}
+async function resolveEligibleCoupon(db: D1Database, rawCode: string, customerId: string, subtotalPaisa: number): Promise<{coupon:EligibleCoupon;discountPaisa:number;freeDelivery:boolean}|null> {
+  const code=cleanText(rawCode,64).toUpperCase();
+  if(!/^[A-Z0-9-]{6,64}$/.test(code)||!Number.isSafeInteger(subtotalPaisa)||subtotalPaisa<0)return null;
+  const coupon=await db.prepare("SELECT c.*, (SELECT COUNT(*) FROM discount_coupon_redemptions r WHERE r.coupon_id=c.id AND r.customer_id=?) AS customer_redemptions FROM discount_coupons c WHERE c.code_hash=? LIMIT 1").bind(customerId,await sha256(code)).first<EligibleCoupon>();
+  if(!coupon||coupon.is_active!==1||coupon.starts_at>Date.now().toString()&&Date.parse(coupon.starts_at)>Date.now()||coupon.expires_at&&Date.parse(coupon.expires_at)<=Date.now())return null;
+  if(coupon.customer_id&&coupon.customer_id!==customerId)return null;
+  if(subtotalPaisa<coupon.min_subtotal_paisa||coupon.max_redemptions!==null&&coupon.usage_count>=coupon.max_redemptions||coupon.customer_redemptions>=coupon.per_customer_limit)return null;
+  if(coupon.exchange_request_id){
+    const exchange=await db.prepare("SELECT id FROM exchange_requests WHERE id=? AND customer_id=? AND status='completed' LIMIT 1").bind(coupon.exchange_request_id,customerId).first<{id:string}>();
+    if(!exchange)return null;
+  }
+  let discountPaisa=0,freeDelivery=false;
+  if(coupon.discount_type==="percent")discountPaisa=Math.floor(subtotalPaisa*coupon.discount_value/10000);
+  else if(coupon.discount_type==="fixed")discountPaisa=coupon.discount_value;
+  else freeDelivery=true;
+  if(coupon.max_discount_paisa!==null)discountPaisa=Math.min(discountPaisa,coupon.max_discount_paisa);
+  discountPaisa=Math.min(subtotalPaisa,discountPaisa);
+  return {coupon,discountPaisa,freeDelivery};
+}
+
+async function adminCouponRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  const collection=url.pathname==="/api/admin/coupons";
+  const match=url.pathname.match(/^\\/api\\/admin\\/coupons\\/([a-f0-9-]{36})$/i);
+  if(!collection&&!match)return null;
+  let admin:SessionRow|null;
+  try{admin=await currentAdmin(request,env.DB);}catch{return error("Voucher management is temporarily unavailable.",503);}
+  if(!admin)return error("Authentication required",401);
+  if(!["owner","manager"].includes(admin.role))return error("Only the owner or manager can manage vouchers.",403);
+  if(collection&&request.method==="GET"){
+    try{
+      const [coupons,exchanges]=await Promise.all([
+        env.DB.prepare("SELECT c.id,c.code_prefix,c.label,c.purpose,c.discount_type,c.discount_value,c.max_discount_paisa,c.min_subtotal_paisa,c.customer_id,c.exchange_request_id,c.starts_at,c.expires_at,c.max_redemptions,c.per_customer_limit,c.usage_count,c.is_active,c.created_at,cu.full_name AS customer_name,e.exchange_number FROM discount_coupons c LEFT JOIN customers cu ON cu.id=c.customer_id LEFT JOIN exchange_requests e ON e.id=c.exchange_request_id ORDER BY c.created_at DESC LIMIT 100").all<Record<string,unknown>>(),
+        env.DB.prepare("SELECT e.id,e.exchange_number,e.reason,e.customer_id,c.full_name AS customer_name,c.phone AS customer_phone,o.order_number FROM exchange_requests e JOIN customers c ON c.id=e.customer_id JOIN orders o ON o.id=e.order_id WHERE e.status='completed' AND NOT EXISTS(SELECT 1 FROM discount_coupons d WHERE d.exchange_request_id=e.id) ORDER BY e.completed_at DESC LIMIT 50").all<Record<string,unknown>>()
+      ]);
+      return json({coupons:coupons.results??[],eligible_exchanges:exchanges.results??[]});
+    }catch{return error("Voucher records could not be loaded.",503);}
+  }
+  if(match&&request.method==="PATCH"){
+    if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+    const body=await readJson(request,1000);
+    if(body?.is_active!==false)return error("Vouchers can only be deactivated from this action.",400);
+    try{
+      const now=new Date().toISOString();
+      const results=await env.DB.batch([
+        env.DB.prepare("UPDATE discount_coupons SET is_active=0,updated_at=? WHERE id=? AND is_active=1").bind(now,match[1]),
+        env.DB.prepare("INSERT INTO audit_logs(id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'coupon.revoked','discount_coupon',?,? WHERE EXISTS(SELECT 1 FROM discount_coupons WHERE id=? AND is_active=0 AND updated_at=?)").bind(crypto.randomUUID(),admin.admin_user_id,match[1],JSON.stringify({reason:cleanText(body.reason,300)||"Revoked by authorised administrator"}),match[1],now)
+      ]);
+      if((results[0]?.meta?.changes??0)!==1)return error("Voucher not found or already inactive.",409);
+      return json({revoked:true});
+    }catch{return error("Voucher could not be revoked.",503);}
+  }
+  if(!collection||request.method!=="POST")return error("Method not allowed",405);
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  const body=await readJson(request,4000);
+  if(!body)return error("Submit valid voucher details.",400);
+  const purpose=cleanText(body.purpose,40);
+  const type=cleanText(body.discount_type,20);
+  const label=cleanText(body.label,100);
+  const discountValue=Number(body.discount_value);
+  const minSubtotal=Number(body.min_subtotal_paisa??0);
+  const maxDiscount=body.max_discount_paisa===null||body.max_discount_paisa===undefined||body.max_discount_paisa===""?null:Number(body.max_discount_paisa);
+  const customerId=cleanText(body.customer_id,64)||null;
+  const exchangeId=cleanText(body.exchange_request_id,64)||null;
+  const isExchange=["exchange_compensation","damaged_item","wrong_item","size_exchange"].includes(purpose);
+  const allowedPurposes=["exchange_compensation","damaged_item","wrong_item","size_exchange","goodwill","first_order","loyalty","campaign","wholesale","manual_adjustment"];
+  if(!allowedPurposes.includes(purpose)||!["percent","fixed","free_delivery"].includes(type)||label.length<3||!Number.isFinite(discountValue)||!Number.isSafeInteger(minSubtotal)||minSubtotal<0||maxDiscount!==null&&(!Number.isSafeInteger(maxDiscount)||maxDiscount<0))return error("Check the voucher purpose, type, label and limits.",400);
+  if(type==="percent"&&(!Number.isInteger(discountValue)||discountValue<1||discountValue>90)||type==="fixed"&&(!Number.isSafeInteger(discountValue)||discountValue<1||discountValue>10000000)||type==="free_delivery"&&discountValue!==0)return error("Discount must be 1–90 percent, a valid fixed PKR amount in paisa, or free delivery.",400);
+  if(isExchange&&(!customerId||!exchangeId))return error("Exchange compensation must be linked to a customer and completed exchange case.",400);
+  if(!isExchange&&(customerId||exchangeId))return error("Customer and exchange case binding is reserved for exchange compensation vouchers.",400);
+  if(isExchange){
+    try{
+      const exchange=await env.DB.prepare("SELECT id,customer_id,status,reason FROM exchange_requests WHERE id=? LIMIT 1").bind(exchangeId).first<{id:string;customer_id:string;status:string;reason:string}>();
+      if(!exchange||exchange.status!=="completed"||exchange.customer_id!==customerId)return error("Only a completed exchange belonging to that customer can receive compensation.",409);
+      if(purpose==="damaged_item"&&exchange.reason!=="damaged"||purpose==="wrong_item"&&exchange.reason!=="wrong_item"||purpose==="size_exchange"&&exchange.reason!=="size_issue")return error("Voucher purpose does not match the recorded exchange reason.",409);
+    }catch{return error("Exchange case could not be verified.",503);}
+  }
+  const now=new Date().toISOString();
+  const days=Number(body.expiry_days??30);
+  if(!Number.isInteger(days)||days<1||days>365)return error("Expiry must be between 1 and 365 days.",400);
+  const expires=new Date(Date.now()+days*86400000).toISOString();
+  const maxUses=isExchange?1:Number(body.max_redemptions??100);
+  const perCustomer=isExchange?1:Number(body.per_customer_limit??1);
+  if(!Number.isInteger(maxUses)||maxUses<1||maxUses>100000||!Number.isInteger(perCustomer)||perCustomer<1||perCustomer>1000)return error("Check the redemption limits.",400);
+  const code="DV-"+base64Url(crypto.getRandomValues(new Uint8Array(12))).toUpperCase().replace(/[-_]/g,"").slice(0,16);
+  const id=crypto.randomUUID();
+  try{
+    const results=await env.DB.batch([
+      env.DB.prepare("INSERT INTO discount_coupons(id,code_hash,code_prefix,label,purpose,discount_type,discount_value,max_discount_paisa,min_subtotal_paisa,customer_id,exchange_request_id,starts_at,expires_at,max_redemptions,per_customer_limit,created_by_admin_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,await sha256(code),code.slice(0,6)+"…",label,purpose,type,type==="percent"?Math.round(discountValue*100):discountValue,maxDiscount,minSubtotal,customerId,exchangeId,now,expires,maxUses,perCustomer,admin.admin_user_id),
+      env.DB.prepare("INSERT INTO audit_logs(id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'coupon.created','discount_coupon',?,? WHERE EXISTS(SELECT 1 FROM discount_coupons WHERE id=?)").bind(crypto.randomUUID(),admin.admin_user_id,id,JSON.stringify({purpose,discount_type:type,exchange_request_id:exchangeId,customer_bound:Boolean(customerId),expires_at:expires,max_redemptions:maxUses}),id)
+    ]);
+    if((results[0]?.meta?.changes??0)!==1)return error("Voucher could not be created.",503);
+    return json({created:true,coupon:{id,code,label,purpose,discount_type:type,discount_value:discountValue,expires_at:expires,max_redemptions:maxUses,customer_id:customerId,exchange_request_id:exchangeId}},201);
+  }catch(caught){return error(/unique|constraint|coupon/i.test(caught instanceof Error?caught.message:"")?"Voucher could not be created because its exchange case or code is already used.":"Voucher could not be created. Please try again.",409);}
+}
+
+async function publicCouponRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if(url.pathname!=="/api/coupons/validate"||request.method!=="POST")return null;
+  if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
+  const limited=await enforcePublicRateLimit(request,env,"coupon-validation",10);
+  if(limited)return limited;
+  const customer=await currentCustomer(request,env.DB).catch(()=>null);
+  if(!customer)return error("Sign in to use a customer voucher.",401);
+  const body=await readJson(request,1000);
+  const resolved=body?await resolveEligibleCoupon(env.DB,cleanText(body.code,64),customer.customer_id,Number(body.subtotal_paisa)):null;
+  if(!resolved)return error("This voucher is invalid, expired, already used, or does not apply to this order.",400);
+  return json({valid:true,label:resolved.coupon.label,discount_amount_paisa:resolved.discountPaisa,free_delivery:resolved.freeDelivery,code:cleanText(body?.code,64).toUpperCase(),expires_at:resolved.coupon.expires_at});
+}
+
 async function adminExchangeRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/exchanges";
   const match = url.pathname.match(/^\/api\/admin\/exchanges\/([a-f0-9-]{36})$/i);
@@ -3522,7 +3639,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   if (auditLogResponse) return auditLogResponse;
 
 
-  const exchangeResponse = await adminExchangeRoutes(request, env, url);
+  const couponResponse = await adminCouponRoutes(request, env, url);\n  if (couponResponse) return couponResponse;\n\n  const exchangeResponse = await adminExchangeRoutes(request, env, url);
   if (exchangeResponse) return exchangeResponse;
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
