@@ -763,3 +763,37 @@ test("inventory warns before splitting legacy shared stock or using incomplete v
   await expect(page.locator(".inventory-data-warning-secondary")).toContainText("Variant records need verified details");
   await expect(page.locator(".inventory-data-warning-secondary")).toContainText("Tolaza");
 });
+
+test("owner website settings exposes the visual design studio and saves validated design choices", async ({ page }) => {
+  await mockAdminApi(page);
+  let saved: { site_design?: { hero_title?: string; font_family?: string } } | null = null;
+  await page.route("**/api/admin/settings", async route => {
+    if (route.request().method() === "PATCH") {
+      saved = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ updated: true }) });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ settings: { site_design: {
+        preset: "midnight-gold", primary_color: "#102d49", accent_color: "#c8a96d",
+        surface_color: "#fbfaf7", text_color: "#19324b", corner_radius: 16,
+        font_family: "dm-sans", density: "comfortable", button_style: "rounded",
+        card_shadow: "soft", hero_title: "Elevate your style.",
+        hero_subtitle: "Everyday fashion for men, women and kids.", section_images: {}
+      } } })
+    });
+  });
+  await page.goto("/admin?section=overview");
+  await page.getByText("Administration", { exact: true }).click();
+  await page.getByRole("button", { name: "Website & brand settings" }).click();
+  await expect(page.getByRole("heading", { name: "Website visual design studio" })).toBeVisible();
+  await page.getByLabel("Homepage headline").fill("A better De VERVE experience");
+  await page.getByLabel("Website typography").selectOption("inter");
+  await page.getByRole("button", { name: "Save website visual design" }).click();
+  await expect(page.getByRole("status")).toContainText("Website visual settings saved");
+  expect(saved?.site_design?.hero_title).toBe("A better De VERVE experience");
+  expect(saved?.site_design?.font_family).toBe("inter");
+});
+
