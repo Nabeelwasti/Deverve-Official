@@ -2458,6 +2458,13 @@ test("direct bank checkout persists the selected method and blocks fulfilment un
   assert.equal(blocked.status,409);
   const verified=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{payment_status:"paid",payment_reference:"BANK-REF-ORDER-1",financial_account_id:"bank-clearing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(verified.status,200);
+  const quote=await handleRequest(request("/api/admin/orders/"+order.id+"/delivery-fee","POST",{delivery_fee_paisa:0},{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(quote.status,200);
+  const quoteBody=await quote.json();
+  const approvalToken=new URL(quoteBody.approval_url).searchParams.get("token");
+  assert.ok(approvalToken);
+  const accepted=await handleRequest(request("/api/delivery-fee/"+approvalToken,"POST",{decision:"accept"}),env(db));
+  assert.equal(accepted.status,200);
   const processing=await handleRequest(request("/api/admin/orders/"+order.id,"PATCH",{order_status:"processing"},{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(processing.status,200);
 });
