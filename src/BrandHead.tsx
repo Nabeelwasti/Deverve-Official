@@ -10,9 +10,9 @@ export default function BrandHead(){
     if(!active)return;
     const faviconId=data.brand_assets?.favicon_id??null;
     const logoId=data.brand_assets?.logo_id??null;
-    const appIconId=faviconId??logoId;
+    const appIconId=faviconId;
     document.documentElement.style.setProperty("--deverve-logo-image", "url('/brand/de-verve-mark.svg')");
-    const iconUrl=appIconId?"/media/"+appIconId+"?v="+encodeURIComponent(appIconId):"/api/brand/logo";
+    const iconUrl=appIconId?"/media/"+appIconId+"?v="+encodeURIComponent(appIconId):"/brand/de-verve-mark.svg";
     let icon=document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if(!icon){icon=document.createElement("link");icon.rel="icon";document.head.appendChild(icon);}
     icon.href=iconUrl;icon.type="";
