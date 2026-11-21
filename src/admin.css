@@ -1185,3 +1185,8 @@
 .admin-pagination-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 4px;padding:12px 14px;border:1px solid #e1e9f1;border-radius:10px;background:#f8fafc}
 .admin-pagination-row span{color:#60738a;font-size:12px}
 @media(max-width:640px){.admin-pagination-row{align-items:stretch;flex-direction:column}.admin-pagination-row button{width:100%}}
+
+/* Keep the primary catalogue action readable even when global button styles change. */
+.admin-add-product-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:8px!important;min-width:132px!important;min-height:42px!important;padding:11px 16px!important;white-space:nowrap!important;overflow:visible!important;color:#fff!important;font-size:14px!important;line-height:1.2!important;visibility:visible!important;opacity:1!important}
+.admin-add-product-button .admin-add-product-label{display:inline!important;visibility:visible!important;opacity:1!important;color:#fff!important;font:inherit!important;line-height:1.2!important;white-space:nowrap!important}
+.admin-add-product-button .admin-add-product-symbol{display:inline-block!important;visibility:visible!important;opacity:1!important;color:#fff!important;font-size:18px!important;line-height:1!important}
