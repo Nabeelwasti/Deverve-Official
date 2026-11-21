@@ -559,3 +559,22 @@ Latest main commit and CI/deployment status must be verified from GitHub Actions
 ### Status clarification — 21 November 2026, 13:24 UTC
 
 The preceding CNIC status paragraph is updated to distinguish the owner-confirmed operating policy from formal sign-off and optional external legal review. No lawyer review is claimed. The technical 90-day deletion gap described above remains open and must not be treated as resolved by consent capture or policy publication.
+
+
+## Storefront and visual designer update — 21 November 2026
+
+The following UX work has been committed to main:
+
+- Customer AI chat now uses a compact composer with in-field attachment, voice, language and send controls. The previous horizontal quick-link strip has been removed; spoken response remains available as a small secondary action.
+- Category selection now focuses the customer on the selected collection and hides the repeated category-card grid while the filtered catalogue is displayed. The collection cards continue to link to the matching catalogue route.
+- The four home service cards now navigate to Fashion, Customer Account, Wholesale and Mobility rather than behaving as decorative cards.
+- The defensive review explanation was replaced with neutral copy: “Customer experiences, shared in their own words.” Review verification labels remain truthful.
+- Added a branded loading screen, reduced-motion handling, an editorial quote slot backed by the public DummyJSON random-quote endpoint, and a brand-authored fallback if the service is unavailable.
+- Refined the storefront palette and catalogue cards toward a premium navy, ivory and champagne-gold visual system.
+- Admin → Content & visual designer can now create a page explicitly as a homepage redesign. A category-grid section supports per-category image selection or upload, saved in the page section content, and category image previews. The public CMS renderer displays those images.
+
+**Important CMS activation note:** the production site_pages query returned no rows at the time of this update. Therefore the new CMS homepage and its editable category-image cards are capabilities in the admin designer, not an already-published homepage. An authorised owner must create a page with purpose “Homepage redesign”, add the desired sections (including a category grid), upload/select the images, preview it, and publish it. Until then, the existing static storefront homepage remains the live fallback.
+
+The Cloudflare Pages builds for commits 9c49b5a, b8b7a18 and d1836a4 reached successful build stages; the deployment for d1836a4 completed successfully. Later commits 8a40720 and f1610e6 were still queued/building at the last status check. These Pages builds verify TypeScript/Vite compilation only; they do not substitute for the GitHub Actions Worker, schema, dependency and Playwright suites. Do not claim those suites are green without their run results.
+
+**Still not certified:** CNIC 90-day deletion remains technically unimplemented; independent off-account backup and full restore; real device scanner acceptance; live Turnstile, Safepay, email and WhatsApp tests; physical inventory/POS reconciliation; final rental workflow; named staff authorisations; formal owner signoff; and final customer-origin production smoke checks. The existing D1 deletion triggers and indefinite R2 locks must not be bypassed as a shortcut.
