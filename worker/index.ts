@@ -1048,7 +1048,7 @@ async function adminCouponRoutes(request: Request, env: Env, url: URL): Promise<
   const customerId=cleanText(body.customer_id,64)||null;
   const exchangeId=cleanText(body.exchange_request_id,64)||null;
   const isExchange=["exchange_compensation","damaged_item","wrong_item","size_exchange"].includes(purpose);
-  const allowedPurposes=["exchange_compensation","damaged_item","wrong_item","size_exchange","goodwill","first_order","loyalty","campaign","wholesale","manual_adjustment"];
+  const allowedPurposes=["exchange_compensation","damaged_item","wrong_item","size_exchange","goodwill","first_order","loyalty","campaign","manual_adjustment"];
   if(!allowedPurposes.includes(purpose)||!["percent","fixed","free_delivery"].includes(type)||label.length<3||!Number.isFinite(discountValue)||!Number.isSafeInteger(minSubtotal)||minSubtotal<0||maxDiscount!==null&&(!Number.isSafeInteger(maxDiscount)||maxDiscount<0))return error("Check the voucher purpose, type, label and limits.",400);
   if(type==="percent"&&(!Number.isInteger(discountValue)||discountValue<1||discountValue>90)||type==="fixed"&&(!Number.isSafeInteger(discountValue)||discountValue<1||discountValue>10000000)||type==="free_delivery"&&discountValue!==0)return error("Discount must be 1–90 percent, a valid fixed PKR amount in paisa, or free delivery.",400);
   if(isExchange&&(!customerId||!exchangeId))return error("Exchange compensation must be linked to a customer and completed exchange case.",400);
