@@ -503,18 +503,20 @@ test("AI chat sends only real alternating conversation turns to Gemini", async (
   expect(submitted.payload?.images).toEqual([]);
 });
 
-test("customer AI chat exposes accessible photo, voice input and spoken response controls", async ({ page }) => {
+test("customer AI chat exposes file, camera, gallery, voice, speaker and copy controls", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   await expect(page.getByRole("button", { name: "Speak your message" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Listen to latest response" })).toBeVisible();
-  await expect(page.locator('label[aria-label="Attach a product photo"]')).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Browse garments" })).toHaveAttribute("href", "/?screen=fashion");
-  await expect(page.getByRole("link", { name: "Wholesale enquiry" })).toHaveAttribute("href", "/?screen=wholesale");
-  await expect(page.getByRole("link", { name: "Car rental" })).toHaveAttribute("href", "/?screen=mobility");
-  await expect(page.getByRole("link", { name: "Contact team" })).toHaveAttribute("href", "/?screen=contact");
-  await expect(page.getByRole("link", { name: "My account" })).toHaveAttribute("href", "/account");
+  await expect(page.getByRole("button", { name: "Add attachment" })).toBeVisible();
+  await page.getByRole("button", { name: "Add attachment" }).click();
+  await expect(page.getByRole("menuitem", { name: "Attach a file" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Take a photo" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Choose from gallery" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Voice recognition language" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Listen to latest response" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy message" }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Speak message" }).first()).toBeVisible();
+  await expect(page.locator(".ai-chat-launcher img")).toHaveAttribute("src", /brand\/de-verve-logo\.svg|\/media\//);
 });
 
 
@@ -741,12 +743,12 @@ test("storefront uses verified service wording instead of fabricated social proo
 test("owner-managed category artwork replaces the default illustration on the live card", async ({ page }) => {
   const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   await page.route("**/api/storefront/settings", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({social_links:{},brand_assets:{},category_assets:{men:mediaId}})}));
-  await page.goto("/");
+  await page.goto("/?screen=fashion");
   const card = page.locator(".collection-card.men");
   await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
   await expect(card.locator(".category-garment")).toHaveCount(0);
-  await expect(card.locator(".collection-art")).toBeVisible();
   await expect(card.locator(".collection-art")).toHaveAttribute("href", "/?screen=fashion&category=men");
+  await expect(card.locator(".collection-art")).toHaveCount(1);
 });
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
