@@ -12,7 +12,7 @@ type SpeechRecognitionLike = {
 };
 type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
-const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. How may I help?" };
+const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. You can also attach a photo or document. How may I help?" };
 
 function toBase64(bytes: Uint8Array): string {
   let binary = "";
@@ -185,13 +185,13 @@ export default function AIChatWidget() {
           <span className="ai-chat-message-label">{message.role === "user" ? "YOU" : "DE VERVE"}</span>
           <p>{message.text}</p>
           <div className="ai-chat-message-actions">
-            {message.role === "model" && <button type="button" aria-label={speakingIndex === index ? "Stop speaking message" : "Speak message"} title="Read this reply aloud" onClick={() => speakMessage(message.text, index)}>{speakingIndex === index ? "Ⅱ" : "◖))"}</button>}
-            <button type="button" aria-label="Copy message" title="Copy message" onClick={() => void copyMessage(message.text)}>⧉</button>
+            <button type="button" aria-label={speakingIndex === index ? "Stop speaking message" : "Speak message"} title="Read this message aloud" onClick={() => speakMessage(message.text, index)}>{speakingIndex === index ? "Ⅱ" : <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4h4l5 4V6l-5 4H4Zm12-1a5 5 0 0 1 0 6m2-9a9 9 0 0 1 0 12" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg>}</button>
+            <button type="button" aria-label="Copy message" title="Copy message" onClick={() => void copyMessage(message.text)}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" strokeWidth="1.7"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3" fill="none" stroke="currentColor" strokeWidth="1.7"/></svg></button>
           </div>
         </article>)}
         {sending && <span className="ai-chat-typing" role="status"><i/><i/><i/> Thinking…</span>}
       </div>
-      {attachments.length > 0 && <div className="ai-chat-attachments" aria-label="Attached files">{attachments.map((item, index) => <figure key={item.name + index}>{item.preview ? <img src={item.preview} alt={"Photo attachment " + (index + 1)} /> : <div className="ai-chat-file-preview" aria-hidden="true">PDF</div>}<button type="button" aria-label="Remove attachment" onClick={() => setAttachments(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
+      {attachments.length > 0 && <div className="ai-chat-attachments" aria-label="Attached files">{attachments.map((item, index) => <figure key={item.name + index}>{item.preview ? <img src={item.preview} alt={"Photo attachment " + (index + 1)} /> : <div className="ai-chat-file-preview" aria-hidden="true">{item.mime_type==="application/pdf"?"PDF":"TXT"}</div>}<button type="button" aria-label="Remove attachment" onClick={() => setAttachments(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
       <form className="ai-chat-form" onSubmit={send}>
         <div className="ai-chat-composer">
           <div className="ai-chat-attach-wrap">
