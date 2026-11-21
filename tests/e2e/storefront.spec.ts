@@ -791,3 +791,17 @@ test("cart does not promise spend-based discounts or free delivery at high subto
   await expect(page.locator(".cart-shipping-unlocked")).toHaveCount(0);
   await expect(page.locator(".cart-shipping-track-label")).toHaveCount(0);
 });
+
+test("uses the uploaded brand logo as the browser tab icon when no dedicated favicon is set", async ({ page }) => {
+  const logoId = "22222222-2222-4222-8222-222222222222";
+  await page.route("**/api/storefront/settings", async route => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ social_links: {}, brand_assets: { logo_id: logoId, favicon_id: null } }),
+    });
+  });
+  await page.goto("/");
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
+});
