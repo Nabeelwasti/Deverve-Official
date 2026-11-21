@@ -676,7 +676,12 @@ test("cart shows the image belonging to the selected product colour", async ({ p
 test("storefront uses verified service wording instead of fabricated social proof or inactive offers", async ({ page }) => {
   await page.goto("/");
   const body = page.locator("body");
-  await expect(page.locator(".trust-pillars-section")).toBeVisible();
+  await expect(page.locator(".trust-pillars-section")).toHaveCount(0);
+  await expect(page.locator(".intro-strip")).toHaveCount(0);
+  await expect(page.locator(".collections-section")).toHaveCount(1);
+  await page.goto("/?screen=fashion");
+  await expect(page.locator(".collections-section")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Shop Men.s fashion collection/ }).first()).toHaveAttribute("href", /screen=fashion/);
   for (const unsupportedClaim of [
     "10,000+",
     "4.9 ★",

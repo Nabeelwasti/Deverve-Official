@@ -502,10 +502,11 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
   const path = url.pathname;
   const isCollection = path === "/api/admin/products";
   const isImport = path === "/api/admin/products/import";
+  const isBulkPublish = path === "/api/admin/products/publish-bulk";
   const productId = path.startsWith("/api/admin/products/") ? path.slice("/api/admin/products/".length) : "";
   const productMatch = /^[a-f0-9-]{36}$/i.test(productId) ? productId : null;
   const isOverview = path === "/api/admin/overview";
-  if (!isCollection && !isImport && !productMatch && !isOverview) return null;
+  if (!isCollection && !isImport && !isBulkPublish && !productMatch && !isOverview) return null;
 
   let admin: SessionRow | null;
   try {
@@ -526,25 +527,56 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     }
   }
 
+  if (isBulkPublish && request.method === "POST") {
+    if (!["owner", "manager"].includes(admin.role)) return error("Only an owner or manager can publish a bulk catalogue", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 100_000);
+    const ids = body && Array.isArray(body.product_ids) ? body.product_ids : null;
+    if (!ids || ids.length < 1 || ids.length > 1000 || ids.some(id => typeof id !== "string" || !/^[a-f0-9-]{36}$/i.test(id)) || new Set(ids).size !== ids.length) {
+      return error("Choose 1–1,000 unique product IDs from the imported catalogue", 400);
+    }
+    const idsJson = JSON.stringify(ids);
+    const eligible = "p.id IN (SELECT value FROM json_each(?)) AND p.status='draft' AND length(trim(p.name))>=2 AND length(trim(p.category))>=2 AND p.retail_price_paisa > 0 AND EXISTS (SELECT 1 FROM product_variants v WHERE v.product_id=p.id AND v.is_active=1 AND v.stock_on_hand>v.reserved_quantity) AND EXISTS (SELECT 1 FROM product_media_assets pm JOIN media_assets m ON m.id=pm.media_asset_id WHERE pm.product_id=p.id AND pm.is_primary=1 AND pm.color='' AND m.media_type='image' AND m.status='ready')";
+    try {
+      const now = new Date().toISOString();
+      const written = await env.DB.batch([
+        env.DB.prepare("UPDATE products SET status='published',updated_at=? WHERE id IN (SELECT value FROM json_each(?)) AND (SELECT COUNT(*) FROM products p WHERE " + eligible + ") = ?")
+          .bind(now, idsJson, idsJson, ids.length),
+        env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'product.bulk_published','product',NULL,? WHERE changes()=?")
+          .bind(crypto.randomUUID(), admin.admin_user_id, JSON.stringify({ source: "bulk_catalogue_import", requested_count: ids.length }), ids.length),
+      ]);
+      const published = Number(written[0]?.meta?.changes ?? 0);
+      const auditCount = Number(written[1]?.meta?.changes ?? 0);
+      if (published !== ids.length || auditCount !== 1) return error("No products were published because at least one item failed the complete catalogue checks. Ensure every product has a retail price, an active in-stock size/colour variant and an attached cover photo, then retry.", 409);
+      return json({ ok: true, published, atomic: true, message: "Published all " + published + " validated products." });
+    } catch {
+      return error("The bulk catalogue could not be published. Refresh the product list and audit history before retrying.", 503);
+    }
+  }
+
   if (isCollection && request.method === "GET") {
     try {
       const limitValue = Number(url.searchParams.get("limit") ?? "50");
       const limit = Number.isInteger(limitValue) ? Math.min(Math.max(limitValue, 1), 100) : 50;
+      const offsetValue = Number(url.searchParams.get("offset") ?? "0");
+      const offset = Number.isInteger(offsetValue) && offsetValue >= 0 ? Math.min(offsetValue, 1_000_000) : 0;
       const status = cleanText(url.searchParams.get("status"), 12);
       const rows = status && ["draft", "published", "archived"].includes(status)
-        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC LIMIT ?").bind(status, limit).all<AdminProductRow>()
-        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key FROM products ORDER BY updated_at DESC LIMIT ?").bind(limit).all<AdminProductRow>();
-      const productRows = rows.results ?? [];
-      if (!productRows.length) return json({ products: [] });
+        ? await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products WHERE status = ? ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").bind(status, limit + 1, offset).all<AdminProductRow>()
+        : await env.DB.prepare("SELECT id, slug, name, description, category, audience, status, retail_price_paisa, wholesale_price_paisa, updated_at, image_key, seo_title, seo_description FROM products ORDER BY updated_at DESC, id DESC LIMIT ? OFFSET ?").bind(limit + 1, offset).all<AdminProductRow>();
+      const fetchedRows = rows.results ?? [];
+      const hasMore = fetchedRows.length > limit;
+      const productRows = fetchedRows.slice(0, limit);
+      if (!productRows.length) return json({ products: [], has_more: false, next_offset: offset });
       const productIds = productRows.map((product) => product.id);
       const placeholders = productIds.map(() => "?").join(",");
-      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500").bind(...productIds).all<PublicVariantRow>();
+      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 10000").bind(...productIds).all<PublicVariantRow>();
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variantRows.results ?? []) {
         const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
       }
-      return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })) });
+      return json({ products: productRows.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [] })), has_more: hasMore, next_offset: offset + productRows.length });
     } catch {
       return error("Product management is temporarily unavailable", 503);
     }
@@ -562,6 +594,10 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
     if (!items || items.length < 1 || items.length > 20) return error("Import between 1 and 20 products per atomic batch", 400);
     const normalizedProducts: Array<{id:string; product:NormalizedProduct; variants:Array<{id:string;sku:string;size:string;color:string;stock:number;cost:number;reorder:number;barcode:string}>}> = [];
     const seenSlugs = new Set<string>();
+    const seenSkus = new Set<string>();
+    const seenBarcodes = new Set<string>();
+    const providedSkus: string[] = [];
+    const providedBarcodes: string[] = [];
     let totalVariants = 0;
     for (const rawProduct of items) {
       if (!rawProduct || typeof rawProduct !== "object" || Array.isArray(rawProduct)) return error("Every imported product must be a valid object", 400);
@@ -580,18 +616,30 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
         const stock=v.initial_stock===undefined?0:v.initial_stock;
         const cost=v.cost_price_paisa===undefined?0:v.cost_price_paisa;
         const reorder=v.reorder_level===undefined?5:v.reorder_level;
-        if(!size||!color||size.includes(",")||size.includes(";")||size.includes("|")||color.includes(",")||color.includes(";")||color.includes("|")||!Number.isSafeInteger(stock)||Number(stock)<0||Number(stock)>1_000_000||!Number.isSafeInteger(cost)||Number(cost)<0||Number(cost)>1_000_000_000_000||!Number.isSafeInteger(reorder)||Number(reorder)<0||Number(reorder)>1_000_000) return error("Each variant needs one size, one colour, whole-number stock and reorder quantities, and a valid cost",400);
+        const suppliedSku=cleanText(v.sku,64);
+        const suppliedBarcode=cleanText(v.barcode,64);
+        if(!size||!color||size.includes(",")||size.includes(";")||size.includes("|")||color.includes(",")||color.includes(";")||color.includes("|")||!Number.isSafeInteger(stock)||Number(stock)<0||Number(stock)>1_000_000||!Number.isSafeInteger(cost)||Number(cost)<0||Number(cost)>1_000_000_000_000||!Number.isSafeInteger(reorder)||Number(reorder)<0||Number(reorder)>1_000_000||(suppliedSku&&!/^[A-Za-z0-9._-]{2,64}$/.test(suppliedSku))||(suppliedBarcode&&!/^[A-Za-z0-9._:-]{3,64}$/.test(suppliedBarcode))) return error("Each variant needs one size, one colour, valid optional SKU/barcode values, whole-number stock and reorder quantities, and a valid cost",400);
         if(v.cost_price_paisa!==undefined&&!["owner","manager"].includes(admin.role))return error("Only an owner or manager can set purchase cost",403);
         const optionKey=size.toLowerCase()+"::"+color.toLowerCase();
         if(seenOptions.has(optionKey))return error(product.name+" contains a duplicate "+size+" / "+color+" combination",409);
         seenOptions.add(optionKey);
-        variants.push({id:crypto.randomUUID(),sku:"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,stock:Number(stock),cost:Number(cost),reorder:Number(reorder),barcode:generateInternalBarcode()});
+        if(suppliedSku){const key=suppliedSku.toLowerCase();if(seenSkus.has(key))return error("The import contains a duplicate SKU: "+suppliedSku,409);seenSkus.add(key);providedSkus.push(suppliedSku);}
+        if(suppliedBarcode){const key=suppliedBarcode.toLowerCase();if(seenBarcodes.has(key))return error("The import contains a duplicate barcode: "+suppliedBarcode,409);seenBarcodes.add(key);providedBarcodes.push(suppliedBarcode);}
+        variants.push({id:crypto.randomUUID(),sku:suppliedSku||"DV-"+crypto.randomUUID().replace(/-/g,"").slice(0,10).toUpperCase(),size,color,stock:Number(stock),cost:Number(cost),reorder:Number(reorder),barcode:suppliedBarcode||generateInternalBarcode()});
       }
       totalVariants+=variants.length;
       normalizedProducts.push({id:crypto.randomUUID(),product,variants});
     }
     if(totalVariants>250)return error("Atomic import is limited to 250 total size-and-colour combinations",400);
     try {
+      if(providedSkus.length){
+        const existing=await env.DB.prepare("SELECT sku FROM product_variants WHERE sku IN ("+providedSkus.map(()=>"?").join(",")+")").bind(...providedSkus).all<{sku:string}>();
+        if((existing.results??[]).length)return error("These SKUs already exist: "+(existing.results??[]).map(row=>row.sku).join(", "),409);
+      }
+      if(providedBarcodes.length){
+        const existing=await env.DB.prepare("SELECT barcode FROM product_variants WHERE barcode IN ("+providedBarcodes.map(()=>"?").join(",")+")").bind(...providedBarcodes).all<{barcode:string}>();
+        if((existing.results??[]).length)return error("These barcodes already exist: "+(existing.results??[]).map(row=>row.barcode).join(", "),409);
+      }
       const slugs=[...seenSlugs], placeholders=slugs.map(()=>"?").join(",");
       const existing=await env.DB.prepare("SELECT slug FROM products WHERE slug IN ("+placeholders+")").bind(...slugs).all<{slug:string}>();
       if((existing.results??[]).length)return error("These product slugs already exist: "+(existing.results??[]).map(row=>row.slug).join(", "),409);

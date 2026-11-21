@@ -976,8 +976,14 @@ class FakeStatement {
       return { success: true, results: rows.slice(0, limit) };
     }
     if (q.startsWith("SELECT id, slug, name, description, category, audience, status,")) {
-      const rows = [...this.db.products.values()].filter((item) => !q.includes("WHERE status = ?") || item.status === v[0]).slice(0, q.includes("LIMIT ?") ? v[v.length - 1] : undefined);
-      return { success: true, results: rows };
+      const hasStatus = q.includes("WHERE status = ?");
+      const status = hasStatus ? v[0] : null;
+      const limit = hasStatus ? v[1] : v[0];
+      const offset = hasStatus ? v[2] : v[1];
+      const rows = [...this.db.products.values()]
+        .filter((item) => !status || item.status === status)
+        .sort((a,b)=>(String(b.updated_at??"").localeCompare(String(a.updated_at??""))||String(b.id).localeCompare(String(a.id))));
+      return { success: true, results: rows.slice(offset, offset + limit) };
     }
     if (q.startsWith("SELECT size, color, is_active FROM product_variants WHERE product_id = ?")) {
       return { success: true, results: [...this.db.variants.values()].filter(row => row.product_id === v[0]).map(row => ({ size: row.size ?? "", color: row.color ?? "", is_active: row.is_active ?? 1 })) };
@@ -1505,6 +1511,27 @@ class FakeStatement {
       if (row) row.status = v[0];
       return { success: true, meta: { changes: row ? 1 : 0 } };
     }
+    if (q.startsWith("UPDATE products SET status='published',updated_at=? WHERE id IN")) {
+      const [updatedAt, idsJson, _idsJsonAgain, expected] = v;
+      const ids = JSON.parse(idsJson);
+      const eligible = ids.every(id => {
+        const product = this.db.products.get(id);
+        const hasStock = [...this.db.variants.values()].some(row => row.product_id === id && row.is_active === 1 && row.stock_on_hand > (row.reserved_quantity ?? 0));
+        const hasCover = [...this.db.productMediaAssets.values()].some(row => row.product_id === id && row.is_primary === 1 && row.color === "" && this.db.mediaAssets.get(row.media_asset_id)?.status === "ready" && this.db.mediaAssets.get(row.media_asset_id)?.media_type === "image");
+        return product?.status === "draft" && product.name?.trim().length >= 2 && product.category?.trim().length >= 2 && product.retail_price_paisa > 0 && hasStock && hasCover;
+      });
+      const changed = eligible && ids.length === expected ? ids.length : 0;
+      if (changed) for (const id of ids) Object.assign(this.db.products.get(id), { status: "published", updated_at: updatedAt });
+      this.db.lastChanges = changed;
+      return { success: true, meta: { changes: changed } };
+    }
+    if (q.startsWith("INSERT INTO audit_logs") && q.includes("'product.bulk_published'")) {
+      const [id, actor_admin_id, metadata_json, expected] = v;
+      const changed = this.db.lastChanges === expected;
+      if (changed) this.db.audits.push({ id, actor_admin_id, action: "product.bulk_published", entity_type: "product", entity_id: null, metadata_json });
+      this.db.lastChanges = changed ? 1 : 0;
+      return { success: true, meta: { changes: changed ? 1 : 0 } };
+    }
     if (q.startsWith("UPDATE products SET slug")) {
       const [slug, name, description, category, audience, status, retail, wholesale, seo_title, seo_description, updated, id] = v;
       const row = this.db.products.get(id);
@@ -1621,6 +1648,7 @@ class FakeD1 {
   posReceiptOutbox = new Map();
   storeSettings = new Map();
   mediaAssets = new Map();
+  productMediaAssets = new Map();
   mediaObjects = new Map();
   prepare(sql) { return new FakeStatement(this, sql); }
   async batch(statements) {
@@ -1736,14 +1764,50 @@ test("owner can create, edit, publish and archive products with an audit entry",
   assert.equal(updated.status, 200);
   assert.equal((await updated.json()).product.status, "published");
 
-  const listed = await handleRequest(new Request(origin + "/api/admin/products?status=published", { headers: { cookie } }), env(db));
+  const listed = await handleRequest(new Request(origin + "/api/admin/products?status=published&limit=1&offset=0", { headers: { cookie } }), env(db));
   assert.equal(listed.status, 200);
-  assert.equal((await listed.json()).products.length, 1);
+  const listedBody = await listed.json();
+  assert.equal(listedBody.products.length, 1);
+  assert.equal(listedBody.has_more, false);
+  assert.equal(listedBody.next_offset, 1);
+  const nextPage = await handleRequest(new Request(origin + "/api/admin/products?status=published&limit=1&offset=1", { headers: { cookie } }), env(db));
+  assert.equal((await nextPage.json()).products.length, 0);
 
   const archived = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
   assert.equal(archived.status, 200);
   assert.equal(db.products.get(id).status, "archived");
   assert.equal(db.audits.length, 3);
+});
+
+test("owner bulk publishing is all-or-none and requires a real cover image plus available stock", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const headers = { cookie, "sec-fetch-site": "same-origin" };
+  const makeProduct = (id, name) => ({ id, slug: name.toLowerCase(), name, description: "", category: "Hoodies", audience: "unisex", status: "draft", retail_price_paisa: 250000, wholesale_price_paisa: null });
+  const ids = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"];
+  for (const [index, id] of ids.entries()) {
+    db.products.set(id, makeProduct(id, "Bulk Hoodie " + index));
+    db.variants.set("variant-" + index, { id: "variant-" + index, product_id: id, is_active: 1, stock_on_hand: 5, reserved_quantity: 0 });
+    const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".replace("aaaa", index === 0 ? "aaaa" : "bbbb");
+    db.mediaAssets.set(mediaId, { id: mediaId, media_type: "image", status: "ready" });
+    if (index === 0) db.productMediaAssets.set("media-link-" + index, { product_id: id, media_asset_id: mediaId, color: "", is_primary: 1 });
+  }
+  const rejected = await handleRequest(request("/api/admin/products/publish-bulk", "POST", { product_ids: ids }, headers), env(db));
+  assert.equal(rejected.status, 409);
+  assert.equal(db.products.get(ids[0]).status, "draft", "eligible product must not be partially published");
+  assert.equal(db.products.get(ids[1]).status, "draft", "ineligible product remains a draft");
+  assert.equal(db.audits.filter(row => row.action === "product.bulk_published").length, 0);
+
+  const secondMedia = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  db.productMediaAssets.set("media-link-1", { product_id: ids[1], media_asset_id: secondMedia, color: "", is_primary: 1 });
+  db.mediaAssets.set(secondMedia, { id: secondMedia, media_type: "image", status: "ready" });
+  const published = await handleRequest(request("/api/admin/products/publish-bulk", "POST", { product_ids: ids }, headers), env(db));
+  assert.equal(published.status, 200);
+  assert.equal((await published.json()).published, 2);
+  assert.equal(db.products.get(ids[0]).status, "published");
+  assert.equal(db.products.get(ids[1]).status, "published");
+  assert.equal(db.audits.filter(row => row.action === "product.bulk_published").length, 1);
 });
 
 test("catalogue staff cannot publish or archive products", async () => {
@@ -1763,6 +1827,8 @@ test("catalogue staff cannot publish or archive products", async () => {
   assert.equal(publish.status, 403);
   const archive = await handleRequest(request("/api/admin/products/" + id, "DELETE", {}, headers), env(db));
   assert.equal(archive.status, 403);
+  const bulkPublish = await handleRequest(request("/api/admin/products/publish-bulk", "POST", { product_ids: [id] }, headers), env(db));
+  assert.equal(bulkPublish.status, 403);
   assert.equal(db.products.get(id).status, "draft");
 });
 

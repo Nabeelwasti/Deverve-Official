@@ -1163,3 +1163,25 @@
 }
 .inventory-data-warning-secondary strong { color: #263f5c; }
 .inventory-data-warning-secondary small { color: #5d7189; }
+
+/* Bulk catalogue import: keep the optional publish choice clear and touch-friendly. */
+.admin-csv-import{display:grid;gap:12px;margin:0 0 22px;padding:18px;border:1px solid #dce6f0;border-radius:14px;background:#fbfcfe}
+.admin-csv-import>label{display:grid;gap:7px;color:#344762;font-size:12px;font-weight:750}
+.admin-csv-import>label input[type=file]{width:100%;min-width:0;padding:10px;border:1px dashed #bdcddd;border-radius:9px;background:#fff;color:#344762}
+.admin-csv-import>label small{color:#718197;font-size:11px;font-weight:500;line-height:1.55}
+.admin-csv-publish-option{display:grid!important;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:6px 10px!important;padding:13px;border:1px solid #d5e2ef;border-radius:10px;background:#f2f7fc;color:#183e64!important;font-size:13px!important}
+.admin-csv-publish-option input{grid-row:span 2;width:18px;height:18px;margin:1px 0 0;accent-color:#1769c2}
+.admin-csv-publish-option small{grid-column:2;color:#60758a;font-size:11px;font-weight:500;line-height:1.5}
+@media(max-width:640px){.admin-csv-import{padding:13px}.admin-csv-import .admin-table-wrap{max-width:100%;overflow-x:auto}.admin-csv-import>.admin-primary{width:100%}}
+
+.admin-global-actions .admin-primary{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:132px;min-height:42px;color:#fff!important;font-size:14px!important;line-height:1.2;white-space:nowrap}
+
+.admin-csv-image-preview{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:9px;padding:12px;border:1px solid #e2eaf2;border-radius:10px;background:#fff}
+.admin-csv-image-preview figure{min-width:0;margin:0;display:grid;gap:5px}
+.admin-csv-image-preview img{display:block;width:100%;aspect-ratio:4/5;object-fit:cover;border-radius:7px;background:#edf2f8}
+.admin-csv-image-preview figcaption{overflow:hidden;color:#64758a;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.admin-csv-image-preview>p{grid-column:1/-1}
+
+.admin-pagination-row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:14px 0 4px;padding:12px 14px;border:1px solid #e1e9f1;border-radius:10px;background:#f8fafc}
+.admin-pagination-row span{color:#60738a;font-size:12px}
+@media(max-width:640px){.admin-pagination-row{align-items:stretch;flex-direction:column}.admin-pagination-row button{width:100%}}
