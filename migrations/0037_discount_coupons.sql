@@ -41,3 +41,55 @@ CREATE INDEX IF NOT EXISTS idx_discount_coupons_active_window ON discount_coupon
 CREATE INDEX IF NOT EXISTS idx_discount_coupons_customer ON discount_coupons(customer_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_customer ON discount_coupon_redemptions(coupon_id, customer_id);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_exchange ON discount_coupon_redemptions(exchange_request_id);
+
+
+-- Enforce voucher eligibility and usage accounting inside D1's transaction.
+-- A failed redemption aborts the whole checkout batch, including order creation.
+CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_validate
+BEFORE INSERT ON discount_coupon_redemptions
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM discount_coupons c
+    WHERE c.id = NEW.coupon_id
+      AND c.is_active = 1
+      AND c.starts_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      AND (c.expires_at IS NULL OR c.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      AND (c.max_redemptions IS NULL OR c.usage_count < c.max_redemptions)
+      AND (c.customer_id IS NULL OR c.customer_id = NEW.customer_id)
+      AND (c.exchange_request_id IS NULL OR c.exchange_request_id = NEW.exchange_request_id)
+      AND (c.min_subtotal_paisa <= (SELECT subtotal_paisa FROM orders WHERE id = NEW.order_id))
+      AND (
+        c.exchange_request_id IS NULL OR EXISTS (
+          SELECT 1 FROM exchange_requests e
+          WHERE e.id = c.exchange_request_id
+            AND e.customer_id = NEW.customer_id
+            AND e.status = 'completed'
+        )
+      )
+      AND (
+        SELECT COUNT(*) FROM discount_coupon_redemptions r
+        WHERE r.coupon_id = c.id AND r.customer_id = NEW.customer_id
+      ) < c.per_customer_limit
+  ) THEN RAISE(ABORT, 'coupon_not_eligible') END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_increment
+AFTER INSERT ON discount_coupon_redemptions
+BEGIN
+  UPDATE discount_coupons
+  SET usage_count = usage_count + 1,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE id = NEW.coupon_id;
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_immutable_update
+BEFORE UPDATE ON discount_coupon_redemptions
+BEGIN
+  SELECT RAISE(ABORT, 'coupon_redemption_immutable');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trg_coupon_redemption_immutable_delete
+BEFORE DELETE ON discount_coupon_redemptions
+BEGIN
+  SELECT RAISE(ABORT, 'coupon_redemption_immutable');
+END;
