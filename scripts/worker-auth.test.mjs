@@ -1292,15 +1292,15 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO rental_requests")) {
-      const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa] = v;
-      const guardVehicle = v[21];
+      const [id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa, cnic_consent_version, cnic_consent_at] = v;
+      const guardVehicle = v[23];
       if (guardVehicle !== vehicle_id) return { success: true, meta: { changes: 0 } };
       if (vehicle_id) {
         const vehicle = this.db.vehicles.get(vehicle_id);
         const overlap = [...this.db.rentalRequests.values()].some((row) => row.vehicle_id === vehicle_id && ["confirmed", "active"].includes(row.status) && row.pickup_at < return_at && row.return_at > pickup_at);
         if (!vehicle || vehicle.status !== "available" || overlap) return { success: true, meta: { changes: 0 } };
       }
-      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa, document_upload_token_hash: null, document_upload_expires_at: null, pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
+      this.db.rentalRequests.set(id, { id, vehicle_id, customer_name, phone, email, pickup_location, destination, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa, cnic_consent_version, cnic_consent_at, document_upload_token_hash: null, document_upload_expires_at: null, pickup_at, return_at, driver_option, status: "requested", customer_note, admin_note: "", reference_code, created_at: updated_at, updated_at });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO rental_documents")) {
@@ -2233,7 +2233,7 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
       email: "renter@example.com", pickup_city: "Jhelum", pickup_address: "House 10, Main Road, Satellite Town",
       destination_city: "Islamabad", destination_address: "Blue Area, Islamabad",
       pickup_at: pickup, return_at: returning, driver_option: driver, customer_note: "",
-      turnstile_token: "test-valid-token", cnic_consent: "true",
+      turnstile_token: "test-valid-token", cnic_consent: "true", cnic_consent_version: "rental-cnic-2026-11-21-v1",
     })) form.append(key, value);
     if (includeDocuments) {
       const png = new Uint8Array([137,80,78,71,13,10,26,10,0,0,0,0]);
@@ -2259,6 +2259,9 @@ test("rental submission requires both CNIC images, calculates driver-specific pr
   const firstId = [...db.rentalRequests.keys()][0];
   assert.equal([...db.rentalDocuments.values()].filter((doc) => doc.rental_request_id === firstId).length, 2);
   assert.equal(db.rentalRequests.get(firstId).estimated_total_paisa, 1200000);
+  assert.equal(db.rentalRequests.get(firstId).cnic_consent_version, "rental-cnic-2026-11-21-v1");
+  assert.ok(db.rentalRequests.get(firstId).cnic_consent_at);
+  assert.equal(db.audits.find(row => row.action === "rental.created_with_cnic").values[2].includes("cnic_consent_version"), true);
   const privateDocument = await handleRequest(new Request(origin + "/api/admin/rentals/" + firstId + "/documents/cnic_front"), env(db));
   assert.equal(privateDocument.status, 401);
 
