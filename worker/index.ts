@@ -1507,7 +1507,8 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
 
   const front = form.get("cnic_front");
   const back = form.get("cnic_back");
-  if (form.get("cnic_consent") !== "true") return error("Confirm consent to the secure processing of your CNIC images", 400);
+  const cnicConsentVersion = cleanText(form.get("cnic_consent_version"), 40);
+  if (form.get("cnic_consent") !== "true" || cnicConsentVersion !== "rental-cnic-2026-11-21-v1") return error("Review the current CNIC notice and confirm consent before submitting your rental request", 400);
   if (!(front instanceof File) || !(back instanceof File)) return error("Both the front and back of your CNIC are required", 400);
   const files = [{ side: "cnic_front", file: front }, { side: "cnic_back", file: back }];
   for (const item of files) {
@@ -1575,14 +1576,14 @@ async function publicRentalRoutes(request: Request, env: Env, url: URL): Promise
       await env.MEDIA.put(objects[i].key, bytes[i], { httpMetadata: { contentType: objects[i].file.type }, customMetadata: { rentalRequestId: id, documentSide: objects[i].side } });
     }
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
-        .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, signedInCustomer?.customer_id ?? null, rentalDays, estimatedDailyRatePaisa, estimatedTotalPaisa, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()),
+      env.DB.prepare("INSERT INTO rental_requests (id, vehicle_id, customer_name, phone, pickup_location, destination, pickup_at, return_at, driver_option, status, email, customer_note, reference_code, updated_at, pickup_city, pickup_address, destination_city, destination_address, customer_id, rental_days, estimated_daily_rate_paisa, estimated_total_paisa, cnic_consent_version, cnic_consent_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 'requested', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE (? IS NULL OR (EXISTS (SELECT 1 FROM vehicles WHERE id = ? AND status = 'available') AND NOT EXISTS (SELECT 1 FROM rental_requests WHERE vehicle_id = ? AND status IN ('confirmed','active') AND pickup_at < ? AND return_at > ?)))")
+        .bind(id, vehicleId, name, phone, pickup, destination, new Date(pickupTime).toISOString(), new Date(returnTime).toISOString(), driver, email || null, note, reference, now, pickupCity, pickupAddress, destinationCity, destinationAddress, signedInCustomer?.customer_id ?? null, rentalDays, estimatedDailyRatePaisa, estimatedTotalPaisa, cnicConsentVersion, now, vehicleId, vehicleId, vehicleId, new Date(returnTime).toISOString(), new Date(pickupTime).toISOString()),
       env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ?)")
         .bind(objects[0].id, id, objects[0].side, objects[0].key, objects[0].file.type, objects[0].file.size, id),
       env.DB.prepare("INSERT INTO rental_documents (id, rental_request_id, document_side, object_key, mime_type, byte_size) SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id = ?)")
         .bind(objects[1].id, id, objects[1].side, objects[1].key, objects[1].file.type, objects[1].file.size, id),
       env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,NULL,'rental.created_with_cnic','rental_request',?,?)")
-        .bind(crypto.randomUUID(), id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"], rental_days: rentalDays, estimated_daily_rate_paisa: estimatedDailyRatePaisa, estimated_total_paisa: estimatedTotalPaisa, driver_option: driver })),
+        .bind(crypto.randomUUID(), id, JSON.stringify({ document_sides: ["cnic_front", "cnic_back"], cnic_consent_version: cnicConsentVersion, cnic_consent_at: now, rental_days: rentalDays, estimated_daily_rate_paisa: estimatedDailyRatePaisa, estimated_total_paisa: estimatedTotalPaisa, driver_option: driver })),
     ]);
     if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1 || (results[2]?.meta?.changes ?? 0) !== 1) {
       console.error(JSON.stringify({event:"cnic_evidence_preserved_after_upload_error",object_count:objects.length}));
