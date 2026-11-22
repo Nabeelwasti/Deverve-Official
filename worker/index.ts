@@ -5163,8 +5163,44 @@ async function adminAITaskHistoryRoute(request:Request,env:Env,url:URL):Promise<
 }
 
 const SITE_TRANSLATION_LANGUAGES = new Set([
-  "ar","bn","de","es","fa","fr","hi","id","it","ja","ko","ms","pt","ru","th","tr","ur","vi","zh"
+  "af","am","ar","ast","az","ba","be","bg","bn","br","bs","ca","ceb","cs","cy","da","de","el","es","et","fa","ff","fi","fr","fy","ga","gd","gl","gu","ha","he","hi","hr","ht","hu","hy","id","ig","ilo","is","it","ja","jv","ka","kk","km","kn","ko","lb","ln","lo","lt","lv","mg","mk","ml","mn","mr","ms","my","ne","nl","no","ns","oc","or","pa","pl","ps","pt","ro","ru","sd","si","sk","sl","so","sq","sr","ss","su","sv","sw","ta","th","tl","tn","tr","uk","ur","uz","vi","wo","xh","yi","yo","zh","zu","as","brx","doi","kok","ks","mai","mni","sa","sat","te"
 ]);
+
+async function publicInspirationalQuoteRoute(request: Request, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/quotes/random") return null;
+  if (request.method !== "GET") return error("Method not allowed", 405);
+  const cacheKey = new Request(new URL("/api/quotes/random", url.origin).toString(), { method: "GET" });
+  const edgeCache = (globalThis as typeof globalThis & {
+    caches?: { default?: { match(key: Request): Promise<Response | undefined>; put(key: Request, response: Response): Promise<void> } };
+  }).caches?.default;
+  try {
+    const cached = await edgeCache?.match(cacheKey);
+    if (cached) return cached;
+  } catch { /* Cache is an optimization; continue to the upstream source. */ }
+  try {
+    const upstream = await fetch("https://zenquotes.io/api/random", {
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(5_000)
+    });
+    if (!upstream.ok) return error("The online quote source is temporarily unavailable", 503);
+    const payload = await upstream.json() as Array<{ q?: unknown; a?: unknown }>;
+    const item = Array.isArray(payload) ? payload[0] : null;
+    const quoteText = typeof item?.q === "string" ? item.q.trim() : "";
+    const author = typeof item?.a === "string" ? item.a.trim() : "";
+    if (!quoteText || quoteText.length > 180 || !author || author.length > 70 || /[<>\\u0000-\\u001f]/.test(quoteText + author)) {
+      return error("The online quote source returned an invalid quote", 502);
+    }
+    const response = json(
+      { text: quoteText, author, source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
+      200,
+      { "cache-control": "public, max-age=300, s-maxage=1800", "x-content-type-options": "nosniff" }
+    );
+    try { await edgeCache?.put(cacheKey, response.clone()); } catch { /* Cache failure must not hide a valid quote. */ }
+    return response;
+  } catch {
+    return error("The online quote source is temporarily unavailable", 503);
+  }
+}
 
 async function publicSiteTranslationRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/translate") return null;
@@ -5212,11 +5248,11 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
       headers: { "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ text, target_lang: targetLang }),
     }));
-    const result = await serviceResponse.json().catch(() => ({})) as { translatedText?: string };
+    const result = await serviceResponse.json().catch(() => ({})) as { translatedText?: string; provider?: string };
     if (!serviceResponse.ok) return error("Translation is temporarily unavailable. Please try again later.", 503);
     const translatedText = typeof result.translatedText === "string" ? result.translatedText.trim() : "";
     if (!translatedText || translatedText.length > 2_400) return error("The translation service returned an invalid result", 502);
-    return json({ translatedText, remainingDailyRequests: Math.max(0, 20 - dailyCount) });
+    return json({ translatedText, provider: result.provider === "google-cloud-translation" ? "google-cloud-translation" : "cloudflare-ai", remainingDailyRequests: Math.max(0, 20 - dailyCount) });
   } catch {
     // Do not refund failed inference attempts: this keeps the global ceiling conservative.
     return error("Translation is temporarily unavailable. Please try again later.", 503);
@@ -5310,6 +5346,9 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
   const pwaManifestResponse = await pwaManifestRoute(request, env, url);
   if (pwaManifestResponse) return pwaManifestResponse;
+
+  const quoteResponse = await publicInspirationalQuoteRoute(request, url);
+  if (quoteResponse) return quoteResponse;
 
   const aiResponse = await aiRoutes(request, env, url);
   if (aiResponse) return aiResponse;
