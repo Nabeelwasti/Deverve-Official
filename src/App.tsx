@@ -295,8 +295,9 @@ function Storefront() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
+  // The local brand quote is an immediate fallback while the cached online quote feed loads.
   const [goldenQuote, setGoldenQuote] = useState<{ text: string; author: string }>(selectGoldenQuote);
+  const quoteChangedRef = useRef(false);
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
@@ -311,16 +312,41 @@ function Storefront() {
     };
   }, [menuOpen]);
 
-
+  useEffect(() => {
+    let active = true;
+    let controller: AbortController | null = null;
+    const loadOnlineQuote = () => {
+      controller?.abort();
+      controller = new AbortController();
+      let previous = "";
+      try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Storage is optional. */ }
+      void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), {
+        headers: { accept: "application/json" }, cache: "no-store", signal: controller.signal
+      }).then(async response => {
+        if (!response.ok) throw new Error("Online quote feed unavailable");
+        return await response.json() as { text?: unknown; author?: unknown };
+      }).then(item => {
+        if (!active || typeof item.text !== "string" || typeof item.author !== "string") return;
+        const text = item.text.trim().slice(0, 220);
+        const author = item.author.trim().slice(0, 80);
+        if (!text || !author) throw new Error("Online quote feed returned an invalid quote");
+        quoteChangedRef.current = true;
+        setGoldenQuote(text === previous ? selectGoldenQuote() : { text, author });
+      }).catch(() => {
+        if (active && !controller?.signal.aborted && !quoteChangedRef.current) {
+          quoteChangedRef.current = true;
+          persistGoldenQuote(selectGoldenQuote());
+        }
+      });
+    };
+    loadOnlineQuote();
+    const handlePageShow = (event: PageTransitionEvent) => { if (event.persisted) loadOnlineQuote(); };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => { active = false; controller?.abort(); window.removeEventListener("pageshow", handlePageShow); };
+  }, []);
 
   useEffect(() => {
-    // Brand-curated quotes rotate locally without contacting an external provider.
-    persistGoldenQuote(goldenQuote);
-    const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) setGoldenQuote(selectGoldenQuote());
-    };
-    window.addEventListener("pageshow", handlePageShow);
-    return () => window.removeEventListener("pageshow", handlePageShow);
+    if (quoteChangedRef.current) persistGoldenQuote(goldenQuote);
   }, [goldenQuote]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
@@ -1081,7 +1107,17 @@ function Storefront() {
 }
 
 function BrandLoadingScreen(){
-  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><img className="brand-loader-logo deverve-round-logo" src="/brand/de-verve-mark.svg" alt="De VERVE" width={100} height={100} loading="eager" decoding="async" fetchPriority="high"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
+  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE">
+    <div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/>
+    <svg className="brand-loader-logo" viewBox="0 0 100 100" role="img" aria-label="De VERVE">
+      <defs><linearGradient id="loaderGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f1d9a6"/><stop offset="1" stopColor="#b68a4e"/></linearGradient></defs>
+      <circle cx="50" cy="50" r="48" fill="#0b2948" stroke="url(#loaderGold)" strokeWidth="1.5"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#fff" strokeOpacity=".18"/>
+      <path d="M22 25h13c16 0 25 9 25 25S51 75 35 75H22V25Zm11 9v32h3c8 0 13-6 13-16s-5-16-13-16h-3Z" fill="#fff"/>
+      <path d="m54 25 11 0 9 29 9-29h11L89 75H78L54 25Z" fill="url(#loaderGold)"/>
+    </svg>
+    <div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div>
+  </main>
 }
 
 function HomePageRoute() {
