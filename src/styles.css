@@ -2390,13 +2390,15 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   }
 }
 
-
-/* Live translation widget stays visually hidden; the branded language picker remains accessible. */
-.google-translate-host{
-  position:fixed!important;left:-10000px!important;top:0!important;
-  width:1px!important;height:1px!important;overflow:hidden!important;
-  opacity:0!important;pointer-events:none!important;
+/* Accessible, in-place browser translation guidance; no redirect or unsupported third-party widget. */
+.announcement-translate-button{
+  border:0;background:transparent;color:#f1d8a4;font:700 10px "DM Sans",sans-serif;
+  cursor:pointer;text-decoration:underline;text-underline-offset:3px;
 }
-.goog-te-banner-frame.skiptranslate{display:none!important}
-body{top:0!important}
-.goog-tooltip,.goog-tooltip:hover,.goog-text-highlight{background:transparent!important;box-shadow:none!important}
+.translation-hint{
+  position:absolute;z-index:40;top:calc(100% + 8px);right:12px;
+  width:min(310px,calc(100vw - 24px));padding:12px 14px;
+  border:1px solid #d9c69f;border-radius:12px;background:#fff;
+  color:#173b61;font:500 11px/1.55 "DM Sans",sans-serif;
+  box-shadow:0 12px 32px rgba(5,30,58,.18);
+}
