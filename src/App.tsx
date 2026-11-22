@@ -310,10 +310,10 @@ function Storefront() {
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
-    const normalise=(value:string)=>value.normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").toLocaleLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+    const normalise=(value:string)=>value.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().replace(/[^a-z0-9]+/g," ").trim();
     const query=normalise(siteSearch);
     if(!query)return [];
-    const tokens=query.split(/\\s+/).filter(Boolean);
+    const tokens=query.split(/\s+/).filter(Boolean);
     const matches=(value:string)=>{const haystack=normalise(value);return haystack.includes(query)||tokens.every(token=>haystack.includes(token));};
     const results:Array<{label:string;detail:string;href:string;score:number}>=[];
     const add=(label:string,detail:string,href:string,searchable:string)=>{
