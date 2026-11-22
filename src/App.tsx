@@ -310,7 +310,7 @@ function Storefront() {
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
-    const normalise=(value:string)=>value.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+    const normalise=(value:string)=>value.normalize("NFKC").toLocaleLowerCase().replace(/\p{M}+/gu,"").replace(/[^\p{L}\p{N}]+/gu," ").trim();
     const query=normalise(siteSearch);
     if(!query)return [];
     const tokens=query.split(/\s+/).filter(Boolean);
@@ -323,7 +323,7 @@ function Storefront() {
       results.push({label,detail,href,score});
     };
     for(const item of categories){
-      const aliases=item.id==="layers"?"hoodies sweatshirts zippers jackets outerwear":item.id==="bottoms"?"trousers pants jeans joggers shorts":item.id==="essentials"?"t shirts tees socks boxers underwear":item.id==="kids"?"children boys girls":item.id==="women"?"ladies womens":item.id==="men"?"mens male": "";
+      const aliases=item.id==="layers"?"hoodies sweatshirts zippers jackets outerwear":item.id==="bottoms"?"trousers pants jeans joggers shorts":item.id==="essentials"?"t shirts tees socks boxers underwear موزے باکسر":item.id==="kids"?"children boys girls kids clothing clothes bachay bachon بچوں کے کپڑے":item.id==="women"?"ladies womens khawateen خواتین":item.id==="men"?"mens male mardana mard مردانہ": "";
       add(item.name,"Fashion category","/?screen=fashion&category="+encodeURIComponent(item.id),[item.id,item.name,item.detail,aliases].join(" "));
     }
     for(const item of products){
@@ -334,11 +334,11 @@ function Storefront() {
       add(item.name,"Car rental · "+item.vehicle_type,"/?screen=mobility",[item.name,item.vehicle_type,item.transmission,item.seats+" seats",item.fuel_type,item.description].join(" "));
     }
     const pages=[
-      {label:"Home",detail:"De VERVE homepage",href:"/",keywords:"home main landing start brand"},
-      {label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale",keywords:"wholesale bulk bulk orders reseller retailer stock lots garments"},
-      {label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility",keywords:"car rental vehicle rent booking driver mobility transport"},
-      {label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact",keywords:"contact phone whatsapp address location enquiry help support"},
-      {label:"Policies & FAQs",detail:"Delivery, returns and customer policies",href:"/?screen=policies",keywords:"policies faq shipping delivery returns refund exchange privacy terms conditions"},
+      {label:"Home",detail:"De VERVE homepage",href:"/",keywords:"home main landing start brand jhelum jhelum pakistan"},
+      {label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale",keywords:"wholesale bulk bulk orders reseller retailer stock lots garments thok kapray تھوک کپڑے"},
+      {label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility",keywords:"car cars rental rentals vehicle rent booking driver mobility transport hire kiraya gari gaari کار کرایہ گاڑی"},
+      {label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact",keywords:"contact phone whatsapp address location enquiry help support rabta رابطہ فون واٹس ایپ"},
+      {label:"Policies & FAQs",detail:"Delivery, returns and customer policies",href:"/?screen=policies",keywords:"policies faq shipping delivery returns refund exchange privacy terms conditions wapsi ترسیل واپسی پالیسی"},
       {label:"My account",detail:"Orders and customer account",href:"/account",keywords:"account orders profile sign in login customer"},
     ];
     for(const item of pages)add(item.label,item.detail,item.href,[item.label,item.detail,item.keywords].join(" "));
