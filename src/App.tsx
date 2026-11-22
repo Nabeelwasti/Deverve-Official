@@ -420,11 +420,18 @@ async function translateRenderedSite(
   }
 }
 
+function readSavedSiteLanguage(): string {
+  try {
+    const saved = localStorage.getItem("deverve:site-language:v1") ?? "";
+    return SITE_TRANSLATION_LANGUAGES.some(([code]) => code === saved) ? saved : "";
+  } catch { return ""; }
+}
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [translationLanguage, setTranslationLanguage] = useState("");
+  const [translationLanguage, setTranslationLanguage] = useState(readSavedSiteLanguage);
   const [translationStatus, setTranslationStatus] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -867,7 +874,14 @@ function Storefront() {
           <div className="announcement-translate">
             <span aria-hidden="true">文</span>
             <label className="sr-only" htmlFor="deverve-site-language">Translate website</label>
-            <select id="deverve-site-language" aria-label="Translate website" value={translationLanguage} onChange={event => setTranslationLanguage(event.currentTarget.value)}>
+            <select id="deverve-site-language" aria-label="Translate website" value={translationLanguage} onChange={event => {
+              const language = event.currentTarget.value;
+              setTranslationLanguage(language);
+              try {
+                if (language) localStorage.setItem("deverve:site-language:v1", language);
+                else localStorage.removeItem("deverve:site-language:v1");
+              } catch { /* The page remains usable when browser storage is unavailable. */ }
+            }}>
               <option value="">English · Original</option>
               {SITE_TRANSLATION_LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
             </select>
