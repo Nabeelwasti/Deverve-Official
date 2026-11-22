@@ -5184,9 +5184,9 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
   }
   if (!SITE_TRANSLATION_LANGUAGES.has(targetLang)) return error("This translation language is not supported", 400);
 
-  // One atomic, account-wide daily ceiling. At 100 calls × 600 characters,
-  // the request budget is deliberately kept well below the published 10,000-neuron
-  // free daily allocation under conservative token-expansion assumptions.
+  // One atomic, account-wide daily ceiling. At 20 calls × 600 characters,
+  // the request budget is deliberately kept below the published 10,000-neuron
+  // free daily allocation, allowing a conservative buffer for tokenization and output expansion.
   const now = Math.floor(Date.now() / 1000);
   const dayStart = Math.floor(now / 86_400) * 86_400;
   const expiresAt = dayStart + 172_800;
@@ -5201,7 +5201,7 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
   } catch {
     return error("Translation protection is temporarily unavailable", 503);
   }
-  if (dailyCount > 100) {
+  if (dailyCount > 20) {
     const retryAfter = Math.max(1, dayStart + 86_400 - now);
     return json({ error: "The shared daily translation allowance has been reached. Please try again after the daily reset." }, 429, { "retry-after": String(retryAfter) });
   }
@@ -5214,7 +5214,7 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
     });
     const translatedText = typeof result?.translated_text === "string" ? result.translated_text.trim() : "";
     if (!translatedText || translatedText.length > 2_400) return error("The translation service returned an invalid result", 502);
-    return json({ translatedText, remainingDailyRequests: Math.max(0, 100 - dailyCount) });
+    return json({ translatedText, remainingDailyRequests: Math.max(0, 20 - dailyCount) });
   } catch {
     // Do not refund failed inference attempts: this keeps the global ceiling conservative.
     return error("Translation is temporarily unavailable. Please try again later.", 503);
