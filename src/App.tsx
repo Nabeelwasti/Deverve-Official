@@ -24,6 +24,265 @@ const categories = [
   { id: "bottoms", name: "Trousers & pants", detail: "Relaxed comfort, made for movement", tag: "06", tone: "bottoms" },
 ];
 
+// Snapshot of Google Translate's live target-language catalog; refresh when its supported list changes.
+const TRANSLATION_LANGUAGES: Array<[string,string]> = [
+  ["ab", "Abkhaz"],
+  ["ace", "Acehnese"],
+  ["ach", "Acholi"],
+  ["aa", "Afar"],
+  ["af", "Afrikaans"],
+  ["sq", "Albanian"],
+  ["alz", "Alur"],
+  ["am", "Amharic"],
+  ["ar", "Arabic"],
+  ["hy", "Armenian"],
+  ["as", "Assamese"],
+  ["av", "Avar"],
+  ["awa", "Awadhi"],
+  ["ay", "Aymara"],
+  ["az", "Azerbaijani"],
+  ["ban", "Balinese"],
+  ["bal", "Baluchi"],
+  ["bm", "Bambara"],
+  ["bci", "Baoulé"],
+  ["ba", "Bashkir"],
+  ["eu", "Basque"],
+  ["btx", "Batak Karo"],
+  ["bts", "Batak Simalungun"],
+  ["bbc", "Batak Toba"],
+  ["be", "Belarusian"],
+  ["bem", "Bemba"],
+  ["bn", "Bengali"],
+  ["bew", "Betawi"],
+  ["bho", "Bhojpuri"],
+  ["bik", "Bikol"],
+  ["bs", "Bosnian"],
+  ["br", "Breton"],
+  ["bg", "Bulgarian"],
+  ["bua", "Buryat"],
+  ["yue", "Cantonese"],
+  ["ca", "Catalan"],
+  ["ceb", "Cebuano"],
+  ["ch", "Chamorro"],
+  ["ce", "Chechen"],
+  ["ny", "Chichewa"],
+  ["zh-CN", "Chinese (Simplified)"],
+  ["zh-TW", "Chinese (Traditional)"],
+  ["chk", "Chuukese"],
+  ["cv", "Chuvash"],
+  ["co", "Corsican"],
+  ["crh", "Crimean Tatar (Cyrillic)"],
+  ["crh-Latn", "Crimean Tatar (Latin)"],
+  ["hr", "Croatian"],
+  ["cs", "Czech"],
+  ["da", "Danish"],
+  ["fa-AF", "Dari"],
+  ["dv", "Dhivehi"],
+  ["din", "Dinka"],
+  ["doi", "Dogri"],
+  ["dov", "Dombe"],
+  ["nl", "Dutch"],
+  ["dyu", "Dyula"],
+  ["dz", "Dzongkha"],
+  ["en", "English"],
+  ["eo", "Esperanto"],
+  ["et", "Estonian"],
+  ["ee", "Ewe"],
+  ["fo", "Faroese"],
+  ["fj", "Fijian"],
+  ["tl", "Filipino"],
+  ["fi", "Finnish"],
+  ["fon", "Fon"],
+  ["fr", "French"],
+  ["fr-CA", "French (Canada)"],
+  ["fy", "Frisian"],
+  ["fur", "Friulian"],
+  ["ff", "Fulani"],
+  ["gaa", "Ga"],
+  ["gl", "Galician"],
+  ["ka", "Georgian"],
+  ["de", "German"],
+  ["el", "Greek"],
+  ["gn", "Guarani"],
+  ["gu", "Gujarati"],
+  ["ht", "Haitian Creole"],
+  ["cnh", "Hakha Chin"],
+  ["ha", "Hausa"],
+  ["haw", "Hawaiian"],
+  ["iw", "Hebrew"],
+  ["hil", "Hiligaynon"],
+  ["hi", "Hindi"],
+  ["hmn", "Hmong"],
+  ["hu", "Hungarian"],
+  ["hrx", "Hunsrik"],
+  ["iba", "Iban"],
+  ["is", "Icelandic"],
+  ["ig", "Igbo"],
+  ["ilo", "Ilocano"],
+  ["id", "Indonesian"],
+  ["iu-Latn", "Inuktut (Latin)"],
+  ["iu", "Inuktut (Syllabics)"],
+  ["ga", "Irish"],
+  ["it", "Italian"],
+  ["jam", "Jamaican Patois"],
+  ["ja", "Japanese"],
+  ["jw", "Javanese"],
+  ["kac", "Jingpo"],
+  ["kl", "Kalaallisut"],
+  ["kn", "Kannada"],
+  ["kr", "Kanuri"],
+  ["pam", "Kapampangan"],
+  ["kk", "Kazakh"],
+  ["kha", "Khasi"],
+  ["km", "Khmer"],
+  ["cgg", "Kiga"],
+  ["kg", "Kikongo"],
+  ["rw", "Kinyarwanda"],
+  ["ktu", "Kituba"],
+  ["trp", "Kokborok"],
+  ["kv", "Komi"],
+  ["gom", "Konkani"],
+  ["ko", "Korean"],
+  ["kri", "Krio"],
+  ["ku", "Kurdish (Kurmanji)"],
+  ["ckb", "Kurdish (Sorani)"],
+  ["ky", "Kyrgyz"],
+  ["lo", "Lao"],
+  ["ltg", "Latgalian"],
+  ["la", "Latin"],
+  ["lv", "Latvian"],
+  ["lij", "Ligurian"],
+  ["li", "Limburgish"],
+  ["ln", "Lingala"],
+  ["lt", "Lithuanian"],
+  ["lmo", "Lombard"],
+  ["lg", "Luganda"],
+  ["luo", "Luo"],
+  ["lb", "Luxembourgish"],
+  ["mk", "Macedonian"],
+  ["mad", "Madurese"],
+  ["mai", "Maithili"],
+  ["mak", "Makassar"],
+  ["mg", "Malagasy"],
+  ["ms", "Malay"],
+  ["ms-Arab", "Malay (Jawi)"],
+  ["ml", "Malayalam"],
+  ["mt", "Maltese"],
+  ["mam", "Mam"],
+  ["gv", "Manx"],
+  ["mi", "Maori"],
+  ["mr", "Marathi"],
+  ["mh", "Marshallese"],
+  ["mwr", "Marwadi"],
+  ["mfe", "Mauritian Creole"],
+  ["chm", "Meadow Mari"],
+  ["mni-Mtei", "Meiteilon (Manipuri)"],
+  ["min", "Minang"],
+  ["lus", "Mizo"],
+  ["mn", "Mongolian"],
+  ["my", "Myanmar (Burmese)"],
+  ["nhe", "Nahuatl (Eastern Huasteca)"],
+  ["ndc-ZW", "Ndau"],
+  ["nr", "Ndebele (South)"],
+  ["new", "Nepalbhasa (Newari)"],
+  ["ne", "Nepali"],
+  ["bm-Nkoo", "NKo"],
+  ["no", "Norwegian"],
+  ["nus", "Nuer"],
+  ["oc", "Occitan"],
+  ["or", "Odia (Oriya)"],
+  ["om", "Oromo"],
+  ["os", "Ossetian"],
+  ["pag", "Pangasinan"],
+  ["pap", "Papiamento"],
+  ["ps", "Pashto"],
+  ["fa", "Persian"],
+  ["pl", "Polish"],
+  ["pt", "Portuguese (Brazil)"],
+  ["pt-PT", "Portuguese (Portugal)"],
+  ["pa", "Punjabi (Gurmukhi)"],
+  ["pa-Arab", "Punjabi (Shahmukhi)"],
+  ["qu", "Quechua"],
+  ["kek", "Qʼeqchiʼ"],
+  ["rom", "Romani"],
+  ["ro", "Romanian"],
+  ["rn", "Rundi"],
+  ["ru", "Russian"],
+  ["se", "Sami (North)"],
+  ["sm", "Samoan"],
+  ["sg", "Sango"],
+  ["sa", "Sanskrit"],
+  ["sat-Latn", "Santali (Latin)"],
+  ["sat", "Santali (Ol Chiki)"],
+  ["gd", "Scots Gaelic"],
+  ["nso", "Sepedi"],
+  ["sr", "Serbian"],
+  ["st", "Sesotho"],
+  ["crs", "Seychellois Creole"],
+  ["shn", "Shan"],
+  ["sn", "Shona"],
+  ["scn", "Sicilian"],
+  ["szl", "Silesian"],
+  ["sd", "Sindhi"],
+  ["si", "Sinhala"],
+  ["sk", "Slovak"],
+  ["sl", "Slovenian"],
+  ["so", "Somali"],
+  ["es", "Spanish"],
+  ["su", "Sundanese"],
+  ["sus", "Susu"],
+  ["sw", "Swahili"],
+  ["ss", "Swati"],
+  ["sv", "Swedish"],
+  ["ty", "Tahitian"],
+  ["tg", "Tajik"],
+  ["ber-Latn", "Tamazight"],
+  ["ber", "Tamazight (Tifinagh)"],
+  ["ta", "Tamil"],
+  ["tt", "Tatar"],
+  ["te", "Telugu"],
+  ["tet", "Tetum"],
+  ["th", "Thai"],
+  ["bo", "Tibetan"],
+  ["ti", "Tigrinya"],
+  ["tiv", "Tiv"],
+  ["tpi", "Tok Pisin"],
+  ["to", "Tongan"],
+  ["lua", "Tshiluba"],
+  ["ts", "Tsonga"],
+  ["tn", "Tswana"],
+  ["tcy", "Tulu"],
+  ["tum", "Tumbuka"],
+  ["tr", "Turkish"],
+  ["tk", "Turkmen"],
+  ["tyv", "Tuvan"],
+  ["ak", "Twi"],
+  ["udm", "Udmurt"],
+  ["uk", "Ukrainian"],
+  ["ur", "Urdu"],
+  ["ug", "Uyghur"],
+  ["uz", "Uzbek"],
+  ["ve", "Venda"],
+  ["vec", "Venetian"],
+  ["vi", "Vietnamese"],
+  ["war", "Waray"],
+  ["cy", "Welsh"],
+  ["wo", "Wolof"],
+  ["xh", "Xhosa"],
+  ["sah", "Yakut"],
+  ["yi", "Yiddish"],
+  ["yo", "Yoruba"],
+  ["yua", "Yucatec Maya"],
+  ["zap", "Zapotec"],
+  ["zu", "Zulu"]
+];
+
+const TRANSLATION_NATIVE_LABELS: Record<string,string> = {
+  "ar":"العربية","bn":"বাংলা","fa":"فارسی","hi":"हिन्दी","pa":"ਪੰਜਾਬੀ",
+  "pa-Arab":"پنجابی (شاہ مکھی)","ps":"پښتو","ur":"اردو",
+  "zh-CN":"简体中文","zh-TW":"繁體中文"
+};
+
 const phone = "923197553705";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 const localDateTime = (date: Date) => {
@@ -260,8 +519,8 @@ function Storefront() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  const [goldenQuote,setGoldenQuote]=useState({text:"Make every day a little more VERVE.",author:"DE VERVE EDITION"});
-  useEffect(()=>{const controller=new AbortController();const fallback=[{text:"Confidence is the best thing you can wear.",author:"DE VERVE EDITION"},{text:"Small details make everyday moments memorable.",author:"DE VERVE EDITION"},{text:"Let your style speak with quiet confidence.",author:"DE VERVE EDITION"}];setGoldenQuote(fallback[Math.floor(Math.random()*fallback.length)]);void fetch("https://dummyjson.com/quotes/random",{signal:controller.signal,headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)throw new Error("Quote service unavailable");const item=await response.json() as {quote?:string;author?:string};if(item.quote&&item.author)setGoldenQuote({text:item.quote.slice(0,180),author:item.author.slice(0,70)});}).catch(()=>{});return()=>controller.abort();},[]);
+  // Brand-controlled copy keeps the quote ribbon readable and independent of third-party quote APIs.
+  const goldenQuote={text:"Wear confidence. Every day.",author:"DE VERVE"};
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -310,15 +569,39 @@ function Storefront() {
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
-    const term=siteSearch.trim().toLocaleLowerCase();
-    if(!term)return [];
-    const results:Array<{label:string;detail:string;href:string}>=[];
-    for(const item of categories)if((item.name+" "+item.detail).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Fashion category",href:"/?screen=fashion&category="+encodeURIComponent(item.id)});
-    for(const item of products)if((item.name+" "+item.description+" "+item.category+" "+item.audience+" "+(item.variants||[]).map(v=>v.sku||"").join(" ")).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Product · "+item.category,href:"/product/"+encodeURIComponent(item.slug)});
-    for(const item of vehicles)if((item.name+" "+item.vehicle_type+" "+item.transmission+" "+item.fuel_type+" "+item.description).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Car rental · "+item.vehicle_type,href:"/?screen=mobility"});
-    const pages=[{label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale"},{label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility"},{label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact"},{label:"Policies",detail:"Customer policies and information",href:"/?screen=policies"},{label:"My account",detail:"Orders and customer account",href:"/account"}];
-    for(const item of pages)if((item.label+" "+item.detail).toLocaleLowerCase().includes(term))results.push(item);
-    return results.slice(0,8);
+    const normalise=(value:string)=>value.normalize("NFKC").toLocaleLowerCase().replace(/\p{M}+/gu,"").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+    const query=normalise(siteSearch);
+    if(!query)return [];
+    const tokens=query.split(/\s+/).filter(Boolean);
+    const matches=(value:string)=>{const haystack=normalise(value);return haystack.includes(query)||tokens.every(token=>haystack.includes(token));};
+    const results:Array<{label:string;detail:string;href:string;score:number}>=[];
+    const add=(label:string,detail:string,href:string,searchable:string)=>{
+      if(!matches(searchable))return;
+      const name=normalise(label);
+      const score=name===query?0:name.startsWith(query)?1:name.includes(query)?2:3;
+      results.push({label,detail,href,score});
+    };
+    for(const item of categories){
+      const aliases=item.id==="layers"?"hoodies sweatshirts zippers jackets outerwear":item.id==="bottoms"?"trousers pants jeans joggers shorts":item.id==="essentials"?"t shirts tees socks boxers underwear موزے باکسر":item.id==="kids"?"children boys girls kids clothing clothes bachay bachon بچوں کے کپڑے":item.id==="women"?"ladies womens khawateen خواتین":item.id==="men"?"mens male mardana mard مردانہ": "";
+      add(item.name,"Fashion category","/?screen=fashion&category="+encodeURIComponent(item.id),[item.id,item.name,item.detail,aliases].join(" "));
+    }
+    for(const item of products){
+      const variants=(item.variants||[]).map(v=>[v.sku,v.size,v.color].filter(Boolean).join(" ")).join(" ");
+      add(item.name,"Product · "+item.category,"/product/"+encodeURIComponent(item.slug),[item.name,item.description,item.category,item.audience,variants].join(" "));
+    }
+    for(const item of vehicles){
+      add(item.name,"Car rental · "+item.vehicle_type,"/?screen=mobility",[item.name,item.vehicle_type,item.transmission,item.seats+" seats",item.fuel_type,item.description].join(" "));
+    }
+    const pages=[
+      {label:"Home",detail:"De VERVE homepage",href:"/",keywords:"home main landing start brand jhelum jhelum pakistan"},
+      {label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale",keywords:"wholesale bulk bulk orders reseller retailer stock lots garments thok kapray تھوک کپڑے"},
+      {label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility",keywords:"car cars rental rentals vehicle rent booking driver mobility transport hire kiraya gari gaari کار کرایہ گاڑی"},
+      {label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact",keywords:"contact phone whatsapp address location enquiry help support rabta رابطہ فون واٹس ایپ"},
+      {label:"Policies & FAQs",detail:"Delivery, returns and customer policies",href:"/?screen=policies",keywords:"policies faq shipping delivery returns refund exchange privacy terms conditions wapsi ترسیل واپسی پالیسی"},
+      {label:"My account",detail:"Orders and customer account",href:"/account",keywords:"account orders profile sign in login customer"},
+    ];
+    for(const item of pages)add(item.label,item.detail,item.href,[item.label,item.detail,item.keywords].join(" "));
+    return results.sort((a,b)=>a.score-b.score||a.label.localeCompare(b.label)).slice(0,8).map(({score,...item})=>item);
   },[siteSearch,products,vehicles]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
   const [rentalOpen, setRentalOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:rental-open") === "1"; } catch { return false; } });
@@ -608,8 +891,9 @@ function Storefront() {
         <div className="announcement-actions">
           <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span>
             <select aria-label="Translate this page" defaultValue="" onChange={event=>{const language=event.currentTarget.value;if(!language)return;const pageUrl=encodeURIComponent(window.location.href);const url=language==="all"?"https://translate.google.com/?sl=auto&u="+pageUrl:"https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+pageUrl;window.open(url,"_blank","noopener,noreferrer");event.currentTarget.value="";}}>
-              <option value="">Language</option><option value="all">More languages…</option>
-              <option value="ur">اردو</option><option value="pa">ਪੰਜਾਬੀ</option><option value="ar">العربية</option><option value="hi">हिन्दी</option><option value="bn">বাংলা</option><option value="zh-CN">中文（简体）</option><option value="zh-TW">中文（繁體）</option><option value="es">Español</option><option value="fr">Français</option><option value="tr">Türkçe</option><option value="de">Deutsch</option><option value="it">Italiano</option><option value="ru">Русский</option><option value="id">Bahasa Indonesia</option><option value="ms">Bahasa Melayu</option><option value="fa">فارسی</option><option value="ps">پښتو</option><option value="ku">Kurdî</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="th">ไทย</option><option value="vi">Tiếng Việt</option><option value="nl">Nederlands</option><option value="pt">Português</option><option value="pt-BR">Português (Brasil)</option><option value="sv">Svenska</option><option value="no">Norsk</option><option value="da">Dansk</option><option value="fi">Suomi</option><option value="pl">Polski</option><option value="cs">Čeština</option><option value="sk">Slovenčina</option><option value="uk">Українська</option><option value="el">Ελληνικά</option><option value="he">עברית</option><option value="sw">Kiswahili</option><option value="am">አማርኛ</option><option value="af">Afrikaans</option><option value="sq">Shqip</option><option value="az">Azərbaycan</option><option value="hy">Հայերեն</option><option value="eu">Euskara</option><option value="be">Беларуская</option><option value="bs">Bosanski</option><option value="bg">Български</option><option value="ca">Català</option><option value="hr">Hrvatski</option><option value="et">Eesti</option><option value="gl">Galego</option><option value="ka">ქართული</option><option value="gu">ગુજરાતી</option><option value="ha">Hausa</option><option value="haw">ʻŌlelo Hawaiʻi</option><option value="hu">Magyar</option><option value="is">Íslenska</option><option value="ig">Igbo</option><option value="ga">Gaeilge</option><option value="jv">Basa Jawa</option><option value="kn">ಕನ್ನಡ</option><option value="kk">Қазақша</option><option value="km">ខ្មែរ</option><option value="rw">Kinyarwanda</option><option value="lo">ລາວ</option><option value="la">Latin</option><option value="lv">Latviešu</option><option value="lt">Lietuvių</option><option value="lb">Lëtzebuergesch</option><option value="mk">Македонски</option><option value="mg">Malagasy</option><option value="ml">മലയാളം</option><option value="mt">Malti</option><option value="mi">Māori</option><option value="mr">मराठी</option><option value="mn">Монгол</option><option value="my">မြန်မာ</option><option value="ne">नेपाली</option><option value="or">ଓଡ଼ିଆ</option><option value="om">Oromoo</option><option value="ro">Română</option><option value="sm">Gagana Samoa</option><option value="sr">Српски</option><option value="si">සිංහල</option><option value="sl">Slovenščina</option><option value="so">Soomaali</option><option value="su">Basa Sunda</option><option value="ta">தமிழ்</option><option value="te">తెలుగు</option><option value="tl">Filipino</option><option value="ti">ትግርኛ</option><option value="tk">Türkmençe</option><option value="uz">Oʻzbek</option><option value="cy">Cymraeg</option><option value="xh">isiXhosa</option><option value="yi">ייִדיש</option><option value="yo">Yorùbá</option><option value="zu">isiZulu</option><option value="en">English</option><option value="as">অসমীয়া</option><option value="ay">Aymara</option><option value="bm">Bambara</option><option value="br">Breton</option><option value="ceb">Cebuano</option><option value="co">Corsican</option><option value="dv">Dhivehi</option><option value="doi">Dogri</option><option value="eo">Esperanto</option><option value="ee">Ewe</option><option value="fj">Fijian</option><option value="fy">Frisian</option><option value="ff">Fulfulde</option><option value="gn">Guarani</option><option value="ht">Haitian Creole</option><option value="hmn">Hmong</option><option value="ilo">Ilocano</option><option value="jw">Javanese</option><option value="gom">Konkani</option><option value="kri">Krio</option><option value="ckb">Kurdish (Sorani)</option><option value="ln">Lingala</option><option value="lg">Luganda</option><option value="mai">Maithili</option><option value="mni-Mtei">Meiteilon (Manipuri)</option><option value="lus">Mizo</option><option value="qu">Quechua</option><option value="sa">Sanskrit</option><option value="st">Sesotho</option><option value="sn">Shona</option><option value="sd">سنڌي</option><option value="tt">Tatar</option><option value="ug">ئۇيغۇرچە</option><option value="yua">Yucatec Maya</option><option value="ab">Abkhaz</option><option value="ace">Acehnese</option><option value="ach">Acholi</option><option value="alz">Alur</option><option value="awa">Awadhi</option><option value="ban">Balinese</option><option value="bho">Bhojpuri</option><option value="bik">Bikol</option><option value="crh">Crimean Tatar</option><option value="dz">Dzongkha</option><option value="gaa">Ga</option><option value="hil">Hiligaynon</option><option value="cnh">Hakha Chin</option><option value="pam">Kapampangan</option><option value="ktu">Kituba</option><option value="ky">Кыргызча</option><option value="min">Minangkabau</option><option value="new">नेपाल भाषा</option><option value="nso">Northern Sotho</option><option value="pag">Pangasinan</option><option value="pap">Papiamento</option><option value="rn">Kirundi</option><option value="sg">Sango</option><option value="scn">Sicilian</option><option value="crs">Seychellois Creole</option><option value="shn">Shan</option><option value="szl">Silesian</option><option value="tg">Tajik</option><option value="tet">Tetum</option><option value="ts">Tsonga</option><option value="tn">Tswana</option><option value="ak">Twi</option><option value="yue">Cantonese</option>
+              <option value="">Language</option>
+              {TRANSLATION_LANGUAGES.map(([code,name])=><option key={code} value={code}>{TRANSLATION_NATIVE_LABELS[code]??name}</option>)}
+              <option value="all">Open Google Translate…</option>
             </select>
           </label>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>

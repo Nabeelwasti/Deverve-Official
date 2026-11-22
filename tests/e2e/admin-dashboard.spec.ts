@@ -6,6 +6,10 @@ const vehicleId = "22222222-2222-4222-8222-222222222222";
 const rentalId = "33333333-3333-4333-8333-333333333333";
 
 async function mockAdminApi(page: Page, options: { rental?: Record<string, unknown>; inventory?: Record<string, unknown> } = {}) {
+  await page.route("**/api/brand/logo*", route => route.fulfill({
+    status: 200, contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="564" height="114" viewBox="0 0 564 114"><rect width="564" height="114" fill="#fff"/><text x="12" y="78" font-size="64" fill="#123f70">DE VERVE</text></svg>'
+  }));
   let rental = options.rental ?? null;
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
@@ -101,7 +105,10 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   });
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
-  await expect(page.locator(".admin-topbar .admin-brand-logo")).toHaveAttribute("src", "/api/brand/logo");
+  const adminBrandLogo = page.locator(".admin-topbar .admin-brand-logo");
+  await expect(adminBrandLogo).toBeVisible();
+  await expect(adminBrandLogo).toHaveAttribute("src", /^(\/api\/brand\/logo|\/brand\/de-verve-logo\.svg)$/);
+  await expect.poll(() => adminBrandLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBeTruthy();
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
   const addProductActions = page.locator(".admin-add-product-button");
   await expect(addProductActions).toHaveCount(2);

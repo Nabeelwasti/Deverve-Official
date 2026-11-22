@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import BrandLogo from "./BrandLogo";
 
 type Message = { role: "user" | "model"; text: string };
 type FileAttachment = { name: string; mime_type: string; data?: string; text?: string; preview?: string; size: number };
@@ -128,26 +129,12 @@ export default function AIChatWidget() {
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const [logoUrl, setLogoUrl] = useState("/brand/de-verve-logo.svg");
   const listRef = useRef<HTMLDivElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceDraftPrefixRef = useRef("");
-
-  useEffect(() => {
-    let active = true;
-    void fetch("/api/storefront/settings", { headers: { accept: "application/json" } })
-      .then(response => response.ok ? response.json() : null)
-      .then((value: unknown) => {
-        if (!active || !value || typeof value !== "object") return;
-        const data = value as { brand_assets?: { logo_id?: string | null }; settings?: { brand_assets?: { logo_id?: string | null } }; logo_id?: string | null };
-        const id = data.brand_assets?.logo_id ?? data.settings?.brand_assets?.logo_id ?? data.logo_id;
-        if (typeof id === "string" && id.trim()) setLogoUrl("/media/" + encodeURIComponent(id));
-      }).catch(() => { /* keep the bundled brand fallback */ });
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, attachments]);
   useEffect(() => () => { recognitionRef.current?.abort(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }, []);
@@ -239,12 +226,13 @@ export default function AIChatWidget() {
   };
 
   return <>
-    <button type="button" className="ai-chat-launcher" aria-label={open ? "Close De VERVE AI chat" : "Open De VERVE AI chat"} onClick={() => setOpen(value => !value)}>
+    <button type="button" className="ai-chat-launcher" aria-label={open ? "Close De VERVE AI chat" : "Open De VERVE AI chat"} aria-expanded={open} aria-controls="deverve-ai-chat-panel" onClick={() => setOpen(value => !value)}>
       <svg className="ai-chat-launcher-icon" viewBox="0 0 24 24" role="img" aria-label="Open customer support chat"><path d="M4.5 5.5A3.5 3.5 0 0 1 8 2h8a3.5 3.5 0 0 1 3.5 3.5v7A3.5 3.5 0 0 1 16 16h-4.2l-4.7 4v-4.2A3.5 3.5 0 0 1 4.5 12.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 8h8M8 11.5h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+      <span className="ai-chat-launcher-label" aria-hidden="true">AI HELP</span>
     </button>
-    {open && <section className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
+    {open && <section id="deverve-ai-chat-panel" className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head">
-        <img className="ai-chat-brand-logo" src={logoUrl} alt="De VERVE" />
+        <BrandLogo className="ai-chat-brand-logo" />
         <div className="ai-chat-identity"><strong>De VERVE assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
         <button type="button" aria-label="Close chat" onClick={() => { setOpen(false); recognitionRef.current?.stop(); }}>×</button>
       </header>

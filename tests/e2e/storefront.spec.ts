@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.route("https://dummyjson.com/quotes/random", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({quote:"Elegance is when the inside is as beautiful as the outside.",author:"Coco Chanel"})}));
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
     await route.fulfill({
       status: 200,
@@ -82,6 +81,16 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
+  for (const control of [
+    chat.getByRole("button", { name: "Add attachment" }),
+    chat.getByRole("button", { name: "Speak your message" }),
+    chat.getByRole("button", { name: "Send message" })
+  ]) {
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThanOrEqual(48);
+    expect(bounds!.height).toBeGreaterThanOrEqual(48);
+  }
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
 });
 
@@ -822,8 +831,18 @@ test("storefront places the golden quote below the top ribbon and offers common 
   });
   expect(order).toBeTruthy();
   const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
-  expect(await languagePicker.locator("option").count()).toBeGreaterThan(150);
-  await expect(languagePicker.locator('option[value="all"]')).toHaveText("More languages…");
+  expect(await languagePicker.locator("option").count()).toBe(251);
+  const languageOptions = await languagePicker.locator("option").evaluateAll(options => options.filter(option => option.value && option.value !== "all").map(option => ({ code: option.value, label: option.textContent?.trim() })));
+  expect(languageOptions).toHaveLength(249);
+  expect(new Set(languageOptions.map(option => option.code)).size).toBe(249);
+  expect(languageOptions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: "ab", label: "Abkhaz" }),
+    expect.objectContaining({ code: "iu", label: "Inuktut (Syllabics)" }),
+    expect.objectContaining({ code: "bm-Nkoo", label: "NKo" }),
+    expect.objectContaining({ code: "ur", label: "اردو" }),
+    expect.objectContaining({ code: "zap", label: "Zapotec" })
+  ]));
+  await expect(languagePicker.locator('option[value="all"]')).toHaveText("Open Google Translate…");
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
@@ -846,5 +865,110 @@ test("customer header search, language ribbon and support launcher remain usable
   await expect(page.getByRole("dialog", { name: "De VERVE AI customer support" })).toBeVisible();
   await expect(page.locator(".ai-chat-head .ai-chat-brand-logo")).toBeVisible();
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
+});
+
+test("official wordmark remains legible on loading and inside AI support while launcher clears the mobile dock", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/pages/home", async route => {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+  });
+  await page.route("**/api/brand/logo*", async route => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="564" height="114" viewBox="0 0 564 114"><rect width="564" height="114" fill="#fff"/><text x="12" y="78" font-size="64" fill="#123f70">DE VERVE</text></svg>'
+  }));
+  await page.goto("/");
+  const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
+  await expect(loadingLogo).toBeVisible();
+  await expect(loadingLogo).toHaveAttribute("src", "/api/brand/logo");
+  const loadingBox = await loadingLogo.boundingBox();
+  expect(loadingBox).not.toBeNull();
+  expect(loadingBox!.width / loadingBox!.height).toBeGreaterThan(3.5);
+
+  await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
+  const mobileSearch = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await expect(mobileSearch).toBeVisible();
+  const mobileSearchBox = await mobileSearch.boundingBox();
+  expect(mobileSearchBox).not.toBeNull();
+  expect(mobileSearchBox!.width).toBeGreaterThanOrEqual(130);
+  await mobileSearch.fill("wholesale");
+  const mobileSearchResult = page.locator(".site-search-results").getByRole("option").first();
+  await expect(mobileSearchResult).toBeVisible();
+  const mobileSearchResultBox = await mobileSearchResult.boundingBox();
+  expect(mobileSearchResultBox).not.toBeNull();
+  expect(mobileSearchResultBox!.height).toBeGreaterThanOrEqual(44);
+  const launcher = page.getByRole("button", { name: "Open De VERVE AI chat" });
+  await expect(launcher).toContainText("AI HELP");
+  const launcherBox = await launcher.boundingBox();
+  expect(launcherBox).not.toBeNull();
+  expect(launcherBox!.width).toBeGreaterThanOrEqual(68);
+  expect(launcherBox!.height).toBeGreaterThanOrEqual(68);
+  const reservedBottomSpace = await page.locator(".site-shell").evaluate(element => parseFloat(getComputedStyle(element).paddingBottom));
+  expect(reservedBottomSpace).toBeGreaterThanOrEqual(180);
+  const dock = page.locator(".mobile-dock");
+  if (await dock.isVisible()) {
+    const dockBox = await dock.boundingBox();
+    expect(dockBox).not.toBeNull();
+    expect(launcherBox!.y + launcherBox!.height).toBeLessThan(dockBox!.y - 8);
+  }
+
+  await launcher.click();
+  const chatLogo = page.locator(".ai-chat-head .ai-chat-brand-logo");
+  await expect(chatLogo).toBeVisible();
+  const chatLogoBox = await chatLogo.boundingBox();
+  expect(chatLogoBox).not.toBeNull();
+  expect(chatLogoBox!.width / chatLogoBox!.height).toBeGreaterThan(3.5);
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  for (const control of [
+    chat.getByRole("button", { name: "Add attachment" }),
+    chat.getByRole("button", { name: "Speak your message" }),
+    chat.getByRole("button", { name: "Send message" })
+  ]) {
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThanOrEqual(48);
+    expect(bounds!.height).toBeGreaterThanOrEqual(48);
+  }
+
+  const quote = page.locator(".top-quote-strip");
+  await expect(quote.locator("p")).toHaveText("Wear confidence. Every day.");
+  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  const quoteFits = await quote.locator("p").evaluate(element => {
+    const style = getComputedStyle(element);
+    return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
+  });
+  expect(quoteFits).toBeTruthy();
+  const shortQuoteIsSingleLine = await quote.locator("p").evaluate(element => {
+    const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+    return element.getBoundingClientRect().height <= lineHeight * 1.5;
+  });
+  expect(shortQuoteIsSingleLine).toBeTruthy();
+});
+
+test("global search matches variant attributes and common policy keywords", async ({ page }) => {
+  await page.route("**/api/products**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/products") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ products: [{
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", slug: "navy-trouser-search", name: "Classic Trouser",
+        description: "Everyday tailored fit", category: "Trousers", audience: "men", retail_price_paisa: 100000,
+        image_key: null, seo_title: "Classic Trouser", seo_description: "Classic fit",
+        variants: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", sku: "DV-NAV-M", size: "M", color: "Navy", available_quantity: 4 }],
+        media: []
+      }] })
+    });
+  });
+  await page.goto("/");
+  const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await search.fill("navy m");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Classic Trouser");
+  await search.fill("shipping returns");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Policies & FAQs");
+  await search.fill("بچوں کے کپڑے");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Kids' fashion");
 });
 
