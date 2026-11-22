@@ -233,7 +233,7 @@ export default function AIChatWidget() {
     {open && <section id="deverve-ai-chat-panel" className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head">
         <BrandLogo className="ai-chat-brand-logo" />
-        <div className="ai-chat-identity"><strong>De VERVE assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
+        <div className="ai-chat-identity"><strong>De VERVE Assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
         <button type="button" aria-label="Close chat" onClick={() => { setOpen(false); recognitionRef.current?.stop(); }}>×</button>
       </header>
       <div className="ai-chat-messages" ref={listRef} aria-live="polite">
