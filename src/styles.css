@@ -2305,25 +2305,33 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 }
 
 
-/* Final measured customer controls: avoid flex-shrink rounding below accessible touch size. */
+/* Final measured customer controls: keep a real 44px+ hit area even when the chat panel is visually scaled. */
 .ai-chat-composer{gap:6px!important;align-items:center!important}
 .ai-chat-composer .ai-chat-icon-button,
-.ai-chat-composer .ai-chat-send{
+.ai-chat-composer .ai-chat-send,
+.ai-chat-head>button{
   box-sizing:border-box!important;
-  flex:0 0 48px!important;
-  width:48px!important;min-width:48px!important;
-  height:48px!important;min-height:48px!important;
+  flex:0 0 52px!important;
+  width:52px!important;min-width:52px!important;
+  height:52px!important;min-height:52px!important;
   padding:0!important;
+  display:grid!important;place-items:center!important;
   touch-action:manipulation;
 }
 .ai-chat-composer .ai-chat-send{border-radius:13px!important}
-.ai-chat-composer textarea{min-width:0;min-height:38px}
+.ai-chat-composer textarea{min-width:0;min-height:40px}
+.ai-chat-attach-menu button{min-height:48px!important;touch-action:manipulation}
+.ai-chat-attachments figure>button{
+  flex:0 0 44px!important;width:44px!important;min-width:44px!important;
+  height:44px!important;min-height:44px!important;touch-action:manipulation;
+}
 @media(max-width:480px){
   .ai-chat-composer{gap:4px!important;padding:5px 6px!important}
   .ai-chat-composer .ai-chat-icon-button,
-  .ai-chat-composer .ai-chat-send{
-    flex-basis:48px!important;width:48px!important;min-width:48px!important;
-    height:48px!important;min-height:48px!important;
+  .ai-chat-composer .ai-chat-send,
+  .ai-chat-head>button{
+    flex-basis:52px!important;width:52px!important;min-width:52px!important;
+    height:52px!important;min-height:52px!important;
   }
 }
 
