@@ -823,6 +823,7 @@ test("storefront places the golden quote below the top ribbon and offers common 
   expect(order).toBeTruthy();
   const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
   expect(await languagePicker.locator("option").count()).toBeGreaterThan(150);
+  await expect(languagePicker.locator('option[value="all"]')).toHaveText("More languages…");
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
