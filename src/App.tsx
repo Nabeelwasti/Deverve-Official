@@ -292,13 +292,12 @@ function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
-  const quoteChangedRef = useRef(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
   // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
-  const [goldenQuote, setGoldenQuote] = useState<{ text: string; author: string; source?: string }>(selectGoldenQuote);
+  const [goldenQuote, setGoldenQuote] = useState<{ text: string; author: string }>(selectGoldenQuote);
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
@@ -316,49 +315,14 @@ function Storefront() {
 
 
   useEffect(() => {
-    // Do not overwrite the previous visit's quote while the online quote is still loading.
-    if (quoteChangedRef.current) persistGoldenQuote(goldenQuote);
+    // Brand-curated quotes rotate locally without contacting an external provider.
+    persistGoldenQuote(goldenQuote);
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        quoteChangedRef.current = true;
-        setGoldenQuote(selectGoldenQuote());
-      }
+      if (event.persisted) setGoldenQuote(selectGoldenQuote());
     };
     window.addEventListener("pageshow", handlePageShow);
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, [goldenQuote]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let active = true;
-    let previous = "";
-    try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Browser storage is optional. */ }
-    void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), { headers: { accept: "application/json" }, signal: controller.signal, cache: "no-store" })
-      .then(async response => {
-        if (!response.ok) throw new Error("Online quote source unavailable");
-        return await response.json() as { text?: string; author?: string; source?: string };
-      })
-      .then(item => {
-        if (!active || typeof item.text !== "string" || typeof item.author !== "string" || !item.text.trim() || !item.author.trim()) return;
-        const text = item.text.trim().slice(0, 180);
-        if (text === previous) {
-          const fallbackQuote = selectGoldenQuote();
-          quoteChangedRef.current = true;
-          setGoldenQuote(fallbackQuote);
-          persistGoldenQuote(fallbackQuote);
-          return;
-        }
-        quoteChangedRef.current = true;
-        setGoldenQuote({ text, author: item.author.trim().slice(0, 70), source: item.source === "ZenQuotes" ? "ZenQuotes" : undefined });
-      })
-      .catch(() => {
-        if (active && !quoteChangedRef.current) {
-          quoteChangedRef.current = true;
-          persistGoldenQuote(goldenQuote);
-        }
-      });
-    return () => { active = false; controller.abort(); };
-  }, []);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -735,7 +699,6 @@ function Storefront() {
         <span className="top-quote-mark" aria-hidden="true">“</span>
         <p>{goldenQuote.text}</p>
         <cite>— {goldenQuote.author}</cite>
-        {goldenQuote.source === "ZenQuotes" && <a className="quote-source-credit" href="https://zenquotes.io/" target="_blank" rel="noreferrer">Quotes via ZenQuotes</a>}
       </div>
 
       <header className="site-header">
@@ -1119,7 +1082,7 @@ function Storefront() {
 }
 
 function BrandLoadingScreen(){
-  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><BrandLogo className="brand-loader-logo"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
+  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><img className="brand-loader-logo deverve-round-logo" src="/brand/de-verve-mark.svg" alt="De VERVE" width={100} height={100} loading="eager" decoding="async" fetchPriority="high"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
 }
 
 function HomePageRoute() {
