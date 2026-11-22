@@ -2479,3 +2479,10 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .admin-brand-assets article:first-child>img{width:112px;height:112px;max-width:112px;max-height:112px;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:6px;border:1px solid #dce5ef;box-shadow:0 4px 14px rgba(10,35,62,.08)}
 
 .image-cropper-canvas-circle{border-radius:50%;border:3px solid #cda45f;object-fit:contain}
+
+/* Keep the mobile dock anchored to the viewport and reserve only its real footprint. */
+@media(max-width:760px){
+ body .mobile-dock{position:fixed!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;max-width:none!important;margin:0!important;border-radius:16px 16px 0 0!important;padding-bottom:calc(7px + env(safe-area-inset-bottom))!important;box-shadow:0 -8px 28px rgba(10,37,67,.16)!important}
+ .site-shell{padding-bottom:calc(92px + env(safe-area-inset-bottom))!important}
+}
+.collection-art.has-custom-art .category-garment{z-index:2;opacity:.98;filter:drop-shadow(0 4px 12px rgba(0,0,0,.36)) drop-shadow(0 0 4px rgba(255,255,255,.75));}
