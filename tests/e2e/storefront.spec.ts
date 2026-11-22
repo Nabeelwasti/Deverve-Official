@@ -1104,6 +1104,7 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
     Object.defineProperty(window, "speechSynthesis", { value: synth, configurable: true });
     (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken = spoken;
   });
+  await page.route("**/api/quotes/random*", route => route.fulfill({ status: 503, contentType: "application/json", body: "{}" }));
   await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   await page.route("**/api/ai/chat", route => route.fulfill({
     status: 200, contentType: "application/json",
@@ -1115,7 +1116,7 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
   await chat.getByRole("textbox", { name: "Your message" }).fill("Please reply in Roman Urdu.");
   await chat.getByRole("button", { name: "Send message" }).click();
   const assistantReply = page.locator(".ai-chat-message-wrap.model").last();
-  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain? I can help you today.");
+  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain, main theek hoon. I can help you today.");
   await assistantReply.getByRole("button", { name: "Speak message" }).click();
   await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.length)).toBe(2);
   await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.lang)).toBe("ur-PK");
