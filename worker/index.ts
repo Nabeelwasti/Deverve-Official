@@ -4712,7 +4712,7 @@ export async function generateGeminiSpeech(apiKey:string,text:string,language:st
         headers:{"content-type":"application/json","x-goog-api-key":apiKey,"Api-Revision":"2026-05-20"},
         body:JSON.stringify({
           model,
-          input:text,
+          input:[{type:"user_input",content:[{type:"text",text}]}],
           response_format:{type:"audio"},
           generation_config:{speech_config:[{voice}]}
         }),
@@ -4720,6 +4720,7 @@ export async function generateGeminiSpeech(apiKey:string,text:string,language:st
       });
       const payload=await response.json().catch(()=>({})) as {
         output_audio?:{data?:unknown;mime_type?:unknown;mimeType?:unknown};
+        steps?:Array<{type?:string;content?:Array<{type?:string;data?:unknown;mime_type?:unknown;mimeType?:unknown}>}>;
         error?:{message?:string;status?:string}
       };
       if(!response.ok){
@@ -4727,22 +4728,27 @@ export async function generateGeminiSpeech(apiKey:string,text:string,language:st
         if(response.status===404||response.status===400||response.status===429||response.status>=500)continue;
         return last;
       }
-      const encoded=payload.output_audio?.data;
+      // The Interactions REST API returns audio in steps[].content[].data.
+      // output_audio is an SDK convenience property and is not guaranteed in raw REST JSON.
+      const outputAudio=payload.output_audio;
+      const modelOutput=[...(Array.isArray(payload.steps)?payload.steps:[])].reverse()
+        .find((step: any)=>step?.type==="model_output");
+      const audioBlocks=Array.isArray(modelOutput?.content)?modelOutput.content:[];
+      const audioBlock=[...audioBlocks].reverse().find((block: any)=>block?.type==="audio"&&typeof block?.data==="string");
+      const encoded=typeof outputAudio?.data==="string"?outputAudio.data:audioBlock?.data;
       if(typeof encoded!=="string"||encoded.length<32||encoded.length>8_000_000||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)){
-        last={ok:false,status:502,audio:undefined,message:"Speech provider returned an invalid audio payload",model};
+        last={ok:false,status:502,audio:undefined,message:"Speech provider returned no valid audio block",model};
         continue;
       }
       const binary=atob(encoded),bytes=new Uint8Array(binary.length);
       for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
-      if(bytes.length<128||bytes.length>6*1024*1024){
+      if(bytes.length<44||bytes.length>6*1024*1024){
         last={ok:false,status:502,audio:undefined,message:"Speech audio exceeded the safe playback size",model};
         continue;
       }
-      const mime=String(payload.output_audio?.mime_type??payload.output_audio?.mimeType??"").toLowerCase();
-      const wav=bytes.length>=44&&new TextDecoder().decode(bytes.subarray(0,4))==="RIFF"
-        ?bytes
-        :mime.includes("mpeg")||mime.includes("mp3")?bytes
-        :speechWavFromPcm(bytes);
+      const mime=String(outputAudio?.mime_type??outputAudio?.mimeType??audioBlock?.mime_type??audioBlock?.mimeType??"").toLowerCase();
+      const isWav=bytes.length>=44&&new TextDecoder().decode(bytes.subarray(0,4))==="RIFF"&&new TextDecoder().decode(bytes.subarray(8,12))==="WAVE";
+      const wav=isWav?bytes:mime.includes("mpeg")||mime.includes("mp3")?bytes:speechWavFromPcm(bytes);
       return {ok:true,status:200,audio:wav,message:"",model};
     }catch{
       last={ok:false,status:503,audio:undefined,message:"Speech provider timed out or could not be reached",model};

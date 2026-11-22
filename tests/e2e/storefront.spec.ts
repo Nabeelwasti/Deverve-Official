@@ -492,6 +492,42 @@ test("cart opens as a review step and merges repeated identical lines", async ({
 });
 
 
+test("mobile cart dialog stays above the bottom navigation and keeps checkout reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const line = { variant_id: "11111111-1111-4111-8111-111111111111", product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "De VERVE Hoodie", sku: "DV-HOOD-NAV-M", size: "M", color: "Navy", quantity: 1, unit_price_paisa: 350000, available_quantity: 5 };
+    localStorage.setItem("deverve-cart", JSON.stringify([line]));
+  });
+  await page.goto("/");
+  const dock = page.locator(".mobile-dock");
+  await expect(dock).toBeVisible();
+  await dock.getByRole("button", { name: /Cart/ }).click();
+  const dialog = page.getByRole("dialog", { name: /Your cart/ });
+  await expect(dialog).toBeVisible();
+  const backdrop = page.locator(".cart-backdrop");
+  await expect(backdrop).toHaveCSS("z-index", "1400");
+  const dockZ = await dock.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
+  const backdropZ = await backdrop.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
+  expect(backdropZ).toBeGreaterThan(dockZ);
+  // The accessible dialog is the cart panel itself (.checkout-panel.cart-panel).
+  const panelBox = await dialog.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.y).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(844);
+  const checkout = dialog.getByRole("button", { name: /Proceed to checkout/ });
+  await expect(checkout).toBeVisible();
+  const checkoutBox = await checkout.boundingBox();
+  expect(checkoutBox).not.toBeNull();
+  expect(checkoutBox!.y + checkoutBox!.height).toBeLessThanOrEqual(844);
+  const hitTarget = await page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    return Boolean(element?.closest(".cart-panel"));
+  }, { x: checkoutBox!.x + checkoutBox!.width / 2, y: checkoutBox!.y + checkoutBox!.height / 2 });
+  expect(hitTarget).toBeTruthy();
+  await expect(dialog.getByRole("button", { name: "Close cart" })).toBeVisible();
+});
+
 test("install app control remains visible when the browser does not expose a native install prompt", async ({ page }) => {
   await page.goto("/");
   const installButton = page.getByRole("button", { name: "Install De VERVE app" });
@@ -964,13 +1000,16 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await page.goto("/");
   const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
   await expect(loadingLogo).toBeVisible();
-  await expect(loadingLogo).toHaveAttribute("viewBox", "0 0 100 100");
-  await expect(loadingLogo.locator("circle")).toHaveCount(2);
+  await expect(loadingLogo).toHaveAttribute("alt", "De VERVE");
+  await expect(loadingLogo).toHaveAttribute("src", /\/api\/brand\/logo/);
+  await expect.poll(() => loadingLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
   expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
   await expect(loadingLogo).toHaveCSS("width", "100px");
   await expect(loadingLogo).toHaveCSS("height", "100px");
+  await expect(loadingLogo).toHaveCSS("object-fit", "contain");
+  await expect(loadingLogo).toHaveCSS("object-position", "50% 50%");
   await expect(loadingLogo).toHaveCSS("border-radius", "50%");
 
   await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });

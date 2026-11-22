@@ -2501,3 +2501,60 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .brand-loader-logo{position:relative;z-index:1;display:block;width:100px;height:100px;overflow:visible;filter:drop-shadow(0 6px 22px rgba(216,184,126,.24))}
 
 .brand-loading-screen .brand-loader-logo{display:block!important;width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:0!important;border-radius:50%!important;background:transparent!important;box-shadow:0 0 55px rgba(209,174,111,.17)!important;padding:0!important}
+
+
+/* Final responsive interaction layer: cart must sit above the mobile dock. */
+@media (max-width: 760px) {
+  .cart-backdrop {
+    z-index: 1400 !important;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)) !important;
+    align-items: center;
+  }
+  .cart-backdrop .cart-panel {
+    width: min(760px, 100%);
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 24px);
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .ai-chat-launcher {
+    /* Keep the 68px launcher at least 8px clear of the fixed mobile dock. */
+    bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  }
+  .ai-chat-panel {
+    bottom: calc(140px + env(safe-area-inset-bottom)) !important;
+    max-height: calc(100vh - 160px);
+    max-height: calc(100dvh - 160px - env(safe-area-inset-bottom));
+  }
+  .floating-whatsapp {
+    bottom: calc(96px + env(safe-area-inset-bottom)) !important;
+  }
+  .site-shell {
+    padding-bottom: calc(92px + env(safe-area-inset-bottom)) !important;
+  }
+}
+/* The four owner-uploaded service artworks are the visual hero of their cards.
+   Keep semantic icons in the no-art fallback, never over the uploaded artwork. */
+.trust-pillar-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 9px;
+  color: #174c7d;
+}
+.trust-pillar-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.trust-pillar-card.has-owner-art .trust-pillar-icon {
+  display: none;
+}
+
+.brand-loader-logo{display:block!important;width:104px!important;height:104px!important;max-width:32vw!important;max-height:32vw!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:1px solid rgba(225,194,139,.85);border-radius:50%;background:#fff;padding:5px;box-shadow:0 0 42px rgba(209,174,111,.18)}

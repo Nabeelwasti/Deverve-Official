@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
+import BrandLogo from "./BrandLogo";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
 const WholesaleQuote = lazy(() => import("./WholesaleQuote"));
@@ -794,10 +795,10 @@ function Storefront() {
             <div className="intro-mark" aria-hidden="true">DV<span>.</span></div>
           </section>
           <section className="trust-pillars-section" aria-label="Explore De VERVE services">
-            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_fashion?" has-owner-art feature-fashion":"")} href="/?screen=fashion"><span className="trust-pillar-icon" aria-hidden="true">◇</span><div><h4>Find your fit</h4><p>Explore garments, product details and available size–colour combinations.</p><small>Explore fashion ↗</small></div></a>
-            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_account?" has-owner-art feature-account":"")} href="/account"><span className="trust-pillar-icon" aria-hidden="true">▣</span><div><h4>Your orders, together</h4><p>Sign in to follow order updates and manage eligible exchange requests.</p><small>Open your account ↗</small></div></a>
-            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_wholesale?" has-owner-art feature-wholesale":"")} href="/?screen=wholesale"><span className="trust-pillar-icon" aria-hidden="true">▤</span><div><h4>Wholesale made clear</h4><p>Share product requirements and quantities for a tailored quotation.</p><small>Request a quote ↗</small></div></a>
-            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_mobility?" has-owner-art feature-mobility":"")} href="/?screen=mobility"><span className="trust-pillar-icon" aria-hidden="true">↗</span><div><h4>Plan your journey</h4><p>Explore vehicle options and send a rental enquiry to our team.</p><small>Explore rentals ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_fashion?" has-owner-art feature-fashion":"")} href="/?screen=fashion"><span className="trust-pillar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 7.5 12 4l6 3.5-2.2 3.2H8.2L6 7.5Z"/><path d="M8.2 10.7 6.5 20h11l-1.7-9.3M9.2 7.8l2.8 2.9 2.8-2.9"/></svg></span><div><h4>Find your fit</h4><p>Explore garments, product details and available size–colour combinations.</p><small>Explore fashion ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_account?" has-owner-art feature-account":"")} href="/account"><span className="trust-pillar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 5V3.5h8V5M8 10h8M8 14h5"/></svg></span><div><h4>Your orders, together</h4><p>Sign in to follow order updates and manage eligible exchange requests.</p><small>Open your account ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_wholesale?" has-owner-art feature-wholesale":"")} href="/?screen=wholesale"><span className="trust-pillar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3 8 9-5 9 5-9 5-9-5Z"/><path d="M3 8v9l9 5 9-5V8M12 13v9M7.5 5.5l9 5"/></svg></span><div><h4>Wholesale made clear</h4><p>Share product requirements and quantities for a tailored quotation.</p><small>Request a quote ↗</small></div></a>
+            <a className={"trust-pillar-card"+(siteDesign.section_images.feature_mobility?" has-owner-art feature-mobility":"")} href="/?screen=mobility"><span className="trust-pillar-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 15.5 5 10h14l2 5.5V19h-2v-2H5v2H3v-3.5Z"/><path d="m6.5 10 1.2-4h8.6l1.2 4M6.5 14.5h.01M17.5 14.5h.01"/></svg></span><div><h4>Plan your journey</h4><p>Explore vehicle options and send a rental enquiry to our team.</p><small>Explore rentals ↗</small></div></a>
           </section>
         </>}
 
@@ -1110,13 +1111,7 @@ function Storefront() {
 function BrandLoadingScreen(){
   return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE">
     <div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/>
-    <svg className="brand-loader-logo" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="De VERVE">
-      <defs><linearGradient id="loaderGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f1d9a6"/><stop offset="1" stopColor="#b68a4e"/></linearGradient></defs>
-      <circle cx="50" cy="50" r="48" fill="#0b2948" stroke="url(#loaderGold)" strokeWidth="1.5"/>
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#fff" strokeOpacity=".18"/>
-      <path d="M22 25h13c16 0 25 9 25 25S51 75 35 75H22V25Zm11 9v32h3c8 0 13-6 13-16s-5-16-13-16h-3Z" fill="#fff"/>
-      <path d="m54 25 11 0 9 29 9-29h11L89 75H78L54 25Z" fill="url(#loaderGold)"/>
-    </svg>
+    <BrandLogo className="brand-loader-logo"/>
     <div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div>
   </main>
 }

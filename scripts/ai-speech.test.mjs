@@ -27,7 +27,7 @@ test("Gemini speech adapter keeps the API key server-side and returns valid WAV 
     requestHeaders = new Headers(init.headers);
     requestBody = JSON.parse(String(init.body || "{}"));
     return new Response(JSON.stringify({
-      output_audio: { data: encodedPcm, mime_type: "audio/pcm;rate=24000" }
+      steps: [{ type: "model_output", content: [{ type: "audio", data: encodedPcm, mime_type: "audio/pcm;rate=24000" }] }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
@@ -38,6 +38,7 @@ test("Gemini speech adapter keeps the API key server-side and returns valid WAV 
     assert.equal(requestHeaders.get("x-goog-api-key"), "server-only-key");
     assert.equal(requestBody.model, "gemini-3.1-flash-tts-preview");
     assert.deepEqual(requestBody.response_format, { type: "audio" });
+    assert.deepEqual(requestBody.input, [{ type: "user_input", content: [{ type: "text", text: "Speak this in Urdu." }] }]);
     assert.deepEqual(requestBody.generation_config.speech_config, [{ voice: "Kore" }]);
     assert.equal(Buffer.from(result.audio.subarray(0, 4)).toString("ascii"), "RIFF");
   } finally {
@@ -56,7 +57,7 @@ test("Gemini speech adapter retries the secondary supported model when the previ
       });
     }
     return new Response(JSON.stringify({
-      output_audio: { data: encodedPcm, mime_type: "audio/pcm;rate=24000" }
+      steps: [{ type: "model_output", content: [{ type: "audio", data: encodedPcm, mime_type: "audio/pcm;rate=24000" }] }]
     }), { status: 200, headers: { "content-type": "application/json" } });
   };
   try {
@@ -71,12 +72,42 @@ test("Gemini speech adapter retries the secondary supported model when the previ
 
 test("Gemini speech adapter rejects malformed audio rather than returning a broken player response", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify({
-    output_audio: { data: "not-valid-base64", mime_type: "audio/pcm" }
+    steps: [{ type: "model_output", content: [{ type: "audio", data: "not-valid-base64", mime_type: "audio/pcm" }] }]
   }), { status: 200, headers: { "content-type": "application/json" } });
   try {
     const result = await generateGeminiSpeech("server-only-key", "Hello.", "auto", "Kore");
     assert.equal(result.ok, false);
     assert.equal(result.status, 502);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test("Gemini speech adapter preserves a complete WAV returned by the raw Interactions REST response", async () => {
+  const wav = Buffer.alloc(160, 0x12);
+  wav.write("RIFF", 0, "ascii");
+  wav.writeUInt32LE(152, 4);
+  wav.write("WAVE", 8, "ascii");
+  wav.write("fmt ", 12, "ascii");
+  wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(1, 20);
+  wav.writeUInt16LE(1, 22);
+  wav.writeUInt32LE(24000, 24);
+  wav.writeUInt32LE(48000, 28);
+  wav.writeUInt16LE(2, 32);
+  wav.writeUInt16LE(16, 34);
+  wav.write("data", 36, "ascii");
+  wav.writeUInt32LE(116, 40);
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    steps: [{ type: "model_output", content: [{ type: "audio", data: wav.toString("base64"), mime_type: "audio/wav" }] }]
+  }), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const result = await generateGeminiSpeech("server-only-key", "Hello.", "en-US", "Kore");
+    assert.equal(result.ok, true);
+    assert.equal(Buffer.from(result.audio.subarray(0, 4)).toString("ascii"), "RIFF");
+    assert.equal(result.audio.length, wav.length);
+    assert.equal(Buffer.from(result.audio).equals(wav), true);
   } finally {
     globalThis.fetch = originalFetch;
   }
