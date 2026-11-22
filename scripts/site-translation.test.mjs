@@ -74,9 +74,11 @@ test("private translation worker uses Google Cloud Translation only as a server-
   const originalFetch = globalThis.fetch;
   let requestedUrl = "";
   let requestedBody;
+  let requestedApiKey = "";
   globalThis.fetch = async (input, init) => {
     requestedUrl = String(input);
     requestedBody = JSON.parse(String(init?.body ?? "{}"));
+    requestedApiKey = new Headers(init?.headers).get("x-goog-api-key") ?? "";
     return new Response(JSON.stringify({ data: { translations: [{ translatedText: "ZXQDVBRAND0ZXQ میں خوش آمدید" }] } }), {
       status: 200,
       headers: { "content-type": "application/json" }
@@ -91,7 +93,8 @@ test("private translation worker uses Google Cloud Translation only as a server-
     assert.equal(response.status, 200);
     assert.equal(payload.translatedText, "De VERVE میں خوش آمدید");
     assert.equal(payload.provider, "google-cloud-translation");
-    assert.match(requestedUrl, /^https:\/\/translation\.googleapis\.com\/language\/translate\/v2\?key=/);
+    assert.equal(requestedUrl, "https://translation.googleapis.com/language/translate/v2");
+    assert.equal(requestedApiKey, "server-only-test-key");
     assert.deepEqual(requestedBody, { q: "Welcome to ZXQDVBRAND0ZXQ", source: "en", target: "ur", format: "text" });
   } finally {
     globalThis.fetch = originalFetch;
