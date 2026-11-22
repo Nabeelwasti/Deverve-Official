@@ -2390,17 +2390,22 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   }
 }
 
-/* Accessible, in-place browser translation guidance; no redirect or unsupported third-party widget. */
-.announcement-translate-button{
-  border:0;background:transparent;color:#f1d8a4;font:700 10px "DM Sans",sans-serif;
-  cursor:pointer;text-decoration:underline;text-underline-offset:3px;
+/* Live multilingual translation selector: compact, keyboard accessible, and non-navigating. */
+.announcement-translate{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0}
+.announcement-translate select{
+  box-sizing:border-box;max-width:150px;min-width:112px;min-height:34px;
+  padding:5px 24px 5px 9px;border:1px solid rgba(241,216,164,.5);
+  border-radius:8px;background:#082b55;color:#fff!important;
+  font:650 10px "DM Sans",sans-serif;cursor:pointer;
 }
-.translation-hint{
-  position:absolute;z-index:40;top:calc(100% + 8px);right:12px;
-  width:min(310px,calc(100vw - 24px));padding:12px 14px;
-  border:1px solid #d9c69f;border-radius:12px;background:#fff;
-  color:#173b61;font:500 11px/1.55 "DM Sans",sans-serif;
-  box-shadow:0 12px 32px rgba(5,30,58,.18);
+.announcement-translate select:focus-visible{outline:2px solid #f1d8a4;outline-offset:2px}
+.announcement-translate select option{background:#fff;color:#102d53}
+.translation-status{
+  display:block;max-width:min(240px,38vw);color:#f5e7ca;
+  font:500 9px/1.35 "DM Sans",sans-serif;overflow-wrap:anywhere;
 }
-
-.announcement-translate{position:relative}
+@media(max-width:720px){
+  .announcement-translate{gap:5px}
+  .announcement-translate select{min-width:100px;max-width:118px;min-height:32px;padding-inline:7px;font-size:9px}
+  .translation-status{max-width:calc(100vw - 28px);font-size:8px}
+}
