@@ -819,7 +819,12 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
 
-test("storefront places the golden quote below the top ribbon and offers browser translation guidance", async ({ page }) => {
+test("storefront translates visible website copy in place and restores English", async ({ page }) => {
+  await page.route("**/api/translate", async route => {
+    const body = route.request().postDataJSON() as { text: string };
+    const translatedText = body.text.split("ZXQDVSEP").map(part => "ترجمہ " + part).join("ZXQDVSEP");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ translatedText, remainingDailyRequests: 19 }) });
+  });
   await page.goto("/");
   const announcement = page.locator(".announcement");
   const quote = page.locator(".top-quote-strip");
@@ -831,16 +836,21 @@ test("storefront places the golden quote below the top ribbon and offers browser
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const translationButton = announcement.getByRole("button", { name: "How to translate this page" });
-  await expect(translationButton).toBeVisible();
-  await translationButton.click();
-  await expect(announcement.getByRole("status")).toContainText("browser’s built-in page translation");
+  const serviceCopy = page.locator(".announcement-services");
+  const originalCopy = await serviceCopy.textContent();
+  const language = page.getByRole("combobox", { name: "Translate website" });
+  await expect(language).toBeVisible();
+  const originalUrl = page.url();
+  await language.selectOption("ur");
+  await expect(serviceCopy).toContainText("ترجمہ");
+  await expect(announcement.getByRole("status")).toContainText("Website translated");
+  expect(page.url()).toBe(originalUrl);
+  await language.selectOption("");
+  await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
 });
-
-
 
 test("customer navigation menu closes on outside tap and Escape", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
@@ -872,10 +882,9 @@ test("AI attachment menu closes on outside tap and Escape", async ({ page }) => 
 
 test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
   await page.goto("/");
-  const language = page.getByRole("button", { name: "Translate this page" });
+  const language = page.getByRole("combobox", { name: "Translate website" });
   await expect(language).toBeVisible();
-  await language.click();
-  await expect(page.getByRole("status")).toContainText("stay on the De VERVE website");
+  await expect(language.locator('option[value="ur"]')).toHaveText("اردو");
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
