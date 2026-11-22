@@ -393,8 +393,6 @@ type TurnstileApi = {
 declare global {
   interface Window {
     turnstile?: TurnstileApi;
-    googleTranslateElementInit?: () => void;
-    google?: { translate?: { TranslateElement: new (options: { pageLanguage: string; includedLanguages: string; autoDisplay: boolean }, elementId: string) => unknown } };
   }
 }
 const TURNSTILE_SITEKEY = "0x4AAAAAAGBpVe5Z1cq2CvB5";
@@ -551,7 +549,7 @@ function persistGoldenQuote(quote: { text: string; author: string }) {
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const siteHeaderRef = useRef<HTMLElement | null>(null);
-  const [translationLanguage, setTranslationLanguage] = useState("");
+  const [translationHintOpen, setTranslationHintOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
@@ -572,51 +570,7 @@ function Storefront() {
     };
   }, [menuOpen]);
 
-  useEffect(() => {
-    const host = document.getElementById("google_translate_element");
-    if (!host) return;
-    const initialize = () => {
-      const TranslateElement = window.google?.translate?.TranslateElement;
-      if (!TranslateElement || host.dataset.initialized === "true") return;
-      try {
-        new TranslateElement({
-          pageLanguage: "en",
-          includedLanguages: TRANSLATION_LANGUAGES.map(([code]) => code).filter(code => code !== "en").join(","),
-          autoDisplay: false
-        }, "google_translate_element");
-        host.dataset.initialized = "true";
-      } catch { host.dataset.initialized = "error"; }
-    };
-    window.googleTranslateElementInit = initialize;
-    if (window.google?.translate?.TranslateElement) {
-      initialize();
-    } else if (!document.querySelector('script[data-deverve-translate="google"]')) {
-      const script = document.createElement("script");
-      script.src = "https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit";
-      script.async = true;
-      script.dataset.deverveTranslate = "google";
-      script.onerror = () => { host.dataset.initialized = "error"; };
-      document.head.appendChild(script);
-    }
-    return () => { if (window.googleTranslateElementInit === initialize) delete window.googleTranslateElementInit; };
-  }, []);
 
-  useEffect(() => {
-    if (!translationLanguage) return;
-    const host = document.getElementById("google_translate_element");
-    if (!host) return;
-    const applyLanguage = () => {
-      const combo = host.querySelector<HTMLSelectElement>(".goog-te-combo");
-      if (!combo) return false;
-      combo.value = translationLanguage;
-      combo.dispatchEvent(new Event("change", { bubbles: true }));
-      return true;
-    };
-    if (applyLanguage()) return;
-    const observer = new MutationObserver(() => { if (applyLanguage()) observer.disconnect(); });
-    observer.observe(host, { childList: true, subtree: true });
-    return () => observer.disconnect();
-  }, [translationLanguage]);
 
   useEffect(() => {
     // Persist only after React commits the selected quote; keep the state initializer side-effect free.
@@ -996,11 +950,8 @@ function Storefront() {
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
           <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span>
-            <select aria-label="Translate this page" value={translationLanguage} onChange={event => setTranslationLanguage(event.currentTarget.value)}>
-              <option value="">Translate page…</option>
-              {TRANSLATION_LANGUAGES.filter(([code]) => code !== "en").map(([code,name])=><option key={code} value={code}>{TRANSLATION_NATIVE_LABELS[code]??name}</option>)}
-            </select>
-            <span id="google_translate_element" className="google-translate-host" aria-hidden="true" />
+            <button type="button" className="announcement-translate-button" aria-label="Translate this page" aria-expanded={translationHintOpen} onClick={() => setTranslationHintOpen(value => !value)}>Translate</button>
+            {translationHintOpen && <span className="translation-hint" role="status">For live translation, use your browser’s built-in Translate option from its menu. This keeps you on the De VERVE website.</span>}
           </label>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
         </div>
