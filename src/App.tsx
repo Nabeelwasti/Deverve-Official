@@ -302,6 +302,13 @@ function Storefront() {
     return list;
   },[products,selectedCategory,search,sortBy]);
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
+
+  const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
+  const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
+  const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
+  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
+  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
+  const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
     const term=siteSearch.trim().toLocaleLowerCase();
     if(!term)return [];
@@ -313,12 +320,6 @@ function Storefront() {
     for(const item of pages)if((item.label+" "+item.detail).toLocaleLowerCase().includes(term))results.push(item);
     return results.slice(0,8);
   },[siteSearch,products,vehicles]);
-  const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
-  const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
-  const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
-  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
-  const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
-  const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
   const [rentalOpen, setRentalOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:rental-open") === "1"; } catch { return false; } });
   const [rentalBusy, setRentalBusy] = useState(false);
