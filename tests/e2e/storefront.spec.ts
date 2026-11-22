@@ -908,6 +908,17 @@ test("official wordmark remains legible on loading and inside AI support while l
   const chatLogoBox = await chatLogo.boundingBox();
   expect(chatLogoBox).not.toBeNull();
   expect(chatLogoBox!.width / chatLogoBox!.height).toBeGreaterThan(3.5);
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  for (const control of [
+    chat.getByRole("button", { name: "Add attachment" }),
+    chat.getByRole("button", { name: "Speak your message" }),
+    chat.getByRole("button", { name: "Send message" })
+  ]) {
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
 
   const quote = page.locator(".top-quote-strip");
   await expect(quote.locator("p")).toHaveText("Wear confidence. Every day.");
