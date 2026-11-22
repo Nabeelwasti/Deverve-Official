@@ -295,10 +295,14 @@ const SITE_TRANSLATION_LANGUAGE_CODES = [
   "su","sv","sw","ta","th","tl","tn","tr","uk","ur","uz","vi","wo","xh","yi","yo","zh","zu",
   "as","brx","doi","kok","ks","mai","mni","sa","sat","te"
 ] as const;
+const SITE_TRANSLATION_LANGUAGE_OVERRIDES: Record<string, string> = {
+  ba: "Bashkir", ff: "Fulah", ns: "Northern Sotho", ss: "Swati",
+  brx: "Bodo", ks: "Kashmiri", sat: "Santali"
+};
 const SITE_TRANSLATION_LANGUAGES = SITE_TRANSLATION_LANGUAGE_CODES.map((code) => {
-  const english = typeof Intl.DisplayNames === "function"
+  const english = SITE_TRANSLATION_LANGUAGE_OVERRIDES[code] ?? (typeof Intl.DisplayNames === "function"
     ? new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code
-    : code;
+    : code);
   const native = typeof Intl.DisplayNames === "function"
     ? new Intl.DisplayNames([code], { type: "language" }).of(code)
     : null;
