@@ -1,7 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ page }) => {
-  await page.route("https://dummyjson.com/quotes/random", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({quote:"Elegance is when the inside is as beautiful as the outside.",author:"Coco Chanel"})}));
   await page.route("https://challenges.cloudflare.com/turnstile/v0/api.js*", async (route) => {
     await route.fulfill({
       status: 200,
