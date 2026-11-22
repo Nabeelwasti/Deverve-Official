@@ -296,7 +296,7 @@ const SITE_TRANSLATION_LANGUAGES = [
 ] as const;
 
 const originalSiteTextNodes = new Map<Text, string>();
-const TRANSLATION_SEPARATOR = "\\nZXQDVSEP\\n";
+const TRANSLATION_SEPARATOR = "ZXQDVSEP";
 
 function restoreOriginalSiteLanguage() {
   for (const [node, original] of originalSiteTextNodes) {
@@ -412,8 +412,8 @@ async function translateRenderedSite(
       ? entry.translated.join(" ")
       : null;
     if (translated !== null && entry.node.isConnected) {
-      const leading = entry.original.match(/^\\s*/)?.[0] ?? "";
-      const trailing = entry.original.match(/\\s*$/)?.[0] ?? "";
+            const leading = entry.original.match(/^\s*/)?.[0] ?? "";
+            const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
       entry.node.nodeValue = leading + translated + trailing;
     }
   }
