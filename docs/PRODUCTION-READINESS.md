@@ -3,7 +3,7 @@
 ## Current verified status — 22 November 2026, after PRs #26 and #27
 
 ### Source, CI and production deployment
-- **Current main branch:** `70cb86805a4619461e236563db1f70a80d618369`.
+- **Latest deployed application-code commit:** `70cb86805a4619461e236563db1f70a80d618369` (subsequent documentation-only commits do not change the deployed application bundle).
 - **Latest application-code release:** `70cb86805a4619461e236563db1f70a80d618369`, merged through [PR #27](https://github.com/Nabeelwasti/Deverve-Official/pull/27), following [PR #26](https://github.com/Nabeelwasti/Deverve-Official/pull/26). The release includes the static HTML-shell loader fix, server-side multilingual Gemini TTS with Roman Urdu transliteration, online quote rotation with local fallback and no provider branding, and safe vehicle-gallery crop/reposition.
 - **Latest verified mainline CI:** [run 45049994321](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45049994321) succeeded. TypeScript/build, dependency audit, Worker tests, D1 schema/constraint checks, backup-script syntax and **154 desktop/mobile Playwright tests** passed. The isolated remote D1 integration suite was skipped because dedicated Cloudflare GitHub Actions secrets are not configured.
 - **Latest verified production deployment:** Cloudflare Pages project `deverve-official`, deployment `b52c76dc-5db6-4def-b9cb-edca1dceb3f0`, source commit `70cb86805a4619461e236563db1f70a80d618369`. Cloudflare confirmed successful queued, initialize, clone, build and deploy stages. Canonical URL: https://deverve-official.pages.dev.
