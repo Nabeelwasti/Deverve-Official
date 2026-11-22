@@ -3,7 +3,6 @@ import { createPortal } from "react-dom";
 import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
-import BrandLogo from "./BrandLogo";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
 const WholesaleQuote = lazy(() => import("./WholesaleQuote"));
