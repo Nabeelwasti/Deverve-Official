@@ -509,8 +509,8 @@ test("mobile cart dialog stays above the bottom navigation and keeps checkout re
   const dockZ = await dock.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
   const backdropZ = await backdrop.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
   expect(backdropZ).toBeGreaterThan(dockZ);
-  const panel = dialog.locator(".cart-panel");
-  const panelBox = await panel.boundingBox();
+  // The accessible dialog is the cart panel itself (.checkout-panel.cart-panel).
+  const panelBox = await dialog.boundingBox();
   expect(panelBox).not.toBeNull();
   expect(panelBox!.x).toBeGreaterThanOrEqual(0);
   expect(panelBox!.y).toBeGreaterThanOrEqual(0);
