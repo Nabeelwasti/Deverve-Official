@@ -4804,7 +4804,7 @@ async function publicAISpeechRoute(request:Request,env:Env):Promise<Response|nul
       try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+wait).toISOString(),label,new Date().toISOString(),candidate.row.id).run();}catch{}
     }
   }
-  return error("High-quality speech is temporarily unavailable. Try again shortly or use your device's installed voice.",503,{"retry-after":"60"});
+  return error("High-quality speech is temporarily unavailable. Try again shortly or use your device's installed voice.",503);
 }
 type GeminiResearchSource={title:string;url:string};
 async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{ok:boolean;status:number;summary:string;message:string;model:string;sources:GeminiResearchSource[];queries:string[]}>{
