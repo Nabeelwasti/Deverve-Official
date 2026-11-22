@@ -831,21 +831,10 @@ test("storefront places the golden quote below the top ribbon and offers common 
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
-  expect(await languagePicker.locator("option").count()).toBe(250);
-  const languageOptions = await languagePicker.locator("option").evaluateAll(options => options.filter(option => option.value && option.value !== "all").map(option => ({ code: option.value, label: option.textContent?.trim() })));
-  expect(languageOptions).toHaveLength(249);
-  expect(new Set(languageOptions.map(option => option.code)).size).toBe(249);
-  expect(languageOptions).toEqual(expect.arrayContaining([
-    expect.objectContaining({ code: "ab", label: "Abkhaz" }),
-    expect.objectContaining({ code: "iu", label: "Inuktut (Syllabics)" }),
-    expect.objectContaining({ code: "bm-Nkoo", label: "NKo" }),
-    expect.objectContaining({ code: "ur", label: "اردو" }),
-    expect.objectContaining({ code: "zap", label: "Zapotec" })
-  ]));
-  await expect(page.locator("#google_translate_element")).toBeAttached();
-  await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
-  await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
+  const translationButton = announcement.getByRole("button", { name: "Translate this page" });
+  await expect(translationButton).toBeVisible();
+  await translationButton.click();
+  await expect(announcement.getByRole("status")).toContainText("browser’s built-in Translate option");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -881,42 +870,12 @@ test("AI attachment menu closes on outside tap and Escape", async ({ page }) => 
   await expect(chat.getByRole("menu", { name: "Attachment options" })).toHaveCount(0);
 });
 
-test("language picker applies translation through the embedded widget without opening a tab", async ({ page }) => {
-  await page.addInitScript(() => {
-    (window as any).google = {
-      translate: {
-        TranslateElement: class {
-          constructor(_options: unknown, elementId: string) {
-            const host = document.getElementById(elementId);
-            if (!host) return;
-            const combo = document.createElement("select");
-            combo.className = "goog-te-combo";
-            const original = document.createElement("option");
-            original.value = "";
-            combo.append(original);
-            const urdu = document.createElement("option");
-            urdu.value = "ur";
-            urdu.textContent = "Urdu";
-            combo.append(urdu);
-            combo.addEventListener("change", () => { document.body.dataset.liveTranslated = combo.value; });
-            host.append(combo);
-          }
-        }
-      }
-    };
-  });
-  await page.goto("/");
-  const originalUrl = page.url();
-  await page.getByRole("combobox", { name: "Translate this page" }).selectOption("ur");
-  await expect(page.locator("body")).toHaveAttribute("data-live-translated", "ur");
-  expect(page.url()).toBe(originalUrl);
-});
-
 test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
   await page.goto("/");
-  const language = page.getByLabel("Translate this page");
+  const language = page.getByRole("button", { name: "Translate this page" });
   await expect(language).toBeVisible();
-  expect(await language.locator("option").count()).toBeGreaterThan(40);
+  await language.click();
+  await expect(page.getByRole("status")).toContainText("keeps you on the De VERVE website");
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
