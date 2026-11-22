@@ -5,7 +5,10 @@
 - The customer-facing language selector translates visible storefront copy in place. It does not redirect or open a new tab.
 - The Pages Function validates same-origin requests, supported languages, input size, per-visitor rate limits, and the shared daily inference ceiling.
 - Pages calls the private `deverve-site-translation` Worker through the `TRANSLATION` service binding.
-- The private Worker has a Workers AI binding named `AI`. It uses AI4Bharat IndicTrans2 for Urdu, Hindi, and Bengali, and Meta `@cf/meta/m2m100-1.2b` for the other supported languages.
+- The private Worker has a Workers AI binding named `AI`. It routes supported Indic languages to AI4Bharat IndicTrans2 and other languages to Meta `@cf/meta/m2m100-1.2b`.
+- The browser sends up to three independent, bounded translation batches concurrently. It reuses verified local translations, aborts stale requests when a visitor changes language, and queues DOM changes that arrive while a translation is running. Completed sections are applied incrementally; a later rate-limit or provider error does not erase already translated sections. Selecting the same language again retries unfinished sections from the local cache.
+- The language picker searches by English name, native name, or language code. The picker and translation status notices close after 10 seconds or when the visitor taps elsewhere.
+- If Workers AI fails, the private Worker can fall back to Google Cloud Translation Basic (v2) using the optional server-side `GOOGLE_TRANSLATE_API_KEY` secret. The key is never sent to the browser. This fallback is inactive until an owner configures that secret.
 - The `De VERVE` brand name is replaced with a protected token before inference and restored exactly afterward.
 - The Worker is deployed with `workers_dev: false` and `preview_urls: false`; it is intended to be reached through the internal Pages service binding only.
 - Translation text is cached in the visitor's browser local storage. Form controls, the AI chat, account areas, dialogs, code, and hidden content are excluded from the DOM translation pass.
@@ -13,9 +16,9 @@
 
 ## Supported customer languages
 
-Urdu, Hindi, Arabic, Bengali, Persian, Turkish, Indonesian, Malay, Chinese, Spanish, French, German, Italian, Portuguese, Russian, Japanese, Korean, Thai, and Vietnamese.
+The picker includes **107 translation targets** from Meta M2M100 and the supported IndicTrans2 language set, plus **English · Original**. The list includes major world languages, lower-resource languages, and additional Indic languages such as Assamese, Bodo, Dogri, Gujarati, Kannada, Kashmiri, Konkani, Maithili, Malayalam, Manipuri, Nepali, Odia, Sanskrit, Santali, Sindhi, Tamil, Telugu, and Urdu.
 
-English remains the original source language.
+The language list is searchable by English display name, native display name, or language code. The model/provider must support the selected language; where an upstream model does not return a valid translation, the Worker attempts the configured Google Cloud fallback and otherwise reports a clear temporary failure.
 
 ## Usage and cost safeguards
 
@@ -38,6 +41,13 @@ Cloudflare currently documents a 10,000-neuron daily Workers AI free allocation.
 - The Pages production and preview environments have the `TRANSLATION` service binding configured. A Pages deployment is required before a binding change takes effect in a running deployment.
 - The Pages production auto-deployment setting remains disabled. Release Pages only after the current-head CI and browser acceptance tests pass.
 - No provider API key is stored in browser code or exposed to customers.
+- To enable Google fallback, create a Google Cloud project, enable Cloud Translation Basic (v2), enable billing, create a restricted API key, and store it only as the private Worker secret `GOOGLE_TRANSLATE_API_KEY`. The key is sent in Google's `x-goog-api-key` header, never in a URL or browser code. Restrict the key to the Cloud Translation API and set explicit daily character quotas and budget alerts; Google documents that default daily character quotas are unlimited. Basic translation has a $10 monthly credit covering the first 500,000 characters, then standard usage pricing applies. The fallback is dormant until the owner approves billing and configures the secret. Official setup: https://docs.cloud.google.com/translate/docs/setup ; API-key authentication: https://docs.cloud.google.com/translate/docs/authentication ; pricing: https://cloud.google.com/products/translate/pricing.
+
+## Online inspiration quotes
+
+- The storefront requests one random quote from ZenQuotes through a same-origin Worker endpoint; the provider is never called directly by the visitor's browser.
+- The upstream quote pool is cached at the edge for up to one hour; each page visit receives a random quote chosen from that pool, excluding the visitor's previous quote where possible. This avoids an upstream API request on every refresh while keeping the visible quote fresh.
+- The quote strip links to ZenQuotes for the attribution required by its free API terms. If the upstream source is unavailable, the curated De VERVE quote pool remains the local fallback.
 
 ## Failure behavior
 
