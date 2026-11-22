@@ -260,8 +260,8 @@ function Storefront() {
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  const [goldenQuote,setGoldenQuote]=useState({text:"Make every day a little more VERVE.",author:"DE VERVE EDITION"});
-  useEffect(()=>{const controller=new AbortController();const fallback=[{text:"Confidence is the best thing you can wear.",author:"DE VERVE EDITION"},{text:"Small details make everyday moments memorable.",author:"DE VERVE EDITION"},{text:"Let your style speak with quiet confidence.",author:"DE VERVE EDITION"}];setGoldenQuote(fallback[Math.floor(Math.random()*fallback.length)]);void fetch("https://dummyjson.com/quotes/random",{signal:controller.signal,headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)throw new Error("Quote service unavailable");const item=await response.json() as {quote?:string;author?:string};if(item.quote&&item.author)setGoldenQuote({text:item.quote.slice(0,180),author:item.author.slice(0,70)});}).catch(()=>{});return()=>controller.abort();},[]);
+  // Brand-controlled copy keeps the quote ribbon readable and independent of third-party quote APIs.
+  const goldenQuote={text:"Wear confidence. Every day.",author:"DE VERVE"};
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -310,15 +310,39 @@ function Storefront() {
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
-    const term=siteSearch.trim().toLocaleLowerCase();
-    if(!term)return [];
-    const results:Array<{label:string;detail:string;href:string}>=[];
-    for(const item of categories)if((item.name+" "+item.detail).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Fashion category",href:"/?screen=fashion&category="+encodeURIComponent(item.id)});
-    for(const item of products)if((item.name+" "+item.description+" "+item.category+" "+item.audience+" "+(item.variants||[]).map(v=>v.sku||"").join(" ")).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Product · "+item.category,href:"/product/"+encodeURIComponent(item.slug)});
-    for(const item of vehicles)if((item.name+" "+item.vehicle_type+" "+item.transmission+" "+item.fuel_type+" "+item.description).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Car rental · "+item.vehicle_type,href:"/?screen=mobility"});
-    const pages=[{label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale"},{label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility"},{label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact"},{label:"Policies",detail:"Customer policies and information",href:"/?screen=policies"},{label:"My account",detail:"Orders and customer account",href:"/account"}];
-    for(const item of pages)if((item.label+" "+item.detail).toLocaleLowerCase().includes(term))results.push(item);
-    return results.slice(0,8);
+    const normalise=(value:string)=>value.normalize("NFKD").replace(/[\\u0300-\\u036f]/g,"").toLocaleLowerCase().replace(/[^a-z0-9]+/g," ").trim();
+    const query=normalise(siteSearch);
+    if(!query)return [];
+    const tokens=query.split(/\\s+/).filter(Boolean);
+    const matches=(value:string)=>{const haystack=normalise(value);return haystack.includes(query)||tokens.every(token=>haystack.includes(token));};
+    const results:Array<{label:string;detail:string;href:string;score:number}>=[];
+    const add=(label:string,detail:string,href:string,searchable:string)=>{
+      if(!matches(searchable))return;
+      const name=normalise(label);
+      const score=name===query?0:name.startsWith(query)?1:name.includes(query)?2:3;
+      results.push({label,detail,href,score});
+    };
+    for(const item of categories){
+      const aliases=item.id==="layers"?"hoodies sweatshirts zippers jackets outerwear":item.id==="bottoms"?"trousers pants jeans joggers shorts":item.id==="essentials"?"t shirts tees socks boxers underwear":item.id==="kids"?"children boys girls":item.id==="women"?"ladies womens":item.id==="men"?"mens male": "";
+      add(item.name,"Fashion category","/?screen=fashion&category="+encodeURIComponent(item.id),[item.id,item.name,item.detail,aliases].join(" "));
+    }
+    for(const item of products){
+      const variants=(item.variants||[]).map(v=>[v.sku,v.size,v.color].filter(Boolean).join(" ")).join(" ");
+      add(item.name,"Product · "+item.category,"/product/"+encodeURIComponent(item.slug),[item.name,item.description,item.category,item.audience,variants].join(" "));
+    }
+    for(const item of vehicles){
+      add(item.name,"Car rental · "+item.vehicle_type,"/?screen=mobility",[item.name,item.vehicle_type,item.transmission,item.seats+" seats",item.fuel_type,item.description].join(" "));
+    }
+    const pages=[
+      {label:"Home",detail:"De VERVE homepage",href:"/",keywords:"home main landing start brand"},
+      {label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale",keywords:"wholesale bulk bulk orders reseller retailer stock lots garments"},
+      {label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility",keywords:"car rental vehicle rent booking driver mobility transport"},
+      {label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact",keywords:"contact phone whatsapp address location enquiry help support"},
+      {label:"Policies & FAQs",detail:"Delivery, returns and customer policies",href:"/?screen=policies",keywords:"policies faq shipping delivery returns refund exchange privacy terms conditions"},
+      {label:"My account",detail:"Orders and customer account",href:"/account",keywords:"account orders profile sign in login customer"},
+    ];
+    for(const item of pages)add(item.label,item.detail,item.href,[item.label,item.detail,item.keywords].join(" "));
+    return results.sort((a,b)=>a.score-b.score||a.label.localeCompare(b.label)).slice(0,8).map(({score,...item})=>item);
   },[siteSearch,products,vehicles]);
   const [vehicleDetail, setVehicleDetail] = useState<StoreVehicle | null>(null);
   const [rentalOpen, setRentalOpen] = useState(() => { try { return sessionStorage.getItem("deverve:ui:rental-open") === "1"; } catch { return false; } });
