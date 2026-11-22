@@ -1,3 +1,23 @@
+# Production readiness — verified 23 November 2026 release
+
+## Latest release evidence
+
+- PR #30 (category artwork replacement) and PR #31 (D1 lookup indexes, barcode query-plan fix, nightly backup schedule and acceptance records) are merged.
+- Latest mainline CI [45072180096](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45072180096) passed, including the full storefront browser suite.
+- Cloudflare Pages production deployment [41aca77d](https://41aca77d.deverve-official.pages.dev) completed successfully from controlled trigger commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; all deployment stages passed.
+- Cloudflare Pages automatic production and preview deployments were restored to disabled after the controlled release.
+- Production D1 migration `0039_pos_lookup_and_status_indexes.sql` was applied. Live query plans confirm `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created` are used. The barcode scan query now qualifies for the existing partial barcode index and the live plan uses multi-index OR.
+- The encrypted backup workflow is scheduled daily at 02:00 Pakistan Standard Time. No successful scheduled backup/isolated restore has yet been verified; required GitHub Actions secrets and a complete run remain prerequisites.
+- The remote D1 integration suite was skipped in CI because dedicated test credentials are not configured.
+
+## Remaining critical acceptance gates
+
+The platform is deployed and the tested release is healthy at the Cloudflare deployment-stage level, but it is **not fully production-accepted**. Outstanding work includes offline-first POS and reconciliation, a dedicated least-privilege CASHIER role, owner-only system-health telemetry, concurrent cross-channel inventory tests, a verified encrypted backup/restore and independent recovery copy, live payment/courier/provider acceptance, Turnstile/email/WhatsApp production acceptance, physical Android and thermal-printer tests, owner catalogue reconciliation, CMS homepage publication, custom domain setup, and qualified legal review of CNIC consent/retention. COD remains the only active checkout method.
+
+See [PRODUCTION-ACCEPTANCE-MATRIX.md](PRODUCTION-ACCEPTANCE-MATRIX.md) for evidence required before each capability can be marked accepted.
+
+---
+
 # Production readiness — current release and acceptance status
 
 ## Current verified status — 23 November 2026
