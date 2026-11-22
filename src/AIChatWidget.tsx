@@ -13,9 +13,9 @@ type SpeechRecognitionLike = {
 };
 type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
-const ROMAN_URDU_WORDS = new Set("aap apka apki apke assalam alaikum kaise kaisay hain hai ho kya kyun kahan kab mujhe mera meri mere hum tum aapka aapki nahi nahin acha achha theek thik bohat bahut shukriya me main mein aur ke ki ko se par per ghar zindagi dil dost madad batao bataye bata dein karo karna kar raha rahi rahe chahiye mil sakta sakti".split(/\s+/));
+const ROMAN_URDU_WORDS = new Set("aap apka apki apke assalam alaikum assalamualaikum hoon kaise kaisay hain hai ho kya kyun kahan kab mujhe mera meri mere hum tum aapka aapki nahi nahin acha achha theek thik bohat bahut shukriya me main mein aur ke ki ko se par per ghar zindagi dil dost madad batao bataye bata dein karo karna kar raha rahi rahe chahiye mil sakta sakti".split(/\s+/));
 const ROMAN_URDU_SCRIPT: Record<string,string> = {
-  aap:"آپ", apka:"آپ کا", apki:"آپ کی", apke:"آپ کے", assalam:"السلام", alaikum:"علیکم",
+  aap:"آپ", apka:"آپ کا", apki:"آپ کی", apke:"آپ کے", assalam:"السلام", alaikum:"علیکم", assalamualaikum:"السلام علیکم", hoon:"ہوں",
   kaise:"کیسے", kaisay:"کیسے", hain:"ہیں", hai:"ہے", ho:"ہو", kya:"کیا", kyun:"کیوں",
   kahan:"کہاں", kab:"کب", mujhe:"مجھے", mera:"میرا", meri:"میری", mere:"میرے",
   hum:"ہم", tum:"تم", nahi:"نہیں", nahin:"نہیں", acha:"اچھا", achha:"اچھا", theek:"ٹھیک",
@@ -40,7 +40,7 @@ function detectSpeechLocale(text: string, selected: string): string {
   if (selected !== "auto") return selected;
   if (/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i.test(text)) {
     if (/[ٹڈڑںھہے]/.test(text)) return "ur-PK";
-    if (/[پچژگ]/.test(text)) return "fa-IR";
+    if (/[ژ]/.test(text)) return "fa-IR";
     return "ar-SA";
   }
   const scripts: Array<[RegExp,string]> = [
@@ -77,7 +77,7 @@ async function availableSpeechVoices(): Promise<SpeechSynthesisVoice[]> {
   const synth = window.speechSynthesis;
   const current = synth.getVoices();
   if (current.length) return current;
-  return await new Promise(resolve => {
+  return await new Promise<SpeechSynthesisVoice[]>(resolve => {
     let settled = false;
     const finish = () => {
       if (settled) return;
