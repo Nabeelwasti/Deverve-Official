@@ -999,7 +999,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
     { text: "A little progress each day adds up.", author: "Test Author One", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
     { text: "Great things begin with small steps.", author: "Test Author Two", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" }
   ];
-  await page.route("**/api/quotes/random", async route => {
+  await page.route("**/api/quotes/random*", async route => {
     const item = onlineQuotes[Math.min(onlineQuoteIndex++, onlineQuotes.length - 1)];
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(item) });
   });
