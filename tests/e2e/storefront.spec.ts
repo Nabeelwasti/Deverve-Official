@@ -974,6 +974,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await expect(loadingLogo).toHaveCSS("border-radius", "50%");
 
   await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator("#initial-brand-loader")).toHaveCount(0, { timeout: 5000 });
   const mobileSearch = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(mobileSearch).toBeVisible();
   const mobileSearchBox = await mobileSearch.boundingBox();
@@ -1171,18 +1172,16 @@ test("golden quote uses the local De VERVE fallback when the online feed is unav
 });
 
 test("the HTML shell shows the circular De VERVE logo before React mounts", async ({ page }) => {
-  await page.route("**/*.js", async route => {
-    await new Promise(resolve => setTimeout(resolve, 650));
-    await route.continue();
-  });
+  // Abort app JavaScript for this test: the shell logo must render without
+  // waiting for a bundle, an API response, a font, or React hydration.
+  await page.route("**/src/main.tsx", route => route.abort());
+  await page.route("**/*.js", route => route.abort());
+  await page.goto("/");
   const initialLoader = page.locator("#initial-brand-loader");
-  await page.goto("/", { waitUntil: "commit" });
-  await initialLoader.waitFor({ state: "visible" });
+  await expect(initialLoader).toBeVisible();
   await expect(initialLoader.locator("svg")).toBeVisible();
   await expect(initialLoader.locator("svg circle")).toHaveCount(2);
   await expect(initialLoader.locator("strong")).toHaveText("DE VERVE");
-  await page.waitForLoadState("load");
-  await expect(page.locator("#initial-brand-loader")).toHaveCount(0);
 });
 
 test("customer AI chat plays server-generated Urdu speech without requiring a device Urdu voice", async ({ page }) => {
