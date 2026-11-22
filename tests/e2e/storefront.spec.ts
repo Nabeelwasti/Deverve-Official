@@ -821,7 +821,17 @@ test("storefront places the golden quote below the top ribbon and offers common 
   });
   expect(order).toBeTruthy();
   const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
-  expect(await languagePicker.locator("option").count()).toBeGreaterThan(150);
+  expect(await languagePicker.locator("option").count()).toBe(251);
+  const languageOptions = await languagePicker.locator("option").evaluateAll(options => options.filter(option => option.value && option.value !== "all").map(option => ({ code: option.value, label: option.textContent?.trim() })));
+  expect(languageOptions).toHaveLength(249);
+  expect(new Set(languageOptions.map(option => option.code)).size).toBe(249);
+  expect(languageOptions).toEqual(expect.arrayContaining([
+    expect.objectContaining({ code: "ab", label: "Abkhaz" }),
+    expect.objectContaining({ code: "iu", label: "Inuktut (Syllabics)" }),
+    expect.objectContaining({ code: "bm-Nkoo", label: "NKo" }),
+    expect.objectContaining({ code: "ur", label: "Urdu" }),
+    expect.objectContaining({ code: "zap", label: "Zapotec" })
+  ]));
   await expect(languagePicker.locator('option[value="all"]')).toHaveText("More languages…");
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
