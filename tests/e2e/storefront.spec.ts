@@ -753,14 +753,28 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
-test("owner-managed category artwork replaces the default illustration on the live card", async ({ page }) => {
+test("owner-managed category artwork replaces the default illustration without hiding its garment icon", async ({ page }) => {
   const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  await page.route("**/api/storefront/settings", async route => route.fulfill({status:200,contentType:"application/json",body:JSON.stringify({social_links:{},brand_assets:{},category_assets:{men:mediaId}})}));
-  await page.goto("/");
+  await page.route("**/api/storefront/settings", async route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ social_links: {}, brand_assets: {}, category_assets: { men: mediaId } }),
+  }));
+  await page.route("**/media/" + mediaId, async route => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#b9c8d8"/></svg>',
+  }));
+  await page.goto("/?screen=fashion");
   const artworkLink = page.getByTestId("collection-men-art");
-  const card = artworkLink.locator("..");
-  await expect(card.locator(".category-custom-art")).toHaveAttribute("src", "/media/"+mediaId);
-  await expect(card.locator(".category-garment")).toBeVisible();
+  const artwork = artworkLink.locator(".category-custom-art");
+  const garment = artworkLink.locator(".category-garment");
+  await expect(artwork).toHaveAttribute("src", "/media/" + mediaId);
+  await expect(artwork).toBeVisible();
+  await expect(garment).toBeVisible();
+  const iconZ = await garment.evaluate(el => Number(getComputedStyle(el).zIndex));
+  const imageZ = await artwork.evaluate(el => Number(getComputedStyle(el).zIndex));
+  expect(iconZ).toBeGreaterThan(imageZ);
   await expect(artworkLink).toHaveAttribute("href", "/?screen=fashion&category=men");
 });
 

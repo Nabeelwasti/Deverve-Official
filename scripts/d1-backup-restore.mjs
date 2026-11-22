@@ -32,7 +32,8 @@ async function snapshot(id){
  const counts=await queryRows(id,union);
  const rowCounts=Object.fromEntries(counts.map(row=>[row.table_name,Number(row.row_count)]));
  const objects=await queryRows(id,"SELECT type, COUNT(*) AS count FROM sqlite_master WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV' GROUP BY type ORDER BY type");
- return {tables,rowCounts,schemaObjects:Object.fromEntries(objects.map(row=>[row.type,Number(row.count)]))};
+ const definitions=await queryRows(id,"SELECT type,name,tbl_name,COALESCE(sql,'') AS sql FROM sqlite_master WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV' ORDER BY type,name");
+ return {tables,rowCounts,schemaObjects:Object.fromEntries(objects.map(row=>[row.type,Number(row.count)])),schemaDefinitions:definitions.map(row=>({type:row.type,name:row.name,table:row.tbl_name,sql:row.sql}))};
 }
 function stable(value){if(Array.isArray(value))return "["+value.map(stable).join(",")+"]";if(value&&typeof value==="object")return "{"+Object.keys(value).sort().map(k=>JSON.stringify(k)+":"+stable(value[k])).join(",")+"}";return JSON.stringify(value);}
 const sha=data=>createHash("sha256").update(data).digest("hex");
@@ -62,7 +63,8 @@ async function restoreDrill(sql,expected){
   if(state.status!=="complete")throw new Error("D1 restore did not complete within three minutes.");
   const restored=await snapshot(id);
   if(stable(restored.tables)!==stable(expected.tables))throw new Error("Restored table set differs from the production export.");
-  if(stable(restored.schemaObjects)!==stable(expected.schemaObjects))throw new Error("Restored tables/indexes/triggers/views differ from the production export.");
+  if(stable(restored.schemaObjects)!==stable(expected.schemaObjects))throw new Error("Restored schema-object counts differ from the production export.");
+  if(stable(restored.schemaDefinitions)!==stable(expected.schemaDefinitions))throw new Error("Restored table/index/trigger/view definitions differ from the production export.");
   const compareRows=expected.rowCounts!==null&&expected.rowCounts!==undefined;
   if(compareRows&&stable(restored.rowCounts)!==stable(expected.rowCounts))throw new Error("Restored row counts differ from the exported snapshot.");
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");

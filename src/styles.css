@@ -2475,7 +2475,8 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 
 /* Brand marks use a centered circular frame in every UI placement. */
 .deverve-round-logo{display:block;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:3px;overflow:hidden;flex-shrink:0}
-.ai-chat-brand-logo{width:48px;height:48px;max-width:48px;max-height:48px;flex:0 0 48px;border:1px solid rgba(255,255,255,.35);box-shadow:0 2px 10px rgba(0,0,0,.14)}
+.ai-chat-brand-logo{display:block!important;width:58px!important;height:58px!important;min-width:58px!important;max-width:58px!important;max-height:58px!important;flex:0 0 58px!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:1px solid rgba(226,197,142,.9)!important;border-radius:50%!important;background:#fff!important;padding:5px!important;box-shadow:0 2px 10px rgba(0,0,0,.18)!important}
+@media(max-width:360px){.ai-chat-brand-logo{width:54px!important;height:54px!important;min-width:54px!important;max-width:54px!important;max-height:54px!important;flex-basis:54px!important;padding:4px!important}}
 .admin-brand-assets article:first-child>img{width:112px;height:112px;max-width:112px;max-height:112px;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:6px;border:1px solid #dce5ef;box-shadow:0 4px 14px rgba(10,35,62,.08)}
 
 .image-cropper-canvas-circle{border-radius:50%;border:3px solid #cda45f;object-fit:contain}
@@ -2491,3 +2492,8 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .brand-logo-image.deverve-round-logo{display:block;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;flex:0 0 40px!important}
 .brand-loader-logo.deverve-round-logo{width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;aspect-ratio:1!important;border-radius:50%!important;object-fit:contain!important}
 .public-page-brand .brand-logo-image.deverve-round-logo{width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important}
+
+/* Uploaded artwork remains a background layer; keep the category garment readable above it. */
+.collection-art.has-custom-art .category-garment{position:relative!important;z-index:2!important;display:block!important;visibility:visible!important;opacity:1!important;filter:drop-shadow(0 0 2px rgba(255,255,255,.95)) drop-shadow(0 5px 14px rgba(0,0,0,.78))!important;pointer-events:none}
+.collection-art.has-custom-art .category-garment:before{z-index:0}
+.collection-art.has-custom-art .category-garment i{z-index:1}
