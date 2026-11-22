@@ -68,10 +68,9 @@ export default {
         const apiKey = typeof env.GOOGLE_TRANSLATE_API_KEY === "string" ? env.GOOGLE_TRANSLATE_API_KEY.trim() : "";
         if (!apiKey) throw aiError;
         const googleUrl = new URL("https://translation.googleapis.com/language/translate/v2");
-        googleUrl.searchParams.set("key", apiKey);
         const googleResponse = await fetch(googleUrl, {
           method: "POST",
-          headers: { "content-type": "application/json", accept: "application/json" },
+          headers: { "content-type": "application/json", accept: "application/json", "x-goog-api-key": apiKey },
           body: JSON.stringify({ q: protectedText, source: "en", target: targetLang, format: "text" }),
           signal: AbortSignal.timeout(8_000)
         });
