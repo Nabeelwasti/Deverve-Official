@@ -2493,3 +2493,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .collection-art.has-custom-art .category-garment{position:relative!important;z-index:2!important;display:block!important;visibility:visible!important;opacity:1!important;filter:drop-shadow(0 0 2px rgba(255,255,255,.95)) drop-shadow(0 5px 14px rgba(0,0,0,.78))!important;pointer-events:none}
 .collection-art.has-custom-art .category-garment:before{z-index:0}
 .collection-art.has-custom-art .category-garment i{z-index:1}
+
+.ai-chat-voice-language{display:inline-flex;align-items:center;gap:5px;color:#64788d;font-size:9px;font-weight:700}
+.ai-chat-voice-language select{max-width:126px;min-height:28px;padding:3px 6px;border:1px solid #dce5ee;border-radius:7px;background:#fff;color:#385873;font:inherit;font-size:9px}
+@media(max-width:480px){.ai-chat-voice-language select{max-width:118px;min-height:32px}}
