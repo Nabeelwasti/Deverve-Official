@@ -5187,7 +5187,7 @@ async function publicInspirationalQuoteRoute(request: Request, url: URL): Promis
     const item = Array.isArray(payload) ? payload[0] : null;
     const quoteText = typeof item?.q === "string" ? item.q.trim() : "";
     const author = typeof item?.a === "string" ? item.a.trim() : "";
-    if (!quoteText || quoteText.length > 180 || !author || author.length > 70 || /[<>\\u0000-\\u001f]/.test(quoteText + author)) {
+    if (!quoteText || quoteText.length > 180 || !author || author.length > 70 || /[<>\u0000-\u001f]/.test(quoteText + author)) {
       return error("The online quote source returned an invalid quote", 502);
     }
     const response = json(
