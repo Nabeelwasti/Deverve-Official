@@ -951,6 +951,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await expect(loadingLogo).toBeVisible();
   await expect(loadingLogo).toHaveAttribute("src", "/brand/de-verve-mark.svg");
   await expect.poll(() => loadingLogo.evaluate(image => image.complete && image.naturalWidth > 0)).toBeTruthy();
+  await expect(page.locator('link[rel="preload"][as="image"][href="/brand/de-verve-mark.svg"]')).toHaveAttribute("fetchpriority", "high");
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
   expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
