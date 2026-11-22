@@ -2497,3 +2497,5 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .ai-chat-voice-language{display:inline-flex;align-items:center;gap:5px;color:#64788d;font-size:9px;font-weight:700}
 .ai-chat-voice-language select{max-width:126px;min-height:28px;padding:3px 6px;border:1px solid #dce5ee;border-radius:7px;background:#fff;color:#385873;font:inherit;font-size:9px}
 @media(max-width:480px){.ai-chat-voice-language select{max-width:118px;min-height:32px}}
+
+.brand-loader-logo{position:relative;z-index:1;display:block;width:100px;height:100px;overflow:visible;filter:drop-shadow(0 6px 22px rgba(216,184,126,.24))}
