@@ -45,9 +45,10 @@ Cloudflare currently documents a 10,000-neuron daily Workers AI free allocation.
 
 ## Online inspiration quotes
 
-- The storefront requests one random quote from ZenQuotes through a same-origin Worker endpoint; the provider is never called directly by the visitor's browser.
-- The upstream quote pool is cached at the edge for up to one hour; each page visit receives a random quote chosen from that pool, excluding the visitor's previous quote where possible. This avoids an upstream API request on every refresh while keeping the visible quote fresh.
-- The quote strip links to ZenQuotes for the attribution required by its free API terms. If the upstream source is unavailable, the curated De VERVE quote pool remains the local fallback.
+- The storefront requests a random quote through the same-origin `/api/quotes/random` Worker route. The upstream provider is never called directly by the visitor's browser and its brand is never shown in the customer interface.
+- The Worker caches a validated quote pool at the edge for up to one hour, then selects a different quote from the pool for each page visit where possible.
+- The customer interface displays only the quote and its author. The curated De VERVE quote pool is an immediate local fallback and is used whenever the online feed is unavailable or returns invalid data.
+- The online feed is an enhancement, not a dependency: quote loading must never delay the logo, storefront, navigation, checkout or customer chat.
 
 ## Failure behavior
 
