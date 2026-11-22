@@ -492,6 +492,42 @@ test("cart opens as a review step and merges repeated identical lines", async ({
 });
 
 
+test("mobile cart dialog stays above the bottom navigation and keeps checkout reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    const line = { variant_id: "11111111-1111-4111-8111-111111111111", product_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", name: "De VERVE Hoodie", sku: "DV-HOOD-NAV-M", size: "M", color: "Navy", quantity: 1, unit_price_paisa: 350000, available_quantity: 5 };
+    localStorage.setItem("deverve-cart", JSON.stringify([line]));
+  });
+  await page.goto("/");
+  const dock = page.locator(".mobile-dock");
+  await expect(dock).toBeVisible();
+  await dock.getByRole("button", { name: /Cart/ }).click();
+  const dialog = page.getByRole("dialog", { name: /Your cart/ });
+  await expect(dialog).toBeVisible();
+  const backdrop = page.locator(".cart-backdrop");
+  await expect(backdrop).toHaveCSS("z-index", "1400");
+  const dockZ = await dock.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
+  const backdropZ = await backdrop.evaluate(element => Number.parseInt(getComputedStyle(element).zIndex, 10));
+  expect(backdropZ).toBeGreaterThan(dockZ);
+  const panel = dialog.locator(".cart-panel");
+  const panelBox = await panel.boundingBox();
+  expect(panelBox).not.toBeNull();
+  expect(panelBox!.x).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.y).toBeGreaterThanOrEqual(0);
+  expect(panelBox!.y + panelBox!.height).toBeLessThanOrEqual(844);
+  const checkout = dialog.getByRole("button", { name: /Proceed to checkout/ });
+  await expect(checkout).toBeVisible();
+  const checkoutBox = await checkout.boundingBox();
+  expect(checkoutBox).not.toBeNull();
+  expect(checkoutBox!.y + checkoutBox!.height).toBeLessThanOrEqual(844);
+  const hitTarget = await page.evaluate(({ x, y }) => {
+    const element = document.elementFromPoint(x, y);
+    return Boolean(element?.closest(".cart-panel"));
+  }, { x: checkoutBox!.x + checkoutBox!.width / 2, y: checkoutBox!.y + checkoutBox!.height / 2 });
+  expect(hitTarget).toBeTruthy();
+  await expect(dialog.getByRole("button", { name: "Close cart" })).toBeVisible();
+});
+
 test("install app control remains visible when the browser does not expose a native install prompt", async ({ page }) => {
   await page.goto("/");
   const installButton = page.getByRole("button", { name: "Install De VERVE app" });
