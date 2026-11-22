@@ -535,8 +535,11 @@ function selectGoldenQuote() {
   const choices = GOLDEN_QUOTES.filter((quote) => quote.text !== previous);
   const pool = choices.length ? choices : GOLDEN_QUOTES;
   const selected = pool[Math.floor(Math.random() * pool.length)] || GOLDEN_QUOTES[0];
-  try { localStorage.setItem(storageKey, selected.text); } catch { /* Quote rotation must never block the storefront. */ }
   return selected;
+}
+
+function persistGoldenQuote(quote: { text: string; author: string }) {
+  try { localStorage.setItem("deverve:golden-quote:last:v1", quote.text); } catch { /* Quote rotation must never block the storefront. */ }
 }
 
 function Storefront() {
@@ -548,12 +551,14 @@ function Storefront() {
   // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
   const [goldenQuote, setGoldenQuote] = useState(selectGoldenQuote);
   useEffect(() => {
+    // Persist only after React commits the selected quote; keep the state initializer side-effect free.
+    persistGoldenQuote(goldenQuote);
     const handlePageShow = (event: PageTransitionEvent) => {
       if (event.persisted) setGoldenQuote(selectGoldenQuote());
     };
     window.addEventListener("pageshow", handlePageShow);
     return () => window.removeEventListener("pageshow", handlePageShow);
-  }, []);
+  }, [goldenQuote]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
