@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "check:worker": "tsc -p tsconfig.worker.json",
     "check": "npm run build && npm run check:worker",
-    "test:worker": "tsc -p tsconfig.worker.test.json && node scripts/verify_sql_bindings.mjs && node --test scripts/worker-auth.test.mjs scripts/site-translation.test.mjs scripts/ai-chat-attachments.test.mjs scripts/cnic-retention.test.mjs scripts/admin-settings-policy.test.mjs scripts/admin-add-product-label.test.mjs scripts/coupon-security.test.mjs",
+    "test:worker": "tsc -p tsconfig.worker.test.json && node scripts/verify_sql_bindings.mjs && node --test scripts/worker-auth.test.mjs scripts/site-translation.test.mjs scripts/ai-speech.test.mjs scripts/ai-chat-attachments.test.mjs scripts/cnic-retention.test.mjs scripts/admin-settings-policy.test.mjs scripts/admin-add-product-label.test.mjs scripts/coupon-security.test.mjs",
     "test:e2e": "playwright test",
     "test:d1:integration": "node scripts/d1-inventory.integration.test.mjs"
   },

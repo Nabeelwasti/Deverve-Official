@@ -4689,6 +4689,122 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
     if(result.status>=400&&result.status<500&&result.status!==401&&result.status!==403&&result.status!==429)return error("Please rephrase your message and try again",400);
   }
   return json({error:attempted?"Our assistant is temporarily busy. Please try again shortly or contact De VERVE.":"Our live assistant is not available"},503,{"retry-after":"60"});
+
+}
+
+export function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
+  const output=new Uint8Array(44+pcm.length),view=new DataView(output.buffer);
+  output.set(new TextEncoder().encode("RIFF"),0);view.setUint32(4,36+pcm.length,true);
+  output.set(new TextEncoder().encode("WAVEfmt "),8);view.setUint32(16,16,true);
+  view.setUint16(20,1,true);view.setUint16(22,1,true);view.setUint32(24,sampleRate,true);
+  view.setUint32(28,sampleRate*2,true);view.setUint16(32,2,true);view.setUint16(34,16,true);
+  output.set(new TextEncoder().encode("data"),36);view.setUint32(40,pcm.length,true);output.set(pcm,44);
+  return output;
+}
+
+export async function generateGeminiSpeech(apiKey:string,text:string,language:string,voice:string):Promise<{ok:boolean;status:number;audio?:Uint8Array;message:string;model:string}> {
+  const models=["gemini-3.1-flash-tts-preview","gemini-2.5-flash-preview-tts"];
+  let last={ok:false,status:503,audio:undefined as Uint8Array|undefined,message:"Speech generation is temporarily unavailable",model:models[0]};
+  for(const model of models){
+    try{
+      const response=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{
+        method:"POST",
+        headers:{"content-type":"application/json","x-goog-api-key":apiKey,"Api-Revision":"2026-05-20"},
+        body:JSON.stringify({
+          model,
+          input:text,
+          response_format:{type:"audio"},
+          generation_config:{speech_config:[{voice}]}
+        }),
+        signal:AbortSignal.timeout(25000)
+      });
+      const payload=await response.json().catch(()=>({})) as {
+        output_audio?:{data?:unknown;mime_type?:unknown;mimeType?:unknown};
+        error?:{message?:string;status?:string}
+      };
+      if(!response.ok){
+        last={ok:false,status:response.status,audio:undefined,message:[payload.error?.status,payload.error?.message].filter(Boolean).join(": ")||"Speech provider request failed",model};
+        if(response.status===404||response.status===400||response.status===429||response.status>=500)continue;
+        return last;
+      }
+      const encoded=payload.output_audio?.data;
+      if(typeof encoded!=="string"||encoded.length<32||encoded.length>8_000_000||!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)){
+        last={ok:false,status:502,audio:undefined,message:"Speech provider returned an invalid audio payload",model};
+        continue;
+      }
+      const binary=atob(encoded),bytes=new Uint8Array(binary.length);
+      for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+      if(bytes.length<128||bytes.length>6*1024*1024){
+        last={ok:false,status:502,audio:undefined,message:"Speech audio exceeded the safe playback size",model};
+        continue;
+      }
+      const mime=String(payload.output_audio?.mime_type??payload.output_audio?.mimeType??"").toLowerCase();
+      const wav=bytes.length>=44&&new TextDecoder().decode(bytes.subarray(0,4))==="RIFF"
+        ?bytes
+        :mime.includes("mpeg")||mime.includes("mp3")?bytes
+        :speechWavFromPcm(bytes);
+      return {ok:true,status:200,audio:wav,message:"",model};
+    }catch{
+      last={ok:false,status:503,audio:undefined,message:"Speech provider timed out or could not be reached",model};
+    }
+  }
+  return last;
+}
+
+async function publicAISpeechRoute(request:Request,env:Env):Promise<Response|null> {
+  if(new URL(request.url).pathname!=="/api/ai/speech")return null;
+  if(request.method!=="POST")return error("Method not allowed",405);
+  const limited=await enforcePublicRateLimit(request,env,"ai_speech",24,15*60);
+  if(limited)return limited;
+  const body=await readJson(request,12000);
+  if(!body||typeof body.text!=="string")return error("Provide the message you want spoken",400);
+  const text=body.text.trim();
+  if(!text||text.length>1800)return error("Speech text must contain 1–1800 characters",400);
+  const language=typeof body.language==="string"?body.language.trim().slice(0,24):"auto";
+  if(language!=="auto"&&!/^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,2}$/i.test(language))return error("Choose a valid speech language",400);
+  const requestedVoice=typeof body.voice==="string"?body.voice:"Kore";
+  const voice=["Kore","Charon","Aoede","Puck","Fenrir","Leda","Orus","Zephyr","Callirrhoe","Enceladus"].includes(requestedVoice)?requestedVoice:"Kore";
+  try{await importConfiguredGeminiEnvKeys(env);}catch{}
+  let rows:GeminiKeyRow[]=[];
+  try{const result=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND enabled=1 ORDER BY priority,created_at").all<GeminiKeyRow>();rows=result.results??[];}catch{}
+  const envKeys=[env.NabeelG_Api_key1?.trim(),env.NabeelG_Api_key2?.trim()].filter((key):key is string=>Boolean(key&&/^(?:AIza[0-9A-Za-z_-]{20,}|AQ\.[A-Za-z0-9._-]{20,})$/.test(key)));
+  const candidates:Array<{key:string;row?:GeminiKeyRow}>=[];
+  for(const row of rows.filter(item=>!item.cooldown_until||Date.parse(item.cooldown_until)<=Date.now())){
+    try{candidates.push({key:await decryptGeminiKey(env,row),row});}catch{}
+  }
+  for(const key of envKeys)if(!candidates.some(item=>item.key===key))candidates.push({key});
+  if(!candidates.length)return error("High-quality speech is not configured. Please try again later.",503);
+  const romanUrdu=/predominantly Roman Urdu/i.test(customerLanguageHint(text))&&(language==="auto"||language.toLowerCase()==="ur-pk");
+  for(const candidate of candidates){
+    let spokenText=text;
+    if(romanUrdu){
+      const converted=await callGemini(candidate.key,[{role:"user",parts:[{text}]}],
+        "Transliterate the input from Roman Urdu into natural Urdu script only. This is transliteration, not translation. Preserve every English word or phrase exactly in Latin script. Preserve names, numbers, punctuation, order and meaning. Do not explain, add, omit or paraphrase. Return only the converted transcript.",900);
+      if(converted.ok&&/[\u0600-\u06ff]/.test(converted.text))spokenText=converted.text.trim().slice(0,2200);
+    }
+    const direction=romanUrdu
+      ?"Speak this transcript in natural Pakistani Urdu, with clear conversational pronunciation. It may contain English words; pronounce those naturally in English. Do not translate, paraphrase, add or omit words."
+      :language==="auto"
+        ?"Identify the language or languages of this transcript and speak each naturally with native pronunciation. Preserve code-switching. Do not translate, paraphrase, add or omit words."
+        :"Speak this transcript in its original language using native pronunciation for language code "+language+". Preserve any other languages naturally. Do not translate, paraphrase, add or omit words.";
+    const result=await generateGeminiSpeech(candidate.key,direction+"\n\nTranscript:\n"+spokenText,language,voice);
+    if(result.ok&&result.audio){
+      if(candidate.row)try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=0,cooldown_until=NULL,last_error=NULL,last_used_at=?,updated_at=? WHERE id=?").bind(new Date().toISOString(),new Date().toISOString(),candidate.row.id).run();}catch{}
+      const isWav=result.audio.length>=4&&new TextDecoder().decode(result.audio.subarray(0,4))==="RIFF";
+      return new Response(result.audio,{status:200,headers:{
+        "content-type":isWav?"audio/wav":"audio/mpeg",
+        "cache-control":"no-store, private",
+        "x-content-type-options":"nosniff",
+        "content-security-policy":"default-src 'none'; media-src 'self'; sandbox"
+      }});
+    }
+    if(candidate.row){
+      const wait=result.status===429?5*60_000:result.status===401||result.status===403?15*60_000:60_000;
+      const label=result.status===429?"quota_or_rate_limit":result.status===401||result.status===403?"key_or_permission":"speech_provider_unavailable";
+      try{await env.DB.prepare("UPDATE ai_provider_keys SET failure_count=failure_count+1,cooldown_until=?,last_error=?,updated_at=? WHERE id=?").bind(new Date(Date.now()+wait).toISOString(),label,new Date().toISOString(),candidate.row.id).run();}catch{}
+    }
+  }
+  return error("High-quality speech is temporarily unavailable. Try again shortly or use your device's installed voice.",503);
 }
 type GeminiResearchSource={title:string;url:string};
 async function callGeminiGroundedResearch(apiKey:string,prompt:string):Promise<{ok:boolean;status:number;summary:string;message:string;model:string;sources:GeminiResearchSource[];queries:string[]}>{
@@ -5284,6 +5400,7 @@ async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> 
   const executeResponse=await adminAIExecuteRoute(request,env,url);if(executeResponse)return executeResponse;
   const adminAssistant=await adminAIAssistantRoute(request,env,url);if(adminAssistant)return adminAssistant;
   const publicResponse=await publicAIChatRoute(request,env);if(publicResponse)return publicResponse;
+  const speechResponse=await publicAISpeechRoute(request,env);if(speechResponse)return speechResponse;
   return adminAIKeyRoutes(request,env,url);
 }
 
