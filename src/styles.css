@@ -2401,11 +2401,15 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .announcement-translate select:focus-visible{outline:2px solid #f1d8a4;outline-offset:2px}
 .announcement-translate select option{background:#fff;color:#102d53}
 .translation-status{
-  display:block;max-width:min(240px,38vw);color:#f5e7ca;
-  font:500 9px/1.35 "DM Sans",sans-serif;overflow-wrap:anywhere;
+  position:absolute;top:calc(100% + 8px);right:0;z-index:40;
+  width:max-content;max-width:min(290px,calc(100vw - 24px));
+  padding:8px 10px;border:1px solid rgba(241,216,164,.48);border-radius:9px;
+  background:#082b55;color:#f5e7ca;
+  font:500 9px/1.4 "DM Sans",sans-serif;overflow-wrap:anywhere;
+  box-shadow:0 10px 26px rgba(5,24,46,.22);pointer-events:none;
 }
 @media(max-width:720px){
   .announcement-translate{gap:5px}
   .announcement-translate select{min-width:100px;max-width:118px;min-height:32px;padding-inline:7px;font-size:9px}
-  .translation-status{max-width:calc(100vw - 28px);font-size:8px}
+  .translation-status{max-width:calc(100vw - 24px);font-size:8px}
 }
