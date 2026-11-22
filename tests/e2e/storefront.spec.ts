@@ -1008,30 +1008,25 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   }
 
   const quote = page.locator(".top-quote-strip");
-  let onlineQuoteIndex = 0;
-  const onlineQuotes = [
-    { text: "A little progress each day adds up.", author: "Test Author One", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
-    { text: "Great things begin with small steps.", author: "Test Author Two", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" }
-  ];
+  let quoteApiRequests = 0;
   await page.route("**/api/quotes/random*", async route => {
-    const item = onlineQuotes[Math.min(onlineQuoteIndex++, onlineQuotes.length - 1)];
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(item) });
+    quoteApiRequests += 1;
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "External quote service must not be used" }) });
   });
-  await page.reload();
-  await expect(quote.getByRole("link", { name: "Quotes via ZenQuotes" })).toBeVisible();
+  await expect(quote.locator("p")).toHaveText(/.+/);
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
-  expect(onlineQuotes.map(item => item.text)).toContain(firstQuoteText);
-  await expect(quote.locator("cite")).toContainText("— ");
-  await expect(quote.getByRole("link", { name: "Quotes via ZenQuotes" })).toHaveAttribute("href", "https://zenquotes.io/");
+  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  await expect(quote.getByRole("link")).toHaveCount(0);
 
-  // A fresh page load requests a new attributed online quote; local brand copy remains the offline fallback.
+  // The next visit rotates locally curated brand copy with no external provider or source badge.
   await page.reload();
-  await expect(page.locator(".top-quote-strip").getByRole("link", { name: "Quotes via ZenQuotes" })).toBeVisible();
   const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
-  expect(onlineQuotes.map(item => item.text)).toContain(nextQuoteText);
   expect(nextQuoteText).not.toBe(firstQuoteText);
-  await expect(page.locator(".top-quote-strip cite")).toContainText("— ");
+  await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
+  await expect(page.locator(".top-quote-strip").getByRole("link")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).toBe(nextQuoteText);
+  expect(quoteApiRequests).toBe(0);
+
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
     return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
