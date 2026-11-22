@@ -39,7 +39,7 @@ const SPEECH_LOCALE_OPTIONS = [
 function detectSpeechLocale(text: string, selected: string): string {
   if (selected !== "auto") return selected;
   if (/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i.test(text)) {
-    if (/[ٹڈڑںھہے]/.test(text)) return "ur-PK";
+    if (/[ٹڈڑںھہے]/.test(text) || /(آپ|ہے|ہیں|کیا|میں|نہیں|کا|کی|کے|اور|سے|کو)/.test(text)) return "ur-PK";
     if (/[ژ]/.test(text)) return "fa-IR";
     return "ar-SA";
   }
@@ -214,7 +214,15 @@ export default function AIChatWidget() {
   const [listening, setListening] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
   const [speechLanguage, setSpeechLanguage] = useState("auto");
+  const [installedSpeechLocales, setInstalledSpeechLocales] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.speechSynthesis === "undefined") return;
+    const refresh = () => setInstalledSpeechLocales([...new Set(window.speechSynthesis.getVoices().map(voice => voice.lang.trim()).filter(Boolean))].sort());
+    refresh();
+    window.speechSynthesis.addEventListener("voiceschanged", refresh);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", refresh);
+  }, []);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const attachWrapRef = useRef<HTMLDivElement | null>(null);
@@ -411,7 +419,7 @@ export default function AIChatWidget() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 16 8-16 8 3-8-3-8Zm3 8h13"/></svg>
           </button>
         </div>
-        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><label className="ai-chat-voice-language">Voice <select aria-label="Voice language" value={speechLanguage} onChange={event => setSpeechLanguage(event.target.value)}>{SPEECH_LOCALE_OPTIONS.map(([code,label]) => <option key={code} value={code}>{label}</option>)}</select></label><span>Up to 3 files</span></div>
+        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><label className="ai-chat-voice-language">Voice <select aria-label="Voice language" value={speechLanguage} onChange={event => setSpeechLanguage(event.target.value)}>{SPEECH_LOCALE_OPTIONS.map(([code,label]) => <option key={code} value={code}>{label}</option>)}{installedSpeechLocales.filter(locale => !SPEECH_LOCALE_OPTIONS.some(([code]) => code === locale)).map(locale => <option key={"installed-" + locale} value={locale}>{locale} · installed</option>)}</select></label><span>Up to 3 files</span></div>
       </form>
       {notice && <p className="ai-chat-note" role="status">{notice}</p>}
       <div className="ai-chat-note">Avoid sending CNIC images, OTPs, passwords or payment-card details in chat. Orders and rentals are completed through secure website forms.</div>
