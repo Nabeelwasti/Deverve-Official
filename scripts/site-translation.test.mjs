@@ -54,7 +54,7 @@ test("private translation worker handles inference failures without exposing pro
     AI: { run: async () => { throw new Error("private provider diagnostic"); } }
   });
   assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "Translation is temporarily unavailable" });
+  assert.deepEqual(await response.json(), { error: "Translation is temporarily unavailable. Please retry or use your browser's built-in page translation." });
 });
 
 
