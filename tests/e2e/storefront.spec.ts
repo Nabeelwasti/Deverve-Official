@@ -81,6 +81,16 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Speak your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Send message" })).toBeVisible();
+  for (const control of [
+    chat.getByRole("button", { name: "Add attachment" }),
+    chat.getByRole("button", { name: "Speak your message" }),
+    chat.getByRole("button", { name: "Send message" })
+  ]) {
+    const bounds = await control.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.width).toBeGreaterThanOrEqual(44);
+    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  }
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
 });
 
