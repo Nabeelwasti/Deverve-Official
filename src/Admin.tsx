@@ -45,7 +45,7 @@ const enquiryTypeLabel = (type: Enquiry["enquiry_type"]) => ({
 }[type]);
 type Variant = { id: string; product_id: string; sku: string | null; size: string; color: string; barcode?: string | null; cost_price_paisa?: number; reorder_level?: number; stock_on_hand: number; reserved_quantity: number; available_quantity: number; is_active: number };
 type InventoryMovement = { id: string; movement_type: string; quantity_delta: number; reference_type: string; reference_id: string | null; note: string; created_at: string };
-type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string; color?: string };
+type MediaAsset = { id: string; media_type: string; mime_type: string; byte_size: number; alt_text: string; caption: string; status: string; created_at: string; url: string; color?: string; position?: number; is_primary?: number };
 type QuoteLineDraft = { product_id: string; variant_id: string; quantity: string; unit_price: string; variants: Variant[] };
 type Vehicle = { id: string; name: string; vehicle_type: string; transmission: string; seats: number; fuel_type: string; daily_rate_paisa: number | null; with_driver_daily_rate_paisa: number | null; status: "draft" | "available" | "maintenance" | "retired"; image_key: string | null; description: string };
 type RentalRequest = { id: string; vehicle_id: string | null; vehicle_name: string | null; vehicle_type: string | null; customer_name: string; phone: string; email: string | null; pickup_location: string; destination: string | null; pickup_city?: string; pickup_address?: string; destination_city?: string; destination_address?: string; cnic_front_uploaded?: number; cnic_back_uploaded?: number; cnic_consent_version?: string; cnic_consent_at?: string | null; rental_days?: number | null; estimated_daily_rate_paisa?: number | null; estimated_total_paisa?: number | null; pickup_at: string; return_at: string; driver_option: "self_drive" | "with_driver"; status: "requested" | "reviewing" | "confirmed" | "active" | "completed" | "cancelled"; customer_note: string; admin_note: string; reference_code: string; created_at: string };
@@ -257,6 +257,7 @@ export default function Admin() {
   const [productMedia, setProductMedia] = useState<MediaAsset[]>([]);
   const [mediaVariants, setMediaVariants] = useState<Variant[]>([]);
   const [mediaColor, setMediaColor] = useState("");
+  const [replaceMedia, setReplaceMedia] = useState<MediaAsset | null>(null);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
@@ -578,7 +579,7 @@ export default function Admin() {
         api<{ media: MediaAsset[] }>(`/api/admin/products/${product.id}/media`),
         api<{ variants: Variant[] }>(`/api/admin/products/${product.id}/variants`),
       ]);
-      setMediaAssets(result.media); setProductMedia(attached.media); setMediaVariants(variantResult.variants); setMediaColor(""); setMediaProduct(product); setMediaFiles([]); setMediaAlt(""); setMediaUploadProgress("");
+      setMediaAssets(result.media); setProductMedia(attached.media); setMediaVariants(variantResult.variants); setMediaColor(""); setMediaProduct(product); setMediaFiles([]); setMediaAlt(""); setMediaUploadProgress(""); setReplaceMedia(null);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Media library could not be loaded."); }
     finally { setBusy(false); }
   };
@@ -590,12 +591,35 @@ export default function Admin() {
     if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
     setCropFiles([...mediaFiles]);
   };
+  const recropProductMedia = async (asset: MediaAsset) => {
+    if (!mediaProduct || asset.media_type !== "image") return;
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(asset.url, { credentials: "same-origin", cache: "no-store" });
+      if (!response.ok) throw new Error("The original image could not be loaded for editing.");
+      const blob = await response.blob();
+      const mime = blob.type || asset.mime_type;
+      if (!["image/jpeg", "image/png", "image/webp"].includes(mime) || blob.size < 1 || blob.size > 5_000_000) {
+        throw new Error("This image is not a supported JPG, PNG or WebP file under 5 MB.");
+      }
+      const extension = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
+      const file = new File([blob], "deverve-media-" + asset.id + "." + extension, { type: mime, lastModified: Date.now() });
+      setReplaceMedia(asset);
+      setMediaFiles([file]);
+      setMediaAlt(asset.alt_text || "");
+      setMediaColor(asset.color || "");
+      setCropFiles([file]);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The image could not be opened for editing.");
+    } finally { setBusy(false); }
+  };
+
 
   const uploadCroppedMedia = async (files: File[]) => {
     setCropFiles(null);
     if (!files.length || !mediaProduct) return;
     if (mediaFiles.length > 50) { setMessage("Choose no more than 50 images in one batch."); return; }
-    if (productMedia.length + mediaFiles.length > 100) { setMessage("This gallery can contain up to 100 media items. Remove older images before adding more."); return; }
+    if (!replaceMedia && productMedia.length + mediaFiles.length > 100) { setMessage("This gallery can contain up to 100 media items. Remove older images before adding more."); return; }
     const invalid = files.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
     if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
     setBusy(true); setMessage("");
@@ -610,14 +634,25 @@ export default function Admin() {
           const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
       if(!result.media)throw new Error("Upload returned no media record.");
           setMediaAssets((current) => [result.media!, ...current.filter((item) => item.id !== result.media!.id)]);
-          const makeCover = !mediaProduct.image_key && attachedCount === 0 && !mediaColor;
-          await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: mediaColor, is_primary: makeCover, position: productMedia.length + attachedCount }) });
-          attachedCount++; if (makeCover) setMediaProduct((current) => current ? { ...current, image_key: result.media!.id } : current);
+          const replacement = replaceMedia;
+          const nextColor = replacement ? (replacement.color || "") : mediaColor;
+          const makeCover = replacement ? replacement.is_primary === 1 : !mediaProduct.image_key && attachedCount === 0 && !mediaColor;
+          const nextPosition = replacement?.position ?? (productMedia.length + attachedCount);
+          await api(`/api/admin/products/${mediaProduct.id}/media`, { method: "POST", body: JSON.stringify({ media_id: result.media.id, color: nextColor, is_primary: makeCover, position: nextPosition }) });
+          attachedCount++;
+          if (makeCover) setMediaProduct((current) => current ? { ...current, image_key: result.media!.id } : current);
+          if (replacement) {
+            try {
+              await api(`/api/admin/products/${mediaProduct.id}/media/${replacement.id}`, { method: "DELETE" });
+            } catch {
+              failures.push(file.name + ": the new crop was saved, but the previous gallery attachment could not be removed. Remove the older copy manually.");
+            }
+          }
         } catch (error) { failures.push(file.name + ": " + (error instanceof Error ? error.message : "Upload failed")); }
       }
       const [attached] = await Promise.all([api<{ media: MediaAsset[] }>(`/api/admin/products/${mediaProduct.id}/media`), loadProducts()]);
-      setProductMedia(attached.media); setMediaFiles([]);
-      setMessage(failures.length ? attachedCount + " of " + files.length + " images uploaded and attached. " + failures.slice(0, 3).join(" · ") : "Successfully uploaded and added all " + attachedCount + " images to " + mediaProduct.name + ".");
+      setProductMedia(attached.media); setMediaFiles([]); setReplaceMedia(null);
+      setMessage(failures.length ? (replaceMedia ? "The replacement image was saved. " : attachedCount + " of " + files.length + " images uploaded and attached. ") + failures.slice(0, 3).join(" · ") : replaceMedia ? "Image crop and position updated for this product. The original library asset remains available for other placements." : "Successfully uploaded and added all " + attachedCount + " images to " + mediaProduct.name + ".");
     } catch (error) { setMessage(error instanceof Error ? error.message : "The image batch could not be completed."); }
     finally { setMediaUploadProgress(""); setBusy(false); }
   };
@@ -1341,7 +1376,7 @@ export default function Admin() {
             {productMedia.length === 0 ? <div className="admin-empty"><strong>No gallery items yet</strong><p>Add product photos or a short product video from your media library below.</p></div> : productMedia.map((asset) => <article className={(asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
               {asset.media_type === "video" ? <video src={asset.url} controls preload="metadata" /> : <img src={asset.url} alt={asset.alt_text || "Product media"} loading="lazy" />}
               <div><span>{asset.alt_text || (asset.media_type === "video" ? "Product video" : "Product image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {asset.color ? asset.color + " colour" : (asset as MediaAsset & {is_primary?:number}).is_primary === 1 ? "Cover image" : asset.media_type}</small></div>
-              <div className="admin-media-actions">{asset.media_type === "image" && !asset.color && <button type="button" disabled={busy || (asset as MediaAsset & {is_primary?:number}).is_primary === 1} className="admin-secondary" onClick={() => void attachMedia(asset, true)}>Set as cover</button>}<button type="button" disabled={busy} className="admin-danger-button" onClick={() => void removeProductMedia(asset)}>Remove</button></div>
+              <div className="admin-media-actions">{asset.media_type === "image" && <button type="button" disabled={busy} className="admin-secondary" onClick={() => void recropProductMedia(asset)}>Crop / reposition</button>}{asset.media_type === "image" && !asset.color && <button type="button" disabled={busy || asset.is_primary === 1} className="admin-secondary" onClick={() => void attachMedia(asset, true)}>Set as cover</button>}<button type="button" disabled={busy} className="admin-danger-button" onClick={() => void removeProductMedia(asset)}>Remove</button></div>
             </article>)}
           </div>
           <h3 className="admin-media-subheading">Media library</h3>
@@ -1351,7 +1386,7 @@ export default function Admin() {
               return <article className={attached ? "admin-media-card is-selected" : "admin-media-card"} key={asset.id}>
                 {asset.media_type === "video" ? <video src={asset.url} controls preload="metadata" /> : <img src={asset.url} alt={asset.alt_text || "Uploaded product media"} loading="lazy" />}
                 <div><span>{asset.alt_text || (asset.media_type === "video" ? "Untitled video" : "Untitled image")}</span><small>{(asset.byte_size / 1024).toFixed(0)} KB · {asset.media_type}</small></div>
-                <button type="button" disabled={busy || attached} className="admin-secondary" onClick={() => void attachMedia(asset, asset.media_type === "image" && !mediaProduct.image_key)}>{attached ? "Already in gallery" : "Add to gallery"}</button>
+                <div className="admin-media-actions">{asset.media_type === "image" && <button type="button" disabled={busy} className="admin-secondary" onClick={() => void recropProductMedia(asset)}>Crop for this product</button>}<button type="button" disabled={busy || attached} className="admin-secondary" onClick={() => void attachMedia(asset, asset.media_type === "image" && !mediaProduct.image_key)}>{attached ? "Already in gallery" : "Add to gallery"}</button></div>
               </article>;
             })}
           </div>
