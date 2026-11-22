@@ -24,14 +24,14 @@ export default {
 
     const text = typeof body?.text === "string" ? body.text : "";
     const targetLang = typeof body?.target_lang === "string" ? body.target_lang : "";
-    if (!text.trim() || text.length > 600 || /[\\u0000-\\u0008\\u000b\\u000c\\u000e-\\u001f\\u007f]/.test(text)) {
+    if (!text.trim() || text.length > 600 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
       return json({ error: "Translate text in sections of up to 600 characters" }, 400);
     }
     if (!LANGUAGES.has(targetLang)) return json({ error: "Unsupported translation language" }, 400);
 
     try {
       const protectedBrands = [];
-      const protectedText = text.replace(/\\bDe VERVE\\b/gi, match => {
+      const protectedText = text.replace(/\bDe VERVE\b/gi, match => {
         const token = `ZXQDVBRAND${protectedBrands.length}ZXQ`;
         protectedBrands.push(match);
         return token;
