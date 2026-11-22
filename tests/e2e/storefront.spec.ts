@@ -848,3 +848,77 @@ test("customer header search, language ribbon and support launcher remain usable
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
+test("official wordmark remains legible on loading and inside AI support while launcher clears the mobile dock", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/pages/home", async route => {
+    await new Promise(resolve => setTimeout(resolve, 900));
+    await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
+  });
+  await page.route("**/api/brand/logo*", async route => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="564" height="114" viewBox="0 0 564 114"><rect width="564" height="114" fill="#fff"/><text x="12" y="78" font-size="64" fill="#123f70">DE VERVE</text></svg>'
+  }));
+  await page.goto("/");
+  const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
+  await expect(loadingLogo).toBeVisible();
+  await expect(loadingLogo).toHaveAttribute("src", "/api/brand/logo");
+  const loadingBox = await loadingLogo.boundingBox();
+  expect(loadingBox).not.toBeNull();
+  expect(loadingBox!.width / loadingBox!.height).toBeGreaterThan(3.5);
+
+  await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
+  const launcher = page.getByRole("button", { name: "Open AI customer support chat" });
+  await expect(launcher).toContainText("AI HELP");
+  const launcherBox = await launcher.boundingBox();
+  expect(launcherBox).not.toBeNull();
+  expect(launcherBox!.width).toBeGreaterThanOrEqual(68);
+  expect(launcherBox!.height).toBeGreaterThanOrEqual(68);
+  const dock = page.locator(".mobile-dock");
+  if (await dock.isVisible()) {
+    const dockBox = await dock.boundingBox();
+    expect(dockBox).not.toBeNull();
+    expect(launcherBox!.y + launcherBox!.height).toBeLessThan(dockBox!.y - 8);
+  }
+
+  await launcher.click();
+  const chatLogo = page.locator(".ai-chat-head .ai-chat-brand-logo");
+  await expect(chatLogo).toBeVisible();
+  const chatLogoBox = await chatLogo.boundingBox();
+  expect(chatLogoBox).not.toBeNull();
+  expect(chatLogoBox!.width / chatLogoBox!.height).toBeGreaterThan(3.5);
+
+  const quote = page.locator(".top-quote-strip");
+  await expect(quote.locator("p")).toHaveText("Wear confidence. Every day.");
+  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  const quoteFits = await quote.locator("p").evaluate(element => {
+    const style = getComputedStyle(element);
+    return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
+  });
+  expect(quoteFits).toBeTruthy();
+});
+
+test("global search matches variant attributes and common policy keywords", async ({ page }) => {
+  await page.route("**/api/products**", async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/products") return route.continue();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ products: [{
+        id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc", slug: "navy-trouser-search", name: "Classic Trouser",
+        description: "Everyday tailored fit", category: "Trousers", audience: "men", retail_price_paisa: 100000,
+        image_key: null, seo_title: "Classic Trouser", seo_description: "Classic fit",
+        variants: [{ id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", sku: "DV-NAV-M", size: "M", color: "Navy", available_quantity: 4 }],
+        media: []
+      }] })
+    });
+  });
+  await page.goto("/");
+  const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await search.fill("navy m");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Classic Trouser");
+  await search.fill("shipping returns");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Policies & FAQs");
+});
+
