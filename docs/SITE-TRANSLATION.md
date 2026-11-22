@@ -46,7 +46,7 @@ Cloudflare currently documents a 10,000-neuron daily Workers AI free allocation.
 ## Online inspiration quotes
 
 - The storefront requests one random quote from ZenQuotes through a same-origin Worker endpoint; the provider is never called directly by the visitor's browser.
-- The edge response is cached to reduce upstream requests and protect the free service's rate limit.
+- The upstream quote pool is cached at the edge for up to one hour; each page visit receives a random quote chosen from that pool, excluding the visitor's previous quote where possible. This avoids an upstream API request on every refresh while keeping the visible quote fresh.
 - The quote strip links to ZenQuotes for the attribution required by its free API terms. If the upstream source is unavailable, the curated De VERVE quote pool remains the local fallback.
 
 ## Failure behavior
