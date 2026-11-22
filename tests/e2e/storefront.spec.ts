@@ -1067,7 +1067,8 @@ test("language picker searches broad language coverage and closes on outside tap
   await expect(page.getByRole("option", { name: /Kashmiri/ })).toBeVisible();
   await search.fill("Zulu");
   await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
-  await page.locator(".announcement-services").click();
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  await page.mouse.click(8, viewportHeight - 20);
   await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
 });
 
