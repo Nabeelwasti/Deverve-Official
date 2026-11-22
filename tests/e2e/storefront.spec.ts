@@ -821,11 +821,12 @@ test("storefront places the golden quote below the top ribbon and offers common 
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const languagePicker = quote.getByRole("combobox", { name: "Translate this page" });
-  await expect(languagePicker.locator("option")).toHaveCount(13);
+  const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
+  expect(await languagePicker.locator("option").count()).toBeGreaterThan(150);
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
+  await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
 });
 
