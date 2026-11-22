@@ -844,11 +844,13 @@ test("storefront translates visible website copy in place and restores English",
   const quoteAuthorBefore = await quoteAuthor.textContent();
   const firstPrice = page.locator(".product-buy-row strong").first();
   const priceBefore = await firstPrice.count() ? await firstPrice.textContent() : null;
-  const language = page.getByRole("combobox", { name: "Translate website" });
+  const language = page.getByRole("button", { name: "Choose website language" });
   await expect(language).toBeVisible();
   const originalUrl = page.url();
   const originalTabCount = page.context().pages().length;
-  await language.selectOption("ur");
+  await language.click();
+  await page.getByRole("searchbox", { name: "Search languages" }).fill("Urdu");
+  await page.getByRole("option", { name: /Urdu/ }).click();
   await expect(serviceCopy).toContainText("ترجمہ");
   await expect(quote.locator("p")).toContainText("ترجمہ");
   await expect(quoteAuthor).toHaveText(quoteAuthorBefore ?? "");
@@ -862,10 +864,11 @@ test("storefront translates visible website copy in place and restores English",
   expect(page.url()).toBe(originalUrl);
   expect(page.context().pages()).toHaveLength(originalTabCount);
   await page.reload();
-  await expect(language).toHaveValue("ur");
+  await expect(language).toContainText(/Urdu/);
   await expect(serviceCopy).toContainText("ترجمہ");
   expect(translationRequests.length).toBeLessThanOrEqual(20);
-  await language.selectOption("");
+  await language.click();
+  await page.getByRole("option", { name: "English · Original" }).click();
   await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -902,9 +905,14 @@ test("AI attachment menu closes on outside tap and Escape", async ({ page }) => 
 
 test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
   await page.goto("/");
-  const language = page.getByRole("combobox", { name: "Translate website" });
+  const language = page.getByRole("button", { name: "Choose website language" });
   await expect(language).toBeVisible();
-  await expect(language.locator('option[value="ur"]')).toHaveText("اردو");
+  await language.click();
+  await page.getByRole("searchbox", { name: "Search languages" }).fill("Zulu");
+  await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
+  await page.getByRole("searchbox", { name: "Search languages" }).fill("Assamese");
+  await expect(page.getByRole("option", { name: /Assamese/ })).toBeVisible();
+  await page.getByRole("button", { name: "Choose website language" }).click();
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
@@ -986,30 +994,27 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   }
 
   const quote = page.locator(".top-quote-strip");
-  const approvedQuotes = [
-    "Wear confidence. Every day.",
-    "Style is how you express your story.",
-    "Everyday comfort. Effortless confidence.",
-    "Make every day your own.",
-    "Good style begins with feeling good.",
-    "Confidence never goes out of style.",
-    "Find your fit. Own your moment.",
-    "Made for movement. Chosen by you.",
-    "Your everyday deserves better.",
-    "Simple choices. Strong personal style.",
-    "Wear what moves you forward.",
-    "Comfort is always in good taste.",
+  let onlineQuoteIndex = 0;
+  const onlineQuotes = [
+    { text: "A little progress each day adds up to big results.", author: "Satya Nani", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
+    { text: "Great things are done by a series of small things brought together.", author: "Vincent van Gogh", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" }
   ];
+  await page.route("**/api/quotes/random", async route => {
+    const item = onlineQuotes[Math.min(onlineQuoteIndex++, onlineQuotes.length - 1)];
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(item) });
+  });
+  await page.reload();
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
-  expect(approvedQuotes).toContain(firstQuoteText);
-  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  expect(onlineQuotes.map(item => item.text)).toContain(firstQuoteText);
+  await expect(quote.locator("cite")).toContainText("— ");
+  await expect(quote.getByRole("link", { name: "Quotes via ZenQuotes" })).toHaveAttribute("href", "https://zenquotes.io/");
 
-  // A fresh page load must select another approved brand quote, not reuse the last one.
+  // A fresh page load requests a new attributed online quote; local brand copy remains the offline fallback.
   await page.reload();
   const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
-  expect(approvedQuotes).toContain(nextQuoteText);
+  expect(onlineQuotes.map(item => item.text)).toContain(nextQuoteText);
   expect(nextQuoteText).not.toBe(firstQuoteText);
-  await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
+  await expect(page.locator(".top-quote-strip cite")).toContainText("— ");
   await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).toBe(nextQuoteText);
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
@@ -1049,3 +1054,27 @@ test("global search matches variant attributes and common policy keywords", asyn
   await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Kids' fashion");
 });
 
+
+
+test("language picker searches broad language coverage and closes on outside tap", async ({ page }) => {
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Choose website language" });
+  await trigger.click();
+  const search = page.getByRole("searchbox", { name: "Search languages" });
+  await search.fill("Kashmiri");
+  await expect(page.getByRole("option", { name: /Kashmiri/ })).toBeVisible();
+  await search.fill("Zulu");
+  await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
+  await page.locator(".site-header").click();
+  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
+});
+
+test("translation guidance and status popups dismiss after ten seconds", async ({ page }) => {
+  await page.clock.install();
+  await page.goto("/");
+  const trigger = page.getByRole("button", { name: "Choose website language" });
+  await trigger.click();
+  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toBeVisible();
+  await page.clock.fastForward(10_001);
+  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
+});
