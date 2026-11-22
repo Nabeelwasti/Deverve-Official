@@ -9,7 +9,7 @@
 - **Latest verified production deployment:** Cloudflare Pages project `deverve-official`, deployment `b52c76dc-5db6-4def-b9cb-edca1dceb3f0`, source commit `70cb86805a4619461e236563db1f70a80d618369`. Cloudflare confirmed successful queued, initialize, clone, build and deploy stages. Canonical URL: https://deverve-official.pages.dev.
 - **Deployment controls:** Git-connected automatic and production deployments remain disabled; preview deployment setting remains `none`. Use a reviewed, CI-passing commit and explicit manual production deployment.
 
-### Changes included in PR #23
+### Changes included in PRs #23, #26 and #27
 - The initial HTML shell now renders the circular De VERVE vector mark outside the React mount root. It appears before app JavaScript loads and is removed only after React commits its first screen; it does not wait for a remote logo request.
 - Golden quotes use a same-origin Worker endpoint and an edge-cached online quote pool. The visible strip displays quote text and author only; no upstream provider brand or link is shown. Original De VERVE quotes are the fallback when the online feed fails or returns invalid data.
 - AI chat uses server-side Gemini TTS (Gemini 3.1 Flash TTS Preview with a 2.5 Flash TTS fallback) through the existing encrypted key vault. It auto-detects the model's supported languages, including Urdu and English. Roman Urdu is detected and transliterated into Urdu script while preserving English phrases, then spoken with a Pakistani Urdu prompt. The API key stays server-side; the endpoint is rate-limited, input-bounded and does not persist speech text or audio.
@@ -25,7 +25,7 @@
 6. **Provider and operations hardening:** payment/courier credentials and owner-approved live transaction tests, provider-adapter contract/health reporting, API contract/version tests and production telemetry remain outstanding.
 7. **Independent off-account recovery:** Dropbox/Google Drive replication and a second independently controlled encrypted backup copy are not automated or verified.
 
-Do not label the whole platform 100% production-ready until these external and operational gates have evidence. The successful Pages deployment and 148-test CI run verify the application release; they do not certify disaster recovery, live payment/courier operations or physical-device acceptance.
+Do not label the whole platform 100% production-ready until these external and operational gates have evidence. The successful Pages deployment and 154-test CI run verify the application release; they do not certify disaster recovery, live payment/courier operations or physical-device acceptance.
 
 
 ## Current verified status — 21 November 2026, after production release
