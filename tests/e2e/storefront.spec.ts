@@ -819,60 +819,19 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
 
-test("storefront translates visible website copy in place and restores English", async ({ page }) => {
-  const translationRequests: string[] = [];
+test("storefront keeps original English copy and does not expose the unreliable translator", async ({ page }) => {
+  let translationRequests = 0;
   await page.route("**/api/translate", async route => {
-    const body = route.request().postDataJSON() as { text: string };
-    translationRequests.push(body.text);
-    const translatedText = body.text.split("ZXQDVSEP").map(part => "ترجمہ " + part).join("ZXQDVSEP");
-    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ translatedText, remainingDailyRequests: 19 }) });
+    translationRequests += 1;
+    await route.fulfill({ status: 410, contentType: "application/json", body: JSON.stringify({ error: "Website translation has been retired." }) });
   });
   await page.goto("/");
-  const announcement = page.locator(".announcement");
-  const quote = page.locator(".top-quote-strip");
-  await expect(announcement).toBeVisible();
-  await expect(quote).toBeVisible();
-  const order = await page.evaluate(() => {
-    const ribbon = document.querySelector(".announcement");
-    const quoteStrip = document.querySelector(".top-quote-strip");
-    return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
-  });
-  expect(order).toBeTruthy();
-  const serviceCopy = page.locator(".announcement-services");
-  const originalCopy = await serviceCopy.textContent();
-  const quoteAuthor = quote.locator("cite");
-  const quoteAuthorBefore = await quoteAuthor.textContent();
-  const firstPrice = page.locator(".product-buy-row strong").first();
-  const priceBefore = await firstPrice.count() ? await firstPrice.textContent() : null;
-  const language = page.getByRole("button", { name: "Choose website language" });
-  await expect(language).toBeVisible();
-  const originalUrl = page.url();
-  const originalTabCount = page.context().pages().length;
-  await language.click();
-  await page.getByRole("searchbox", { name: "Search languages" }).fill("Urdu");
-  await page.getByRole("option", { name: /Urdu/ }).click();
-  await expect(serviceCopy).toContainText("ترجمہ");
-  await expect(quote.locator("p")).toContainText("ترجمہ");
-  await expect(quoteAuthor).toHaveText(quoteAuthorBefore ?? "");
-  await expect(announcement.getByRole("status")).toContainText("Website translated");
-  expect(translationRequests.length).toBeLessThanOrEqual(20);
-  expect(translationRequests.every(text => text.length <= 600)).toBeTruthy();
-  const settledTranslationRequests = translationRequests.length;
-  await page.waitForTimeout(500);
-  expect(translationRequests.length).toBe(settledTranslationRequests);
-  if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
-  expect(page.url()).toBe(originalUrl);
-  expect(page.context().pages()).toHaveLength(originalTabCount);
-  await page.reload();
-  await expect(language).toContainText(/Urdu/);
-  await expect(serviceCopy).toContainText("ترجمہ");
-  expect(translationRequests.length).toBeLessThanOrEqual(20);
-  await language.click();
-  await page.getByRole("option", { name: "English · Original" }).click();
-  await expect(serviceCopy).toHaveText(originalCopy ?? "");
-  await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
-  await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
-  await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
+  await expect(page.locator(".announcement")).toBeVisible();
+  await expect(page.locator(".announcement-services")).toHaveText("FASHION · WHOLESALE · CAR RENTALS");
+  await expect(page.locator(".top-quote-strip p")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Choose website language" })).toHaveCount(0);
+  await expect(page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" })).toBeVisible();
+  expect(translationRequests).toBe(0);
 });
 
 test("customer navigation menu closes on outside tap and Escape", async ({ page }) => {
@@ -889,6 +848,24 @@ test("customer navigation menu closes on outside tap and Escape", async ({ page 
   await expect(page.locator(".main-nav")).not.toHaveClass(/is-open/);
 });
 
+test("mobile quick-navigation ribbon stays fixed to the viewport bottom on every screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const screen of ["home", "fashion", "wholesale", "mobility", "contact", "favourites"]) {
+    await page.goto(screen === "home" ? "/" : "/?screen=" + screen);
+    const dock = page.locator(".mobile-dock");
+    await expect(dock).toBeVisible();
+    await expect(dock).toHaveCSS("position", "fixed");
+    const before = await dock.boundingBox();
+    expect(before).not.toBeNull();
+    expect(Math.abs(before!.y + before!.height - 844)).toBeLessThanOrEqual(2);
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(80);
+    const after = await dock.boundingBox();
+    expect(after).not.toBeNull();
+    expect(Math.abs(after!.y + after!.height - 844)).toBeLessThanOrEqual(2);
+  }
+});
+
 test("AI attachment menu closes on outside tap and Escape", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
@@ -903,16 +880,9 @@ test("AI attachment menu closes on outside tap and Escape", async ({ page }) => 
   await expect(chat.getByRole("menu", { name: "Attachment options" })).toHaveCount(0);
 });
 
-test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
+test("customer header search and AI support launcher remain usable", async ({ page }) => {
   await page.goto("/");
-  const language = page.getByRole("button", { name: "Choose website language" });
-  await expect(language).toBeVisible();
-  await language.click();
-  await page.getByRole("searchbox", { name: "Search languages" }).fill("Zulu");
-  await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
-  await page.getByRole("searchbox", { name: "Search languages" }).fill("Assamese");
-  await expect(page.getByRole("option", { name: /Assamese/ })).toBeVisible();
-  await page.getByRole("button", { name: "Choose website language" }).click();
+  await expect(page.getByRole("button", { name: "Choose website language" })).toHaveCount(0);
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
@@ -921,7 +891,9 @@ test("customer header search, language ribbon and support launcher remain usable
   await expect(launcher.locator("svg.ai-chat-launcher-icon")).toBeVisible();
   await launcher.click();
   await expect(page.getByRole("dialog", { name: "De VERVE AI customer support" })).toBeVisible();
-  await expect(page.locator(".ai-chat-head .ai-chat-brand-logo")).toBeVisible();
+  const logo = page.locator(".ai-chat-head .ai-chat-brand-logo");
+  await expect(logo).toBeVisible();
+  await expect(logo).toHaveCSS("border-radius", "50%");
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
@@ -942,7 +914,8 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await expect(loadingLogo).toHaveAttribute("src", "/api/brand/logo");
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
-  expect(loadingBox!.width / loadingBox!.height).toBeGreaterThan(3.5);
+  expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
+  await expect(loadingLogo).toHaveCSS("border-radius", "50%");
 
   await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
   const mobileSearch = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });

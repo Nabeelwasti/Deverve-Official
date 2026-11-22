@@ -9,5 +9,5 @@ export default function BrandLogo({className=""}:{className?:string}){
   return()=>window.removeEventListener("deverve:brand-assets-updated",refresh);
  },[]);
  const src=fallback?"/brand/de-verve-logo.svg":version?"/api/brand/logo?v="+version:"/api/brand/logo";
- return <img className={className} src={src} alt="De VERVE" onError={()=>setFallback(true)}/>;
+ return <img className={["deverve-round-logo",className].filter(Boolean).join(" ")} src={src} alt="De VERVE" onError={()=>setFallback(true)}/>;
 }

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
@@ -287,316 +288,15 @@ function persistGoldenQuote(quote: { text: string; author: string }) {
   try { localStorage.setItem("deverve:golden-quote:last:v1", quote.text); } catch { /* Quote rotation must never block the storefront. */ }
 }
 
-const SITE_TRANSLATION_LANGUAGE_CODES = [
-  "af","am","ar","ast","az","ba","be","bg","bn","br","bs","ca","ceb","cs","cy","da","de","el","es","et",
-  "fa","ff","fi","fr","fy","ga","gd","gl","gu","ha","he","hi","hr","ht","hu","hy","id","ig","ilo","is",
-  "it","ja","jv","ka","kk","km","kn","ko","lb","ln","lo","lt","lv","mg","mk","ml","mn","mr","ms","my",
-  "ne","nl","no","ns","oc","or","pa","pl","ps","pt","ro","ru","sd","si","sk","sl","so","sq","sr","ss",
-  "su","sv","sw","ta","th","tl","tn","tr","uk","ur","uz","vi","wo","xh","yi","yo","zh","zu",
-  "as","brx","doi","kok","ks","mai","mni","sa","sat","te"
-] as const;
-const SITE_TRANSLATION_LANGUAGE_OVERRIDES: Record<string, string> = {
-  ba: "Bashkir", ff: "Fulah", ns: "Northern Sotho", ss: "Swati",
-  brx: "Bodo", ks: "Kashmiri", sat: "Santali"
-};
-const SITE_TRANSLATION_LANGUAGES = SITE_TRANSLATION_LANGUAGE_CODES.map((code) => {
-  const english = SITE_TRANSLATION_LANGUAGE_OVERRIDES[code] ?? (typeof Intl.DisplayNames === "function"
-    ? new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code
-    : code);
-  const native = typeof Intl.DisplayNames === "function"
-    ? new Intl.DisplayNames([code], { type: "language" }).of(code)
-    : null;
-  return [code, native && native.toLowerCase() !== english.toLowerCase() ? english + " · " + native : english] as const;
-});
-
-const originalSiteTextNodes = new Map<Text, string>();
-const translatedSiteTextNodes = new Map<Text, string>();
-const TRANSLATION_SEPARATOR = "ZXQDVSEP";
-
-function restoreOriginalSiteLanguage() {
-  for (const [node, original] of originalSiteTextNodes) {
-    if (node.isConnected) node.nodeValue = original;
-  }
-  originalSiteTextNodes.clear();
-  translatedSiteTextNodes.clear();
-}
-
-function translationCacheKey(language: string, source: string) {
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return `deverve:site-translation:v1:${language}:${(hash >>> 0).toString(36)}`;
-}
-
-function readCachedTranslation(language: string, source: string): string | null {
-  try {
-    const raw = localStorage.getItem(translationCacheKey(language, source));
-    if (!raw) return null;
-    const value = JSON.parse(raw) as { source?: unknown; translated?: unknown };
-    return value.source === source && typeof value.translated === "string" ? value.translated : null;
-  } catch { return null; }
-}
-
-function writeCachedTranslation(language: string, source: string, translated: string) {
-  try {
-    localStorage.setItem(translationCacheKey(language, source), JSON.stringify({ source, translated }));
-  } catch { /* Translation caching is optional; it must never block the page. */ }
-}
-
-function splitTranslationText(value: string, maximum = 450): string[] {
-  const parts: string[] = [];
-  let remaining = value.trim();
-  while (remaining.length > maximum) {
-    let boundary = remaining.lastIndexOf(" ", maximum);
-    if (boundary < Math.floor(maximum * 0.55)) boundary = maximum;
-    parts.push(remaining.slice(0, boundary).trim());
-    remaining = remaining.slice(boundary).trim();
-  }
-  if (remaining) parts.push(remaining);
-  return parts;
-}
-
-async function translateRenderedSite(
-  root: HTMLElement,
-  language: string,
-  onProgress: (done: number, total: number, provider?: string) => void,
-  signal?: AbortSignal
-): Promise<void> {
-  const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,.brand-type,.brand-logo-image,.product-detail-price,.product-buy-row strong,.product-info > strong,.mobility-vehicle-card strong,.vehicle-detail-rates strong,.cart-open-button,.cart-line-main small,.cart-line-main b,.cart-line-total,.cart-summary strong,.checkout-item span,.checkout-item small,.checkout-item > div:last-child strong,.checkout-total strong,.product-stock-badge,.product-urgency-badge,.product-variant-picker,.rental-price-estimate,.testimonial-rating,.top-quote-strip cite,[role='dialog']";
-  for (const node of originalSiteTextNodes.keys()) if (!node.isConnected) { originalSiteTextNodes.delete(node); translatedSiteTextNodes.delete(node); }
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes: Array<{ node: Text; original: string; parts: string[]; translated: Array<string | null> }> = [];
-  let current: Node | null;
-  while ((current = walker.nextNode())) {
-    const node = current as Text;
-    const parent = node.parentElement;
-    const currentText = node.nodeValue ?? "";
-    const previousOriginal = originalSiteTextNodes.get(node);
-    const previousTranslation = translatedSiteTextNodes.get(node);
-    const raw = previousOriginal !== undefined && previousTranslation === currentText ? previousOriginal : currentText;
-    if (!parent || !raw.trim() || /^[\s\d.,:+()/%\-₨$€£¥₹]+$/.test(raw) || parent.closest(excluded)) continue;
-    originalSiteTextNodes.set(node, raw);
-    const parts = splitTranslationText(raw);
-    if (!parts.length) continue;
-    nodes.push({ node, original: raw, parts, translated: parts.map(part => readCachedTranslation(language, part)) });
-  }
-
-  const pending: Array<{ owner: number; part: number; source: string }> = [];
-  nodes.forEach((entry, owner) => entry.parts.forEach((part, index) => {
-    if (entry.translated[index] === null) pending.push({ owner, part: index, source: part });
-  }));
-
-  const batches: Array<typeof pending> = [];
-  let batch: typeof pending = [];
-  let batchLength = 0;
-  for (const item of pending) {
-    const separatorLength = batch.length ? TRANSLATION_SEPARATOR.length : 0;
-    if (batch.length && batchLength + separatorLength + item.source.length > 580) {
-      batches.push(batch); batch = []; batchLength = 0;
-    }
-    batchLength += (batch.length ? TRANSLATION_SEPARATOR.length : 0) + item.source.length;
-    batch.push(item);
-  }
-  if (batch.length) batches.push(batch);
-
-  const applyCompletedTranslations = () => {
-    for (const entry of nodes) {
-      const translated = entry.translated.every((part): part is string => typeof part === "string" && Boolean(part))
-        ? entry.translated.join(" ")
-        : null;
-      if (translated !== null && entry.node.isConnected) {
-        const leading = entry.original.match(/^\s*/)?.[0] ?? "";
-        const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
-        const finalText = leading + translated + trailing;
-        if (entry.node.nodeValue !== finalText) entry.node.nodeValue = finalText;
-        translatedSiteTextNodes.set(entry.node, finalText);
-      }
-    }
-  };
-
-  onProgress(0, batches.length);
-  const concurrency = 3;
-  let completedCount = 0;
-  for (let start = 0; start < batches.length; start += concurrency) {
-    if (signal?.aborted) throw new DOMException("Translation cancelled", "AbortError");
-    const group = batches.slice(start, start + concurrency);
-    const results = await Promise.allSettled(group.map(async currentBatch => {
-      const requestController = new AbortController();
-      const abortFromParent = () => requestController.abort();
-      signal?.addEventListener("abort", abortFromParent, { once: true });
-      const timeout = window.setTimeout(() => requestController.abort(), 18000);
-      try {
-        const text = currentBatch.map(item => item.source).join(TRANSLATION_SEPARATOR);
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "content-type": "application/json", accept: "application/json" },
-          body: JSON.stringify({ text, target_lang: language }),
-          signal: requestController.signal
-        });
-        const payload = await response.json().catch(() => ({})) as { translatedText?: string; error?: string; provider?: string };
-        if (!response.ok || typeof payload.translatedText !== "string") {
-          throw new Error(response.status === 429 ? "The shared daily translation allowance has been reached. Please try again after the daily reset." : payload.error || "Translation is temporarily unavailable.");
-        }
-        const translatedParts = currentBatch.length === 1
-          ? [payload.translatedText.trim()]
-          : payload.translatedText.split(TRANSLATION_SEPARATOR).map(part => part.trim());
-        if (translatedParts.length !== currentBatch.length || translatedParts.some(part => !part)) {
-          throw new Error("The translation service could not safely preserve the page layout. Please try again.");
-        }
-        return { currentBatch, translatedParts, provider: payload.provider ?? "cloudflare-ai" };
-      } finally {
-        window.clearTimeout(timeout);
-        signal?.removeEventListener("abort", abortFromParent);
-      }
-    }));
-    let failure: unknown = null;
-    for (const result of results) {
-      if (result.status === "rejected") { failure ??= result.reason; continue; }
-      const { currentBatch, translatedParts, provider } = result.value;
-      currentBatch.forEach((item, itemIndex) => {
-        const translated = translatedParts[itemIndex];
-        nodes[item.owner].translated[item.part] = translated;
-        writeCachedTranslation(language, item.source, translated);
-      });
-      completedCount += 1;
-      onProgress(completedCount, batches.length, provider);
-    }
-    // Keep completed sections even if a later batch is rate-limited or unavailable.
-    applyCompletedTranslations();
-    if (failure) throw failure;
-  }
-
-  applyCompletedTranslations();
-}
-
-function readSavedSiteLanguage(): string {
-  try {
-    const saved = localStorage.getItem("deverve:site-language:v1") ?? "";
-    return SITE_TRANSLATION_LANGUAGES.some(([code]) => code === saved) ? saved : "";
-  } catch { return ""; }
-}
-
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [translationLanguage, setTranslationLanguage] = useState(readSavedSiteLanguage);
-  const [translationStatus, setTranslationStatus] = useState("");
-  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
-  const [languageSearch, setLanguageSearch] = useState("");
-  const [translationAttempt, setTranslationAttempt] = useState(0);
-  const languagePickerRef = useRef<HTMLDivElement | null>(null);
   const quoteChangedRef = useRef(false);
-  const filteredSiteLanguages = useMemo(() => {
-    const term = languageSearch.trim().toLocaleLowerCase();
-    return term ? SITE_TRANSLATION_LANGUAGES.filter(([code, label]) => (code + " " + label).toLocaleLowerCase().includes(term)) : SITE_TRANSLATION_LANGUAGES;
-  }, [languageSearch]);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  useEffect(() => {
-    let active = true;
-    let running = false;
-    let rerunRequested = false;
-    let scheduled = 0;
-    let lastCompleted = 0;
-    let totalBatches = 0;
-    const controller = new AbortController();
-    const root = document.querySelector<HTMLElement>(".site-shell");
-    restoreOriginalSiteLanguage();
-    if (!translationLanguage || !root) {
-      setTranslationStatus("");
-      return () => controller.abort();
-    }
-    const runTranslation = async () => {
-      if (!active) return;
-      if (running) { rerunRequested = true; return; }
-      running = true;
-      let googleFallbackUsed = false;
-      try {
-        await translateRenderedSite(root, translationLanguage, (done, total, provider) => {
-          lastCompleted = done;
-          totalBatches = total;
-          if (provider === "google-cloud-translation") googleFallbackUsed = true;
-          if (active) setTranslationStatus(total ? `Translating website… ${done}/${total}` : "Checking saved translations…");
-        }, controller.signal);
-        if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}${googleFallbackUsed ? " · Google fallback used" : ""}`);
-      } catch (caught) {
-        if (controller.signal.aborted) return;
-        rerunRequested = false;
-        const message = caught instanceof Error ? caught.message : "Translation is temporarily unavailable.";
-        const status = lastCompleted > 0 && lastCompleted < totalBatches
-          ? `Partially translated (${lastCompleted}/${totalBatches} sections). Some content remains in English. Re-select this language to retry, or choose English to restore the page. ${message}`
-          : `${message} Select the language again to retry.`;
-        if (active) setTranslationStatus(status);
-      } finally {
-        running = false;
-        if (rerunRequested && active && !controller.signal.aborted) {
-          rerunRequested = false;
-          scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 180);
-        }
-      }
-    };
-    const observer = new MutationObserver(records => {
-      const siteContentChanged = records.some(record => {
-        const target = record.target instanceof Element ? record.target : record.target.parentElement;
-        if (!target || target.closest(".announcement-translate")) return false;
-        if (record.type === "characterData" && record.target instanceof Text) {
-          const lastTranslation = translatedSiteTextNodes.get(record.target);
-          return lastTranslation !== undefined && lastTranslation !== record.target.nodeValue;
-        }
-        return record.type === "childList";
-      });
-      if (!siteContentChanged || !active) return;
-      if (running) { rerunRequested = true; return; }
-      if (scheduled) return;
-      scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 180);
-    });
-    observer.observe(root, { childList: true, characterData: true, subtree: true });
-    void runTranslation();
-    return () => {
-      active = false;
-      controller.abort();
-      observer.disconnect();
-      if (scheduled) window.clearTimeout(scheduled);
-      restoreOriginalSiteLanguage();
-    };
-  }, [translationLanguage, translationAttempt]);
-
-  useEffect(() => {
-    if (!translationStatus) return;
-    const timeout = window.setTimeout(() => setTranslationStatus(""), 10_000);
-    return () => window.clearTimeout(timeout);
-  }, [translationStatus]);
-
-  useEffect(() => {
-    if (!translationStatus) return;
-    const closeStatusOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !languagePickerRef.current?.contains(event.target)) setTranslationStatus("");
-    };
-    document.addEventListener("pointerdown", closeStatusOutside, true);
-    return () => document.removeEventListener("pointerdown", closeStatusOutside, true);
-  }, [translationStatus]);
-
-  useEffect(() => {
-    if (!languagePickerOpen) return;
-    const closeOutside = (event: PointerEvent) => {
-      if (event.target instanceof Node && !languagePickerRef.current?.contains(event.target)) setLanguagePickerOpen(false);
-    };
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setLanguagePickerOpen(false); };
-    const timeout = window.setTimeout(() => setLanguagePickerOpen(false), 10_000);
-    document.addEventListener("pointerdown", closeOutside, true);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      window.clearTimeout(timeout);
-      document.removeEventListener("pointerdown", closeOutside, true);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, [languagePickerOpen]);
-
   // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
   const [goldenQuote, setGoldenQuote] = useState<{ text: string; author: string; source?: string }>(selectGoldenQuote);
   useEffect(() => {
@@ -633,7 +333,7 @@ function Storefront() {
     let active = true;
     let previous = "";
     try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Browser storage is optional. */ }
-    void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), { headers: { accept: "application/json" }, signal: controller.signal })
+    void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), { headers: { accept: "application/json" }, signal: controller.signal, cache: "no-store" })
       .then(async response => {
         if (!response.ok) throw new Error("Online quote source unavailable");
         return await response.json() as { text?: string; author?: string; source?: string };
@@ -642,8 +342,10 @@ function Storefront() {
         if (!active || typeof item.text !== "string" || typeof item.author !== "string" || !item.text.trim() || !item.author.trim()) return;
         const text = item.text.trim().slice(0, 180);
         if (text === previous) {
+          const fallbackQuote = selectGoldenQuote();
           quoteChangedRef.current = true;
-          persistGoldenQuote(goldenQuote);
+          setGoldenQuote(fallbackQuote);
+          persistGoldenQuote(fallbackQuote);
           return;
         }
         quoteChangedRef.current = true;
@@ -1013,17 +715,6 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
-  const chooseSiteLanguage = (language: string) => {
-    if (language && language === translationLanguage) setTranslationAttempt(value => value + 1);
-    setTranslationLanguage(language);
-    setLanguagePickerOpen(false);
-    setLanguageSearch("");
-    setTranslationStatus(language ? "Starting website translation. Text is translated in place; saved sections load faster." : "Restoring the original English website.");
-    try {
-      if (language) localStorage.setItem("deverve:site-language:v1", language);
-      else localStorage.removeItem("deverve:site-language:v1");
-    } catch { /* The page remains usable when browser storage is unavailable. */ }
-  };
   const navigate = (screen: StoreScreen) => { if(screen==="home"){window.location.assign("/");return;} setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); if(screen!=="fashion")url.searchParams.delete("category"); url.hash = ""; setSelectedCategory(screen==="fashion"?url.searchParams.get("category")||"": ""); window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => {
     playLuxuryChime("favourite");
@@ -1031,28 +722,12 @@ function Storefront() {
   };
 
   return (
-    <div className="site-shell">
+    <>
+      <div className="site-shell">
       <div className="announcement">
         <span className="announcement-location">JHELUM, PAKISTAN</span>
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
-          <div className="announcement-translate" ref={languagePickerRef}>
-            <span aria-hidden="true">文</span>
-            <button type="button" className="language-picker-trigger" aria-label="Choose website language" aria-expanded={languagePickerOpen} aria-haspopup="dialog" onClick={() => { setLanguagePickerOpen(value => !value); setLanguageSearch(""); }}>
-              {translationLanguage ? SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage : "English · Original"} <span aria-hidden="true">⌄</span>
-            </button>
-            {languagePickerOpen && <div className="language-picker-popover" role="dialog" aria-label="Choose a website language">
-              <label className="sr-only" htmlFor="deverve-language-search">Search languages</label>
-              <input id="deverve-language-search" type="search" autoComplete="off" value={languageSearch} onChange={event => setLanguageSearch(event.currentTarget.value)} placeholder="Search 100+ languages…" />
-              <div className="language-picker-options" role="listbox" aria-label="Available languages">
-                <button type="button" role="option" aria-selected={!translationLanguage} onClick={() => chooseSiteLanguage("")}>English · Original</button>
-                {filteredSiteLanguages.map(([code, label]) => <button type="button" role="option" aria-selected={translationLanguage === code} key={code} onClick={() => chooseSiteLanguage(code)}>{label}</button>)}
-                {!filteredSiteLanguages.length && <p className="language-picker-empty">No matching language. Try its English name or language code.</p>}
-              </div>
-              <p className="language-picker-help">Choose a language to translate this page in place. Progress appears while it works, and saved sections load faster on later visits. Prices, product codes and the De VERVE name stay unchanged. Choose English · Original to restore the page. If translation is unavailable, try again later or use your browser’s Google Translate option.</p>
-            </div>}
-            {translationStatus && <span className="translation-status" role="status" aria-live="polite">{translationStatus}</span>}
-          </div>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
         </div>
       </div>
@@ -1149,7 +824,7 @@ function Storefront() {
           <div className="collection-grid">
             {visibleCategories.map((item) => (
               <article className={`collection-card ${item.tone}`} key={item.id}>
-                <a className="collection-art" data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
+                <a className={categoryAssets[item.id] ? "collection-art has-custom-art" : "collection-art"} data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
                   {categoryAssets[item.id]&&<img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy"/>}
                   {!categoryAssets[item.id]&&<span className="category-garment"><i /></span>}
@@ -1437,8 +1112,9 @@ function Storefront() {
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
-      <nav className="mobile-dock" aria-label="Quick navigation"><button type="button" className={activeScreen === "home" ? "active" : ""} onClick={() => navigate("home")}><span>⌂</span>Home</button><button type="button" className={activeScreen === "fashion" ? "active" : ""} onClick={() => navigate("fashion")}><span>◇</span>Shop</button><button type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}><span>▣</span>Cart <i>{cart.reduce((sum,item)=>sum+item.quantity,0)}</i></button><button type="button" className={activeScreen === "favourites" ? "active" : ""} onClick={() => navigate("favourites")}><span>♡</span>Saved</button><button type="button" className={activeScreen === "mobility" ? "active" : ""} onClick={() => navigate("mobility")}><span>↗</span>Rent</button></nav>
     </div>
+    {createPortal(<nav className="mobile-dock" aria-label="Quick navigation"><button type="button" className={activeScreen === "home" ? "active" : ""} onClick={() => navigate("home")}><span>⌂</span>Home</button><button type="button" className={activeScreen === "fashion" ? "active" : ""} onClick={() => navigate("fashion")}><span>◇</span>Shop</button><button type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}><span>▣</span>Cart <i>{cart.reduce((sum,item)=>sum+item.quantity,0)}</i></button><button type="button" className={activeScreen === "favourites" ? "active" : ""} onClick={() => navigate("favourites")}><span>♡</span>Saved</button><button type="button" className={activeScreen === "mobility" ? "active" : ""} onClick={() => navigate("mobility")}><span>↗</span>Rent</button></nav>, document.body)}
+    </>
   );
 }
 

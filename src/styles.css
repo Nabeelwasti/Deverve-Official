@@ -386,12 +386,12 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
   .site-header .brand-lockup{min-width:0}
   .site-header .header-actions .header-cta{display:none}
   .site-header .main-nav.is-open{right:10px}
-  .mobile-dock{position:fixed;z-index:90;left:10px;right:10px;bottom:max(10px,env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(5,1fr);gap:2px;padding:7px;background:rgba(255,255,255,.96);border:1px solid #dce5ef;border-radius:18px;box-shadow:0 12px 36px #0a25431f;backdrop-filter:blur(18px)}
+  .mobile-dock{position:fixed;z-index:1200;left:0;right:0;bottom:0;width:100%;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:2px;padding:7px 10px calc(7px + env(safe-area-inset-bottom));background:rgba(255,255,255,.98);border:1px solid #dce5ef;border-bottom:0;border-radius:16px 16px 0 0;box-shadow:0 -8px 28px rgba(10,37,67,.16);backdrop-filter:blur(18px);padding-bottom:max(7px,env(safe-area-inset-bottom))}
   .mobile-dock button{display:flex;min-width:0;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:0;background:transparent;color:#657990;border-radius:12px;padding:6px 2px;font:inherit;font-size:10px;font-weight:750;cursor:pointer}
   .mobile-dock button span{font-size:18px;line-height:1.1}
   .mobile-dock button.active{background:#edf4fb;color:#174c7d}
   .mobile-dock button i{font-style:normal;font-size:9px}
-  .site-shell{padding-bottom:82px}
+  .site-shell{padding-bottom:calc(92px + env(safe-area-inset-bottom))}
   .checkout-backdrop{padding-bottom:82px}
 }
 @media(prefers-reduced-motion:reduce){html:focus-within{scroll-behavior:auto}.mobile-dock,.site-header .main-nav{transition:none!important}}
@@ -1947,9 +1947,12 @@ h1 em,h2 em{color:#ad8955}
 
 .category-custom-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .7s var(--dv-ease-out);z-index:0}
 .collection-card:hover .category-custom-art{transform:scale(1.055)}
-.collection-art:has(.category-custom-art){background:#0b2137!important}
-.collection-art:has(.category-custom-art):after{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(180deg,rgba(4,16,29,.04),rgba(4,16,29,.72))}
-.collection-art:has(.category-custom-art) .category-tag,.collection-art:has(.category-custom-art) .category-arrow,.collection-art:has(.category-custom-art) .category-art-word{z-index:1;color:#f3dfb9}
+.collection-art.has-custom-art{background:#0b2137!important}
+.collection-art.has-custom-art:after{content:"";position:absolute;inset:0;z-index:0;background:linear-gradient(180deg,rgba(4,16,29,.04),rgba(4,16,29,.72))}
+.collection-art.has-custom-art{isolation:isolate}
+.collection-art.has-custom-art .category-tag{z-index:3!important;left:14px;top:14px;padding:7px 10px;border:1px solid rgba(255,255,255,.32);border-radius:999px;background:rgba(4,17,31,.76);color:#fff!important;text-shadow:0 1px 5px rgba(0,0,0,.45)}
+.collection-art.has-custom-art .category-arrow{z-index:3!important;background:rgba(4,17,31,.82);border-color:rgba(255,255,255,.7);color:#fff!important;box-shadow:0 3px 12px rgba(0,0,0,.22)}
+.collection-art.has-custom-art .category-art-word{z-index:3!important;color:#fff!important;text-shadow:0 2px 12px rgba(0,0,0,.8)}
 .admin-category-artwork{display:grid;gap:15px;margin:20px 0;padding:18px;border:1px solid #dce5ef;border-radius:14px;background:linear-gradient(145deg,#f9fbfd,#f1f5f9)}
 .admin-category-artwork h3{margin:0;color:#183b5e;font-size:15px}
 .admin-category-artwork-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
@@ -2468,3 +2471,9 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   .language-picker-help{font-size:9px}
   .quote-source-credit{font-size:7px}
 }
+
+
+/* Brand marks use a centered circular frame in every UI placement. */
+.deverve-round-logo{display:block;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:3px;overflow:hidden;flex-shrink:0}
+.ai-chat-brand-logo{width:48px;height:48px;max-width:48px;max-height:48px;flex:0 0 48px;border:1px solid rgba(255,255,255,.35);box-shadow:0 2px 10px rgba(0,0,0,.14)}
+.admin-brand-assets article:first-child>img{width:112px;height:112px;max-width:112px;max-height:112px;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:6px;border:1px solid #dce5ef;box-shadow:0 4px 14px rgba(10,35,62,.08)}
