@@ -892,6 +892,12 @@ test("official wordmark remains legible on loading and inside AI support while l
   const mobileSearchBox = await mobileSearch.boundingBox();
   expect(mobileSearchBox).not.toBeNull();
   expect(mobileSearchBox!.width).toBeGreaterThanOrEqual(130);
+  await mobileSearch.fill("wholesale");
+  const mobileSearchResult = page.getByRole("option").first();
+  await expect(mobileSearchResult).toBeVisible();
+  const mobileSearchResultBox = await mobileSearchResult.boundingBox();
+  expect(mobileSearchResultBox).not.toBeNull();
+  expect(mobileSearchResultBox!.height).toBeGreaterThanOrEqual(44);
   const launcher = page.getByRole("button", { name: "Open De VERVE AI chat" });
   await expect(launcher).toContainText("AI HELP");
   const launcherBox = await launcher.boundingBox();
