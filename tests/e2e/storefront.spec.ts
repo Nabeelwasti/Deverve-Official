@@ -942,6 +942,11 @@ test("customer header search and AI support launcher remain usable", async ({ pa
 
 test("loading wordmark stays legible and customer AI logo uses a centered circular frame", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
+  let quoteApiRequests = 0;
+  await page.route("**/api/quotes/random*", async route => {
+    quoteApiRequests += 1;
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "External quote service must not be used" }) });
+  });
   await page.route("**/api/pages/home", async route => {
     await new Promise(resolve => setTimeout(resolve, 900));
     await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
@@ -1009,11 +1014,6 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   }
 
   const quote = page.locator(".top-quote-strip");
-  let quoteApiRequests = 0;
-  await page.route("**/api/quotes/random*", async route => {
-    quoteApiRequests += 1;
-    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "External quote service must not be used" }) });
-  });
   await expect(quote.locator("p")).toHaveText(/.+/);
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
   await expect(quote.locator("cite")).toHaveText("— DE VERVE");
