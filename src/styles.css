@@ -2201,3 +2201,91 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
  .ai-chat-icon-button,.ai-chat-send{flex-basis:40px;width:40px;min-width:40px;height:42px;min-height:42px}
 }
 @media(prefers-reduced-motion:reduce){.ai-chat-launcher{transition:none!important}}
+
+/* Final customer UI layout contract: one authoritative layer after legacy theme rules. */
+.site-header .header-cta,
+.site-header .header-cta:link,
+.site-header .header-cta:visited,
+.site-header .header-cta:hover,
+.site-header .header-cta:focus-visible,
+.site-header .header-cta * {
+  color:#fff!important;
+}
+.site-header .header-cta{background:var(--dv-site-primary,#102d49)!important;border-color:var(--dv-site-primary,#102d49)!important}
+.site-header .header-cta:hover{background:#071f43!important;border-color:#071f43!important}
+
+.top-quote-strip{
+  display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+  column-gap:8px;row-gap:3px;min-height:42px;padding:9px 16px;
+  overflow:visible;background:#f8f5ef;border-bottom:1px solid #eee6d8;
+  color:#755d36;text-align:center;
+}
+.top-quote-strip .top-quote-mark{flex:0 0 auto;color:#b99861;font:italic 24px/1 Georgia,serif}
+.top-quote-strip p{
+  flex:0 1 auto;width:max-content;min-width:0;max-width:calc(100vw - 72px);
+  margin:0;color:#765f3d;font:600 12px/1.4 Manrope,serif;letter-spacing:.005em;
+  white-space:normal;overflow:visible;text-overflow:clip;overflow-wrap:break-word;word-break:normal;
+}
+.top-quote-strip cite{
+  display:inline;flex:0 0 auto;max-width:none;margin:0;color:#8c795b;
+  font:700 8px/1.3 "DM Sans",sans-serif;letter-spacing:.06em;
+  text-transform:uppercase;white-space:nowrap;
+}
+
+/* The landscape De VERVE wordmark must never be squeezed into a circular avatar. */
+.brand-loading-screen .brand-loader-logo{
+  display:block;width:min(320px,76vw);height:auto;max-height:88px;aspect-ratio:564/114;
+  object-fit:contain;object-position:center;border:0;border-radius:0;
+  background:transparent;box-shadow:none;padding:0;
+}
+.ai-chat-head .ai-chat-brand-logo{
+  display:block;flex:0 0 auto;width:clamp(92px,28vw,116px);height:auto;max-height:34px;
+  aspect-ratio:564/114;object-fit:contain;object-position:left center;
+  border:0;border-radius:0;background:transparent;padding:0;
+}
+
+/* Clear AI-support affordance with a generous hit area and explicit dock clearance. */
+.ai-chat-launcher{
+  position:fixed!important;right:max(18px,env(safe-area-inset-right))!important;
+  bottom:calc(32px + env(safe-area-inset-bottom))!important;z-index:1600!important;
+  display:flex!important;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  width:68px!important;height:68px!important;min-width:68px!important;min-height:68px!important;
+  padding:7px 5px!important;border:2px solid #e5d0a5!important;border-radius:50%!important;
+  background:linear-gradient(145deg,#123f70,#071f43)!important;color:#fff!important;
+  box-shadow:0 10px 30px rgba(6,27,54,.34)!important;
+  cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;
+}
+.ai-chat-launcher-icon{display:block;flex:0 0 27px;width:27px!important;height:27px!important;pointer-events:none}
+.ai-chat-launcher-label{display:block;color:#fff;font:800 8px/1 "DM Sans",sans-serif;letter-spacing:.08em;pointer-events:none}
+.ai-chat-launcher:focus-visible{outline:3px solid #e2c58e!important;outline-offset:4px}
+.ai-chat-panel{
+  right:max(14px,env(safe-area-inset-right))!important;
+  bottom:calc(116px + env(safe-area-inset-bottom))!important;
+  z-index:1599!important;width:min(410px,calc(100vw - 28px))!important;
+  height:min(620px,calc(100dvh - 144px - env(safe-area-inset-bottom)))!important;
+  max-height:calc(100dvh - 144px - env(safe-area-inset-bottom))!important;
+}
+@media(max-width:760px){
+  .top-quote-strip{justify-content:center;padding:9px 12px}
+  .top-quote-strip p{max-width:calc(100vw - 72px);font-size:11px;text-align:center}
+  .top-quote-strip cite{display:inline;max-width:none;font-size:8px}
+  .ai-chat-launcher{
+    right:16px!important;bottom:calc(112px + env(safe-area-inset-bottom))!important;
+    width:68px!important;height:68px!important;min-width:68px!important;min-height:68px!important;
+  }
+  .ai-chat-panel{
+    right:12px!important;bottom:calc(196px + env(safe-area-inset-bottom))!important;
+    width:calc(100vw - 24px)!important;
+    height:min(610px,calc(100dvh - 216px - env(safe-area-inset-bottom)))!important;
+    max-height:calc(100dvh - 216px - env(safe-area-inset-bottom))!important;
+  }
+  .ai-chat-head{gap:10px}
+}
+@media(max-height:600px) and (max-width:760px){
+  .ai-chat-launcher{bottom:calc(88px + env(safe-area-inset-bottom))!important}
+  .ai-chat-panel{
+    bottom:calc(164px + env(safe-area-inset-bottom))!important;
+    height:calc(100dvh - 180px - env(safe-area-inset-bottom))!important;
+    max-height:calc(100dvh - 180px - env(safe-area-inset-bottom))!important;
+  }
+}
