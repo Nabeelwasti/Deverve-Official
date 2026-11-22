@@ -1078,3 +1078,64 @@ test("global search matches variant attributes and common policy keywords", asyn
 
 
 
+
+
+test("AI speech detects and reads common Roman Urdu using an installed Urdu voice", async ({ page }) => {
+  await page.addInitScript(() => {
+    const spoken: Array<{ text: string; lang: string }> = [];
+    class MockUtterance {
+      text: string; lang = ""; rate = 1; pitch = 1; voice: unknown = null;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null; onerror: (() => void) | null = null;
+      constructor(text: string) { this.text = text; }
+    }
+    Object.defineProperty(window, "SpeechSynthesisUtterance", { value: MockUtterance, configurable: true });
+    const voice = { name: "Urdu test voice", lang: "ur-PK", default: true, localService: true, voiceURI: "test-urdu" };
+    const synth = {
+      getVoices: () => [voice],
+      cancel: () => undefined,
+      speak: (utterance: MockUtterance) => {
+        spoken.push({ text: utterance.text, lang: utterance.lang });
+        utterance.onstart?.();
+        utterance.onend?.();
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: synth, configurable: true });
+    (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken = spoken;
+  });
+  await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/ai/chat", route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ reply: "Aap kaise hain? Main theek hoon." })
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await chat.getByRole("textbox", { name: "Your message" }).fill("Please reply in Roman Urdu.");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  const assistantReply = page.locator(".ai-chat-message-wrap.model").last();
+  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain? Main theek hoon.");
+  await assistantReply.getByRole("button", { name: "Speak message" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.lang)).toBe("ur-PK");
+  const spokenText = await page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.text || "");
+  expect(spokenText).toContain("آپ");
+  expect(spokenText).toContain("کیسے");
+  expect(spokenText).toContain("ہیں");
+  expect(spokenText).toContain("ٹھیک");
+  expect(spokenText).toContain("ہوں");
+});
+
+test("golden quote uses the local De VERVE fallback when the online feed is unavailable", async ({ page }) => {
+  await page.route("**/api/quotes/random*", route => route.fulfill({
+    status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporarily unavailable" })
+  }));
+  await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+  await page.goto("/");
+  const quote = page.locator(".top-quote-strip");
+  await expect(quote.locator("p")).toHaveText(/.+/);
+  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  await expect(quote.getByRole("link")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).not.toBeNull();
+});
+
