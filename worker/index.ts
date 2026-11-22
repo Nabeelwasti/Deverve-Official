@@ -4931,7 +4931,7 @@ async function adminProductLabelScanRoute(request:Request,env:Env,url:URL):Promi
       const lookupSku=exactSku||scanToken;
       if(lookupCode||lookupSku){
         try{
-          const matches=await env.DB.prepare("SELECT p.id AS product_id,p.name,p.slug,p.status,v.id AS variant_id,v.sku,v.barcode,v.size,v.color,v.stock_on_hand,v.reserved_quantity,MAX(0,v.stock_on_hand-v.reserved_quantity) AS available_quantity FROM product_variants v JOIN products p ON p.id=v.product_id WHERE (v.barcode=? AND ?<>'') OR (v.sku=? AND ?<>'') ORDER BY CASE WHEN v.barcode=? AND ?<>'' THEN 0 ELSE 1 END LIMIT 2").bind(lookupCode,lookupCode,lookupSku,lookupSku,lookupCode,lookupCode).all<Record<string,unknown>>();
+          const matches=await env.DB.prepare("SELECT p.id AS product_id,p.name,p.slug,p.status,v.id AS variant_id,v.sku,v.barcode,v.size,v.color,v.stock_on_hand,v.reserved_quantity,MAX(0,v.stock_on_hand-v.reserved_quantity) AS available_quantity FROM product_variants v JOIN products p ON p.id=v.product_id WHERE (v.barcode=? AND ?<>'' AND v.barcode IS NOT NULL AND v.barcode<>'') OR (v.sku=? AND ?<>'') ORDER BY CASE WHEN v.barcode=? AND ?<>'' THEN 0 ELSE 1 END LIMIT 2").bind(lookupCode,lookupCode,lookupSku,lookupSku,lookupCode,lookupCode).all<Record<string,unknown>>();
           const rows=matches.results??[];
           catalogueMatchAmbiguous=rows.length>1;
           catalogueMatch=rows.length===1?rows[0]:null;
