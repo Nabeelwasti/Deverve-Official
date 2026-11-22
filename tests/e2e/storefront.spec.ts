@@ -838,12 +838,15 @@ test("storefront translates visible website copy in place and restores English",
   expect(order).toBeTruthy();
   const serviceCopy = page.locator(".announcement-services");
   const originalCopy = await serviceCopy.textContent();
+  const firstPrice = page.locator(".product-buy-row strong").first();
+  const priceBefore = await firstPrice.count() ? await firstPrice.textContent() : null;
   const language = page.getByRole("combobox", { name: "Translate website" });
   await expect(language).toBeVisible();
   const originalUrl = page.url();
   await language.selectOption("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
   await expect(announcement.getByRole("status")).toContainText("Website translated");
+  if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
   expect(page.url()).toBe(originalUrl);
   await language.selectOption("");
   await expect(serviceCopy).toHaveText(originalCopy ?? "");
