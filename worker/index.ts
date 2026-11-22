@@ -4720,6 +4720,7 @@ export async function generateGeminiSpeech(apiKey:string,text:string,language:st
       });
       const payload=await response.json().catch(()=>({})) as {
         output_audio?:{data?:unknown;mime_type?:unknown;mimeType?:unknown};
+        steps?:Array<{type?:string;content?:Array<{type?:string;data?:unknown;mime_type?:unknown;mimeType?:unknown}>}>;
         error?:{message?:string;status?:string}
       };
       if(!response.ok){
