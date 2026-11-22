@@ -919,5 +919,7 @@ test("global search matches variant attributes and common policy keywords", asyn
   await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Classic Trouser");
   await search.fill("shipping returns");
   await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Policies & FAQs");
+  await search.fill("بچوں کے کپڑے");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Kids' fashion");
 });
 
