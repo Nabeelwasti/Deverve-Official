@@ -1110,6 +1110,9 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
     status: 200, contentType: "application/json",
     body: JSON.stringify({ reply: "Aap kaise hain, main theek hoon. I can help you today." })
   }));
+  await page.route("**/api/ai/speech", route => route.fulfill({
+    status: 503, contentType: "application/json", body: JSON.stringify({ error: "speech temporarily unavailable" })
+  }));
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
@@ -1142,3 +1145,64 @@ test("golden quote uses the local De VERVE fallback when the online feed is unav
   await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).not.toBeNull();
 });
 
+test("the HTML shell shows the circular De VERVE logo before React mounts", async ({ page }) => {
+  await page.route("**/*.js", async route => {
+    await new Promise(resolve => setTimeout(resolve, 650));
+    await route.continue();
+  });
+  const initialLoaderSeen = page.waitForSelector("#initial-brand-loader", { state: "visible" });
+  await page.goto("/", { waitUntil: "commit" });
+  const initialLoader = await initialLoaderSeen;
+  await expect(initialLoader.locator("svg")).toBeVisible();
+  await expect(initialLoader.locator("svg circle")).toHaveCount(2);
+  await expect(initialLoader.locator("strong")).toHaveText("DE VERVE");
+  await page.waitForLoadState("load");
+  await expect(page.locator("#initial-brand-loader")).toHaveCount(0);
+});
+
+test("customer AI chat plays server-generated Urdu speech without requiring a device Urdu voice", async ({ page }) => {
+  await page.addInitScript(() => {
+    class FakeSource {
+      buffer: unknown = null;
+      onended: (() => void) | null = null;
+      connect() {}
+      start() {
+        (window as Window & { __serverTtsPlayed?: boolean }).__serverTtsPlayed = true;
+        this.onended?.();
+      }
+      stop() {}
+    }
+    class FakeAudioContext {
+      state = "running";
+      destination = {};
+      resume() { return Promise.resolve(); }
+      decodeAudioData() { return Promise.resolve({ duration: 1 }); }
+      createBufferSource() { return new FakeSource(); }
+      close() { this.state = "closed"; return Promise.resolve(); }
+    }
+    Object.defineProperty(window, "AudioContext", { value: FakeAudioContext, configurable: true });
+  });
+  let speechRequest: { text?: string; language?: string; voice?: string } | null = null;
+  await page.route("**/api/quotes/random*", route => route.fulfill({ status: 503, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/ai/chat", route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ reply: "Aap kaise hain? Main aap ki madad kar sakta hoon." })
+  }));
+  await page.route("**/api/ai/speech", async route => {
+    speechRequest = JSON.parse(route.request().postData() || "{}");
+    await route.fulfill({ status: 200, contentType: "audio/wav", body: Buffer.from("RIFF0000WAVE") });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await chat.getByRole("combobox", { name: "Voice language" }).selectOption("ur-PK");
+  await chat.getByRole("textbox", { name: "Your message" }).fill("Please reply in Roman Urdu.");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  const assistantReply = page.locator(".ai-chat-message-wrap.model").last();
+  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain? Main aap ki madad kar sakta hoon.");
+  await assistantReply.getByRole("button", { name: "Speak message" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __serverTtsPlayed?: boolean }).__serverTtsPlayed)).toBe(true);
+  expect(speechRequest).toMatchObject({ language: "ur-PK", voice: "Kore" });
+  expect(speechRequest?.text).toContain("Aap kaise hain");
+});
