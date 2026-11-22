@@ -154,11 +154,11 @@ jobs:
             printf '%s\n' "$headers"
             exit 1
           fi
-          for directive in "script-src 'self' https://challenges.cloudflare.com https://translate.google.com" "frame-src 'self' https://challenges.cloudflare.com https://translate.google.com https://translate.googleapis.com"; do
+          for directive in "script-src 'self' https://challenges.cloudflare.com" "frame-src 'self' https://challenges.cloudflare.com"; do
             if ! grep -qiF "$directive" <<<"$headers"; then
               echo "Missing Turnstile Content-Security-Policy directive: $directive"
               printf '%s\\n' "$headers"
               exit 1
             fi
           done
-          echo "All expected security response headers and Turnstile / live-translation CSP directives are present."
+          echo "All expected security response headers and Turnstile CSP directives are present."
