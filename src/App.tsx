@@ -462,8 +462,12 @@ function Storefront() {
         running = false;
       }
     };
-    const observer = new MutationObserver(() => {
-      if (scheduled || !active) return;
+    const observer = new MutationObserver(records => {
+      const siteContentChanged = records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement;
+        return Boolean(target && !target.closest(".announcement-translate"));
+      });
+      if (!siteContentChanged || scheduled || !active) return;
       scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 250);
     });
     observer.observe(root, { childList: true, subtree: true });
