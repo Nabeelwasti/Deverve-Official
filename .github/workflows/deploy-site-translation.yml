@@ -62,3 +62,26 @@ jobs:
         shell: bash
         run: |
           echo "::warning::Automatic Worker deployment skipped because CLOUDFLARE_API_TOKEN and/or CLOUDFLARE_ACCOUNT_ID repository secrets are not configured. The private Worker must be deployed through an authorized Cloudflare connection until those secrets are added."
+
+      - name: Smoke-test the live production translation route
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        shell: bash
+        run: |
+          http_code="$(curl --silent --show-error --connect-timeout 10 --max-time 45 \
+            --output translation-smoke.json --write-out '%{http_code}' \
+            --request POST "https://deverve-official.pages.dev/api/translate" \
+            --header "Origin: https://deverve-official.pages.dev" \
+            --header "sec-fetch-site: same-origin" \
+            --header "Content-Type: application/json" \
+            --header "Accept: application/json" \
+            --data '{"text":"Welcome to De VERVE ZXQDVSEP Shop now.","target_lang":"ur"}')"
+          if [ "$http_code" = "429" ]; then
+            echo "::warning::Live translation smoke test skipped because the visitor or shared daily inference limit is currently exhausted."
+            exit 0
+          fi
+          if [ "$http_code" != "200" ]; then
+            cat translation-smoke.json
+            echo "Live translation endpoint returned HTTP $http_code"
+            exit 1
+          fi
+          node -e 'const result=JSON.parse(require("node:fs").readFileSync("translation-smoke.json","utf8")); if(typeof result.translatedText!=="string" || !result.translatedText.includes("De VERVE") || !result.translatedText.includes("ZXQDVSEP")) { console.error("Translation output failed brand/segment preservation:", result); process.exit(1); } console.log("Live in-page translation smoke test passed.");'
