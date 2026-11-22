@@ -2266,6 +2266,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   max-height:calc(100dvh - 144px - env(safe-area-inset-bottom))!important;
 }
 @media(max-width:760px){
+  .site-shell{padding-bottom:calc(190px + env(safe-area-inset-bottom))!important}
   .top-quote-strip{justify-content:center;padding:9px 12px}
   .top-quote-strip p{max-width:calc(100vw - 72px);font-size:11px;text-align:center}
   .top-quote-strip cite{display:inline;max-width:none;font-size:8px}
