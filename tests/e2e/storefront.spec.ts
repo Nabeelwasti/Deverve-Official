@@ -820,8 +820,10 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
 });
 
 test("storefront translates visible website copy in place and restores English", async ({ page }) => {
+  const translationRequests: string[] = [];
   await page.route("**/api/translate", async route => {
     const body = route.request().postDataJSON() as { text: string };
+    translationRequests.push(body.text);
     const translatedText = body.text.split("ZXQDVSEP").map(part => "ترجمہ " + part).join("ZXQDVSEP");
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ translatedText, remainingDailyRequests: 19 }) });
   });
@@ -847,12 +849,15 @@ test("storefront translates visible website copy in place and restores English",
   await language.selectOption("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
   await expect(announcement.getByRole("status")).toContainText("Website translated");
+  expect(translationRequests.length).toBeLessThanOrEqual(20);
+  expect(translationRequests.every(text => text.length <= 600)).toBeTruthy();
   if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
   expect(page.url()).toBe(originalUrl);
   expect(page.context().pages()).toHaveLength(originalTabCount);
   await page.reload();
   await expect(language).toHaveValue("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
+  expect(translationRequests.length).toBeLessThanOrEqual(22);
   await language.selectOption("");
   await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
