@@ -868,7 +868,7 @@ test("customer header search, language ribbon and support launcher remain usable
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
-test("official wordmark remains legible on loading and inside AI support while launcher clears the mobile dock", async ({ page }) => {
+test("loading wordmark stays legible and customer AI logo uses a centered circular frame", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/pages/home", async route => {
     await new Promise(resolve => setTimeout(resolve, 900));
@@ -922,6 +922,8 @@ test("official wordmark remains legible on loading and inside AI support while l
   expect(chatLogoBox!.width).toBeGreaterThanOrEqual(54);
   expect(chatLogoBox!.height).toBeGreaterThanOrEqual(54);
   expect(Math.abs(chatLogoBox!.width / chatLogoBox!.height - 1)).toBeLessThanOrEqual(0.03);
+  await expect(chatLogo).toHaveCSS("border-radius", "50%");
+  await expect(chatLogo).toHaveCSS("object-position", "50% 50%");
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   for (const control of [
     chat.getByRole("button", { name: "Add attachment" }),
@@ -935,16 +937,31 @@ test("official wordmark remains legible on loading and inside AI support while l
   }
 
   const quote = page.locator(".top-quote-strip");
+  const approvedQuotes = [
+    "Wear confidence. Every day.",
+    "Style is how you express your story.",
+    "Everyday comfort. Effortless confidence.",
+    "Make every day your own.",
+    "Good style begins with feeling good.",
+    "Confidence never goes out of style.",
+    "Find your fit. Own your moment.",
+    "Made for movement. Chosen by you.",
+    "Your everyday deserves better.",
+    "Simple choices. Strong personal style.",
+    "Wear what moves you forward.",
+    "Comfort is always in good taste.",
+  ];
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
-  expect(firstQuoteText).not.toBe("");
+  expect(approvedQuotes).toContain(firstQuoteText);
   await expect(quote.locator("cite")).toHaveText("— DE VERVE");
 
   // A fresh page load must select another approved brand quote, not reuse the last one.
   await page.reload();
   const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
-  expect(nextQuoteText).not.toBe("");
+  expect(approvedQuotes).toContain(nextQuoteText);
   expect(nextQuoteText).not.toBe(firstQuoteText);
   await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).toBe(nextQuoteText);
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
     return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
