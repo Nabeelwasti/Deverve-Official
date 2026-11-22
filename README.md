@@ -208,3 +208,12 @@ Use [`docs/OWNER-SETUP-AND-HANDOVER-TRACKER.md`](docs/OWNER-SETUP-AND-HANDOVER-T
 ## Production handover and pending owner actions
 
 The current engineering and owner-side release checklist is maintained in [docs/OWNER-HANDOVER-PENDING.md](docs/OWNER-HANDOVER-PENDING.md). It records business data/policy decisions, provider account setup, physical device and live-provider acceptance, backup/restore drills, migration release gates and remaining engineering tests. Keep credentials and personal/customer evidence out of GitHub; use provider secret settings. A green CI run is not production acceptance.
+
+
+## Live website translation
+
+The storefront language selector translates visible page copy in place through the private Cloudflare Workers AI service. It supports Urdu, Hindi, Arabic, Bengali, Persian, Turkish, Indonesian, Malay, Chinese, Spanish, French, German, Italian, Portuguese, Russian, Japanese, Korean, Thai, and Vietnamese. Customers can return to the original English copy at any time. Translation is cached locally in the visitor's browser.
+
+The translation backend is isolated in `workers/site-translation/index.js`, deployed as the private `deverve-site-translation` Worker, and called through the Pages `TRANSLATION` service binding. It uses the `@cf/meta/m2m100-1.2b` Workers AI model. The Pages endpoint applies same-origin validation, per-visitor rate limiting, a shared 20-inference UTC daily cap, and a 600-character request limit before inference. The private Worker has public workers.dev and preview URLs disabled.
+
+See [Live translation architecture and operating limits](docs/SITE-TRANSLATION.md) before changing supported languages, model selection, or usage ceilings. The application ceiling is conservative but is not a provider-side billing guarantee; monitor actual Workers AI usage in Cloudflare.
