@@ -1826,7 +1826,7 @@ img,video{max-width:100%}input,select,textarea{max-width:100%}
 .ai-chat-send{width:36px!important;height:36px!important;display:grid;place-items:center;flex:0 0 auto;border:0;border-radius:12px!important;background:#102d49!important;color:#f5d9a6!important;transition:transform .18s,background .18s}
 .ai-chat-send:not(:disabled):hover{transform:translateY(-2px);background:#1b4568!important}
 .ai-chat-send:disabled{opacity:.35}
-.ai-chat-composer-caption{display:flex;justify-content:space-between;gap:10px;padding:6px 3px 0;color:#a0a0a0;font-size:8px}
+.ai-chat-composer-caption{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:7px 10px;padding:6px 3px 0;color:#a0a0a0;font-size:8px}
 .ai-chat-composer-caption button{width:auto;height:auto;padding:0;border:0;background:none;color:#8c754e;font-size:9px;font-weight:700}
 .ai-chat-typing{display:flex;align-items:center;gap:4px}
 .ai-chat-typing i{width:5px;height:5px;border-radius:50%;background:#b59b6c;animation:dvPulseDot .9s infinite}
@@ -2493,3 +2493,11 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .collection-art.has-custom-art .category-garment{position:relative!important;z-index:2!important;display:block!important;visibility:visible!important;opacity:1!important;filter:drop-shadow(0 0 2px rgba(255,255,255,.95)) drop-shadow(0 5px 14px rgba(0,0,0,.78))!important;pointer-events:none}
 .collection-art.has-custom-art .category-garment:before{z-index:0}
 .collection-art.has-custom-art .category-garment i{z-index:1}
+
+.ai-chat-voice-language{display:inline-flex;align-items:center;gap:5px;color:#64788d;font-size:9px;font-weight:700}
+.ai-chat-voice-language select{max-width:126px;min-height:28px;padding:3px 6px;border:1px solid #dce5ee;border-radius:7px;background:#fff;color:#385873;font:inherit;font-size:9px}
+@media(max-width:480px){.ai-chat-voice-language select{max-width:118px;min-height:32px}}
+
+.brand-loader-logo{position:relative;z-index:1;display:block;width:100px;height:100px;overflow:visible;filter:drop-shadow(0 6px 22px rgba(216,184,126,.24))}
+
+.brand-loading-screen .brand-loader-logo{display:block!important;width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:0!important;border-radius:50%!important;background:transparent!important;box-shadow:0 0 55px rgba(209,174,111,.17)!important;padding:0!important}

@@ -943,9 +943,14 @@ test("customer header search and AI support launcher remain usable", async ({ pa
 test("loading wordmark stays legible and customer AI logo uses a centered circular frame", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   let quoteApiRequests = 0;
+  const onlineQuotes = [
+    { text: "You are your best thing.", author: "Toni Morrison" },
+    { text: "Nothing will work unless you do.", author: "Maya Angelou" }
+  ];
   await page.route("**/api/quotes/random*", async route => {
+    const item = onlineQuotes[Math.min(quoteApiRequests, onlineQuotes.length - 1)];
     quoteApiRequests += 1;
-    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "External quote service must not be used" }) });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(item) });
   });
   await page.route("**/api/pages/home", async route => {
     await new Promise(resolve => setTimeout(resolve, 900));
@@ -959,9 +964,8 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await page.goto("/");
   const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
   await expect(loadingLogo).toBeVisible();
-  await expect(loadingLogo).toHaveAttribute("src", "/brand/de-verve-mark.svg");
-  await expect.poll(() => loadingLogo.evaluate(image => image.complete && image.naturalWidth > 0)).toBeTruthy();
-  await expect(page.locator('link[rel="preload"][as="image"][href="/brand/de-verve-mark.svg"]')).toHaveAttribute("fetchpriority", "high");
+  await expect(loadingLogo).toHaveAttribute("viewBox", "0 0 100 100");
+  await expect(loadingLogo.locator("circle")).toHaveCount(2);
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
   expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
@@ -1019,19 +1023,20 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   }
 
   const quote = page.locator(".top-quote-strip");
-  await expect(quote.locator("p")).toHaveText(/.+/);
+  await expect(quote.locator("p")).toHaveText(onlineQuotes[0].text);
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
-  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  await expect(quote.locator("cite")).toHaveText("— Toni Morrison");
   await expect(quote.getByRole("link")).toHaveCount(0);
 
-  // The next visit rotates locally curated brand copy with no external provider or source badge.
+  // Online quotes rotate on a fresh visit without exposing the upstream service brand.
   await page.reload();
+  await expect(page.locator(".top-quote-strip p")).toHaveText(onlineQuotes[1].text);
   const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
   expect(nextQuoteText).not.toBe(firstQuoteText);
-  await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
+  await expect(page.locator(".top-quote-strip cite")).toHaveText("— Maya Angelou");
   await expect(page.locator(".top-quote-strip").getByRole("link")).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).toBe(nextQuoteText);
-  expect(quoteApiRequests).toBe(0);
+  expect(quoteApiRequests).toBe(2);
 
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
@@ -1072,4 +1077,68 @@ test("global search matches variant attributes and common policy keywords", asyn
 });
 
 
+
+
+
+test("AI speech detects and reads common Roman Urdu using an installed Urdu voice", async ({ page }) => {
+  await page.addInitScript(() => {
+    const spoken: Array<{ text: string; lang: string }> = [];
+    class MockUtterance {
+      text: string; lang = ""; rate = 1; pitch = 1; voice: unknown = null;
+      onstart: (() => void) | null = null; onend: (() => void) | null = null; onerror: (() => void) | null = null;
+      constructor(text: string) { this.text = text; }
+    }
+    Object.defineProperty(window, "SpeechSynthesisUtterance", { value: MockUtterance, configurable: true });
+    const voices = [{ name: "Urdu test voice", lang: "ur-PK", default: true, localService: true, voiceURI: "test-urdu" }, { name: "English test voice", lang: "en-US", default: false, localService: true, voiceURI: "test-english" }];
+    const synth = {
+      getVoices: () => voices,
+      cancel: () => undefined,
+      speak: (utterance: MockUtterance) => {
+        spoken.push({ text: utterance.text, lang: utterance.lang });
+        utterance.onstart?.();
+        utterance.onend?.();
+      },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    };
+    Object.defineProperty(window, "speechSynthesis", { value: synth, configurable: true });
+    (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken = spoken;
+  });
+  await page.route("**/api/quotes/random*", route => route.fulfill({ status: 503, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+  await page.route("**/api/ai/chat", route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ reply: "Aap kaise hain, main theek hoon. I can help you today." })
+  }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await chat.getByRole("textbox", { name: "Your message" }).fill("Please reply in Roman Urdu.");
+  await chat.getByRole("button", { name: "Send message" }).click();
+  const assistantReply = page.locator(".ai-chat-message-wrap.model").last();
+  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain, main theek hoon. I can help you today.");
+  await assistantReply.getByRole("button", { name: "Speak message" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.length)).toBe(2);
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.lang)).toBe("ur-PK");
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[1]?.lang)).toBe("en-US");
+  const spokenText = await page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.text || "");
+  expect(spokenText).toContain("آپ");
+  expect(spokenText).toContain("کیسے");
+  expect(spokenText).toContain("ہیں");
+  expect(spokenText).toContain("ٹھیک");
+  expect(spokenText).toContain("ہوں");
+});
+
+test("golden quote uses the local De VERVE fallback when the online feed is unavailable", async ({ page }) => {
+  await page.route("**/api/quotes/random*", route => route.fulfill({
+    status: 503, contentType: "application/json", body: JSON.stringify({ error: "temporarily unavailable" })
+  }));
+  await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
+  await page.goto("/");
+  const quote = page.locator(".top-quote-strip");
+  await expect(quote.locator("p")).toHaveText(/.+/);
+  await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+  await expect(quote.getByRole("link")).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).not.toBeNull();
+});
 

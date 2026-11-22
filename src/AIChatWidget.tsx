@@ -13,6 +13,92 @@ type SpeechRecognitionLike = {
 };
 type SpeechWindow = Window & { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
 
+const ROMAN_URDU_WORDS = new Set("aap apka apki apke assalam alaikum assalamualaikum hoon kaise kaisay hain hai ho kya kyun kahan kab mujhe mera meri mere hum tum aapka aapki nahi nahin acha achha theek thik bohat bahut shukriya me main mein aur ke ki ko se par per ghar zindagi dil dost madad batao bataye bata dein karo karna kar raha rahi rahe chahiye mil sakta sakti".split(/\s+/));
+const ROMAN_URDU_SCRIPT: Record<string,string> = {
+  aap:"آپ", apka:"آپ کا", apki:"آپ کی", apke:"آپ کے", assalam:"السلام", alaikum:"علیکم", assalamualaikum:"السلام علیکم", hoon:"ہوں",
+  kaise:"کیسے", kaisay:"کیسے", hain:"ہیں", hai:"ہے", ho:"ہو", kya:"کیا", kyun:"کیوں",
+  kahan:"کہاں", kab:"کب", mujhe:"مجھے", mera:"میرا", meri:"میری", mere:"میرے",
+  hum:"ہم", tum:"تم", nahi:"نہیں", nahin:"نہیں", acha:"اچھا", achha:"اچھا", theek:"ٹھیک",
+  thik:"ٹھیک", bohat:"بہت", bahut:"بہت", shukriya:"شکریہ", mein:"میں", main:"میں",
+  aur:"اور", ke:"کے", ki:"کی", ko:"کو", se:"سے", par:"پر", per:"پر", ghar:"گھر",
+  zindagi:"زندگی", dil:"دل", dost:"دوست", madad:"مدد", batao:"بتاؤ", bataye:"بتائیں",
+  karo:"کرو", karna:"کرنا", raha:"رہا", rahi:"رہی", rahe:"رہے", chahiye:"چاہیے",
+  mil:"مل", sakta:"سکتا", sakti:"سکتی",
+  allah:"اللہ", inshallah:"ان شاء اللہ", mashallah:"ماشاءاللہ", kapray:"کپڑے", kapde:"کپڑے",
+  khareedna:"خریدنا", paisa:"پیسہ", kitna:"کتنا", qeemat:"قیمت", salam:"سلام"
+};
+const SPEECH_LOCALE_OPTIONS = [
+  ["auto","Auto detect"],["en-US","English"],["ur-PK","Urdu / Roman Urdu"],["ar-SA","Arabic"],
+  ["hi-IN","Hindi"],["pa-IN","Punjabi"],["bn-BD","Bengali"],["fa-IR","Persian"],
+  ["ps-AF","Pashto"],["es-ES","Spanish"],["fr-FR","French"],["de-DE","German"],
+  ["tr-TR","Turkish"],["zh-CN","Chinese"],["ja-JP","Japanese"],["ko-KR","Korean"],
+  ["ru-RU","Russian"],["pt-BR","Portuguese"],["it-IT","Italian"],["id-ID","Indonesian"],
+  ["nl-NL","Dutch"],["ta-IN","Tamil"],["te-IN","Telugu"],["ml-IN","Malayalam"]
+] as const;
+
+function detectSpeechLocale(text: string, selected: string): string {
+  if (selected !== "auto") return selected;
+  if (/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]/i.test(text)) {
+    if (/[ٹڈڑںھہے]/.test(text) || /(آپ|ہے|ہیں|کیا|میں|نہیں|کا|کی|کے|اور|سے|کو)/.test(text)) return "ur-PK";
+    if (/[ژ]/.test(text)) return "fa-IR";
+    return "ar-SA";
+  }
+  const scripts: Array<[RegExp,string]> = [
+    [/\p{Script=Devanagari}/u,"hi-IN"],[/\p{Script=Gurmukhi}/u,"pa-IN"],[/\p{Script=Bengali}/u,"bn-BD"],
+    [/\p{Script=Tamil}/u,"ta-IN"],[/\p{Script=Telugu}/u,"te-IN"],[/\p{Script=Kannada}/u,"kn-IN"],
+    [/\p{Script=Malayalam}/u,"ml-IN"],[/\p{Script=Thai}/u,"th-TH"],[/\p{Script=Hiragana}|\p{Script=Katakana}/u,"ja-JP"],
+    [/\p{Script=Hangul}/u,"ko-KR"],[/\p{Script=Han}/u,"zh-CN"],[/\p{Script=Cyrillic}/u,"ru-RU"],
+    [/\p{Script=Hebrew}/u,"he-IL"]
+  ];
+  for (const [pattern,locale] of scripts) if (pattern.test(text)) return locale;
+  const words = (text.toLocaleLowerCase().match(/[a-z]+/g) || []);
+  const romanUrduHits = words.filter(word => ROMAN_URDU_WORDS.has(word)).length;
+  if (romanUrduHits >= 2 && romanUrduHits / Math.max(words.length,1) >= 0.12) return "ur-PK";
+  const latinHints: Array<[RegExp,string]> = [
+    [/\b(hola|gracias|buenos|buenas|usted|ustedes|porque|quiero|puedo|necesito)\b/i,"es-ES"],
+    [/\b(bonjour|merci|avec|vous|nous|pourquoi|besoin)\b/i,"fr-FR"],
+    [/\b(hallo|danke|bitte|ich|nicht|und|weil|brauche)\b/i,"de-DE"],
+    [/\b(ciao|grazie|perche|perché|buongiorno|sono|vorrei)\b/i,"it-IT"],
+    [/\b(olá|ola|obrigado|obrigada|voce|você|preciso|porque)\b/i,"pt-BR"],
+    [/\b(merhaba|tesekkur|teşekkür|lutfen|lütfen|nasilsin|nasılsın)\b/i,"tr-TR"],
+    [/\b(terima|kasih|selamat|saya|tidak|bagaimana)\b/i,"id-ID"],
+    [/\b(dank je|alsjeblieft|goedemorgen)\b/i,"nl-NL"]
+  ];
+  for (const [pattern,locale] of latinHints) if (pattern.test(text)) return locale;
+  return typeof navigator !== "undefined" && navigator.language ? navigator.language : "en-US";
+}
+
+function prepareSpeechText(text: string, locale: string): string {
+  if (locale !== "ur-PK" || /[\u0600-\u06ff]/.test(text)) return text;
+  return text.replace(/[A-Za-z]+/g, word => ROMAN_URDU_SCRIPT[word.toLowerCase()] || word);
+}
+
+function buildSpeechChunks(text: string, selected: string): Array<{ text: string; locale: string }> {
+  const parts = selected === "auto" ? (text.match(/[^.!?؟\n]+[.!?؟\n]*/g) || [text]) : [text];
+  return parts.map(part => {
+    const locale = detectSpeechLocale(part, selected);
+    return { locale, text: prepareSpeechText(part, locale) };
+  }).filter(part => part.text.trim().length > 0);
+}
+
+async function availableSpeechVoices(): Promise<SpeechSynthesisVoice[]> {
+  const synth = window.speechSynthesis;
+  const current = synth.getVoices();
+  if (current.length) return current;
+  return await new Promise<SpeechSynthesisVoice[]>(resolve => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      synth.removeEventListener("voiceschanged", finish);
+      resolve(synth.getVoices());
+    };
+    const timer = window.setTimeout(finish, 900);
+    synth.addEventListener("voiceschanged", finish, { once: true });
+  });
+}
+
 const greeting: Message = { role: "model", text: "Assalamu Alaikum! Welcome to De VERVE. I can help with garments, wholesale and car rentals. You can type, speak, or attach files for me to understand. How may I help?" };
 
 const TEXT_EXTENSIONS = new Set(["txt","md","markdown","csv","tsv","json","jsonl","xml","html","htm","css","js","jsx","ts","tsx","py","java","c","cpp","h","hpp","cs","go","rs","php","sql","yaml","yml","toml","ini","log","rtf","svg","sh","bat","ps1"]);
@@ -127,7 +213,16 @@ export default function AIChatWidget() {
   const [sending, setSending] = useState(false);
   const [listening, setListening] = useState(false);
   const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [speechLanguage, setSpeechLanguage] = useState("auto");
+  const [installedSpeechLocales, setInstalledSpeechLocales] = useState<string[]>([]);
   const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.speechSynthesis === "undefined") return;
+    const refresh = () => setInstalledSpeechLocales([...new Set(window.speechSynthesis.getVoices().map(voice => voice.lang.trim()).filter(Boolean))].sort());
+    refresh();
+    window.speechSynthesis.addEventListener("voiceschanged", refresh);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", refresh);
+  }, []);
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
   const attachWrapRef = useRef<HTMLDivElement | null>(null);
@@ -177,7 +272,7 @@ export default function AIChatWidget() {
     if (!Speech) { setNotice("Voice input is not available in this browser. You can still type or attach a photo."); return; }
     try {
       const recognition = new Speech();
-      recognition.lang = navigator.language || "ur-PK";
+      recognition.lang = speechLanguage === "auto" ? (navigator.language || "en-US") : speechLanguage;
       recognition.continuous = false; recognition.interimResults = true;
       voiceDraftPrefixRef.current = draft.trim() ? draft.trimEnd() + " " : "";
       recognition.onresult = event => {
@@ -191,15 +286,52 @@ export default function AIChatWidget() {
     } catch { setListening(false); setNotice("Voice input could not start. Check microphone permission."); }
   };
 
-  const speakMessage = (message: Message, index: number) => {
-    if (typeof speechSynthesis === "undefined") { setNotice("Spoken responses are not supported in this browser."); return; }
-    if (speakingIndex === index) { speechSynthesis.cancel(); setSpeakingIndex(null); return; }
-    speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message.text);
-    utterance.lang = /[\u0600-\u06FF]/.test(message.text) ? "ur-PK" : "en-PK";
-    utterance.onend = () => setSpeakingIndex(null);
-    utterance.onerror = () => setSpeakingIndex(null);
-    setSpeakingIndex(index); speechSynthesis.speak(utterance);
+  const speakMessage = async (message: Message, index: number) => {
+    if (typeof window.speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") {
+      setNotice("Spoken responses are not supported by this browser. Try a browser with text-to-speech enabled.");
+      return;
+    }
+    if (speakingIndex === index) { window.speechSynthesis.cancel(); setSpeakingIndex(null); return; }
+    const synth = window.speechSynthesis;
+    synth.cancel();
+    const chunks = buildSpeechChunks(message.text, speechLanguage);
+    if (!chunks.length) { setNotice("There is no readable text in this message."); return; }
+    const voices = await availableSpeechVoices();
+    const utterances: SpeechSynthesisUtterance[] = [];
+    const missingLocales: string[] = [];
+    for (const chunk of chunks) {
+      const baseLanguage = chunk.locale.toLowerCase().split("-")[0];
+      const voice = voices.find(item => item.lang.toLowerCase() === chunk.locale.toLowerCase())
+        || voices.find(item => item.lang.toLowerCase().split("-")[0] === baseLanguage);
+      if (voices.length && !voice) { missingLocales.push(chunk.locale); continue; }
+      const utterance = new SpeechSynthesisUtterance(chunk.text);
+      utterance.lang = chunk.locale;
+      if (voice) utterance.voice = voice;
+      utterance.rate = 0.94;
+      utterance.pitch = 1;
+      utterances.push(utterance);
+    }
+    if (missingLocales.length) {
+      setNotice("Install speech voices for " + [...new Set(missingLocales)].join(", ") + " in your device's Text-to-speech settings, then try again.");
+      setSpeakingIndex(null);
+      return;
+    }
+    if (!utterances.length) { setNotice("No compatible speech voice is available on this device."); return; }
+    let remaining = utterances.length;
+    for (const utterance of utterances) {
+      utterance.onstart = () => setNotice("");
+      utterance.onend = () => {
+        remaining -= 1;
+        if (remaining === 0) setSpeakingIndex(null);
+      };
+      utterance.onerror = () => {
+        synth.cancel();
+        setSpeakingIndex(null);
+        setNotice("Your device could not speak this language. Check its installed speech voices and try again.");
+      };
+    }
+    setSpeakingIndex(index);
+    utterances.forEach(utterance => synth.speak(utterance));
   };
 
   const copyMessage = async (text: string) => {
@@ -287,7 +419,7 @@ export default function AIChatWidget() {
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 16 8-16 8 3-8-3-8Zm3 8h13"/></svg>
           </button>
         </div>
-        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><span>Up to 3 files</span></div>
+        <div className="ai-chat-composer-caption"><span>Enter to send · Shift + Enter for a new line</span><label className="ai-chat-voice-language">Voice <select aria-label="Voice language" value={speechLanguage} onChange={event => setSpeechLanguage(event.target.value)}>{SPEECH_LOCALE_OPTIONS.map(([code,label]) => <option key={code} value={code}>{label}</option>)}{installedSpeechLocales.filter(locale => !SPEECH_LOCALE_OPTIONS.some(([code]) => code === locale)).map(locale => <option key={"installed-" + locale} value={locale}>{locale} · installed</option>)}</select></label><span>Up to 3 files</span></div>
       </form>
       {notice && <p className="ai-chat-note" role="status">{notice}</p>}
       <div className="ai-chat-note">Avoid sending CNIC images, OTPs, passwords or payment-card details in chat. Orders and rentals are completed through secure website forms.</div>

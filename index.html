@@ -9,10 +9,16 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="De VERVE" />
+    <style>
+      #initial-brand-loader{position:fixed;inset:0;z-index:99999;display:grid;place-content:center;justify-items:center;gap:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#15395c 0%,#071a30 46%,#030b16 100%);color:#f4e7cb;font-family:Arial,sans-serif}
+      #initial-brand-loader svg{display:block;width:100px;height:100px}
+      #initial-brand-loader strong{margin-top:8px;font-size:12px;letter-spacing:.38em}
+      #initial-brand-loader small{color:#bba77f;font-size:8px;letter-spacing:.24em}
+      @media(prefers-reduced-motion:reduce){#initial-brand-loader{animation:none}}
+    </style>
     <link rel="manifest" href="/api/pwa/manifest" />
-    <link rel="icon" href="/brand/de-verve-mark.svg" type="image/svg+xml" />
-    <link rel="preload" as="image" href="/brand/de-verve-mark.svg" fetchpriority="high" />
-    <link rel="apple-touch-icon" href="/brand/de-verve-mark.svg" />
+    <link rel="icon" href="/brand/de-verve-loader.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/brand/de-verve-loader.svg" />
     <link rel="canonical" href="https://deverve-official.pages.dev/" />
     <meta name="description" content="De VERVE, Jhelum, Pakistan. Explore fashion for men, women and kids, wholesale garment enquiries and car rental services. Elevate Your Style." />
     <meta name="keywords" content="De VERVE, Jhelum fashion, garments Jhelum, wholesale garments Pakistan, men fashion, women fashion, kids fashion, car rentals Jhelum" />
@@ -59,7 +65,18 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main id="initial-brand-loader" role="status" aria-live="polite" aria-label="Loading De VERVE">
+        <svg viewBox="0 0 100 100" role="img" aria-label="De VERVE">
+          <defs><linearGradient id="initialLoaderGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f1d9a6"/><stop offset="1" stop-color="#b68a4e"/></linearGradient></defs>
+          <circle cx="50" cy="50" r="48" fill="#0b2948" stroke="url(#initialLoaderGold)" stroke-width="1.5"/>
+          <circle cx="50" cy="50" r="43" fill="none" stroke="#fff" stroke-opacity=".18"/>
+          <path d="M22 25h13c16 0 25 9 25 25S51 75 35 75H22V25Zm11 9v32h3c8 0 13-6 13-16s-5-16-13-16h-3Z" fill="#fff"/>
+          <path d="m54 25 11 0 9 29 9-29h11L89 75H78L54 25Z" fill="url(#initialLoaderGold)"/>
+        </svg>
+        <strong>DE VERVE</strong><small>ELEVATE YOUR EVERYDAY</small>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
