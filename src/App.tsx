@@ -740,7 +740,7 @@ function Storefront() {
 
       <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
-          <img className="brand-logo-image" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
+          <img className="brand-logo-image deverve-round-logo" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
         <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>

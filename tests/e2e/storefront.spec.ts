@@ -904,6 +904,12 @@ test("AI attachment menu closes on outside tap and Escape", async ({ page }) => 
 test("customer header search and AI support launcher remain usable", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("button", { name: "Choose website language" })).toHaveCount(0);
+  const headerLogo = page.locator(".site-header .brand-logo-image");
+  await expect(headerLogo).toBeVisible();
+  await expect(headerLogo).toHaveCSS("border-radius", "50%");
+  const headerLogoBox = await headerLogo.boundingBox();
+  expect(headerLogoBox).not.toBeNull();
+  expect(headerLogoBox!.width / headerLogoBox!.height).toBeCloseTo(1, 1);
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
@@ -915,6 +921,8 @@ test("customer header search and AI support launcher remain usable", async ({ pa
   const logo = page.locator(".ai-chat-head .ai-chat-brand-logo");
   await expect(logo).toBeVisible();
   await expect(logo).toHaveCSS("border-radius", "50%");
+  await expect(logo).toHaveCSS("width", "48px");
+  await expect(logo).toHaveCSS("height", "48px");
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
@@ -927,7 +935,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   await page.route("**/api/brand/logo*", async route => route.fulfill({
     status: 200,
     contentType: "image/svg+xml",
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="564" height="114" viewBox="0 0 564 114"><rect width="564" height="114" fill="#fff"/><text x="12" y="78" font-size="64" fill="#123f70">DE VERVE</text></svg>'
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="#fff" stroke="#123f70" stroke-width="8"/><text x="100" y="112" text-anchor="middle" font-size="30" font-weight="700" fill="#123f70">DE</text><text x="100" y="142" text-anchor="middle" font-size="20" fill="#123f70">VERVE</text></svg>'
   }));
   await page.goto("/");
   const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
@@ -936,6 +944,8 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
   expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
+  await expect(loadingLogo).toHaveCSS("width", "100px");
+  await expect(loadingLogo).toHaveCSS("height", "100px");
   await expect(loadingLogo).toHaveCSS("border-radius", "50%");
 
   await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
@@ -1052,26 +1062,3 @@ test("global search matches variant attributes and common policy keywords", asyn
 
 
 
-test("language picker searches broad language coverage and closes on outside tap", async ({ page }) => {
-  await page.goto("/");
-  const trigger = page.getByRole("button", { name: "Choose website language" });
-  await trigger.click();
-  const search = page.getByRole("searchbox", { name: "Search languages" });
-  await search.fill("Kashmiri");
-  await expect(page.getByRole("option", { name: /Kashmiri/ })).toBeVisible();
-  await search.fill("Zulu");
-  await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
-  const viewportHeight = await page.evaluate(() => window.innerHeight);
-  await page.mouse.click(8, viewportHeight - 20);
-  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
-});
-
-test("translation guidance and status popups dismiss after ten seconds", async ({ page }) => {
-  await page.goto("/");
-  await page.clock.install();
-  const trigger = page.getByRole("button", { name: "Choose website language" });
-  await trigger.click();
-  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toBeVisible();
-  await page.clock.fastForward(10_001);
-  await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
-});
