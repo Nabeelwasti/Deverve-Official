@@ -4754,7 +4754,7 @@ export async function generateGeminiSpeech(apiKey:string,text:string,language:st
 async function publicAISpeechRoute(request:Request,env:Env):Promise<Response|null> {
   if(new URL(request.url).pathname!=="/api/ai/speech")return null;
   if(request.method!=="POST")return error("Method not allowed",405);
-  const limited=await enforcePublicRateLimit(request,env,"ai_speech",12,60*60);
+  const limited=await enforcePublicRateLimit(request,env,"ai_speech",24,15*60);
   if(limited)return limited;
   const body=await readJson(request,12000);
   if(!body||typeof body.text!=="string")return error("Provide the message you want spoken",400);
@@ -4774,7 +4774,7 @@ async function publicAISpeechRoute(request:Request,env:Env):Promise<Response|nul
   }
   for(const key of envKeys)if(!candidates.some(item=>item.key===key))candidates.push({key});
   if(!candidates.length)return error("High-quality speech is not configured. Please try again later.",503);
-  const romanUrdu=language.toLowerCase()==="ur-pk"||(language==="auto"&&/predominantly Roman Urdu/i.test(customerLanguageHint(text)));
+  const romanUrdu=/predominantly Roman Urdu/i.test(customerLanguageHint(text))&&(language==="auto"||language.toLowerCase()==="ur-pk");
   for(const candidate of candidates){
     let spokenText=text;
     if(romanUrdu){
