@@ -33,12 +33,33 @@ export default {
     if (!LANGUAGES.has(targetLang)) return json({ error: "Unsupported translation language" }, 400);
 
     try {
-      const result = await env.AI.run("@cf/meta/m2m100-1.2b", {
-        text,
-        source_lang: "en",
-        target_lang: targetLang
+      const protectedBrands = [];
+      const protectedText = text.replace(/\\bDe VERVE\\b/gi, match => {
+        const token = `ZXQDVBRAND${protectedBrands.length}ZXQ`;
+        protectedBrands.push(match);
+        return token;
       });
-      const translatedText = typeof result?.translated_text === "string" ? result.translated_text.trim() : "";
+      const indicTargets = { ur: "urd_Arab", hi: "hin_Deva", bn: "ben_Beng" };
+      let translatedText = "";
+      if (indicTargets[targetLang]) {
+        const result = await env.AI.run("@cf/ai4bharat/indictrans2-en-indic-1B", {
+          text: protectedText,
+          target_language: indicTargets[targetLang]
+        });
+        translatedText = Array.isArray(result?.translations) && typeof result.translations[0] === "string"
+          ? result.translations[0].trim()
+          : "";
+      } else {
+        const result = await env.AI.run("@cf/meta/m2m100-1.2b", {
+          text: protectedText,
+          source_lang: "en",
+          target_lang: targetLang
+        });
+        translatedText = typeof result?.translated_text === "string" ? result.translated_text.trim() : "";
+      }
+      protectedBrands.forEach((brand, index) => {
+        translatedText = translatedText.replaceAll(`ZXQDVBRAND${index}ZXQ`, brand);
+      });
       if (!translatedText || translatedText.length > 2_400) return json({ error: "Invalid translation result" }, 502);
       return json({ translatedText });
     } catch {
