@@ -5,7 +5,8 @@
 - The customer-facing language selector translates visible storefront copy in place. It does not redirect or open a new tab.
 - The Pages Function validates same-origin requests, supported languages, input size, per-visitor rate limits, and the shared daily inference ceiling.
 - Pages calls the private `deverve-site-translation` Worker through the `TRANSLATION` service binding.
-- The private Worker has a Workers AI binding named `AI` and runs Meta `@cf/meta/m2m100-1.2b`.
+- The private Worker has a Workers AI binding named `AI`. It uses AI4Bharat IndicTrans2 for Urdu, Hindi, and Bengali, and Meta `@cf/meta/m2m100-1.2b` for the other supported languages.
+- The `De VERVE` brand name is replaced with a protected token before inference and restored exactly afterward.
 - The Worker is deployed with `workers_dev: false` and `preview_urls: false`; it is intended to be reached through the internal Pages service binding only.
 - Translation text is cached in the visitor's browser local storage. Form controls, the AI chat, account areas, dialogs, code, and hidden content are excluded from the DOM translation pass.
 - The selected language is remembered on the visitor's next visit; switching back to **English · Original** clears that preference and restores the source text.
