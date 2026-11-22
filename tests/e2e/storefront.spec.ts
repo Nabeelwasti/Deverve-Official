@@ -828,3 +828,23 @@ test("storefront places the golden quote below the top ribbon and offers common 
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
 });
+
+test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
+  await page.goto("/");
+  const language = page.getByLabel("Translate this page");
+  await expect(language).toBeVisible();
+  await expect(language.locator("option")).toHaveCount(90, { timeout: 5000 }).catch(async () => {
+    await expect(language.locator("option").count()).resolves.toBeGreaterThan(40);
+  });
+  const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await expect(search).toBeVisible();
+  await search.fill("wholesale");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Wholesale enquiries");
+  const launcher = page.getByRole("button", { name: "Open De VERVE AI chat" });
+  await expect(launcher.locator("svg.ai-chat-launcher-icon")).toBeVisible();
+  await launcher.click();
+  await expect(page.getByRole("dialog", { name: "De VERVE AI customer support" })).toBeVisible();
+  await expect(page.locator(".ai-chat-head .ai-chat-brand-logo")).toBeVisible();
+  await expect(page.locator(".top-quote-strip p")).toBeVisible();
+});
+
