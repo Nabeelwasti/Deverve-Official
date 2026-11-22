@@ -1110,7 +1110,7 @@ function Storefront() {
 function BrandLoadingScreen(){
   return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE">
     <div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/>
-    <svg className="brand-loader-logo" viewBox="0 0 100 100" role="img" aria-label="De VERVE">
+    <svg className="brand-loader-logo" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="De VERVE">
       <defs><linearGradient id="loaderGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#f1d9a6"/><stop offset="1" stopColor="#b68a4e"/></linearGradient></defs>
       <circle cx="50" cy="50" r="48" fill="#0b2948" stroke="url(#loaderGold)" strokeWidth="1.5"/>
       <circle cx="50" cy="50" r="43" fill="none" stroke="#fff" strokeOpacity=".18"/>
