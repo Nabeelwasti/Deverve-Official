@@ -296,6 +296,7 @@ const SITE_TRANSLATION_LANGUAGES = [
 ] as const;
 
 const originalSiteTextNodes = new Map<Text, string>();
+const translatedSiteTextNodes = new Map<Text, string>();
 const TRANSLATION_SEPARATOR = "ZXQDVSEP";
 
 function restoreOriginalSiteLanguage() {
@@ -303,6 +304,7 @@ function restoreOriginalSiteLanguage() {
     if (node.isConnected) node.nodeValue = original;
   }
   originalSiteTextNodes.clear();
+  translatedSiteTextNodes.clear();
 }
 
 function translationCacheKey(language: string, source: string) {
@@ -348,16 +350,19 @@ async function translateRenderedSite(
   onProgress: (done: number, total: number) => void
 ): Promise<void> {
   const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,.brand-type,.brand-logo-image,.product-detail-price,.product-buy-row strong,.product-stock-badge,.product-urgency-badge,.product-variant-picker,.rental-price-estimate,.testimonial-rating,.top-quote-strip cite,[role='dialog']";
-  for (const node of originalSiteTextNodes.keys()) if (!node.isConnected) originalSiteTextNodes.delete(node);
+  for (const node of originalSiteTextNodes.keys()) if (!node.isConnected) { originalSiteTextNodes.delete(node); translatedSiteTextNodes.delete(node); }
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Array<{ node: Text; original: string; parts: string[]; translated: Array<string | null> }> = [];
   let current: Node | null;
   while ((current = walker.nextNode())) {
     const node = current as Text;
     const parent = node.parentElement;
-    const raw = originalSiteTextNodes.get(node) ?? node.nodeValue ?? "";
+    const currentText = node.nodeValue ?? "";
+    const previousOriginal = originalSiteTextNodes.get(node);
+    const previousTranslation = translatedSiteTextNodes.get(node);
+    const raw = previousOriginal !== undefined && previousTranslation === currentText ? previousOriginal : currentText;
     if (!parent || !raw.trim() || /^[\s\d.,:+()/%\-₨$€£¥₹]+$/.test(raw) || parent.closest(excluded)) continue;
-    if (!originalSiteTextNodes.has(node)) originalSiteTextNodes.set(node, raw);
+    originalSiteTextNodes.set(node, raw);
     const parts = splitTranslationText(raw);
     if (!parts.length) continue;
     nodes.push({ node, original: raw, parts, translated: parts.map(part => readCachedTranslation(language, part)) });
@@ -416,6 +421,7 @@ async function translateRenderedSite(
             const leading = entry.original.match(/^\s*/)?.[0] ?? "";
             const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
       entry.node.nodeValue = leading + translated + trailing;
+      translatedSiteTextNodes.set(entry.node, leading + translated + trailing);
     }
   }
 }
@@ -465,12 +471,17 @@ function Storefront() {
     const observer = new MutationObserver(records => {
       const siteContentChanged = records.some(record => {
         const target = record.target instanceof Element ? record.target : record.target.parentElement;
-        return Boolean(target && !target.closest(".announcement-translate"));
+        if (!target || target.closest(".announcement-translate")) return false;
+        if (record.type === "characterData" && record.target instanceof Text) {
+          const lastTranslation = translatedSiteTextNodes.get(record.target);
+          return lastTranslation !== undefined && lastTranslation !== record.target.nodeValue;
+        }
+        return record.type === "childList";
       });
       if (!siteContentChanged || scheduled || !active) return;
       scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 250);
     });
-    observer.observe(root, { childList: true, subtree: true });
+    observer.observe(root, { childList: true, characterData: true, subtree: true });
     void runTranslation();
     return () => {
       active = false;
