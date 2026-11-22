@@ -54,6 +54,10 @@ assert any(row[1] == "idx_pos_sales_status_created" for row in db.execute("PRAGM
 assert any(row[1] == "idx_payment_webhook_status" for row in db.execute("PRAGMA index_list(payment_webhook_events)")), "Payment webhook processing index is missing"
 sku_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE sku = ? COLLATE NOCASE", ("SKU-INDEX-TEST",)))
 assert "idx_product_variants_sku_nocase" in sku_plan, f"Case-insensitive SKU query does not use its index: {sku_plan}"
+barcode_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE barcode = ? AND barcode IS NOT NULL AND barcode <> ?", ("BARCODE-INDEX-TEST", "")))
+assert "idx_product_variants_barcode" in barcode_plan, f"Barcode query does not use its partial index: {barcode_plan}"
+scan_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE (barcode = ? AND ? <> '' AND barcode IS NOT NULL AND barcode <> '') OR (sku = ? AND ? <> '') LIMIT 2", ("BARCODE-INDEX-TEST", "BARCODE-INDEX-TEST", "SKU-INDEX-TEST", "SKU-INDEX-TEST")))
+assert "MULTI-INDEX OR" in scan_plan and "idx_product_variants_barcode" in scan_plan, f"Combined barcode/SKU scan does not use indexed lookups: {scan_plan}"
 order_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM order_items WHERE order_id = ?", ("ORDER-INDEX-TEST",)))
 assert "idx_order_items_order" in order_plan, f"Order-item query does not use its index: {order_plan}"
 pos_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM pos_sales WHERE status = ? ORDER BY created_at DESC LIMIT 50", ("completed",)))
