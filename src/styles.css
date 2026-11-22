@@ -2129,7 +2129,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .announcement-location,.announcement-services{white-space:nowrap}
 .announcement-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
 .announcement-actions>a{color:#fff!important;font-size:10px;font-weight:700;white-space:nowrap}
-.announcement-translate{display:inline-flex;align-items:center;gap:6px;color:#f1d8a4!important}
+.announcement-translate{position:relative;display:inline-flex;align-items:center;gap:6px;color:#f1d8a4!important}
 .announcement-translate select{max-width:140px;min-height:30px;padding:4px 22px 4px 7px;border:1px solid rgba(241,216,164,.42);border-radius:7px;background:#082b55;color:#fff!important;font:600 10px "DM Sans",sans-serif;cursor:pointer}
 .announcement-translate select option{background:#fff;color:#102d53}
 .top-quote-strip{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px clamp(12px,4vw,48px);background:#f8f5ef;border-bottom:1px solid #eee6d8;color:#755d36;text-align:center}
