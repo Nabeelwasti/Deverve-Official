@@ -996,8 +996,8 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
   const quote = page.locator(".top-quote-strip");
   let onlineQuoteIndex = 0;
   const onlineQuotes = [
-    { text: "A little progress each day adds up to big results.", author: "Satya Nani", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
-    { text: "Great things are done by a series of small things brought together.", author: "Vincent van Gogh", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" }
+    { text: "A little progress each day adds up.", author: "Test Author One", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
+    { text: "Great things begin with small steps.", author: "Test Author Two", source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" }
   ];
   await page.route("**/api/quotes/random", async route => {
     const item = onlineQuotes[Math.min(onlineQuoteIndex++, onlineQuotes.length - 1)];
