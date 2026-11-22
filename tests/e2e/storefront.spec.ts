@@ -819,7 +819,7 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
 
-test("storefront places the golden quote below the top ribbon and offers common page translations", async ({ page }) => {
+test("storefront places the golden quote below the top ribbon and offers browser translation guidance", async ({ page }) => {
   await page.goto("/");
   const announcement = page.locator(".announcement");
   const quote = page.locator(".top-quote-strip");
@@ -831,10 +831,10 @@ test("storefront places the golden quote below the top ribbon and offers common 
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const translationButton = announcement.getByRole("button", { name: "Translate this page" });
+  const translationButton = announcement.getByRole("button", { name: "How to translate this page" });
   await expect(translationButton).toBeVisible();
   await translationButton.click();
-  await expect(announcement.getByRole("status")).toContainText("browser’s built-in Translate option");
+  await expect(announcement.getByRole("status")).toContainText("browser’s built-in page translation");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
@@ -875,7 +875,7 @@ test("customer header search, language ribbon and support launcher remain usable
   const language = page.getByRole("button", { name: "Translate this page" });
   await expect(language).toBeVisible();
   await language.click();
-  await expect(page.getByRole("status")).toContainText("keeps you on the De VERVE website");
+  await expect(page.getByRole("status")).toContainText("stay on the De VERVE website");
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
