@@ -883,6 +883,8 @@ test("official wordmark remains legible on loading and inside AI support while l
   expect(launcherBox).not.toBeNull();
   expect(launcherBox!.width).toBeGreaterThanOrEqual(68);
   expect(launcherBox!.height).toBeGreaterThanOrEqual(68);
+  const reservedBottomSpace = await page.locator(".site-shell").evaluate(element => parseFloat(getComputedStyle(element).paddingBottom));
+  expect(reservedBottomSpace).toBeGreaterThanOrEqual(180);
   const dock = page.locator(".mobile-dock");
   if (await dock.isVisible()) {
     const dockBox = await dock.boundingBox();
