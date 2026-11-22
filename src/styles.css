@@ -2224,6 +2224,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   color:#fff!important;
 }
 .site-header .header-cta{background:var(--dv-site-primary,#102d49)!important;border-color:var(--dv-site-primary,#102d49)!important}
+.site-search-results a{min-height:44px}
 .site-header .header-cta:hover{background:#071f43!important;border-color:#071f43!important}
 
 .top-quote-strip{
