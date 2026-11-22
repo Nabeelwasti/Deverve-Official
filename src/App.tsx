@@ -355,7 +355,7 @@ async function translateRenderedSite(
     const node = current as Text;
     const parent = node.parentElement;
     const raw = originalSiteTextNodes.get(node) ?? node.nodeValue ?? "";
-    if (!parent || !raw.trim() || /^[\\s\\d.,:+()/%\\-₨$€£¥₹]+$/.test(raw) || parent.childNodes.length !== 1 || parent.firstChild !== node || parent.closest(excluded)) continue;
+    if (!parent || !raw.trim() || /^[\s\d.,:+()/%\-₨$€£¥₹]+$/.test(raw) || parent.childNodes.length !== 1 || parent.firstChild !== node || parent.closest(excluded)) continue;
     if (!originalSiteTextNodes.has(node)) originalSiteTextNodes.set(node, raw);
     const parts = splitTranslationText(raw);
     if (!parts.length) continue;
