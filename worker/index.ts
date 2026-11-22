@@ -5166,58 +5166,6 @@ const SITE_TRANSLATION_LANGUAGES = new Set([
   "af","am","ar","ast","az","ba","be","bg","bn","br","bs","ca","ceb","cs","cy","da","de","el","es","et","fa","ff","fi","fr","fy","ga","gd","gl","gu","ha","he","hi","hr","ht","hu","hy","id","ig","ilo","is","it","ja","jv","ka","kk","km","kn","ko","lb","ln","lo","lt","lv","mg","mk","ml","mn","mr","ms","my","ne","nl","no","ns","oc","or","pa","pl","ps","pt","ro","ru","sd","si","sk","sl","so","sq","sr","ss","su","sv","sw","ta","th","tl","tn","tr","uk","ur","uz","vi","wo","xh","yi","yo","zh","zu","as","brx","doi","kok","ks","mai","mni","sa","sat","te"
 ]);
 
-async function publicInspirationalQuoteRoute(request: Request, url: URL): Promise<Response | null> {
-  if (url.pathname !== "/api/quotes/random") return null;
-  if (request.method !== "GET") return error("Method not allowed", 405);
-  const excluded = (url.searchParams.get("exclude") ?? "").slice(0, 180);
-  const cacheKey = new Request(new URL("/api/quotes/pool", url.origin).toString(), { method: "GET" });
-  const edgeCache = (globalThis as typeof globalThis & {
-    caches?: { default?: { match(key: Request): Promise<Response | undefined>; put(key: Request, response: Response): Promise<void> } };
-  }).caches?.default;
-  let quotes: Array<{ q: string; a: string }> = [];
-  try {
-    const cached = await edgeCache?.match(cacheKey);
-    if (cached) {
-      const payload = await cached.json() as { quotes?: Array<{ q?: unknown; a?: unknown }> };
-      if (Array.isArray(payload.quotes)) quotes = payload.quotes.filter((item): item is { q: string; a: string } =>
-        typeof item.q === "string" && typeof item.a === "string"
-      );
-    }
-  } catch { /* Cache is an optimization; refresh from the source below. */ }
-  if (!quotes.length) {
-    try {
-      const upstream = await fetch("https://zenquotes.io/api/quotes/", {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(7_000)
-      });
-      if (!upstream.ok) return error("The online quote source is temporarily unavailable", 503);
-      const payload = await upstream.json() as Array<{ q?: unknown; a?: unknown }>;
-      if (!Array.isArray(payload)) return error("The online quote source returned an invalid list", 502);
-      quotes = payload.filter((item): item is { q: string; a: string } =>
-        typeof item?.q === "string" && typeof item?.a === "string" &&
-        item.q.trim().length > 0 && item.q.trim().length <= 180 &&
-        item.a.trim().length > 0 && item.a.trim().length <= 70 &&
-        !/[<>\u0000-\u001f]/.test(item.q + item.a)
-      ).map(item => ({ q: item.q.trim(), a: item.a.trim() })).slice(0, 500);
-      if (!quotes.length) return error("The online quote source returned no usable quotes", 502);
-      try {
-        await edgeCache?.put(cacheKey, json({ quotes }, 200, { "cache-control": "public, max-age=0, s-maxage=3600" }));
-      } catch { /* A cache write failure must not hide a valid quote list. */ }
-    } catch {
-      return error("The online quote source is temporarily unavailable", 503);
-    }
-  }
-  const choices = excluded ? quotes.filter(item => item.q !== excluded) : quotes;
-  const pool = choices.length ? choices : quotes;
-  const selected = pool[Math.floor(Math.random() * pool.length)];
-  if (!selected) return error("The online quote source returned no usable quote", 502);
-  return json(
-    { text: selected.q, author: selected.a, source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
-    200,
-    { "cache-control": "no-store", "x-content-type-options": "nosniff" }
-  );
-}
-
 async function publicSiteTranslationRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/translate") return null;
   if (request.method !== "POST") return error("Method not allowed", 405);
@@ -5362,9 +5310,6 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
   const pwaManifestResponse = await pwaManifestRoute(request, env, url);
   if (pwaManifestResponse) return pwaManifestResponse;
-
-  const quoteResponse = await publicInspirationalQuoteRoute(request, url);
-  if (quoteResponse) return quoteResponse;
 
   const aiResponse = await aiRoutes(request, env, url);
   if (aiResponse) return aiResponse;
