@@ -612,11 +612,20 @@ function Storefront() {
       .then(item => {
         if (!active || typeof item.text !== "string" || typeof item.author !== "string" || !item.text.trim() || !item.author.trim()) return;
         const text = item.text.trim().slice(0, 180);
-        if (text === previous) return;
+        if (text === previous) {
+          quoteChangedRef.current = true;
+          persistGoldenQuote(goldenQuote);
+          return;
+        }
         quoteChangedRef.current = true;
         setGoldenQuote({ text, author: item.author.trim().slice(0, 70), source: item.source === "ZenQuotes" ? "ZenQuotes" : undefined });
       })
-      .catch(() => { /* The rotating De VERVE quote remains as an offline fallback. */ });
+      .catch(() => {
+        if (active && !quoteChangedRef.current) {
+          quoteChangedRef.current = true;
+          persistGoldenQuote(goldenQuote);
+        }
+      });
     return () => { active = false; controller.abort(); };
   }, []);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
