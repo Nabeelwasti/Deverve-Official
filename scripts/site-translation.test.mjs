@@ -8,16 +8,33 @@ const request = (body, method = "POST") => new Request("https://internal.deverve
   body: method === "POST" ? JSON.stringify(body) : undefined
 });
 
-test("private translation worker invokes only the approved multilingual model", async () => {
+test("private translation worker uses IndicTrans2 for Urdu and preserves De VERVE", async () => {
   const calls = [];
   const response = await translationWorker.fetch(request({ text: "Welcome to De VERVE", target_lang: "ur" }), {
-    AI: { run: async (model, input) => { calls.push({ model, input }); return { translated_text: "ڈی ویرْو میں خوش آمدید" }; } }
+    AI: { run: async (model, input) => {
+      calls.push({ model, input });
+      return { translations: ["ZXQDVBRAND0ZXQ میں خوش آمدید"] };
+    } }
   });
   assert.equal(response.status, 200);
-  assert.equal((await response.json()).translatedText, "ڈی ویرْو میں خوش آمدید");
+  assert.equal((await response.json()).translatedText, "De VERVE میں خوش آمدید");
   assert.equal(calls.length, 1);
+  assert.equal(calls[0].model, "@cf/ai4bharat/indictrans2-en-indic-1B");
+  assert.deepEqual(calls[0].input, { text: "Welcome to ZXQDVBRAND0ZXQ", target_language: "urd_Arab" });
+});
+
+test("private translation worker uses the multilingual model for non-Indic languages", async () => {
+  const calls = [];
+  const response = await translationWorker.fetch(request({ text: "Welcome to De VERVE", target_lang: "es" }), {
+    AI: { run: async (model, input) => {
+      calls.push({ model, input });
+      return { translated_text: "Bienvenido a ZXQDVBRAND0ZXQ" };
+    } }
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).translatedText, "Bienvenido a De VERVE");
   assert.equal(calls[0].model, "@cf/meta/m2m100-1.2b");
-  assert.deepEqual(calls[0].input, { text: "Welcome to De VERVE", source_lang: "en", target_lang: "ur" });
+  assert.deepEqual(calls[0].input, { text: "Welcome to ZXQDVBRAND0ZXQ", source_lang: "en", target_lang: "es" });
 });
 
 test("private translation worker rejects invalid, oversized and unsupported requests before inference", async () => {
