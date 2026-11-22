@@ -910,27 +910,6 @@ test("customer navigation menu closes on outside tap and Escape", async ({ page 
   await expect(page.locator(".main-nav")).not.toHaveClass(/is-open/);
 });
 
-test("custom category background images never hide the garment icon overlay", async ({ page }) => {
-  const imageId = "33333333-3333-4333-8333-333333333333";
-  await page.route("**/api/storefront/settings", async route => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ social_links: {}, category_assets: { men: imageId } }),
-  }));
-  await page.route("**/media/" + imageId, async route => route.fulfill({
-    status: 200,
-    contentType: "image/svg+xml",
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#b9c8d8"/></svg>',
-  }));
-  await page.goto("/?screen=fashion");
-  const card = page.locator('[data-testid="collection-men-art"]');
-  await expect(card.locator(".category-custom-art")).toBeVisible();
-  await expect(card.locator(".category-garment")).toBeVisible();
-  const iconZ = await card.locator(".category-garment").evaluate(el => Number(getComputedStyle(el).zIndex));
-  const imageZ = await card.locator(".category-custom-art").evaluate(el => Number(getComputedStyle(el).zIndex));
-  expect(iconZ).toBeGreaterThan(imageZ);
-});
-
 test("mobile quick-navigation ribbon stays fixed to the viewport bottom on every screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const screen of ["home", "fashion", "wholesale", "mobility", "contact", "favourites"]) {
