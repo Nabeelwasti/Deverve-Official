@@ -1,9 +1,9 @@
 name: Build and type-check
 
-# Validate every pushed main-branch revision; do not silently cancel an earlier commit's checks.
+# Keep main-branch release checks serial; cancel superseded pull-request runs so the latest revision is always tested.
 concurrency:
   group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 on:
   push:
