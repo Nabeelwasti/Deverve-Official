@@ -8,7 +8,7 @@
 - The private Worker has a Workers AI binding named `AI` and runs Meta `@cf/meta/m2m100-1.2b`.
 - The Worker is deployed with `workers_dev: false` and `preview_urls: false`; it is intended to be reached through the internal Pages service binding only.
 - Translation text is cached in the visitor's browser local storage. Form controls, the AI chat, account areas, dialogs, code, and hidden content are excluded from the DOM translation pass.
-- Switching back to **English · Original** restores the source text.
+- The selected language is remembered on the visitor's next visit; switching back to **English · Original** clears that preference and restores the source text.
 
 ## Supported customer languages
 
