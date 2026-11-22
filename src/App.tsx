@@ -407,8 +407,8 @@ async function translateRenderedSite(
         ? entry.translated.join(" ")
         : null;
       if (translated !== null && entry.node.isConnected) {
-        const leading = entry.original.match(/^\\s*/)?.[0] ?? "";
-        const trailing = entry.original.match(/\\s*$/)?.[0] ?? "";
+        const leading = entry.original.match(/^\s*/)?.[0] ?? "";
+        const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
         const finalText = leading + translated + trailing;
         if (entry.node.nodeValue !== finalText) entry.node.nodeValue = finalText;
         translatedSiteTextNodes.set(entry.node, finalText);
