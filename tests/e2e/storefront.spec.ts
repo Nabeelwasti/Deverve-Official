@@ -76,6 +76,7 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   await expect(page.locator(".top-quote-strip cite")).toHaveText(/— .+/);
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await expect(chat.getByText("De VERVE Assistant", { exact: true })).toBeVisible();
   await expect(chat).toBeVisible();
   await expect(chat.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
@@ -918,7 +919,9 @@ test("official wordmark remains legible on loading and inside AI support while l
   await expect(chatLogo).toBeVisible();
   const chatLogoBox = await chatLogo.boundingBox();
   expect(chatLogoBox).not.toBeNull();
-  expect(chatLogoBox!.width / chatLogoBox!.height).toBeGreaterThan(3.5);
+  expect(chatLogoBox!.width).toBeGreaterThanOrEqual(54);
+  expect(chatLogoBox!.height).toBeGreaterThanOrEqual(54);
+  expect(Math.abs(chatLogoBox!.width / chatLogoBox!.height - 1)).toBeLessThanOrEqual(0.03);
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   for (const control of [
     chat.getByRole("button", { name: "Add attachment" }),
@@ -932,8 +935,16 @@ test("official wordmark remains legible on loading and inside AI support while l
   }
 
   const quote = page.locator(".top-quote-strip");
-  await expect(quote.locator("p")).toHaveText("Wear confidence. Every day.");
+  const firstQuoteText = (await quote.locator("p").innerText()).trim();
+  expect(firstQuoteText).not.toBe("");
   await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+
+  // A fresh page load must select another approved brand quote, not reuse the last one.
+  await page.reload();
+  const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
+  expect(nextQuoteText).not.toBe("");
+  expect(nextQuoteText).not.toBe(firstQuoteText);
+  await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
     return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
