@@ -240,7 +240,7 @@ export default function AIChatWidget() {
 
   return <>
     <button type="button" className="ai-chat-launcher" aria-label={open ? "Close De VERVE AI chat" : "Open De VERVE AI chat"} onClick={() => setOpen(value => !value)}>
-      <img src={logoUrl} alt="" aria-hidden="true" />
+      <svg className="ai-chat-launcher-icon" viewBox="0 0 24 24" role="img" aria-label="Open customer support chat"><path d="M4.5 5.5A3.5 3.5 0 0 1 8 2h8a3.5 3.5 0 0 1 3.5 3.5v7A3.5 3.5 0 0 1 16 16h-4.2l-4.7 4v-4.2A3.5 3.5 0 0 1 4.5 12.5z" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/><path d="M8 8h8M8 11.5h5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
     </button>
     {open && <section className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head">

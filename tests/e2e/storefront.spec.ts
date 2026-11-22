@@ -821,10 +821,29 @@ test("storefront places the golden quote below the top ribbon and offers common 
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const languagePicker = quote.getByRole("combobox", { name: "Translate this page" });
-  await expect(languagePicker.locator("option")).toHaveCount(13);
+  const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
+  expect(await languagePicker.locator("option").count()).toBeGreaterThan(150);
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
+  await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
 });
+
+test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
+  await page.goto("/");
+  const language = page.getByLabel("Translate this page");
+  await expect(language).toBeVisible();
+  expect(await language.locator("option").count()).toBeGreaterThan(40);
+  const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await expect(search).toBeVisible();
+  await search.fill("wholesale");
+  await expect(page.getByRole("listbox", { name: "Search results" })).toContainText("Wholesale enquiries");
+  const launcher = page.getByRole("button", { name: "Open De VERVE AI chat" });
+  await expect(launcher.locator("svg.ai-chat-launcher-icon")).toBeVisible();
+  await launcher.click();
+  await expect(page.getByRole("dialog", { name: "De VERVE AI customer support" })).toBeVisible();
+  await expect(page.locator(".ai-chat-head .ai-chat-brand-logo")).toBeVisible();
+  await expect(page.locator(".top-quote-strip p")).toBeVisible();
+});
+
