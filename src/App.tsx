@@ -289,7 +289,8 @@ function persistGoldenQuote(quote: { text: string; author: string }) {
 
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
-  const siteHeaderRef = useRef<HTMLElement | null>(null);
+  const mainNavRef = useRef<HTMLElement | null>(null);
+  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
   const [translationHintOpen, setTranslationHintOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
@@ -300,7 +301,7 @@ function Storefront() {
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !siteHeaderRef.current?.contains(event.target)) setMenuOpen(false);
+      if (event.target instanceof Node && !mainNavRef.current?.contains(event.target) && !menuToggleRef.current?.contains(event.target)) setMenuOpen(false);
     };
     const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
     document.addEventListener("pointerdown", handlePointerDown, true);
@@ -703,16 +704,16 @@ function Storefront() {
         <cite>— {goldenQuote.author}</cite>
       </div>
 
-      <header className="site-header" ref={siteHeaderRef}>
+      <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
           <img className="brand-logo-image" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
-        <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+        <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
         {menuOpen && <button type="button" className="menu-dismiss" aria-label="Close navigation menu" onClick={closeMenu} />}
-        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
+        <nav ref={mainNavRef} className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
         <div className="header-actions">
           <form className="site-search" role="search" onSubmit={event=>{event.preventDefault();const first=siteSearchResults[0];if(first)window.location.href=first.href;else if(siteSearch.trim())setSiteSearchOpen(true);}}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
