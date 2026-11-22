@@ -23,7 +23,7 @@ const ROMAN_URDU_SCRIPT: Record<string,string> = {
   aur:"اور", ke:"کے", ki:"کی", ko:"کو", se:"سے", par:"پر", per:"پر", ghar:"گھر",
   zindagi:"زندگی", dil:"دل", dost:"دوست", madad:"مدد", batao:"بتاؤ", bataye:"بتائیں",
   karo:"کرو", karna:"کرنا", raha:"رہا", rahi:"رہی", rahe:"رہے", chahiye:"چاہیے",
-  mil:"مل", sakta:"سکتا", sakti:"سکتی", assalamualaikum:"السلام علیکم",
+  mil:"مل", sakta:"سکتا", sakti:"سکتی",
   allah:"اللہ", inshallah:"ان شاء اللہ", mashallah:"ماشاءاللہ", kapray:"کپڑے", kapde:"کپڑے",
   khareedna:"خریدنا", paisa:"پیسہ", kitna:"کتنا", qeemat:"قیمت", salam:"سلام"
 };
