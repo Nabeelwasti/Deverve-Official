@@ -336,7 +336,7 @@ function Storefront() {
       }).catch(() => {
         if (active && !currentController.signal.aborted && !quoteChangedRef.current) {
           quoteChangedRef.current = true;
-          persistGoldenQuote(selectGoldenQuote());
+          persistGoldenQuote(goldenQuote);
         }
       });
     };
