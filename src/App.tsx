@@ -287,15 +287,187 @@ function persistGoldenQuote(quote: { text: string; author: string }) {
   try { localStorage.setItem("deverve:golden-quote:last:v1", quote.text); } catch { /* Quote rotation must never block the storefront. */ }
 }
 
+const SITE_TRANSLATION_LANGUAGES = [
+  ["ur", "اردو"], ["hi", "हिन्दी"], ["ar", "العربية"], ["bn", "বাংলা"],
+  ["fa", "فارسی"], ["tr", "Türkçe"], ["id", "Bahasa Indonesia"], ["ms", "Bahasa Melayu"],
+  ["zh", "中文"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"],
+  ["it", "Italiano"], ["pt", "Português"], ["ru", "Русский"], ["ja", "日本語"],
+  ["ko", "한국어"], ["th", "ไทย"], ["vi", "Tiếng Việt"]
+] as const;
+
+const originalSiteTextNodes = new Map<Text, string>();
+const TRANSLATION_SEPARATOR = "\\nZXQDVSEP\\n";
+
+function restoreOriginalSiteLanguage() {
+  for (const [node, original] of originalSiteTextNodes) {
+    if (node.isConnected) node.nodeValue = original;
+  }
+  originalSiteTextNodes.clear();
+}
+
+function translationCacheKey(language: string, source: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `deverve:site-translation:v1:${language}:${(hash >>> 0).toString(36)}`;
+}
+
+function readCachedTranslation(language: string, source: string): string | null {
+  try {
+    const raw = localStorage.getItem(translationCacheKey(language, source));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as { source?: unknown; translated?: unknown };
+    return value.source === source && typeof value.translated === "string" ? value.translated : null;
+  } catch { return null; }
+}
+
+function writeCachedTranslation(language: string, source: string, translated: string) {
+  try {
+    localStorage.setItem(translationCacheKey(language, source), JSON.stringify({ source, translated }));
+  } catch { /* Translation caching is optional; it must never block the page. */ }
+}
+
+function splitTranslationText(value: string, maximum = 450): string[] {
+  const parts: string[] = [];
+  let remaining = value.trim();
+  while (remaining.length > maximum) {
+    let boundary = remaining.lastIndexOf(" ", maximum);
+    if (boundary < Math.floor(maximum * 0.55)) boundary = maximum;
+    parts.push(remaining.slice(0, boundary).trim());
+    remaining = remaining.slice(boundary).trim();
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
+}
+
+async function translateRenderedSite(
+  root: HTMLElement,
+  language: string,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,[role='dialog']";
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Array<{ node: Text; original: string; parts: string[]; translated: Array<string | null> }> = [];
+  let current: Node | null;
+  while ((current = walker.nextNode())) {
+    const node = current as Text;
+    const parent = node.parentElement;
+    const raw = originalSiteTextNodes.get(node) ?? node.nodeValue ?? "";
+    if (!parent || !raw.trim() || parent.childNodes.length !== 1 || parent.firstChild !== node || parent.closest(excluded)) continue;
+    if (!originalSiteTextNodes.has(node)) originalSiteTextNodes.set(node, raw);
+    const parts = splitTranslationText(raw);
+    if (!parts.length) continue;
+    nodes.push({ node, original: raw, parts, translated: parts.map(part => readCachedTranslation(language, part)) });
+  }
+
+  const pending: Array<{ owner: number; part: number; source: string }> = [];
+  nodes.forEach((entry, owner) => entry.parts.forEach((part, index) => {
+    if (entry.translated[index] === null) pending.push({ owner, part: index, source: part });
+  }));
+
+  const batches: Array<typeof pending> = [];
+  let batch: typeof pending = [];
+  let batchLength = 0;
+  for (const item of pending) {
+    const separatorLength = batch.length ? TRANSLATION_SEPARATOR.length : 0;
+    if (batch.length && batchLength + separatorLength + item.source.length > 580) {
+      batches.push(batch); batch = []; batchLength = 0;
+    }
+    batchLength += (batch.length ? TRANSLATION_SEPARATOR.length : 0) + item.source.length;
+    batch.push(item);
+  }
+  if (batch.length) batches.push(batch);
+
+  onProgress(0, batches.length);
+  for (let index = 0; index < batches.length; index += 1) {
+    const currentBatch = batches[index];
+    const text = currentBatch.map(item => item.source).join(TRANSLATION_SEPARATOR);
+    const response = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ text, target_lang: language })
+    });
+    const payload = await response.json().catch(() => ({})) as { translatedText?: string; error?: string };
+    if (!response.ok || typeof payload.translatedText !== "string") {
+      throw new Error(response.status === 429 ? "The shared daily translation allowance has been reached. Please try again tomorrow." : payload.error || "Translation is temporarily unavailable.");
+    }
+    const translatedParts = currentBatch.length === 1
+      ? [payload.translatedText.trim()]
+      : payload.translatedText.split(TRANSLATION_SEPARATOR).map(part => part.trim());
+    if (translatedParts.length !== currentBatch.length || translatedParts.some(part => !part)) {
+      throw new Error("The translation service could not safely preserve the page layout. Please try again.");
+    }
+    currentBatch.forEach((item, itemIndex) => {
+      const translated = translatedParts[itemIndex];
+      nodes[item.owner].translated[item.part] = translated;
+      writeCachedTranslation(language, item.source, translated);
+    });
+    onProgress(index + 1, batches.length);
+  }
+
+  for (const entry of nodes) {
+    const translated = entry.translated.every((part): part is string => typeof part === "string" && Boolean(part))
+      ? entry.translated.join(" ")
+      : null;
+    if (translated !== null && entry.node.isConnected) {
+      const leading = entry.original.match(/^\\s*/)?.[0] ?? "";
+      const trailing = entry.original.match(/\\s*$/)?.[0] ?? "";
+      entry.node.nodeValue = leading + translated + trailing;
+    }
+  }
+}
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const mainNavRef = useRef<HTMLElement | null>(null);
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [translationHintOpen, setTranslationHintOpen] = useState(false);
+  const [translationLanguage, setTranslationLanguage] = useState("");
+  const [translationStatus, setTranslationStatus] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
+  useEffect(() => {
+    let active = true;
+    let running = false;
+    let scheduled = 0;
+    const root = document.querySelector<HTMLElement>(".site-shell");
+    restoreOriginalSiteLanguage();
+    if (!translationLanguage || !root) {
+      setTranslationStatus("");
+      return;
+    }
+    const runTranslation = async () => {
+      if (!active || running) return;
+      running = true;
+      try {
+        await translateRenderedSite(root, translationLanguage, (done, total) => {
+          if (active) setTranslationStatus(total ? `Translating website… ${done}/${total}` : "Checking saved translations…");
+        });
+        if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}`);
+      } catch (caught) {
+        restoreOriginalSiteLanguage();
+        if (active) setTranslationStatus(caught instanceof Error ? caught.message : "Translation is temporarily unavailable.");
+      } finally {
+        running = false;
+      }
+    };
+    const observer = new MutationObserver(() => {
+      if (scheduled || !active) return;
+      scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 250);
+    });
+    observer.observe(root, { childList: true, subtree: true });
+    void runTranslation();
+    return () => {
+      active = false;
+      observer.disconnect();
+      if (scheduled) window.clearTimeout(scheduled);
+      restoreOriginalSiteLanguage();
+    };
+  }, [translationLanguage]);
+
   // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
   const [goldenQuote, setGoldenQuote] = useState(selectGoldenQuote);
   useEffect(() => {
@@ -691,9 +863,14 @@ function Storefront() {
         <span className="announcement-location">JHELUM, PAKISTAN</span>
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
-          <div className="announcement-translate"><span aria-hidden="true">文</span>
-            <button type="button" className="announcement-translate-button" aria-label="How to translate this page" aria-expanded={translationHintOpen} onClick={() => setTranslationHintOpen(value => !value)}>How to translate</button>
-            {translationHintOpen && <span className="translation-hint" role="status">Use your browser’s built-in page translation (in Chrome, open ⋮ and choose Translate). You will stay on the De VERVE website; availability depends on your browser.</span>}
+          <div className="announcement-translate">
+            <span aria-hidden="true">文</span>
+            <label className="sr-only" htmlFor="deverve-site-language">Translate website</label>
+            <select id="deverve-site-language" aria-label="Translate website" value={translationLanguage} onChange={event => setTranslationLanguage(event.currentTarget.value)}>
+              <option value="">English · Original</option>
+              {SITE_TRANSLATION_LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
+            </select>
+            {translationStatus && <span className="translation-status" role="status" aria-live="polite">{translationStatus}</span>}
           </div>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
         </div>
