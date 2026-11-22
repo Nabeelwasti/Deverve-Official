@@ -843,11 +843,13 @@ test("storefront translates visible website copy in place and restores English",
   const language = page.getByRole("combobox", { name: "Translate website" });
   await expect(language).toBeVisible();
   const originalUrl = page.url();
+  const originalTabCount = page.context().pages().length;
   await language.selectOption("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
   await expect(announcement.getByRole("status")).toContainText("Website translated");
   if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
   expect(page.url()).toBe(originalUrl);
+  expect(page.context().pages()).toHaveLength(originalTabCount);
   await language.selectOption("");
   await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
