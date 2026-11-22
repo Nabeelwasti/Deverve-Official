@@ -73,6 +73,14 @@ function prepareSpeechText(text: string, locale: string): string {
   return text.replace(/[A-Za-z]+/g, word => ROMAN_URDU_SCRIPT[word.toLowerCase()] || word);
 }
 
+function buildSpeechChunks(text: string, selected: string): Array<{ text: string; locale: string }> {
+  const parts = selected === "auto" ? (text.match(/[^.!?؟\n]+[.!?؟\n]*/g) || [text]) : [text];
+  return parts.map(part => {
+    const locale = detectSpeechLocale(part, selected);
+    return { locale, text: prepareSpeechText(part, locale) };
+  }).filter(part => part.text.trim().length > 0);
+}
+
 async function availableSpeechVoices(): Promise<SpeechSynthesisVoice[]> {
   const synth = window.speechSynthesis;
   const current = synth.getVoices();
@@ -278,29 +286,44 @@ export default function AIChatWidget() {
     if (speakingIndex === index) { window.speechSynthesis.cancel(); setSpeakingIndex(null); return; }
     const synth = window.speechSynthesis;
     synth.cancel();
-    const locale = detectSpeechLocale(message.text, speechLanguage);
+    const chunks = buildSpeechChunks(message.text, speechLanguage);
+    if (!chunks.length) { setNotice("There is no readable text in this message."); return; }
     const voices = await availableSpeechVoices();
-    const baseLanguage = locale.toLowerCase().split("-")[0];
-    const voice = voices.find(item => item.lang.toLowerCase() === locale.toLowerCase())
-      || voices.find(item => item.lang.toLowerCase().split("-")[0] === baseLanguage);
-    if (voices.length && !voice) {
-      setNotice("This device has no " + locale + " speech voice installed. Add that language in your device's Text-to-speech settings, then try again.");
+    const utterances: SpeechSynthesisUtterance[] = [];
+    const missingLocales: string[] = [];
+    for (const chunk of chunks) {
+      const baseLanguage = chunk.locale.toLowerCase().split("-")[0];
+      const voice = voices.find(item => item.lang.toLowerCase() === chunk.locale.toLowerCase())
+        || voices.find(item => item.lang.toLowerCase().split("-")[0] === baseLanguage);
+      if (voices.length && !voice) { missingLocales.push(chunk.locale); continue; }
+      const utterance = new SpeechSynthesisUtterance(chunk.text);
+      utterance.lang = chunk.locale;
+      if (voice) utterance.voice = voice;
+      utterance.rate = 0.94;
+      utterance.pitch = 1;
+      utterances.push(utterance);
+    }
+    if (missingLocales.length) {
+      setNotice("Install speech voices for " + [...new Set(missingLocales)].join(", ") + " in your device's Text-to-speech settings, then try again.");
       setSpeakingIndex(null);
       return;
     }
-    const utterance = new SpeechSynthesisUtterance(prepareSpeechText(message.text, locale));
-    utterance.lang = locale;
-    if (voice) utterance.voice = voice;
-    utterance.rate = 0.94;
-    utterance.pitch = 1;
-    utterance.onstart = () => setNotice("");
-    utterance.onend = () => setSpeakingIndex(null);
-    utterance.onerror = () => {
-      setSpeakingIndex(null);
-      setNotice("Your device could not speak this language. Check its installed speech voices and try again.");
-    };
+    if (!utterances.length) { setNotice("No compatible speech voice is available on this device."); return; }
+    let remaining = utterances.length;
+    for (const utterance of utterances) {
+      utterance.onstart = () => setNotice("");
+      utterance.onend = () => {
+        remaining -= 1;
+        if (remaining === 0) setSpeakingIndex(null);
+      };
+      utterance.onerror = () => {
+        synth.cancel();
+        setSpeakingIndex(null);
+        setNotice("Your device could not speak this language. Check its installed speech voices and try again.");
+      };
+    }
     setSpeakingIndex(index);
-    synth.speak(utterance);
+    utterances.forEach(utterance => synth.speak(utterance));
   };
 
   const copyMessage = async (text: string) => {
