@@ -855,6 +855,9 @@ test("storefront translates visible website copy in place and restores English",
   await expect(announcement.getByRole("status")).toContainText("Website translated");
   expect(translationRequests.length).toBeLessThanOrEqual(20);
   expect(translationRequests.every(text => text.length <= 600)).toBeTruthy();
+  const settledTranslationRequests = translationRequests.length;
+  await page.waitForTimeout(500);
+  expect(translationRequests.length).toBe(settledTranslationRequests);
   if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
   expect(page.url()).toBe(originalUrl);
   expect(page.context().pages()).toHaveLength(originalTabCount);
