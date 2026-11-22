@@ -401,8 +401,24 @@ async function translateRenderedSite(
   }
   if (batch.length) batches.push(batch);
 
+  const applyCompletedTranslations = () => {
+    for (const entry of nodes) {
+      const translated = entry.translated.every((part): part is string => typeof part === "string" && Boolean(part))
+        ? entry.translated.join(" ")
+        : null;
+      if (translated !== null && entry.node.isConnected) {
+        const leading = entry.original.match(/^\\s*/)?.[0] ?? "";
+        const trailing = entry.original.match(/\\s*$/)?.[0] ?? "";
+        const finalText = leading + translated + trailing;
+        if (entry.node.nodeValue !== finalText) entry.node.nodeValue = finalText;
+        translatedSiteTextNodes.set(entry.node, finalText);
+      }
+    }
+  };
+
   onProgress(0, batches.length);
   const concurrency = 3;
+  let completedCount = 0;
   for (let start = 0; start < batches.length; start += concurrency) {
     if (signal?.aborted) throw new DOMException("Translation cancelled", "AbortError");
     const group = batches.slice(start, start + concurrency);
@@ -436,7 +452,6 @@ async function translateRenderedSite(
       }
     }));
     let failure: unknown = null;
-    let completed = 0;
     for (const result of results) {
       if (result.status === "rejected") { failure ??= result.reason; continue; }
       const { currentBatch, translatedParts, provider } = result.value;
@@ -445,23 +460,15 @@ async function translateRenderedSite(
         nodes[item.owner].translated[item.part] = translated;
         writeCachedTranslation(language, item.source, translated);
       });
-      completed += 1;
-      onProgress(start + completed, batches.length, provider);
+      completedCount += 1;
+      onProgress(completedCount, batches.length, provider);
     }
+    // Keep completed sections even if a later batch is rate-limited or unavailable.
+    applyCompletedTranslations();
     if (failure) throw failure;
   }
 
-  for (const entry of nodes) {
-    const translated = entry.translated.every((part): part is string => typeof part === "string" && Boolean(part))
-      ? entry.translated.join(" ")
-      : null;
-    if (translated !== null && entry.node.isConnected) {
-            const leading = entry.original.match(/^\s*/)?.[0] ?? "";
-            const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
-      entry.node.nodeValue = leading + translated + trailing;
-      translatedSiteTextNodes.set(entry.node, leading + translated + trailing);
-    }
-  }
+  applyCompletedTranslations();
 }
 
 function readSavedSiteLanguage(): string {
@@ -479,6 +486,7 @@ function Storefront() {
   const [translationStatus, setTranslationStatus] = useState("");
   const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
   const [languageSearch, setLanguageSearch] = useState("");
+  const [translationAttempt, setTranslationAttempt] = useState(0);
   const languagePickerRef = useRef<HTMLDivElement | null>(null);
   const quoteChangedRef = useRef(false);
   const filteredSiteLanguages = useMemo(() => {
@@ -494,6 +502,8 @@ function Storefront() {
     let running = false;
     let rerunRequested = false;
     let scheduled = 0;
+    let lastCompleted = 0;
+    let totalBatches = 0;
     const controller = new AbortController();
     const root = document.querySelector<HTMLElement>(".site-shell");
     restoreOriginalSiteLanguage();
@@ -508,14 +518,20 @@ function Storefront() {
       let googleFallbackUsed = false;
       try {
         await translateRenderedSite(root, translationLanguage, (done, total, provider) => {
+          lastCompleted = done;
+          totalBatches = total;
           if (provider === "google-cloud-translation") googleFallbackUsed = true;
           if (active) setTranslationStatus(total ? `Translating website… ${done}/${total}` : "Checking saved translations…");
         }, controller.signal);
         if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}${googleFallbackUsed ? " · Google fallback used" : ""}`);
       } catch (caught) {
         if (controller.signal.aborted) return;
-        restoreOriginalSiteLanguage();
-        if (active) setTranslationStatus(caught instanceof Error ? caught.message : "Translation is temporarily unavailable.");
+        rerunRequested = false;
+        const message = caught instanceof Error ? caught.message : "Translation is temporarily unavailable.";
+        const status = lastCompleted > 0 && lastCompleted < totalBatches
+          ? `Partially translated (${lastCompleted}/${totalBatches} sections). Some content remains in English. Re-select this language to retry, or choose English to restore the page. ${message}`
+          : `${message} Select the language again to retry.`;
+        if (active) setTranslationStatus(status);
       } finally {
         running = false;
         if (rerunRequested && active && !controller.signal.aborted) {
@@ -548,7 +564,7 @@ function Storefront() {
       if (scheduled) window.clearTimeout(scheduled);
       restoreOriginalSiteLanguage();
     };
-  }, [translationLanguage]);
+  }, [translationLanguage, translationAttempt]);
 
   useEffect(() => {
     if (!translationStatus) return;
@@ -998,6 +1014,7 @@ function Storefront() {
 
   const closeMenu = () => setMenuOpen(false);
   const chooseSiteLanguage = (language: string) => {
+    if (language && language === translationLanguage) setTranslationAttempt(value => value + 1);
     setTranslationLanguage(language);
     setLanguagePickerOpen(false);
     setLanguageSearch("");
@@ -1032,7 +1049,7 @@ function Storefront() {
                 {filteredSiteLanguages.map(([code, label]) => <button type="button" role="option" aria-selected={translationLanguage === code} key={code} onClick={() => chooseSiteLanguage(code)}>{label}</button>)}
                 {!filteredSiteLanguages.length && <p className="language-picker-empty">No matching language. Try its English name or language code.</p>}
               </div>
-              <p className="language-picker-help">The page translates in place. Saved text appears faster on later visits. If De VERVE translation is unavailable, Google Cloud Translation can be used when its secure service key is configured; otherwise use your browser’s built-in Google Translate option.</p>
+              <p className="language-picker-help">Choose a language to translate this page in place. Progress appears while it works, and saved sections load faster on later visits. Prices, product codes and the De VERVE name stay unchanged. Choose English · Original to restore the page. If translation is unavailable, try again later or use your browser’s Google Translate option.</p>
             </div>}
             {translationStatus && <span className="translation-status" role="status" aria-live="polite">{translationStatus}</span>}
           </div>
