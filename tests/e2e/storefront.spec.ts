@@ -829,7 +829,7 @@ test("storefront places the golden quote below the top ribbon and offers common 
     expect.objectContaining({ code: "ab", label: "Abkhaz" }),
     expect.objectContaining({ code: "iu", label: "Inuktut (Syllabics)" }),
     expect.objectContaining({ code: "bm-Nkoo", label: "NKo" }),
-    expect.objectContaining({ code: "ur", label: "Urdu" }),
+    expect.objectContaining({ code: "ur", label: "اردو" }),
     expect.objectContaining({ code: "zap", label: "Zapotec" })
   ]));
   await expect(languagePicker.locator('option[value="all"]')).toHaveText("More languages…");
