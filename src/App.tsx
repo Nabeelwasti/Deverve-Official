@@ -317,11 +317,12 @@ function Storefront() {
     let controller: AbortController | null = null;
     const loadOnlineQuote = () => {
       controller?.abort();
-      controller = new AbortController();
+      const currentController = new AbortController();
+      controller = currentController;
       let previous = "";
       try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Storage is optional. */ }
       void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), {
-        headers: { accept: "application/json" }, cache: "no-store", signal: controller.signal
+        headers: { accept: "application/json" }, cache: "no-store", signal: currentController.signal
       }).then(async response => {
         if (!response.ok) throw new Error("Online quote feed unavailable");
         return await response.json() as { text?: unknown; author?: unknown };
@@ -333,7 +334,7 @@ function Storefront() {
         quoteChangedRef.current = true;
         setGoldenQuote(text === previous ? selectGoldenQuote() : { text, author });
       }).catch(() => {
-        if (active && !controller?.signal.aborted && !quoteChangedRef.current) {
+        if (active && !currentController.signal.aborted && !quoteChangedRef.current) {
           quoteChangedRef.current = true;
           persistGoldenQuote(selectGoldenQuote());
         }
