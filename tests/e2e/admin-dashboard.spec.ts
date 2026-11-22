@@ -567,6 +567,7 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   const pageId = "66666666-6666-4666-8666-666666666666";
   const mediaId = "77777777-7777-4777-8777-777777777777";
   let savedPage: Record<string, unknown> | null = null;
+  let uploadedImagePart = "";
   let savedNavigation: Array<Record<string, unknown>> = [];
   await mockAdminApi(page);
   await page.route("**/api/admin/**", async (route) => {
@@ -582,6 +583,7 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
     } else if (url.pathname === "/api/admin/media" && method === "GET") {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ media: [] }) });
     } else if (url.pathname === "/api/admin/media" && method === "POST") {
+      uploadedImagePart = request.postDataBuffer()?.toString("latin1") ?? "";
       await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify({ media: { id: mediaId, media_type: "image", mime_type: "image/png", byte_size: 120, alt_text: "CMS gallery image", caption: "", status: "ready" } }) });
     } else if (url.pathname === "/api/admin/navigation" && method === "PUT") {
       savedNavigation = (request.postDataJSON() as { items: Array<Record<string, unknown>> }).items;
@@ -606,6 +608,8 @@ test("CMS editor uploads gallery media, edits section-specific content and reord
   await expect(page.getByRole("dialog", { name: "Crop and position image" })).toBeVisible();
   await page.getByRole("button", { name: "Crop & upload" }).click();
   await expect(block.locator(".content-gallery-preview img")).toHaveCount(1);
+  expect(uploadedImagePart).toContain("Content-Type: image/png");
+  expect(uploadedImagePart).toContain("campaign-cropped.png");
 
   await page.getByRole("button", { name: "Move navigation item down" }).first().click();
   await page.getByLabel("Visible").first().uncheck();
