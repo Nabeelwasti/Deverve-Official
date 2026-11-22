@@ -130,11 +130,26 @@ export default function AIChatWidget() {
   const [notice, setNotice] = useState("");
   const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const attachWrapRef = useRef<HTMLDivElement | null>(null);
   const galleryRef = useRef<HTMLInputElement | null>(null);
   const cameraRef = useRef<HTMLInputElement | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const voiceDraftPrefixRef = useRef("");
+
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !attachWrapRef.current?.contains(event.target)) setAttachMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setAttachMenuOpen(false); };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [attachMenuOpen]);
 
   useEffect(() => { if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight; }, [open, messages, sending, attachments]);
   useEffect(() => () => { recognitionRef.current?.abort(); if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); }, []);
@@ -233,7 +248,7 @@ export default function AIChatWidget() {
     {open && <section id="deverve-ai-chat-panel" className="ai-chat-panel" role="dialog" aria-label="De VERVE AI customer support" aria-modal="false">
       <header className="ai-chat-head">
         <BrandLogo className="ai-chat-brand-logo" />
-        <div className="ai-chat-identity"><strong>De VERVE assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
+        <div className="ai-chat-identity"><strong>De VERVE Assistant</strong><small><span className="ai-chat-online-dot"/> Here to help · Usually replies instantly</small></div>
         <button type="button" aria-label="Close chat" onClick={() => { setOpen(false); recognitionRef.current?.stop(); }}>×</button>
       </header>
       <div className="ai-chat-messages" ref={listRef} aria-live="polite">
@@ -253,7 +268,7 @@ export default function AIChatWidget() {
       {attachments.length > 0 && <div className="ai-chat-attachments" aria-label="Attached files">{attachments.map((item,index)=><figure key={item.name+index}>{item.preview?<img src={item.preview} alt={"Image attachment "+(index+1)}/>:<div className="ai-chat-file-preview" aria-hidden="true">{item.mime_type==="application/pdf"?"PDF":item.mime_type.startsWith("audio/")?"♪":item.mime_type.startsWith("video/")?"▶":"TXT"}</div>}<button type="button" aria-label={"Remove "+item.name} onClick={()=>setAttachments(current=>current.filter((_,i)=>i!==index))}>×</button><figcaption>{item.name}</figcaption></figure>)}</div>}
       <form className="ai-chat-form" onSubmit={send}>
         <div className="ai-chat-composer">
-          <div className="ai-chat-attach-wrap">
+          <div className="ai-chat-attach-wrap" ref={attachWrapRef}>
             <button type="button" className="ai-chat-icon-button ai-chat-plus" aria-label="Add attachment" aria-expanded={attachMenuOpen} onClick={() => setAttachMenuOpen(value => !value)} disabled={sending || attachments.length >= 3}>＋</button>
             {attachMenuOpen && <div className="ai-chat-attach-menu" role="menu" aria-label="Attachment options">
               <button type="button" role="menuitem" onClick={() => cameraRef.current?.click()}><span>▣</span> Take a photo</button>

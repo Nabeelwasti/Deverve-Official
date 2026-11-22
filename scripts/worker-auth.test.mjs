@@ -3082,3 +3082,63 @@ test("server promotion selection never grants an unconfigured offer", () => {
   assert.deepEqual(selectOrderPromotion(2_000_001,false),none);
   assert.deepEqual(selectOrderPromotion(4_000_001,true),none);
 });
+
+
+test("public website translation is same-origin, language allowlisted and uses the bounded Workers AI model", async () => {
+  const db = new FakeD1();
+  const calls = [];
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async request => {
+    const input = await request.json();
+    calls.push({ url: request.url, input });
+    return Response.json({ translatedText: "یہ ایک ترجمہ ہے" });
+  } } };
+  const response = await handleRequest(new Request(origin + "/api/translate", {
+    method: "POST",
+    headers: { origin, "sec-fetch-site": "same-origin", "content-type": "application/json", "cf-connecting-ip": "203.0.113.70" },
+    body: JSON.stringify({ text: "Welcome to De VERVE", target_lang: "ur" })
+  }), testEnv);
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).translatedText, "یہ ایک ترجمہ ہے");
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://deverve-translation.internal/translate");
+  assert.deepEqual(calls[0].input, { text: "Welcome to De VERVE", target_lang: "ur" });
+});
+
+test("public website translation rejects unsupported languages, oversized input and cross-origin requests", async () => {
+  const db = new FakeD1();
+  let calls = 0;
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async () => { calls += 1; return Response.json({ translatedText: "translated" }); } } };
+  const send = (body, headers = {}) => handleRequest(new Request(origin + "/api/translate", {
+    method: "POST", headers: { origin, "sec-fetch-site": "same-origin", "content-type": "application/json", "cf-connecting-ip": "203.0.113.71", ...headers },
+    body: JSON.stringify(body)
+  }), testEnv);
+  assert.equal((await send({ text: "Hello", target_lang: "xx" })).status, 400);
+  assert.equal((await send({ text: "x".repeat(601), target_lang: "ur" })).status, 400);
+  const crossOrigin = await handleRequest(new Request(origin + "/api/translate", {
+    method: "POST", headers: { origin: "https://attacker.example", "sec-fetch-site": "cross-site", "content-type": "application/json", "cf-connecting-ip": "203.0.113.72" },
+    body: JSON.stringify({ text: "Hello", target_lang: "ur" })
+  }), testEnv);
+  assert.equal(crossOrigin.status, 403);
+  assert.equal(calls, 0);
+});
+
+test("public website translation enforces an atomic account-wide daily inference ceiling", async () => {
+  const db = new FakeD1();
+  let calls = 0;
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async () => { calls += 1; return Response.json({ translatedText: "translated" }); } } };
+  for (let index = 0; index < 20; index += 1) {
+    const response = await handleRequest(new Request(origin + "/api/translate", {
+      method: "POST",
+      headers: { origin, "sec-fetch-site": "same-origin", "content-type": "application/json", "cf-connecting-ip": "198.51.100." + (index + 1) },
+      body: JSON.stringify({ text: "A short public page label", target_lang: "ur" })
+    }), testEnv);
+    assert.equal(response.status, 200);
+  }
+  const blocked = await handleRequest(new Request(origin + "/api/translate", {
+    method: "POST",
+    headers: { origin, "sec-fetch-site": "same-origin", "content-type": "application/json", "cf-connecting-ip": "198.51.100.99" },
+    body: JSON.stringify({ text: "A short public page label", target_lang: "ur" })
+  }), testEnv);
+  assert.equal(blocked.status, 429);
+  assert.equal(calls, 20);
+});

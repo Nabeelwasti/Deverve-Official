@@ -76,6 +76,7 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   await expect(page.locator(".top-quote-strip cite")).toHaveText(/— .+/);
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  await expect(chat.getByText("De VERVE Assistant", { exact: true })).toBeVisible();
   await expect(chat).toBeVisible();
   await expect(chat.getByRole("textbox", { name: "Your message" })).toBeVisible();
   await expect(chat.getByRole("button", { name: "Add attachment" })).toBeVisible();
@@ -818,7 +819,14 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
   await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
 });
 
-test("storefront places the golden quote below the top ribbon and offers common page translations", async ({ page }) => {
+test("storefront translates visible website copy in place and restores English", async ({ page }) => {
+  const translationRequests: string[] = [];
+  await page.route("**/api/translate", async route => {
+    const body = route.request().postDataJSON() as { text: string };
+    translationRequests.push(body.text);
+    const translatedText = body.text.split("ZXQDVSEP").map(part => "ترجمہ " + part).join("ZXQDVSEP");
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ translatedText, remainingDailyRequests: 19 }) });
+  });
   await page.goto("/");
   const announcement = page.locator(".announcement");
   const quote = page.locator(".top-quote-strip");
@@ -830,31 +838,73 @@ test("storefront places the golden quote below the top ribbon and offers common 
     return Boolean(ribbon && quoteStrip && (ribbon.compareDocumentPosition(quoteStrip) & Node.DOCUMENT_POSITION_FOLLOWING));
   });
   expect(order).toBeTruthy();
-  const languagePicker = announcement.getByRole("combobox", { name: "Translate this page" });
-  expect(await languagePicker.locator("option").count()).toBe(251);
-  const languageOptions = await languagePicker.locator("option").evaluateAll(options => options.filter(option => option.value && option.value !== "all").map(option => ({ code: option.value, label: option.textContent?.trim() })));
-  expect(languageOptions).toHaveLength(249);
-  expect(new Set(languageOptions.map(option => option.code)).size).toBe(249);
-  expect(languageOptions).toEqual(expect.arrayContaining([
-    expect.objectContaining({ code: "ab", label: "Abkhaz" }),
-    expect.objectContaining({ code: "iu", label: "Inuktut (Syllabics)" }),
-    expect.objectContaining({ code: "bm-Nkoo", label: "NKo" }),
-    expect.objectContaining({ code: "ur", label: "اردو" }),
-    expect.objectContaining({ code: "zap", label: "Zapotec" })
-  ]));
-  await expect(languagePicker.locator('option[value="all"]')).toHaveText("Open Google Translate…");
-  await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
-  await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
+  const serviceCopy = page.locator(".announcement-services");
+  const originalCopy = await serviceCopy.textContent();
+  const quoteAuthor = quote.locator("cite");
+  const quoteAuthorBefore = await quoteAuthor.textContent();
+  const firstPrice = page.locator(".product-buy-row strong").first();
+  const priceBefore = await firstPrice.count() ? await firstPrice.textContent() : null;
+  const language = page.getByRole("combobox", { name: "Translate website" });
+  await expect(language).toBeVisible();
+  const originalUrl = page.url();
+  const originalTabCount = page.context().pages().length;
+  await language.selectOption("ur");
+  await expect(serviceCopy).toContainText("ترجمہ");
+  await expect(quote.locator("p")).toContainText("ترجمہ");
+  await expect(quoteAuthor).toHaveText(quoteAuthorBefore ?? "");
+  await expect(announcement.getByRole("status")).toContainText("Website translated");
+  expect(translationRequests.length).toBeLessThanOrEqual(20);
+  expect(translationRequests.every(text => text.length <= 600)).toBeTruthy();
+  const settledTranslationRequests = translationRequests.length;
+  await page.waitForTimeout(500);
+  expect(translationRequests.length).toBe(settledTranslationRequests);
+  if (priceBefore !== null) await expect(firstPrice).toHaveText(priceBefore);
+  expect(page.url()).toBe(originalUrl);
+  expect(page.context().pages()).toHaveLength(originalTabCount);
+  await page.reload();
+  await expect(language).toHaveValue("ur");
+  await expect(serviceCopy).toContainText("ترجمہ");
+  expect(translationRequests.length).toBeLessThanOrEqual(20);
+  await language.selectOption("");
+  await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
   await expect(page.locator(".site-header .header-cta")).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(page.locator(".site-credit strong")).toHaveCSS("color", "rgb(255, 255, 255)");
 });
 
+test("customer navigation menu closes on outside tap and Escape", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const toggle = page.getByRole("button", { name: "Toggle navigation" });
+  await toggle.click();
+  await expect(page.locator(".main-nav")).toHaveClass(/is-open/);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".main-nav")).not.toHaveClass(/is-open/);
+  await toggle.click();
+  await expect(page.locator(".main-nav")).toHaveClass(/is-open/);
+  await page.locator(".menu-dismiss").click({ position: { x: 8, y: 8 } });
+  await expect(page.locator(".main-nav")).not.toHaveClass(/is-open/);
+});
+
+test("AI attachment menu closes on outside tap and Escape", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
+  const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
+  const plus = chat.getByRole("button", { name: "Add attachment" });
+  await plus.click();
+  await expect(chat.getByRole("menu", { name: "Attachment options" })).toBeVisible();
+  await chat.locator(".ai-chat-head").click();
+  await expect(chat.getByRole("menu", { name: "Attachment options" })).toHaveCount(0);
+  await plus.click();
+  await page.keyboard.press("Escape");
+  await expect(chat.getByRole("menu", { name: "Attachment options" })).toHaveCount(0);
+});
+
 test("customer header search, language ribbon and support launcher remain usable", async ({ page }) => {
   await page.goto("/");
-  const language = page.getByLabel("Translate this page");
+  const language = page.getByRole("combobox", { name: "Translate website" });
   await expect(language).toBeVisible();
-  expect(await language.locator("option").count()).toBeGreaterThan(40);
+  await expect(language.locator('option[value="ur"]')).toHaveText("اردو");
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
@@ -867,7 +917,7 @@ test("customer header search, language ribbon and support launcher remain usable
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
-test("official wordmark remains legible on loading and inside AI support while launcher clears the mobile dock", async ({ page }) => {
+test("loading wordmark stays legible and customer AI logo uses a centered circular frame", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/pages/home", async route => {
     await new Promise(resolve => setTimeout(resolve, 900));
@@ -918,7 +968,11 @@ test("official wordmark remains legible on loading and inside AI support while l
   await expect(chatLogo).toBeVisible();
   const chatLogoBox = await chatLogo.boundingBox();
   expect(chatLogoBox).not.toBeNull();
-  expect(chatLogoBox!.width / chatLogoBox!.height).toBeGreaterThan(3.5);
+  expect(chatLogoBox!.width).toBeGreaterThanOrEqual(54);
+  expect(chatLogoBox!.height).toBeGreaterThanOrEqual(54);
+  expect(Math.abs(chatLogoBox!.width / chatLogoBox!.height - 1)).toBeLessThanOrEqual(0.03);
+  await expect(chatLogo).toHaveCSS("border-radius", "50%");
+  await expect(chatLogo).toHaveCSS("object-position", "50% 50%");
   const chat = page.getByRole("dialog", { name: "De VERVE AI customer support" });
   for (const control of [
     chat.getByRole("button", { name: "Add attachment" }),
@@ -932,8 +986,31 @@ test("official wordmark remains legible on loading and inside AI support while l
   }
 
   const quote = page.locator(".top-quote-strip");
-  await expect(quote.locator("p")).toHaveText("Wear confidence. Every day.");
+  const approvedQuotes = [
+    "Wear confidence. Every day.",
+    "Style is how you express your story.",
+    "Everyday comfort. Effortless confidence.",
+    "Make every day your own.",
+    "Good style begins with feeling good.",
+    "Confidence never goes out of style.",
+    "Find your fit. Own your moment.",
+    "Made for movement. Chosen by you.",
+    "Your everyday deserves better.",
+    "Simple choices. Strong personal style.",
+    "Wear what moves you forward.",
+    "Comfort is always in good taste.",
+  ];
+  const firstQuoteText = (await quote.locator("p").innerText()).trim();
+  expect(approvedQuotes).toContain(firstQuoteText);
   await expect(quote.locator("cite")).toHaveText("— DE VERVE");
+
+  // A fresh page load must select another approved brand quote, not reuse the last one.
+  await page.reload();
+  const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
+  expect(approvedQuotes).toContain(nextQuoteText);
+  expect(nextQuoteText).not.toBe(firstQuoteText);
+  await expect(page.locator(".top-quote-strip cite")).toHaveText("— DE VERVE");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).toBe(nextQuoteText);
   const quoteFits = await quote.locator("p").evaluate(element => {
     const style = getComputedStyle(element);
     return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;

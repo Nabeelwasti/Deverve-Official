@@ -24,265 +24,6 @@ const categories = [
   { id: "bottoms", name: "Trousers & pants", detail: "Relaxed comfort, made for movement", tag: "06", tone: "bottoms" },
 ];
 
-// Snapshot of Google Translate's live target-language catalog; refresh when its supported list changes.
-const TRANSLATION_LANGUAGES: Array<[string,string]> = [
-  ["ab", "Abkhaz"],
-  ["ace", "Acehnese"],
-  ["ach", "Acholi"],
-  ["aa", "Afar"],
-  ["af", "Afrikaans"],
-  ["sq", "Albanian"],
-  ["alz", "Alur"],
-  ["am", "Amharic"],
-  ["ar", "Arabic"],
-  ["hy", "Armenian"],
-  ["as", "Assamese"],
-  ["av", "Avar"],
-  ["awa", "Awadhi"],
-  ["ay", "Aymara"],
-  ["az", "Azerbaijani"],
-  ["ban", "Balinese"],
-  ["bal", "Baluchi"],
-  ["bm", "Bambara"],
-  ["bci", "Baoulé"],
-  ["ba", "Bashkir"],
-  ["eu", "Basque"],
-  ["btx", "Batak Karo"],
-  ["bts", "Batak Simalungun"],
-  ["bbc", "Batak Toba"],
-  ["be", "Belarusian"],
-  ["bem", "Bemba"],
-  ["bn", "Bengali"],
-  ["bew", "Betawi"],
-  ["bho", "Bhojpuri"],
-  ["bik", "Bikol"],
-  ["bs", "Bosnian"],
-  ["br", "Breton"],
-  ["bg", "Bulgarian"],
-  ["bua", "Buryat"],
-  ["yue", "Cantonese"],
-  ["ca", "Catalan"],
-  ["ceb", "Cebuano"],
-  ["ch", "Chamorro"],
-  ["ce", "Chechen"],
-  ["ny", "Chichewa"],
-  ["zh-CN", "Chinese (Simplified)"],
-  ["zh-TW", "Chinese (Traditional)"],
-  ["chk", "Chuukese"],
-  ["cv", "Chuvash"],
-  ["co", "Corsican"],
-  ["crh", "Crimean Tatar (Cyrillic)"],
-  ["crh-Latn", "Crimean Tatar (Latin)"],
-  ["hr", "Croatian"],
-  ["cs", "Czech"],
-  ["da", "Danish"],
-  ["fa-AF", "Dari"],
-  ["dv", "Dhivehi"],
-  ["din", "Dinka"],
-  ["doi", "Dogri"],
-  ["dov", "Dombe"],
-  ["nl", "Dutch"],
-  ["dyu", "Dyula"],
-  ["dz", "Dzongkha"],
-  ["en", "English"],
-  ["eo", "Esperanto"],
-  ["et", "Estonian"],
-  ["ee", "Ewe"],
-  ["fo", "Faroese"],
-  ["fj", "Fijian"],
-  ["tl", "Filipino"],
-  ["fi", "Finnish"],
-  ["fon", "Fon"],
-  ["fr", "French"],
-  ["fr-CA", "French (Canada)"],
-  ["fy", "Frisian"],
-  ["fur", "Friulian"],
-  ["ff", "Fulani"],
-  ["gaa", "Ga"],
-  ["gl", "Galician"],
-  ["ka", "Georgian"],
-  ["de", "German"],
-  ["el", "Greek"],
-  ["gn", "Guarani"],
-  ["gu", "Gujarati"],
-  ["ht", "Haitian Creole"],
-  ["cnh", "Hakha Chin"],
-  ["ha", "Hausa"],
-  ["haw", "Hawaiian"],
-  ["iw", "Hebrew"],
-  ["hil", "Hiligaynon"],
-  ["hi", "Hindi"],
-  ["hmn", "Hmong"],
-  ["hu", "Hungarian"],
-  ["hrx", "Hunsrik"],
-  ["iba", "Iban"],
-  ["is", "Icelandic"],
-  ["ig", "Igbo"],
-  ["ilo", "Ilocano"],
-  ["id", "Indonesian"],
-  ["iu-Latn", "Inuktut (Latin)"],
-  ["iu", "Inuktut (Syllabics)"],
-  ["ga", "Irish"],
-  ["it", "Italian"],
-  ["jam", "Jamaican Patois"],
-  ["ja", "Japanese"],
-  ["jw", "Javanese"],
-  ["kac", "Jingpo"],
-  ["kl", "Kalaallisut"],
-  ["kn", "Kannada"],
-  ["kr", "Kanuri"],
-  ["pam", "Kapampangan"],
-  ["kk", "Kazakh"],
-  ["kha", "Khasi"],
-  ["km", "Khmer"],
-  ["cgg", "Kiga"],
-  ["kg", "Kikongo"],
-  ["rw", "Kinyarwanda"],
-  ["ktu", "Kituba"],
-  ["trp", "Kokborok"],
-  ["kv", "Komi"],
-  ["gom", "Konkani"],
-  ["ko", "Korean"],
-  ["kri", "Krio"],
-  ["ku", "Kurdish (Kurmanji)"],
-  ["ckb", "Kurdish (Sorani)"],
-  ["ky", "Kyrgyz"],
-  ["lo", "Lao"],
-  ["ltg", "Latgalian"],
-  ["la", "Latin"],
-  ["lv", "Latvian"],
-  ["lij", "Ligurian"],
-  ["li", "Limburgish"],
-  ["ln", "Lingala"],
-  ["lt", "Lithuanian"],
-  ["lmo", "Lombard"],
-  ["lg", "Luganda"],
-  ["luo", "Luo"],
-  ["lb", "Luxembourgish"],
-  ["mk", "Macedonian"],
-  ["mad", "Madurese"],
-  ["mai", "Maithili"],
-  ["mak", "Makassar"],
-  ["mg", "Malagasy"],
-  ["ms", "Malay"],
-  ["ms-Arab", "Malay (Jawi)"],
-  ["ml", "Malayalam"],
-  ["mt", "Maltese"],
-  ["mam", "Mam"],
-  ["gv", "Manx"],
-  ["mi", "Maori"],
-  ["mr", "Marathi"],
-  ["mh", "Marshallese"],
-  ["mwr", "Marwadi"],
-  ["mfe", "Mauritian Creole"],
-  ["chm", "Meadow Mari"],
-  ["mni-Mtei", "Meiteilon (Manipuri)"],
-  ["min", "Minang"],
-  ["lus", "Mizo"],
-  ["mn", "Mongolian"],
-  ["my", "Myanmar (Burmese)"],
-  ["nhe", "Nahuatl (Eastern Huasteca)"],
-  ["ndc-ZW", "Ndau"],
-  ["nr", "Ndebele (South)"],
-  ["new", "Nepalbhasa (Newari)"],
-  ["ne", "Nepali"],
-  ["bm-Nkoo", "NKo"],
-  ["no", "Norwegian"],
-  ["nus", "Nuer"],
-  ["oc", "Occitan"],
-  ["or", "Odia (Oriya)"],
-  ["om", "Oromo"],
-  ["os", "Ossetian"],
-  ["pag", "Pangasinan"],
-  ["pap", "Papiamento"],
-  ["ps", "Pashto"],
-  ["fa", "Persian"],
-  ["pl", "Polish"],
-  ["pt", "Portuguese (Brazil)"],
-  ["pt-PT", "Portuguese (Portugal)"],
-  ["pa", "Punjabi (Gurmukhi)"],
-  ["pa-Arab", "Punjabi (Shahmukhi)"],
-  ["qu", "Quechua"],
-  ["kek", "Qʼeqchiʼ"],
-  ["rom", "Romani"],
-  ["ro", "Romanian"],
-  ["rn", "Rundi"],
-  ["ru", "Russian"],
-  ["se", "Sami (North)"],
-  ["sm", "Samoan"],
-  ["sg", "Sango"],
-  ["sa", "Sanskrit"],
-  ["sat-Latn", "Santali (Latin)"],
-  ["sat", "Santali (Ol Chiki)"],
-  ["gd", "Scots Gaelic"],
-  ["nso", "Sepedi"],
-  ["sr", "Serbian"],
-  ["st", "Sesotho"],
-  ["crs", "Seychellois Creole"],
-  ["shn", "Shan"],
-  ["sn", "Shona"],
-  ["scn", "Sicilian"],
-  ["szl", "Silesian"],
-  ["sd", "Sindhi"],
-  ["si", "Sinhala"],
-  ["sk", "Slovak"],
-  ["sl", "Slovenian"],
-  ["so", "Somali"],
-  ["es", "Spanish"],
-  ["su", "Sundanese"],
-  ["sus", "Susu"],
-  ["sw", "Swahili"],
-  ["ss", "Swati"],
-  ["sv", "Swedish"],
-  ["ty", "Tahitian"],
-  ["tg", "Tajik"],
-  ["ber-Latn", "Tamazight"],
-  ["ber", "Tamazight (Tifinagh)"],
-  ["ta", "Tamil"],
-  ["tt", "Tatar"],
-  ["te", "Telugu"],
-  ["tet", "Tetum"],
-  ["th", "Thai"],
-  ["bo", "Tibetan"],
-  ["ti", "Tigrinya"],
-  ["tiv", "Tiv"],
-  ["tpi", "Tok Pisin"],
-  ["to", "Tongan"],
-  ["lua", "Tshiluba"],
-  ["ts", "Tsonga"],
-  ["tn", "Tswana"],
-  ["tcy", "Tulu"],
-  ["tum", "Tumbuka"],
-  ["tr", "Turkish"],
-  ["tk", "Turkmen"],
-  ["tyv", "Tuvan"],
-  ["ak", "Twi"],
-  ["udm", "Udmurt"],
-  ["uk", "Ukrainian"],
-  ["ur", "Urdu"],
-  ["ug", "Uyghur"],
-  ["uz", "Uzbek"],
-  ["ve", "Venda"],
-  ["vec", "Venetian"],
-  ["vi", "Vietnamese"],
-  ["war", "Waray"],
-  ["cy", "Welsh"],
-  ["wo", "Wolof"],
-  ["xh", "Xhosa"],
-  ["sah", "Yakut"],
-  ["yi", "Yiddish"],
-  ["yo", "Yoruba"],
-  ["yua", "Yucatec Maya"],
-  ["zap", "Zapotec"],
-  ["zu", "Zulu"]
-];
-
-const TRANSLATION_NATIVE_LABELS: Record<string,string> = {
-  "ar":"العربية","bn":"বাংলা","fa":"فارسی","hi":"हिन्दी","pa":"ਪੰਜਾਬੀ",
-  "pa-Arab":"پنجابی (شاہ مکھی)","ps":"پښتو","ur":"اردو",
-  "zh-CN":"简体中文","zh-TW":"繁體中文"
-};
-
 const phone = "923197553705";
 const whatsapp = (message: string) => `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
 const localDateTime = (date: Date) => {
@@ -390,7 +131,11 @@ type TurnstileApi = {
   reset: (widgetId: string) => void;
   remove?: (widgetId: string) => void;
 };
-declare global { interface Window { turnstile?: TurnstileApi } }
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+  }
+}
 const TURNSTILE_SITEKEY = "0x4AAAAAAGBpVe5Z1cq2CvB5";
 let turnstileScriptPromise: Promise<void> | null = null;
 function ensureTurnstileLoaded(): Promise<void> {
@@ -513,14 +258,266 @@ function playLuxuryChime(type: "add" | "favourite" = "add") {
   } catch {}
 }
 
+const GOLDEN_QUOTES = [
+  { text: "Wear confidence. Every day.", author: "DE VERVE" },
+  { text: "Style is how you express your story.", author: "DE VERVE" },
+  { text: "Everyday comfort. Effortless confidence.", author: "DE VERVE" },
+  { text: "Make every day your own.", author: "DE VERVE" },
+  { text: "Good style begins with feeling good.", author: "DE VERVE" },
+  { text: "Confidence never goes out of style.", author: "DE VERVE" },
+  { text: "Find your fit. Own your moment.", author: "DE VERVE" },
+  { text: "Made for movement. Chosen by you.", author: "DE VERVE" },
+  { text: "Your everyday deserves better.", author: "DE VERVE" },
+  { text: "Simple choices. Strong personal style.", author: "DE VERVE" },
+  { text: "Wear what moves you forward.", author: "DE VERVE" },
+  { text: "Comfort is always in good taste.", author: "DE VERVE" },
+] as const;
+
+function selectGoldenQuote() {
+  const storageKey = "deverve:golden-quote:last:v1";
+  let previous = "";
+  try { previous = localStorage.getItem(storageKey) || ""; } catch { /* Storage may be unavailable. */ }
+  const choices = GOLDEN_QUOTES.filter((quote) => quote.text !== previous);
+  const pool = choices.length ? choices : GOLDEN_QUOTES;
+  const selected = pool[Math.floor(Math.random() * pool.length)] || GOLDEN_QUOTES[0];
+  return selected;
+}
+
+function persistGoldenQuote(quote: { text: string; author: string }) {
+  try { localStorage.setItem("deverve:golden-quote:last:v1", quote.text); } catch { /* Quote rotation must never block the storefront. */ }
+}
+
+const SITE_TRANSLATION_LANGUAGES = [
+  ["ur", "اردو"], ["hi", "हिन्दी"], ["ar", "العربية"], ["bn", "বাংলা"],
+  ["fa", "فارسی"], ["tr", "Türkçe"], ["id", "Bahasa Indonesia"], ["ms", "Bahasa Melayu"],
+  ["zh", "中文"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"],
+  ["it", "Italiano"], ["pt", "Português"], ["ru", "Русский"], ["ja", "日本語"],
+  ["ko", "한국어"], ["th", "ไทย"], ["vi", "Tiếng Việt"]
+] as const;
+
+const originalSiteTextNodes = new Map<Text, string>();
+const translatedSiteTextNodes = new Map<Text, string>();
+const TRANSLATION_SEPARATOR = "ZXQDVSEP";
+
+function restoreOriginalSiteLanguage() {
+  for (const [node, original] of originalSiteTextNodes) {
+    if (node.isConnected) node.nodeValue = original;
+  }
+  originalSiteTextNodes.clear();
+  translatedSiteTextNodes.clear();
+}
+
+function translationCacheKey(language: string, source: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `deverve:site-translation:v1:${language}:${(hash >>> 0).toString(36)}`;
+}
+
+function readCachedTranslation(language: string, source: string): string | null {
+  try {
+    const raw = localStorage.getItem(translationCacheKey(language, source));
+    if (!raw) return null;
+    const value = JSON.parse(raw) as { source?: unknown; translated?: unknown };
+    return value.source === source && typeof value.translated === "string" ? value.translated : null;
+  } catch { return null; }
+}
+
+function writeCachedTranslation(language: string, source: string, translated: string) {
+  try {
+    localStorage.setItem(translationCacheKey(language, source), JSON.stringify({ source, translated }));
+  } catch { /* Translation caching is optional; it must never block the page. */ }
+}
+
+function splitTranslationText(value: string, maximum = 450): string[] {
+  const parts: string[] = [];
+  let remaining = value.trim();
+  while (remaining.length > maximum) {
+    let boundary = remaining.lastIndexOf(" ", maximum);
+    if (boundary < Math.floor(maximum * 0.55)) boundary = maximum;
+    parts.push(remaining.slice(0, boundary).trim());
+    remaining = remaining.slice(boundary).trim();
+  }
+  if (remaining) parts.push(remaining);
+  return parts;
+}
+
+async function translateRenderedSite(
+  root: HTMLElement,
+  language: string,
+  onProgress: (done: number, total: number) => void
+): Promise<void> {
+  const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,.brand-type,.brand-logo-image,.product-detail-price,.product-buy-row strong,.product-stock-badge,.product-urgency-badge,.product-variant-picker,.rental-price-estimate,.testimonial-rating,.top-quote-strip cite,[role='dialog']";
+  for (const node of originalSiteTextNodes.keys()) if (!node.isConnected) { originalSiteTextNodes.delete(node); translatedSiteTextNodes.delete(node); }
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Array<{ node: Text; original: string; parts: string[]; translated: Array<string | null> }> = [];
+  let current: Node | null;
+  while ((current = walker.nextNode())) {
+    const node = current as Text;
+    const parent = node.parentElement;
+    const currentText = node.nodeValue ?? "";
+    const previousOriginal = originalSiteTextNodes.get(node);
+    const previousTranslation = translatedSiteTextNodes.get(node);
+    const raw = previousOriginal !== undefined && previousTranslation === currentText ? previousOriginal : currentText;
+    if (!parent || !raw.trim() || /^[\s\d.,:+()/%\-₨$€£¥₹]+$/.test(raw) || parent.closest(excluded)) continue;
+    originalSiteTextNodes.set(node, raw);
+    const parts = splitTranslationText(raw);
+    if (!parts.length) continue;
+    nodes.push({ node, original: raw, parts, translated: parts.map(part => readCachedTranslation(language, part)) });
+  }
+
+  const pending: Array<{ owner: number; part: number; source: string }> = [];
+  nodes.forEach((entry, owner) => entry.parts.forEach((part, index) => {
+    if (entry.translated[index] === null) pending.push({ owner, part: index, source: part });
+  }));
+
+  const batches: Array<typeof pending> = [];
+  let batch: typeof pending = [];
+  let batchLength = 0;
+  for (const item of pending) {
+    const separatorLength = batch.length ? TRANSLATION_SEPARATOR.length : 0;
+    if (batch.length && batchLength + separatorLength + item.source.length > 580) {
+      batches.push(batch); batch = []; batchLength = 0;
+    }
+    batchLength += (batch.length ? TRANSLATION_SEPARATOR.length : 0) + item.source.length;
+    batch.push(item);
+  }
+  if (batch.length) batches.push(batch);
+
+  onProgress(0, batches.length);
+  for (let index = 0; index < batches.length; index += 1) {
+    const currentBatch = batches[index];
+    const text = currentBatch.map(item => item.source).join(TRANSLATION_SEPARATOR);
+    const response = await fetch("/api/translate", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ text, target_lang: language })
+    });
+    const payload = await response.json().catch(() => ({})) as { translatedText?: string; error?: string };
+    if (!response.ok || typeof payload.translatedText !== "string") {
+      throw new Error(response.status === 429 ? "The shared daily translation allowance has been reached. Please try again tomorrow." : payload.error || "Translation is temporarily unavailable.");
+    }
+    const translatedParts = currentBatch.length === 1
+      ? [payload.translatedText.trim()]
+      : payload.translatedText.split(TRANSLATION_SEPARATOR).map(part => part.trim());
+    if (translatedParts.length !== currentBatch.length || translatedParts.some(part => !part)) {
+      throw new Error("The translation service could not safely preserve the page layout. Please try again.");
+    }
+    currentBatch.forEach((item, itemIndex) => {
+      const translated = translatedParts[itemIndex];
+      nodes[item.owner].translated[item.part] = translated;
+      writeCachedTranslation(language, item.source, translated);
+    });
+    onProgress(index + 1, batches.length);
+  }
+
+  for (const entry of nodes) {
+    const translated = entry.translated.every((part): part is string => typeof part === "string" && Boolean(part))
+      ? entry.translated.join(" ")
+      : null;
+    if (translated !== null && entry.node.isConnected) {
+            const leading = entry.original.match(/^\s*/)?.[0] ?? "";
+            const trailing = entry.original.match(/\s*$/)?.[0] ?? "";
+      entry.node.nodeValue = leading + translated + trailing;
+      translatedSiteTextNodes.set(entry.node, leading + translated + trailing);
+    }
+  }
+}
+
+function readSavedSiteLanguage(): string {
+  try {
+    const saved = localStorage.getItem("deverve:site-language:v1") ?? "";
+    return SITE_TRANSLATION_LANGUAGES.some(([code]) => code === saved) ? saved : "";
+  } catch { return ""; }
+}
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const mainNavRef = useRef<HTMLElement | null>(null);
+  const menuToggleRef = useRef<HTMLButtonElement | null>(null);
+  const [translationLanguage, setTranslationLanguage] = useState(readSavedSiteLanguage);
+  const [translationStatus, setTranslationStatus] = useState("");
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  // Brand-controlled copy keeps the quote ribbon readable and independent of third-party quote APIs.
-  const goldenQuote={text:"Wear confidence. Every day.",author:"DE VERVE"};
+  useEffect(() => {
+    let active = true;
+    let running = false;
+    let scheduled = 0;
+    const root = document.querySelector<HTMLElement>(".site-shell");
+    restoreOriginalSiteLanguage();
+    if (!translationLanguage || !root) {
+      setTranslationStatus("");
+      return;
+    }
+    const runTranslation = async () => {
+      if (!active || running) return;
+      running = true;
+      try {
+        await translateRenderedSite(root, translationLanguage, (done, total) => {
+          if (active) setTranslationStatus(total ? `Translating website… ${done}/${total}` : "Checking saved translations…");
+        });
+        if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}`);
+      } catch (caught) {
+        restoreOriginalSiteLanguage();
+        if (active) setTranslationStatus(caught instanceof Error ? caught.message : "Translation is temporarily unavailable.");
+      } finally {
+        running = false;
+      }
+    };
+    const observer = new MutationObserver(records => {
+      const siteContentChanged = records.some(record => {
+        const target = record.target instanceof Element ? record.target : record.target.parentElement;
+        if (!target || target.closest(".announcement-translate")) return false;
+        if (record.type === "characterData" && record.target instanceof Text) {
+          const lastTranslation = translatedSiteTextNodes.get(record.target);
+          return lastTranslation !== undefined && lastTranslation !== record.target.nodeValue;
+        }
+        return record.type === "childList";
+      });
+      if (!siteContentChanged || scheduled || !active) return;
+      scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 250);
+    });
+    observer.observe(root, { childList: true, characterData: true, subtree: true });
+    void runTranslation();
+    return () => {
+      active = false;
+      observer.disconnect();
+      if (scheduled) window.clearTimeout(scheduled);
+      restoreOriginalSiteLanguage();
+    };
+  }, [translationLanguage]);
+
+  // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
+  const [goldenQuote, setGoldenQuote] = useState(selectGoldenQuote);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      if (event.target instanceof Node && !mainNavRef.current?.contains(event.target) && !menuToggleRef.current?.contains(event.target)) setMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [menuOpen]);
+
+
+
+  useEffect(() => {
+    // Persist only after React commits the selected quote; keep the state initializer side-effect free.
+    persistGoldenQuote(goldenQuote);
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setGoldenQuote(selectGoldenQuote());
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [goldenQuote]);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -889,13 +886,22 @@ function Storefront() {
         <span className="announcement-location">JHELUM, PAKISTAN</span>
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
-          <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span>
-            <select aria-label="Translate this page" defaultValue="" onChange={event=>{const language=event.currentTarget.value;if(!language)return;const pageUrl=encodeURIComponent(window.location.href);const url=language==="all"?"https://translate.google.com/?sl=auto&u="+pageUrl:"https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+pageUrl;window.open(url,"_blank","noopener,noreferrer");event.currentTarget.value="";}}>
-              <option value="">Language</option>
-              {TRANSLATION_LANGUAGES.map(([code,name])=><option key={code} value={code}>{TRANSLATION_NATIVE_LABELS[code]??name}</option>)}
-              <option value="all">Open Google Translate…</option>
+          <div className="announcement-translate">
+            <span aria-hidden="true">文</span>
+            <label className="sr-only" htmlFor="deverve-site-language">Translate website</label>
+            <select id="deverve-site-language" aria-label="Translate website" value={translationLanguage} onChange={event => {
+              const language = event.currentTarget.value;
+              setTranslationLanguage(language);
+              try {
+                if (language) localStorage.setItem("deverve:site-language:v1", language);
+                else localStorage.removeItem("deverve:site-language:v1");
+              } catch { /* The page remains usable when browser storage is unavailable. */ }
+            }}>
+              <option value="">English · Original</option>
+              {SITE_TRANSLATION_LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
             </select>
-          </label>
+            {translationStatus && <span className="translation-status" role="status" aria-live="polite">{translationStatus}</span>}
+          </div>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
         </div>
       </div>
@@ -910,11 +916,11 @@ function Storefront() {
           <img className="brand-logo-image" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
-        <button className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
+        <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
           <span /><span />
         </button>
         {menuOpen && <button type="button" className="menu-dismiss" aria-label="Close navigation menu" onClick={closeMenu} />}
-        <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
+        <nav ref={mainNavRef} className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
         <div className="header-actions">
           <form className="site-search" role="search" onSubmit={event=>{event.preventDefault();const first=siteSearchResults[0];if(first)window.location.href=first.href;else if(siteSearch.trim())setSiteSearchOpen(true);}}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>

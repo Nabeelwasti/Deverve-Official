@@ -2129,7 +2129,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .announcement-location,.announcement-services{white-space:nowrap}
 .announcement-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;min-width:0}
 .announcement-actions>a{color:#fff!important;font-size:10px;font-weight:700;white-space:nowrap}
-.announcement-translate{display:inline-flex;align-items:center;gap:6px;color:#f1d8a4!important}
+.announcement-translate{position:relative;display:inline-flex;align-items:center;gap:6px;color:#f1d8a4!important}
 .announcement-translate select{max-width:140px;min-height:30px;padding:4px 22px 4px 7px;border:1px solid rgba(241,216,164,.42);border-radius:7px;background:#082b55;color:#fff!important;font:600 10px "DM Sans",sans-serif;cursor:pointer}
 .announcement-translate select option{background:#fff;color:#102d53}
 .top-quote-strip{display:flex;align-items:center;justify-content:center;gap:8px;min-height:38px;padding:8px clamp(12px,4vw,48px);background:#f8f5ef;border-bottom:1px solid #eee6d8;color:#755d36;text-align:center}
@@ -2245,16 +2245,11 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   text-transform:uppercase;white-space:nowrap;
 }
 
-/* The landscape De VERVE wordmark must never be squeezed into a circular avatar. */
+/* Keep the loading-screen wordmark landscape; customer AI support uses its own circular logo frame. */
 .brand-loading-screen .brand-loader-logo{
   display:block;width:min(320px,76vw);height:auto;max-height:88px;aspect-ratio:564/114;
   object-fit:contain;object-position:center;border:0;border-radius:0;
   background:transparent;box-shadow:none;padding:0;
-}
-.ai-chat-head .ai-chat-brand-logo{
-  display:block;flex:0 0 auto;width:clamp(92px,28vw,116px);height:auto;max-height:34px;
-  aspect-ratio:564/114;object-fit:contain;object-position:left center;
-  border:0;border-radius:0;background:transparent;padding:0;
 }
 
 /* Clear AI-support affordance with a generous hit area and explicit dock clearance. */
@@ -2365,4 +2360,56 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 }
 @media(max-width:360px){
   .top-quote-strip p{max-width:calc(100vw - 96px);font-size:10px}
+}
+
+
+/* Final customer chat brand mark: a larger, centered circular logo frame. */
+.ai-chat-head .ai-chat-brand-logo{
+  display:block!important;
+  box-sizing:border-box!important;
+  flex:0 0 58px!important;
+  width:58px!important;
+  min-width:58px!important;
+  height:58px!important;
+  max-height:58px!important;
+  aspect-ratio:1/1!important;
+  object-fit:contain!important;
+  object-position:center center!important;
+  border:1px solid rgba(226,197,142,.9)!important;
+  border-radius:50%!important;
+  background:#fff!important;
+  padding:5px!important;
+  box-shadow:0 2px 10px rgba(0,0,0,.18)!important;
+}
+.ai-chat-head .ai-chat-identity{min-width:0;flex:1 1 auto}
+.ai-chat-head .ai-chat-identity strong{text-transform:none}
+@media(max-width:360px){
+  .ai-chat-head .ai-chat-brand-logo{
+    flex-basis:54px!important;width:54px!important;min-width:54px!important;
+    height:54px!important;max-height:54px!important;padding:4px!important;
+  }
+}
+
+/* Live multilingual translation selector: compact, keyboard accessible, and non-navigating. */
+.announcement-translate{position:relative;display:inline-flex;align-items:center;gap:7px;min-width:0}
+.announcement-translate select{
+  box-sizing:border-box;max-width:150px;min-width:112px;min-height:34px;
+  padding:5px 24px 5px 9px;border:1px solid rgba(241,216,164,.5);
+  border-radius:8px;background:#082b55;color:#fff!important;
+  font:650 10px "DM Sans",sans-serif;cursor:pointer;
+}
+.announcement-translate select:focus-visible{outline:2px solid #f1d8a4;outline-offset:2px}
+.announcement-translate select option{background:#fff;color:#102d53}
+.translation-status{
+  position:absolute;top:calc(100% + 8px);right:0;z-index:40;
+  width:max-content;max-width:min(290px,calc(100vw - 24px));
+  padding:8px 10px;border:1px solid rgba(241,216,164,.48);border-radius:9px;
+  background:#082b55;color:#f5e7ca;
+  font:500 9px/1.4 "DM Sans",sans-serif;overflow-wrap:anywhere;
+  box-shadow:0 10px 26px rgba(5,24,46,.22);pointer-events:none;
+}
+@media(max-width:720px){
+  .announcement-translate{gap:5px}
+  .announcement-translate select{min-width:100px;max-width:118px;min-height:32px;padding-inline:7px;font-size:9px}
+  .translation-status{max-width:calc(100vw - 24px);font-size:8px}
 }
