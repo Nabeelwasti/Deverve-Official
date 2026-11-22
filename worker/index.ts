@@ -17,7 +17,11 @@ interface D1Database {
   batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 export interface WorkerExecutionContext { waitUntil(promise:Promise<unknown>):void; }
+interface WorkersAI {
+  run(model: string, input: { text: string; source_lang: string; target_lang: string }): Promise<{ translated_text?: string }>;
+}
 export interface Env {
+  AI?: WorkersAI;
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
@@ -5158,7 +5162,68 @@ async function adminAITaskHistoryRoute(request:Request,env:Env,url:URL):Promise<
  }catch{return error("AI task history is unavailable. Apply migration 0036_ai_task_continuity.sql and retry.",503);}
 }
 
+const SITE_TRANSLATION_LANGUAGES = new Set([
+  "ar","bn","de","es","fa","fr","hi","id","it","ja","ko","ms","pt","ru","th","tr","ur","vi","zh"
+]);
+
+async function publicSiteTranslationRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/translate") return null;
+  if (request.method !== "POST") return error("Method not allowed", 405);
+  if (!requireSameOrigin(request, url)) return error("Translation requests must come from this website", 403);
+  if (!env.AI) return error("Live translation is temporarily unavailable", 503);
+
+  const visitorLimit = await enforcePublicRateLimit(request, env, "site_translation", 20, 60 * 60);
+  if (visitorLimit) return visitorLimit;
+
+  const body = await readJson(request, 8_000);
+  if (!body) return error("The translation request is invalid or too large", 413);
+  const text = typeof body.text === "string" ? body.text : "";
+  const targetLang = typeof body.target_lang === "string" ? body.target_lang : "";
+  if (!text.trim() || text.length > 600 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)) {
+    return error("Translate text in sections of up to 600 characters", 400);
+  }
+  if (!SITE_TRANSLATION_LANGUAGES.has(targetLang)) return error("This translation language is not supported", 400);
+
+  // One atomic, account-wide daily ceiling. At 100 calls × 600 characters,
+  // the request budget is deliberately kept well below the published 10,000-neuron
+  // free daily allocation under conservative token-expansion assumptions.
+  const now = Math.floor(Date.now() / 1000);
+  const dayStart = Math.floor(now / 86_400) * 86_400;
+  const expiresAt = dayStart + 172_800;
+  const bucketKey = await sha256("deverve-site-translation-daily:v1:" + dayStart);
+  let dailyCount = 0;
+  try {
+    const row = await env.DB.prepare(
+      "INSERT INTO public_rate_limits (bucket_key, window_start, request_count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(bucket_key) DO UPDATE SET request_count = CASE WHEN public_rate_limits.window_start = excluded.window_start THEN public_rate_limits.request_count + 1 ELSE 1 END, window_start = excluded.window_start, expires_at = excluded.expires_at RETURNING request_count",
+    ).bind(bucketKey, dayStart, expiresAt).first<{ request_count: number }>();
+    if (!row || !Number.isInteger(row.request_count)) return error("Translation protection is temporarily unavailable", 503);
+    dailyCount = row.request_count;
+  } catch {
+    return error("Translation protection is temporarily unavailable", 503);
+  }
+  if (dailyCount > 100) {
+    const retryAfter = Math.max(1, dayStart + 86_400 - now);
+    return json({ error: "The shared daily translation allowance has been reached. Please try again after the daily reset." }, 429, { "retry-after": String(retryAfter) });
+  }
+
+  try {
+    const result = await env.AI.run("@cf/meta/m2m100-1.2b", {
+      text,
+      source_lang: "en",
+      target_lang: targetLang,
+    });
+    const translatedText = typeof result?.translated_text === "string" ? result.translated_text.trim() : "";
+    if (!translatedText || translatedText.length > 2_400) return error("The translation service returned an invalid result", 502);
+    return json({ translatedText, remainingDailyRequests: Math.max(0, 100 - dailyCount) });
+  } catch {
+    // Do not refund failed inference attempts: this keeps the global ceiling conservative.
+    return error("Translation is temporarily unavailable. Please try again later.", 503);
+  }
+}
+
 async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> {
+  const translation = await publicSiteTranslationRoute(request, env, url);
+  if (translation) return translation;
   const taskHistory=await adminAITaskHistoryRoute(request,env,url);if(taskHistory)return taskHistory;
   const executeResponse=await adminAIExecuteRoute(request,env,url);if(executeResponse)return executeResponse;
   const adminAssistant=await adminAIAssistantRoute(request,env,url);if(adminAssistant)return adminAssistant;
