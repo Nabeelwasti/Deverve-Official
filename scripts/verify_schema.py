@@ -46,6 +46,37 @@ assert "contact_type" in enquiry_columns, "Extended customer contact categories 
 
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
+assert any(row[1] == "idx_product_variants_sku_nocase" for row in db.execute("PRAGMA index_list(product_variants)")), "Case-insensitive SKU lookup index is missing"
+assert any(row[1] == "idx_product_variants_barcode" for row in db.execute("PRAGMA index_list(product_variants)")), "Barcode lookup index is missing"
+assert any(row[1] == "idx_order_items_order" for row in db.execute("PRAGMA index_list(order_items)")), "Order item foreign-key lookup index is missing"
+assert any(row[1] == "idx_orders_status_created" for row in db.execute("PRAGMA index_list(orders)")), "Order status/history index is missing"
+assert any(row[1] == "idx_pos_sales_status_created" for row in db.execute("PRAGMA index_list(pos_sales)")), "POS status/history index is missing"
+assert any(row[1] == "idx_payment_webhook_status" for row in db.execute("PRAGMA index_list(payment_webhook_events)")), "Payment webhook processing index is missing"
+# Seed a representative catalogue inside a savepoint so SQLite's planner can be checked without polluting later constraint tests.
+db.execute("SAVEPOINT index_probe")
+for number in range(100):
+    product_id = f"INDEX-PRODUCT-{number}"
+    db.execute(
+        "INSERT INTO products (id, slug, name, category, audience, status) VALUES (?, ?, ?, ?, 'unisex', 'published')",
+        (product_id, f"index-product-{number}", f"Index product {number}", "test"),
+    )
+    db.execute(
+        "INSERT INTO product_variants (id, product_id, sku, size, color, stock_on_hand, is_active, barcode) VALUES (?, ?, ?, 'M', 'Black', 1, 1, ?)",
+        (f"INDEX-VARIANT-{number}", product_id, f"INDEX-SKU-{number}", f"INDEX-BARCODE-{number}"),
+    )
+db.execute("ANALYZE")
+sku_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE sku = ? COLLATE NOCASE", ("SKU-INDEX-TEST",)))
+assert "idx_product_variants_sku_nocase" in sku_plan, f"Case-insensitive SKU query does not use its index: {sku_plan}"
+barcode_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE barcode = ? AND barcode IS NOT NULL AND barcode <> ?", ("BARCODE-INDEX-TEST", "")))
+assert "idx_product_variants_barcode" in barcode_plan, f"Barcode query does not use its partial index: {barcode_plan}"
+scan_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE (barcode = ? AND ? <> '' AND barcode IS NOT NULL AND barcode <> '') OR (sku = ? AND ? <> '') LIMIT 2", ("BARCODE-INDEX-TEST", "BARCODE-INDEX-TEST", "SKU-INDEX-TEST", "SKU-INDEX-TEST")))
+assert "MULTI-INDEX OR" in scan_plan and "idx_product_variants_barcode" in scan_plan, f"Combined barcode/SKU scan does not use indexed lookups: {scan_plan}"
+order_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM order_items WHERE order_id = ?", ("ORDER-INDEX-TEST",)))
+assert "idx_order_items_order" in order_plan, f"Order-item query does not use its index: {order_plan}"
+pos_status_index_sql = db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_pos_sales_status_created'").fetchone()[0]
+assert "ON pos_sales(status, created_at DESC)" in pos_status_index_sql, "POS status index must lead with status and sort by creation time"
+db.execute("ROLLBACK TO index_probe")
+db.execute("RELEASE index_probe")
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
 variant_option_indexes = [row for row in db.execute("PRAGMA index_list(product_variants)") if row[1] == "idx_product_variants_unique_active_options"]
 assert variant_option_indexes and variant_option_indexes[0][2] == 1, "Active size/colour combinations must be unique per product"

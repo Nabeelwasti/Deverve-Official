@@ -1,3 +1,23 @@
+# Production readiness — current release and acceptance status
+
+## Current verified status — 23 November 2026
+
+- PR #30, category artwork replacement, merged successfully as commit `66fd5595c72ce916f177fc6d32e94bb5b2d1c932`.
+- CI run [45070011368](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45070011368) completed successfully, including the storefront browser suite.
+- The merge is not yet deployed. The last verified Cloudflare production deployment remains deployment `0ba1f0aa-3730-4261-86f0-7d06e3a6e72a` from main trigger commit `07a06c981edcfd3db0d25664045be395805fb624`.
+- Automatic Pages production and preview deployments remain disabled.
+- The encrypted D1 backup workflow is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). The schedule alone does not prove execution: the required GitHub Actions secrets and a successful isolated restore drill remain prerequisites.
+- Live D1 inspection confirms the production schema includes catalogue, orders, inventory reservations/movements, POS, payments, webhook events, notification outbox and audit records. Schema presence does not prove operational acceptance.
+- The POS is online-only; the existing service worker caches the app shell but does not implement IndexedDB offline sale synchronization.
+- The POS API currently permits owner, manager and orders roles; a dedicated restricted CASHIER role has not been implemented.
+- A dedicated owner-only system-health dashboard is not yet certified.
+- COD is the active checkout method. Live gateway and courier acceptance remain outstanding.
+- Production acceptance remains blocked by the evidence gates in [the production acceptance matrix](PRODUCTION-ACCEPTANCE-MATRIX.md).
+
+Do not describe the platform as 100% production-ready until all critical code, security, backup, integration, provider, physical-device and owner-acceptance gates have evidence.
+
+---
+
 # Production readiness — historical engineering record and current status
 
 ## Current verified status — 22 November 2026, after PRs #26 and #27
