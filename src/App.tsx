@@ -613,7 +613,7 @@ function Storefront() {
     let active = true;
     let previous = "";
     try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Browser storage is optional. */ }
-    void fetch("/api/quotes/random", { headers: { accept: "application/json" }, signal: controller.signal })
+    void fetch("/api/quotes/random?exclude=" + encodeURIComponent(previous), { headers: { accept: "application/json" }, signal: controller.signal })
       .then(async response => {
         if (!response.ok) throw new Error("Online quote source unavailable");
         return await response.json() as { text?: string; author?: string; source?: string };
