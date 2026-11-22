@@ -261,6 +261,8 @@ export default function Admin() {
   const [mediaUploadProgress, setMediaUploadProgress] = useState("");
   const [mediaAlt, setMediaAlt] = useState("");
   const [cropFiles, setCropFiles] = useState<File[] | null>(null);
+  const [brandCropRequest,setBrandCropRequest]=useState<{kind:"logo"|"favicon";file:File}|null>(null);
+  const [categoryCropRequest,setCategoryCropRequest]=useState<{category:string;file:File}|null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [variantForm, setVariantForm] = useState({ sku: "", size: "", color: "", barcode: "", cost_price: "0", reorder_level: "5", initial_stock: "0" });
   const [bulkSizes, setBulkSizes] = useState("S, M, L, XL");
@@ -434,24 +436,33 @@ export default function Admin() {
   }, [admin, activeAdminScreen]);
 
   const saveSocialLinks = async (event:FormEvent<HTMLFormElement>) => {event.preventDefault();setBusy(true);setMessage("");try{const secondary=ownerSecondaryEmails.split(/[;,\n]/).map((item)=>item.trim()).filter(Boolean);await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({social_links:socialLinks,brand_assets:brandAssets,category_assets:categoryAssets,notification_emails:{primary:ownerPrimaryEmail,secondary,enabled:ownerEmailsEnabled},payment_methods:{methods:paymentMethods}})});setMessage("Website, owner notification email and brand settings saved.");window.dispatchEvent(new Event("deverve:brand-assets-updated"));}catch(error){setMessage(error instanceof Error?error.message:"Website settings could not be saved.");}finally{setBusy(false);}};
-  const uploadBrandAsset = async (kind:"logo"|"favicon",file:File|null) => {
+  const uploadBrandAsset = (kind:"logo"|"favicon",file:File|null) => {
     if(!file)return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size<1||file.size>5_000_000){setMessage("Brand images must be JPG, PNG or WebP and no larger than 5 MB.");return;}
+    setBrandCropRequest({kind,file});
+  };
+  const saveBrandAsset = async (kind:"logo"|"favicon",file:File) => {
     setBusy(true);setMessage("");
     try{
-      const data=new FormData();data.append("file",file);data.append("alt_text",kind==="logo"?"Official De VERVE logo":"De VERVE website favicon");
+      const data=new FormData();data.append("file",file);data.append("alt_text",kind==="logo"?"Official De VERVE circular logo":"De VERVE website favicon");
       const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});
       if(!result.media)throw new Error("Upload returned no media record.");
       const next={...brandAssets,[kind+"_id"]:result.media.id} as {logo_id:string|null;favicon_id:string|null};
       await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({brand_assets:next})});
       setBrandAssets(next);setBrandPreviews((current)=>({...current,[kind]:"/api/admin/media/"+result.media!.id+"/file"}));
-      setMessage(kind==="logo"?"Website logo updated and published.":"Website favicon updated and published.");
+      setMessage(kind==="logo"?"Circular website logo cropped, saved and published.":"Square website favicon cropped, saved and published.");
+      window.dispatchEvent(new Event("deverve:brand-assets-updated"));
     }catch(error){setMessage(error instanceof Error?error.message:"Brand image could not be saved.");}
     finally{setBusy(false);}
   };
-  const uploadCategoryAsset = async (category:string,file:File|null) => {
-    if(!file)return;if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size<1||file.size>5_000_000){setMessage("Category artwork must be JPG, PNG or WebP and no larger than 5 MB.");return;}
+  const uploadCategoryAsset = (category:string,file:File|null) => {
+    if(!file)return;
+    if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size<1||file.size>5_000_000){setMessage("Category artwork must be JPG, PNG or WebP and no larger than 5 MB.");return;}
+    setCategoryCropRequest({category,file});
+  };
+  const saveCategoryAsset = async (category:string,file:File) => {
     setBusy(true);setMessage("");
-    try{const data=new FormData();data.append("file",file);data.append("alt_text",category+" fashion category artwork");const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});if(!result.media)throw new Error("Upload returned no media record.");const next={...categoryAssets,[category]:result.media.id};await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({category_assets:next})});setCategoryAssets(next);setCategoryAssetPreviews(current=>({...current,[category]:"/api/admin/media/"+result.media!.id+"/file"}));setMessage("Category artwork uploaded and published.");}catch(error){setMessage(error instanceof Error?error.message:"Category artwork could not be saved.");}finally{setBusy(false);}
+    try{const data=new FormData();data.append("file",file);data.append("alt_text",category+" fashion category artwork");const result=await api<{media?:MediaAsset}>("/api/admin/media",{method:"POST",body:data});if(!result.media)throw new Error("Upload returned no media record.");const next={...categoryAssets,[category]:result.media.id};await api("/api/admin/settings",{method:"PATCH",body:JSON.stringify({category_assets:next})});setCategoryAssets(next);setCategoryAssetPreviews(current=>({...current,[category]:"/api/admin/media/"+result.media!.id+"/file"}));setMessage("Category artwork cropped, saved and published.");}catch(error){setMessage(error instanceof Error?error.message:"Category artwork could not be saved.");}finally{setBusy(false);}
   };
   const uploadPaymentQr = async (index:number,file:File|null) => {
     if(!file)return;
@@ -1312,7 +1323,9 @@ export default function Admin() {
             <div className="admin-form-actions"><button type="button" className="admin-secondary" onClick={() => setShowQuoteEditor(false)}>Cancel</button><button className="admin-primary" disabled={busy}>{busy ? "Saving…" : "Save quotation"}</button></div>
           </form>
         </section></div>}
-        {cropFiles && <ImageCropper files={cropFiles} aspectRatio={4/5} onCancel={() => setCropFiles(null)} onComplete={(cropped) => void uploadCroppedMedia(cropped)} />}
+        {brandCropRequest && <ImageCropper files={[brandCropRequest.file]} aspectRatio={1} frameLabel={brandCropRequest.kind==="logo"?"Circular brand logo":"Square favicon"} onCancel={()=>setBrandCropRequest(null)} onComplete={files=>{const request=brandCropRequest;setBrandCropRequest(null);if(files[0])void saveBrandAsset(request.kind,files[0]);}} />}
+        {categoryCropRequest && <ImageCropper files={[categoryCropRequest.file]} aspectRatio={4/5} frameLabel="Homepage category artwork" onCancel={()=>setCategoryCropRequest(null)} onComplete={files=>{const request=categoryCropRequest;setCategoryCropRequest(null);if(files[0])void saveCategoryAsset(request.category,files[0]);}} />}
+        {cropFiles && <ImageCropper files={cropFiles} aspectRatio={4/5} frameLabel="Product photo" onCancel={() => setCropFiles(null)} onComplete={(cropped) => void uploadCroppedMedia(cropped)} />}
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
           <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max. Add separate photos for each colour after creating exact size/colour stock variants.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
