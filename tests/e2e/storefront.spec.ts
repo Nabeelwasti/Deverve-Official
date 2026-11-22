@@ -88,8 +88,8 @@ test("AI support uses a compact in-composer control layout", async ({ page }) =>
   ]) {
     const bounds = await control.boundingBox();
     expect(bounds).not.toBeNull();
-    expect(bounds!.width).toBeGreaterThanOrEqual(44);
-    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+    expect(bounds!.width).toBeGreaterThanOrEqual(48);
+    expect(bounds!.height).toBeGreaterThanOrEqual(48);
   }
   await expect(chat.locator(".ai-chat-shortcuts")).toHaveCount(0);
 });
@@ -927,8 +927,8 @@ test("official wordmark remains legible on loading and inside AI support while l
   ]) {
     const bounds = await control.boundingBox();
     expect(bounds).not.toBeNull();
-    expect(bounds!.width).toBeGreaterThanOrEqual(44);
-    expect(bounds!.height).toBeGreaterThanOrEqual(44);
+    expect(bounds!.width).toBeGreaterThanOrEqual(48);
+    expect(bounds!.height).toBeGreaterThanOrEqual(48);
   }
 
   const quote = page.locator(".top-quote-strip");
@@ -939,6 +939,11 @@ test("official wordmark remains legible on loading and inside AI support while l
     return element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= parseFloat(style.lineHeight) * 1.5;
   });
   expect(quoteFits).toBeTruthy();
+  const shortQuoteIsSingleLine = await quote.locator("p").evaluate(element => {
+    const lineHeight = parseFloat(getComputedStyle(element).lineHeight);
+    return element.getBoundingClientRect().height <= lineHeight * 1.5;
+  });
+  expect(shortQuoteIsSingleLine).toBeTruthy();
 });
 
 test("global search matches variant attributes and common policy keywords", async ({ page }) => {
