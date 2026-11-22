@@ -24,6 +24,12 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 - Only `deverve-official.pages.dev` is configured; no custom domain is attached.
 - Production acceptance is **not complete**. Outstanding gates include independent encrypted off-account D1/R2 backup and isolated restore; remote D1 integration credentials; physical size/colour stock reconciliation and SKU/barcode cleanup; owner verification of T2 brand authenticity and Tolaza's red/black photo/variant mismatch; qualified legal review of the current owner-instructed indefinite CNIC retention policy; live Gemini TTS/Turnstile/email/WhatsApp checks; physical Android camera, microphone, speech, scanner and checkout acceptance; reusable existing-media crop editing for brand/CMS/category placements; and POS/finance/rental acceptance. COD is the only active checkout method. See [the release checklist](docs/RELEASE-SETUP-CHECKLIST.md) and [the production-readiness record](docs/PRODUCTION-READINESS.md).
 
+## Release documentation
+
+- [Multilingual AI speech architecture and device-acceptance checklist](docs/AI-VOICE.md)
+- [Current production-readiness record and remaining release gates](docs/PRODUCTION-READINESS.md)
+- [nopCommerce capability comparison and safe DeVErve adaptation plan](docs/NOPCOMMERCE-ARCHITECTURE-REVIEW.md)
+
 ## Implemented
 
 > Release note: the source contains substantial implemented functionality, but live production acceptance remains blocked by the outstanding gates below. UI presence and a passing build do not prove a provider, backup, payment or physical-device workflow is operational.
