@@ -893,7 +893,7 @@ test("official wordmark remains legible on loading and inside AI support while l
   expect(mobileSearchBox).not.toBeNull();
   expect(mobileSearchBox!.width).toBeGreaterThanOrEqual(130);
   await mobileSearch.fill("wholesale");
-  const mobileSearchResult = page.getByRole("option").first();
+  const mobileSearchResult = page.locator(".site-search-results").getByRole("option").first();
   await expect(mobileSearchResult).toBeVisible();
   const mobileSearchResultBox = await mobileSearchResult.boundingBox();
   expect(mobileSearchResultBox).not.toBeNull();
