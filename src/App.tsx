@@ -816,9 +816,14 @@ function Storefront() {
               <article className={`collection-card ${item.tone}`} key={item.id}>
                 <a className={categoryAssets[item.id] ? "collection-art has-custom-art" : "collection-art"} data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
-                  {categoryAssets[item.id]&&<img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy"/>}
-                  <span className="category-garment" aria-hidden="true"><i /></span>
-                  <span className="category-art-word">{item.id === "essentials" ? "DAILY" : item.id.toUpperCase()}</span>
+                  {categoryAssets[item.id] ? (
+                    <img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy"/>
+                  ) : (
+                    <>
+                      <span className="category-garment" aria-hidden="true"><i /></span>
+                      <span className="category-art-word">{item.id === "essentials" ? "DAILY" : item.id.toUpperCase()}</span>
+                    </>
+                  )}
                   <span className="category-arrow">↗</span>
                 </a>
                 <div className="collection-meta"><div><span className="category-number">{item.tag} / 06</span><h3>{item.name}</h3><p>{item.detail}</p></div><a href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>↗</a></div>
