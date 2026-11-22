@@ -347,7 +347,7 @@ async function translateRenderedSite(
   language: string,
   onProgress: (done: number, total: number) => void
 ): Promise<void> {
-  const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,[role='dialog']";
+  const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,.brand-type,.brand-logo-image,.product-detail-price,.product-buy-row strong,.product-stock-badge,.product-urgency-badge,.product-variant-picker,.rental-price-estimate,.testimonial-rating,.top-quote-strip cite,[role='dialog']";
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Array<{ node: Text; original: string; parts: string[]; translated: Array<string | null> }> = [];
   let current: Node | null;
@@ -355,7 +355,7 @@ async function translateRenderedSite(
     const node = current as Text;
     const parent = node.parentElement;
     const raw = originalSiteTextNodes.get(node) ?? node.nodeValue ?? "";
-    if (!parent || !raw.trim() || parent.childNodes.length !== 1 || parent.firstChild !== node || parent.closest(excluded)) continue;
+    if (!parent || !raw.trim() || /^[\\s\\d.,:+()/%\\-₨$€£¥₹]+$/.test(raw) || parent.childNodes.length !== 1 || parent.firstChild !== node || parent.closest(excluded)) continue;
     if (!originalSiteTextNodes.has(node)) originalSiteTextNodes.set(node, raw);
     const parts = splitTranslationText(raw);
     if (!parts.length) continue;
