@@ -946,15 +946,11 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
     await new Promise(resolve => setTimeout(resolve, 900));
     await route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "not found" }) });
   });
-  await page.route("**/api/brand/logo*", async route => route.fulfill({
-    status: 200,
-    contentType: "image/svg+xml",
-    body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="#fff" stroke="#123f70" stroke-width="8"/><text x="100" y="112" text-anchor="middle" font-size="30" font-weight="700" fill="#123f70">DE</text><text x="100" y="142" text-anchor="middle" font-size="20" fill="#123f70">VERVE</text></svg>'
-  }));
   await page.goto("/");
   const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
   await expect(loadingLogo).toBeVisible();
-  await expect(loadingLogo).toHaveAttribute("src", "/api/brand/logo");
+  await expect(loadingLogo).toHaveAttribute("src", "/brand/de-verve-mark.svg");
+  await expect.poll(() => loadingLogo.evaluate(image => image.complete && image.naturalWidth > 0)).toBeTruthy();
   const loadingBox = await loadingLogo.boundingBox();
   expect(loadingBox).not.toBeNull();
   expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
