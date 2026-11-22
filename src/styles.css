@@ -2366,3 +2366,31 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 @media(max-width:360px){
   .top-quote-strip p{max-width:calc(100vw - 96px);font-size:10px}
 }
+
+
+/* Final customer chat brand mark: a larger, centered circular logo frame. */
+.ai-chat-head .ai-chat-brand-logo{
+  display:block!important;
+  box-sizing:border-box!important;
+  flex:0 0 58px!important;
+  width:58px!important;
+  min-width:58px!important;
+  height:58px!important;
+  max-height:58px!important;
+  aspect-ratio:1/1!important;
+  object-fit:contain!important;
+  object-position:center center!important;
+  border:1px solid rgba(226,197,142,.9)!important;
+  border-radius:50%!important;
+  background:#fff!important;
+  padding:5px!important;
+  box-shadow:0 2px 10px rgba(0,0,0,.18)!important;
+}
+.ai-chat-head .ai-chat-identity{min-width:0;flex:1 1 auto}
+.ai-chat-head .ai-chat-identity strong{text-transform:none}
+@media(max-width:360px){
+  .ai-chat-head .ai-chat-brand-logo{
+    flex-basis:54px!important;width:54px!important;min-width:54px!important;
+    height:54px!important;max-height:54px!important;padding:4px!important;
+  }
+}
