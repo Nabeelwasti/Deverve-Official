@@ -40,7 +40,7 @@ export default {
         as: "asm_Beng", bn: "ben_Beng", brx: "brx_Deva", doi: "doi_Deva",
         gu: "guj_Gujr", hi: "hin_Deva", kn: "kan_Knda", ks: "kas_Arab",
         kok: "gom_Deva", mai: "mai_Deva", ml: "mal_Mlym", mni: "mni_Beng",
-        mr: "mar_Deva", ne: "nep_Deva", or: "ory_Orya", pa: "pan_Guru",
+        mr: "mar_Deva", ne: "npi_Deva", or: "ory_Orya", pa: "pan_Guru",
         sa: "san_Deva", sat: "sat_Olck", sd: "snd_Arab", ta: "tam_Taml",
         te: "tel_Telu", ur: "urd_Arab"
       };
