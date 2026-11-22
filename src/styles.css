@@ -2555,3 +2555,5 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .trust-pillar-card.has-owner-art .trust-pillar-icon {
   display: none;
 }
+
+.brand-loader-logo{display:block!important;width:104px!important;height:104px!important;max-width:32vw!important;max-height:32vw!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:1px solid rgba(225,194,139,.85);border-radius:50%;background:#fff;padding:5px;box-shadow:0 0 42px rgba(209,174,111,.18)}
