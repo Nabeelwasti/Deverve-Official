@@ -690,7 +690,7 @@ function Storefront() {
         <span className="announcement-location">JHELUM, PAKISTAN</span>
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
-          <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span>
+          <div className="announcement-translate"><span aria-hidden="true">文</span>
             <button type="button" className="announcement-translate-button" aria-label="Translate this page" aria-expanded={translationHintOpen} onClick={() => setTranslationHintOpen(value => !value)}>Translate</button>
             {translationHintOpen && <span className="translation-hint" role="status">For live translation, use your browser’s built-in Translate option from its menu. This keeps you on the De VERVE website.</span>}
           </label>
