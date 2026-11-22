@@ -149,3 +149,23 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 - [ ] Approve a named owner and backup custodian, with access review dates.
 
 **Release limitation:** these procedures improve independent recovery, but they do not certify a completed disaster-recovery program until the owner has completed and documented the actual Drive/Dropbox uploads, independent copy and restore drill.
+
+## Automated encrypted D1 backup and restore drill
+
+The repository includes `scripts/d1-backup-restore.mjs` and the manually triggered / weekly `Encrypted D1 Backup and Restore Drill` workflow. It exports production D1, encrypts the SQL in memory with AES-256-GCM, uploads only the encrypted archive and a non-sensitive manifest to the private `deverve-db-backups` R2 bucket, then decrypts the archive in memory and imports it into a temporary APAC D1 database. The drill verifies table names and schema-object counts, compares row counts when the source snapshot is stable, and deletes the temporary database. Plaintext SQL is never written to the GitHub runner filesystem or uploaded to R2 by this workflow.
+
+### One-time owner setup
+
+1. In GitHub, open **Settings → Secrets and variables → Actions → New repository secret**.
+2. Add `D1_BACKUP_ENCRYPTION_KEY` with a fresh 32-byte hex key generated locally using `openssl rand -hex 32`. Do not paste this key into chat or commit it.
+3. Keep a separate recovery copy of this key in the business password manager. Do not rotate it unless the previous key is retained for older archives.
+4. Ensure `CLOUDFLARE_API_TOKEN` has **D1 Read**, **D1 Write**, and **R2 Storage Edit** permissions.
+5. Open **Actions → Encrypted D1 Backup and Restore Drill → Run workflow**. The workflow also runs weekly on Sunday at 21:00 UTC.
+
+### Existing legacy snapshot
+
+A pre-existing dated SQL snapshot in the private R2 backup bucket is a legacy plaintext export. Keep the bucket private. Do not copy that file to Drive or another third-party cloud. After the first encrypted backup and restore drill succeeds and the owner has verified the recovery key, remove the legacy plaintext snapshot under the normal backup-retention procedure.
+
+### Current verification boundary
+
+The Cloudflare control plane confirms that the backup bucket has no enabled public `r2.dev` endpoint and no custom domain. The R2 restore-drill bucket is also private. A successful automated D1 import/restore run is still required before production release; merely having an export object is not proof of recoverability.
