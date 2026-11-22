@@ -1004,6 +1004,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(item) });
   });
   await page.reload();
+  await expect(quote.getByRole("link", { name: "Quotes via ZenQuotes" })).toBeVisible();
   const firstQuoteText = (await quote.locator("p").innerText()).trim();
   expect(onlineQuotes.map(item => item.text)).toContain(firstQuoteText);
   await expect(quote.locator("cite")).toContainText("— ");
@@ -1011,6 +1012,7 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
 
   // A fresh page load requests a new attributed online quote; local brand copy remains the offline fallback.
   await page.reload();
+  await expect(page.locator(".top-quote-strip").getByRole("link", { name: "Quotes via ZenQuotes" })).toBeVisible();
   const nextQuoteText = (await page.locator(".top-quote-strip p").innerText()).trim();
   expect(onlineQuotes.map(item => item.text)).toContain(nextQuoteText);
   expect(nextQuoteText).not.toBe(firstQuoteText);
@@ -1065,13 +1067,13 @@ test("language picker searches broad language coverage and closes on outside tap
   await expect(page.getByRole("option", { name: /Kashmiri/ })).toBeVisible();
   await search.fill("Zulu");
   await expect(page.getByRole("option", { name: /Zulu/ })).toBeVisible();
-  await page.locator(".site-header").click();
+  await page.locator(".announcement-services").click();
   await expect(page.getByRole("dialog", { name: "Choose a website language" })).toHaveCount(0);
 });
 
 test("translation guidance and status popups dismiss after ten seconds", async ({ page }) => {
-  await page.clock.install();
   await page.goto("/");
+  await page.clock.install();
   const trigger = page.getByRole("button", { name: "Choose website language" });
   await trigger.click();
   await expect(page.getByRole("dialog", { name: "Choose a website language" })).toBeVisible();
