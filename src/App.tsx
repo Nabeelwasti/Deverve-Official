@@ -893,7 +893,7 @@ function Storefront() {
             <select aria-label="Translate this page" defaultValue="" onChange={event=>{const language=event.currentTarget.value;if(!language)return;const pageUrl=encodeURIComponent(window.location.href);const url=language==="all"?"https://translate.google.com/?sl=auto&u="+pageUrl:"https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+pageUrl;window.open(url,"_blank","noopener,noreferrer");event.currentTarget.value="";}}>
               <option value="">Language</option>
               {TRANSLATION_LANGUAGES.map(([code,name])=><option key={code} value={code}>{TRANSLATION_NATIVE_LABELS[code]??name}</option>)}
-              <option value="all">More languages…</option>
+              <option value="all">Open Google Translate…</option>
             </select>
           </label>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
