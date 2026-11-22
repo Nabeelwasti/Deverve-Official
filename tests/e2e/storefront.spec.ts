@@ -1107,7 +1107,7 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
   await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   await page.route("**/api/ai/chat", route => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ reply: "Aap kaise hain? I can help you today." })
+    body: JSON.stringify({ reply: "Aap kaise hain, main theek hoon. I can help you today." })
   }));
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
