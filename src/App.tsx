@@ -513,14 +513,47 @@ function playLuxuryChime(type: "add" | "favourite" = "add") {
   } catch {}
 }
 
+const GOLDEN_QUOTES = [
+  { text: "Wear confidence. Every day.", author: "DE VERVE" },
+  { text: "Style is how you express your story.", author: "DE VERVE" },
+  { text: "Everyday comfort. Effortless confidence.", author: "DE VERVE" },
+  { text: "Make every day your own.", author: "DE VERVE" },
+  { text: "Good style begins with feeling good.", author: "DE VERVE" },
+  { text: "Confidence never goes out of style.", author: "DE VERVE" },
+  { text: "Find your fit. Own your moment.", author: "DE VERVE" },
+  { text: "Made for movement. Chosen by you.", author: "DE VERVE" },
+  { text: "Your everyday deserves better.", author: "DE VERVE" },
+  { text: "Simple choices. Strong personal style.", author: "DE VERVE" },
+  { text: "Wear what moves you forward.", author: "DE VERVE" },
+  { text: "Comfort is always in good taste.", author: "DE VERVE" },
+] as const;
+
+function selectGoldenQuote() {
+  const storageKey = "deverve:golden-quote:last:v1";
+  let previous = "";
+  try { previous = localStorage.getItem(storageKey) || ""; } catch { /* Storage may be unavailable. */ }
+  const choices = GOLDEN_QUOTES.filter((quote) => quote.text !== previous);
+  const pool = choices.length ? choices : GOLDEN_QUOTES;
+  const selected = pool[Math.floor(Math.random() * pool.length)] || GOLDEN_QUOTES[0];
+  try { localStorage.setItem(storageKey, selected.text); } catch { /* Quote rotation must never block the storefront. */ }
+  return selected;
+}
+
 function Storefront() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
   useEffect(()=>{let active=true;void fetch("/api/reviews/featured",{headers:{accept:"application/json"}}).then(async response=>{if(!response.ok)return;const payload=await response.json() as {reviews?:typeof featuredReviews};if(active&&Array.isArray(payload.reviews))setFeaturedReviews(payload.reviews);}).catch(()=>{});return()=>{active=false;};},[]);
-  // Brand-controlled copy keeps the quote ribbon readable and independent of third-party quote APIs.
-  const goldenQuote={text:"Wear confidence. Every day.",author:"DE VERVE"};
+  // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
+  const [goldenQuote, setGoldenQuote] = useState(selectGoldenQuote);
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setGoldenQuote(selectGoldenQuote());
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, []);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
