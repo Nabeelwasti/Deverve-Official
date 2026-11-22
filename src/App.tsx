@@ -691,8 +691,8 @@ function Storefront() {
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
           <div className="announcement-translate"><span aria-hidden="true">文</span>
-            <button type="button" className="announcement-translate-button" aria-label="Translate this page" aria-expanded={translationHintOpen} onClick={() => setTranslationHintOpen(value => !value)}>Translate</button>
-            {translationHintOpen && <span className="translation-hint" role="status">For live translation, use your browser’s built-in Translate option from its menu. This keeps you on the De VERVE website.</span>}
+            <button type="button" className="announcement-translate-button" aria-label="How to translate this page" aria-expanded={translationHintOpen} onClick={() => setTranslationHintOpen(value => !value)}>How to translate</button>
+            {translationHintOpen && <span className="translation-hint" role="status">Use your browser’s built-in page translation (in Chrome, open ⋮ and choose Translate). You will stay on the De VERVE website; availability depends on your browser.</span>}
           </div>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
         </div>
