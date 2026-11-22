@@ -605,10 +605,11 @@ export default function Admin() {
       }
       const extension = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
       const file = new File([blob], "deverve-media-" + asset.id + "." + extension, { type: mime, lastModified: Date.now() });
-      setReplaceMedia(productMedia.find(item => item.id === asset.id) ? asset : null);
+      const attachedAsset = productMedia.find(item => item.id === asset.id) || null;
+      setReplaceMedia(attachedAsset);
       setMediaFiles([file]);
       setMediaAlt(asset.alt_text || "");
-      setMediaColor(asset.color || "");
+      setMediaColor(attachedAsset?.color || asset.color || "");
       setCropFiles([file]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The image could not be opened for editing.");
