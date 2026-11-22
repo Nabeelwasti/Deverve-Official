@@ -5169,37 +5169,53 @@ const SITE_TRANSLATION_LANGUAGES = new Set([
 async function publicInspirationalQuoteRoute(request: Request, url: URL): Promise<Response | null> {
   if (url.pathname !== "/api/quotes/random") return null;
   if (request.method !== "GET") return error("Method not allowed", 405);
-  const cacheKey = new Request(new URL("/api/quotes/random", url.origin).toString(), { method: "GET" });
+  const excluded = (url.searchParams.get("exclude") ?? "").slice(0, 180);
+  const cacheKey = new Request(new URL("/api/quotes/pool", url.origin).toString(), { method: "GET" });
   const edgeCache = (globalThis as typeof globalThis & {
     caches?: { default?: { match(key: Request): Promise<Response | undefined>; put(key: Request, response: Response): Promise<void> } };
   }).caches?.default;
+  let quotes: Array<{ q: string; a: string }> = [];
   try {
     const cached = await edgeCache?.match(cacheKey);
-    if (cached) return cached;
-  } catch { /* Cache is an optimization; continue to the upstream source. */ }
-  try {
-    const upstream = await fetch("https://zenquotes.io/api/random", {
-      headers: { accept: "application/json" },
-      signal: AbortSignal.timeout(5_000)
-    });
-    if (!upstream.ok) return error("The online quote source is temporarily unavailable", 503);
-    const payload = await upstream.json() as Array<{ q?: unknown; a?: unknown }>;
-    const item = Array.isArray(payload) ? payload[0] : null;
-    const quoteText = typeof item?.q === "string" ? item.q.trim() : "";
-    const author = typeof item?.a === "string" ? item.a.trim() : "";
-    if (!quoteText || quoteText.length > 180 || !author || author.length > 70 || /[<>\u0000-\u001f]/.test(quoteText + author)) {
-      return error("The online quote source returned an invalid quote", 502);
+    if (cached) {
+      const payload = await cached.json() as { quotes?: Array<{ q?: unknown; a?: unknown }> };
+      if (Array.isArray(payload.quotes)) quotes = payload.quotes.filter((item): item is { q: string; a: string } =>
+        typeof item.q === "string" && typeof item.a === "string"
+      );
     }
-    const response = json(
-      { text: quoteText, author, source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
-      200,
-      { "cache-control": "public, max-age=300, s-maxage=1800", "x-content-type-options": "nosniff" }
-    );
-    try { await edgeCache?.put(cacheKey, response.clone()); } catch { /* Cache failure must not hide a valid quote. */ }
-    return response;
-  } catch {
-    return error("The online quote source is temporarily unavailable", 503);
+  } catch { /* Cache is an optimization; refresh from the source below. */ }
+  if (!quotes.length) {
+    try {
+      const upstream = await fetch("https://zenquotes.io/api/quotes/", {
+        headers: { accept: "application/json" },
+        signal: AbortSignal.timeout(7_000)
+      });
+      if (!upstream.ok) return error("The online quote source is temporarily unavailable", 503);
+      const payload = await upstream.json() as Array<{ q?: unknown; a?: unknown }>;
+      if (!Array.isArray(payload)) return error("The online quote source returned an invalid list", 502);
+      quotes = payload.filter((item): item is { q: string; a: string } =>
+        typeof item?.q === "string" && typeof item?.a === "string" &&
+        item.q.trim().length > 0 && item.q.trim().length <= 180 &&
+        item.a.trim().length > 0 && item.a.trim().length <= 70 &&
+        !/[<>\\u0000-\\u001f]/.test(item.q + item.a)
+      ).map(item => ({ q: item.q.trim(), a: item.a.trim() })).slice(0, 500);
+      if (!quotes.length) return error("The online quote source returned no usable quotes", 502);
+      try {
+        await edgeCache?.put(cacheKey, json({ quotes }, 200, { "cache-control": "public, max-age=0, s-maxage=3600" }));
+      } catch { /* A cache write failure must not hide a valid quote list. */ }
+    } catch {
+      return error("The online quote source is temporarily unavailable", 503);
+    }
   }
+  const choices = excluded ? quotes.filter(item => item.q !== excluded) : quotes;
+  const pool = choices.length ? choices : quotes;
+  const selected = pool[Math.floor(Math.random() * pool.length)];
+  if (!selected) return error("The online quote source returned no usable quote", 502);
+  return json(
+    { text: selected.q, author: selected.a, source: "ZenQuotes", sourceUrl: "https://zenquotes.io/" },
+    200,
+    { "cache-control": "no-store", "x-content-type-options": "nosniff" }
+  );
 }
 
 async function publicSiteTranslationRoute(request: Request, env: Env, url: URL): Promise<Response | null> {
