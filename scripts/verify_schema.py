@@ -46,6 +46,18 @@ assert "contact_type" in enquiry_columns, "Extended customer contact categories 
 
 variant_columns = {row[1] for row in db.execute("PRAGMA table_info(product_variants)")}
 order_columns = {row[1] for row in db.execute("PRAGMA table_info(orders)")}
+assert any(row[1] == "idx_product_variants_sku" for row in db.execute("PRAGMA index_list(product_variants)")), "SKU lookup index is missing"
+assert any(row[1] == "idx_product_variants_barcode" for row in db.execute("PRAGMA index_list(product_variants)")), "Barcode lookup index is missing"
+assert any(row[1] == "idx_order_items_order" for row in db.execute("PRAGMA index_list(order_items)")), "Order item foreign-key lookup index is missing"
+assert any(row[1] == "idx_orders_status_created" for row in db.execute("PRAGMA index_list(orders)")), "Order status/history index is missing"
+assert any(row[1] == "idx_pos_sales_status_created" for row in db.execute("PRAGMA index_list(pos_sales)")), "POS status/history index is missing"
+assert any(row[1] == "idx_payment_webhook_status" for row in db.execute("PRAGMA index_list(payment_webhook_events)")), "Payment webhook processing index is missing"
+sku_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM product_variants WHERE sku = ?", ("SKU-INDEX-TEST",)))
+assert "idx_product_variants_sku" in sku_plan, f"SKU query does not use its index: {sku_plan}"
+order_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM order_items WHERE order_id = ?", ("ORDER-INDEX-TEST",)))
+assert "idx_order_items_order" in order_plan, f"Order-item query does not use its index: {order_plan}"
+pos_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT id FROM pos_sales WHERE status = ? ORDER BY created_at DESC LIMIT 50", ("completed",)))
+assert "idx_pos_sales_status_created" in pos_plan, f"POS status query does not use its index: {pos_plan}"
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
 variant_option_indexes = [row for row in db.execute("PRAGMA index_list(product_variants)") if row[1] == "idx_product_variants_unique_active_options"]
 assert variant_option_indexes and variant_option_indexes[0][2] == 1, "Active size/colour combinations must be unique per product"
