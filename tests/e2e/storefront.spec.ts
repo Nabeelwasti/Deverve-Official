@@ -833,9 +833,7 @@ test("customer header search, language ribbon and support launcher remain usable
   await page.goto("/");
   const language = page.getByLabel("Translate this page");
   await expect(language).toBeVisible();
-  await expect(language.locator("option")).toHaveCount(90, { timeout: 5000 }).catch(async () => {
-    await expect(language.locator("option").count()).resolves.toBeGreaterThan(40);
-  });
+  expect(await language.locator("option").count()).toBeGreaterThan(40);
   const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(search).toBeVisible();
   await search.fill("wholesale");
