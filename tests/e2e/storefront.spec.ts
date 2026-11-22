@@ -1089,9 +1089,9 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
       constructor(text: string) { this.text = text; }
     }
     Object.defineProperty(window, "SpeechSynthesisUtterance", { value: MockUtterance, configurable: true });
-    const voice = { name: "Urdu test voice", lang: "ur-PK", default: true, localService: true, voiceURI: "test-urdu" };
+    const voices = [{ name: "Urdu test voice", lang: "ur-PK", default: true, localService: true, voiceURI: "test-urdu" }, { name: "English test voice", lang: "en-US", default: false, localService: true, voiceURI: "test-english" }];
     const synth = {
-      getVoices: () => [voice],
+      getVoices: () => voices,
       cancel: () => undefined,
       speak: (utterance: MockUtterance) => {
         spoken.push({ text: utterance.text, lang: utterance.lang });
@@ -1107,7 +1107,7 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
   await page.route("**/api/pages/home", route => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   await page.route("**/api/ai/chat", route => route.fulfill({
     status: 200, contentType: "application/json",
-    body: JSON.stringify({ reply: "Aap kaise hain? Main theek hoon." })
+    body: JSON.stringify({ reply: "Aap kaise hain? I can help you today." })
   }));
   await page.goto("/");
   await page.getByRole("button", { name: "Open De VERVE AI chat" }).click();
@@ -1115,9 +1115,11 @@ test("AI speech detects and reads common Roman Urdu using an installed Urdu voic
   await chat.getByRole("textbox", { name: "Your message" }).fill("Please reply in Roman Urdu.");
   await chat.getByRole("button", { name: "Send message" }).click();
   const assistantReply = page.locator(".ai-chat-message-wrap.model").last();
-  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain? Main theek hoon.");
+  await expect(assistantReply.locator("p")).toHaveText("Aap kaise hain? I can help you today.");
   await assistantReply.getByRole("button", { name: "Speak message" }).click();
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.length)).toBe(2);
   await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.lang)).toBe("ur-PK");
+  await expect.poll(() => page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[1]?.lang)).toBe("en-US");
   const spokenText = await page.evaluate(() => (window as Window & { __spoken?: Array<{ text: string; lang: string }> }).__spoken?.[0]?.text || "");
   expect(spokenText).toContain("آپ");
   expect(spokenText).toContain("کیسے");
