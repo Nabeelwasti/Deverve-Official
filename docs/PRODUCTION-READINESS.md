@@ -1,5 +1,33 @@
 # Production readiness — historical engineering record and current status
 
+## Current verified status — 22 November 2026, after PR #23
+
+### Source, CI and production deployment
+- **Current main branch:** documentation release record commit `26b9dc00342502c220332f47593b44cbc561cf59`.
+- **Latest application-code release:** `ccf96993a74a24fb13c6e49cc7578830834e1e62`, merged through [PR #23](https://github.com/Nabeelwasti/Deverve-Official/pull/23). The later main commit updates release documentation only.
+- **Latest verified mainline CI:** [run 45048038622](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45048038622) succeeded. TypeScript/build, dependency audit, Worker authentication/translation tests, D1 schema/constraint checks, backup-script syntax and **148 desktop/mobile Playwright tests** passed. The isolated remote D1 integration suite was skipped because dedicated Cloudflare GitHub Actions secrets are not configured.
+- **Latest verified production deployment:** Cloudflare Pages project `deverve-official`, deployment `f86435d6-4898-4461-adf5-2d45b4c38e6d`, source commit `ccf96993a74a24fb13c6e49cc7578830834e1e62`. Cloudflare confirmed successful queued, initialize, clone, build and deploy stages. Canonical URL: https://deverve-official.pages.dev.
+- **Deployment controls:** Git-connected automatic and production deployments remain disabled; preview deployment setting remains `none`. Use a reviewed, CI-passing commit and explicit manual production deployment.
+
+### Changes included in PR #23
+- The initial HTML shell and React loading screen render a circular De VERVE vector mark inline. The loader no longer waits for a remote brand-logo request or the large embedded-raster SVG. A legacy landscape CSS override was corrected.
+- Golden quotes again use a same-origin Worker endpoint and an edge-cached online quote pool. The visible strip displays only quote text and author; it does not display or link to the upstream service brand. The local De VERVE quote pool is used when the online service fails or returns invalid data.
+- AI chat speech now detects common writing systems, supports a manual language override, exposes installed device speech locales, and separates mixed-language sentences into their respective speech voices. Common Roman Urdu words are converted to Urdu script before speech. Actual pronunciation still depends on the voices installed and exposed by the visitor's browser/device; this is not a guarantee of a voice for every language or dialect.
+- Product gallery images can be reopened for crop/reposition. The editor creates a new derivative and swaps only the selected product attachment, preserving the original library asset and other placements.
+- The nopCommerce assessment was updated. No nopCommerce source, themes, schema or dependencies were imported. Multi-store, tax automation and multi-currency remain deferred until the owner approves the business rules and operational need.
+
+### Remaining release gates — not certified complete
+1. **Encrypted D1 backup/restore:** workflow and AES-256-GCM script exist, but GitHub Actions secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `D1_BACKUP_ENCRYPTION_KEY` are not configured. No successful automated encrypted backup/isolated restore drill is verified yet.
+2. **Legacy backup object:** the private `deverve-db-backups` R2 bucket contains legacy object `d1/deverve-production-2026-11-21.sql` (139,921 bytes). The bucket has no public `r2.dev` endpoint or custom domain. Keep the object private and do not copy it to Drive or another cloud. Retain it until an encrypted backup and isolated restore drill succeed and the owner verifies the recovery key; then remove it under the documented retention procedure.
+3. **Remote D1 integration:** still skipped in CI until dedicated test credentials are configured. Schema inspection and local schema checks do not replace a remote integration/restore test.
+4. **Physical-device acceptance:** real Android camera, gallery upload, microphone, speech voices, scanner, mobile checkout and touch behavior still require an owner-operated physical-device pass.
+5. **Media editing scope:** product-gallery recropping/repositioning is implemented. Existing vehicle, brand, CMS section and category assets still need the same per-placement editor and preview.
+6. **Provider and operations hardening:** payment/courier credentials and owner-approved live transaction tests, provider-adapter contract/health reporting, API contract/version tests and production telemetry remain outstanding.
+7. **Independent off-account recovery:** Dropbox/Google Drive replication and a second independently controlled encrypted backup copy are not automated or verified.
+
+Do not label the whole platform 100% production-ready until these external and operational gates have evidence. The successful Pages deployment and 148-test CI run verify the application release; they do not certify disaster recovery, live payment/courier operations or physical-device acceptance.
+
+
 ## Current verified status — 21 November 2026, after production release
 
 This section supersedes older source, deployment, migration and catalogue-state claims in the historical notes below.
