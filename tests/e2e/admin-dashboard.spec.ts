@@ -6,6 +6,10 @@ const vehicleId = "22222222-2222-4222-8222-222222222222";
 const rentalId = "33333333-3333-4333-8333-333333333333";
 
 async function mockAdminApi(page: Page, options: { rental?: Record<string, unknown>; inventory?: Record<string, unknown> } = {}) {
+  await page.route("**/api/brand/logo*", route => route.fulfill({
+    status: 200, contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="564" height="114" viewBox="0 0 564 114"><rect width="564" height="114" fill="#fff"/><text x="12" y="78" font-size="64" fill="#123f70">DE VERVE</text></svg>'
+  }));
   let rental = options.rental ?? null;
   await page.route("**/api/admin/**", async (route) => {
     const request = route.request();
