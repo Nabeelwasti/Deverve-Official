@@ -589,6 +589,7 @@ export default function Admin() {
     if (!mediaFiles.length || !mediaProduct) return;
     const invalid = mediaFiles.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5_000_000);
     if (invalid) { setMessage(invalid.size > 5_000_000 ? invalid.name + " is larger than 5 MB." : invalid.name + " is not a supported JPG, PNG or WebP image."); return; }
+    setReplaceMedia(null);
     setCropFiles([...mediaFiles]);
   };
   const recropProductMedia = async (asset: MediaAsset) => {
@@ -604,7 +605,7 @@ export default function Admin() {
       }
       const extension = mime === "image/jpeg" ? "jpg" : mime === "image/webp" ? "webp" : "png";
       const file = new File([blob], "deverve-media-" + asset.id + "." + extension, { type: mime, lastModified: Date.now() });
-      setReplaceMedia(asset);
+      setReplaceMedia(productMedia.find(item => item.id === asset.id) ? asset : null);
       setMediaFiles([file]);
       setMediaAlt(asset.alt_text || "");
       setMediaColor(asset.color || "");
@@ -1360,9 +1361,9 @@ export default function Admin() {
         </section></div>}
         {brandCropRequest && <ImageCropper files={[brandCropRequest.file]} aspectRatio={1} frameLabel={brandCropRequest.kind==="logo"?"Circular brand logo":"Square favicon"} onCancel={()=>setBrandCropRequest(null)} onComplete={files=>{const request=brandCropRequest;setBrandCropRequest(null);if(files[0])void saveBrandAsset(request.kind,files[0]);}} />}
         {categoryCropRequest && <ImageCropper files={[categoryCropRequest.file]} aspectRatio={4/5} frameLabel="Homepage category artwork" onCancel={()=>setCategoryCropRequest(null)} onComplete={files=>{const request=categoryCropRequest;setCategoryCropRequest(null);if(files[0])void saveCategoryAsset(request.category,files[0]);}} />}
-        {cropFiles && <ImageCropper files={cropFiles} aspectRatio={4/5} frameLabel="Product photo" onCancel={() => setCropFiles(null)} onComplete={(cropped) => void uploadCroppedMedia(cropped)} />}
+        {cropFiles && <ImageCropper files={cropFiles} aspectRatio={4/5} frameLabel="Product photo" onCancel={() => { setCropFiles(null); setReplaceMedia(null); }} onComplete={(cropped) => void uploadCroppedMedia(cropped)} />}
         {mediaProduct && <div className="admin-modal-backdrop"><section className="admin-editor admin-media-editor" role="dialog" aria-modal="true" aria-labelledby="media-editor-title">
-          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max. Add separate photos for each colour after creating exact size/colour stock variants.</p></div><button type="button" className="admin-close" onClick={() => setMediaProduct(null)} aria-label="Close">×</button></div>
+          <div className="admin-panel-heading"><div><p className="admin-eyebrow">PRODUCT MEDIA</p><h2 id="media-editor-title">{mediaProduct.name}</h2><p className="admin-muted">Build a gallery with multiple photos and short MP4/WebM videos. Images: 5 MB max. Videos: 20 MB max. Add separate photos for each colour after creating exact size/colour stock variants.</p></div><button type="button" className="admin-close" onClick={() => { setMediaProduct(null); setReplaceMedia(null); setCropFiles(null); }} aria-label="Close">×</button></div>
           <form className="admin-form admin-media-upload" onSubmit={uploadMedia}>
             <label>Choose product images (up to 50 at once)<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => { const files = Array.from(event.target.files ?? []); setMediaFiles(files.slice(0, 50)); if (files.length > 50) setMessage("Only the first 50 selected images were kept."); }} /></label>
             <label>Gallery colour<select value={mediaColor} onChange={(event) => setMediaColor(event.target.value)}><option value="">General photos · all colours</option>{[...new Set(mediaVariants.filter((variant) => variant.is_active === 1).flatMap((variant) => variant.color.split(/[,;|]+/).map((color) => color.trim()).filter(Boolean)))].sort().map((color) => <option key={color} value={color}>{color} only</option>)}</select><small>Choose a colour to show these photos only when customers select that colour. Keep “General photos” for images shared by every colour.</small></label>
