@@ -832,7 +832,7 @@ test("storefront places the golden quote below the top ribbon and offers common 
     expect.objectContaining({ code: "ur", label: "اردو" }),
     expect.objectContaining({ code: "zap", label: "Zapotec" })
   ]));
-  await expect(languagePicker.locator('option[value="all"]')).toHaveText("More languages…");
+  await expect(languagePicker.locator('option[value="all"]')).toHaveText("Open Google Translate…");
   await expect(languagePicker.locator('option[value="ur"]')).toHaveText("اردو");
   await expect(languagePicker.locator('option[value="ar"]')).toHaveText("العربية");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
