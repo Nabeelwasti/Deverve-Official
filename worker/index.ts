@@ -4692,7 +4692,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
 
 }
 
-function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
+export function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
   const output=new Uint8Array(44+pcm.length),view=new DataView(output.buffer);
   output.set(new TextEncoder().encode("RIFF"),0);view.setUint32(4,36+pcm.length,true);
   output.set(new TextEncoder().encode("WAVEfmt "),8);view.setUint32(16,16,true);
@@ -4702,7 +4702,7 @@ function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
   return output;
 }
 
-async function generateGeminiSpeech(apiKey:string,text:string,language:string,voice:string):Promise<{ok:boolean;status:number;audio?:Uint8Array;message:string;model:string}> {
+export async function generateGeminiSpeech(apiKey:string,text:string,language:string,voice:string):Promise<{ok:boolean;status:number;audio?:Uint8Array;message:string;model:string}> {
   const models=["gemini-3.1-flash-tts-preview","gemini-2.5-flash-preview-tts"];
   let last={ok:false,status:503,audio:undefined as Uint8Array|undefined,message:"Speech generation is temporarily unavailable",model:models[0]};
   for(const model of models){
