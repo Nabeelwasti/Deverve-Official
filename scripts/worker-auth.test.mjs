@@ -3087,9 +3087,10 @@ test("server promotion selection never grants an unconfigured offer", () => {
 test("public website translation is same-origin, language allowlisted and uses the bounded Workers AI model", async () => {
   const db = new FakeD1();
   const calls = [];
-  const testEnv = { ...env(db), AI: { run: async (model, input) => {
-    calls.push({ model, input });
-    return { translated_text: "یہ ایک ترجمہ ہے" };
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async request => {
+    const input = await request.json();
+    calls.push({ url: request.url, input });
+    return Response.json({ translatedText: "یہ ایک ترجمہ ہے" });
   } } };
   const response = await handleRequest(new Request(origin + "/api/translate", {
     method: "POST",
@@ -3099,14 +3100,14 @@ test("public website translation is same-origin, language allowlisted and uses t
   assert.equal(response.status, 200);
   assert.equal((await response.json()).translatedText, "یہ ایک ترجمہ ہے");
   assert.equal(calls.length, 1);
-  assert.equal(calls[0].model, "@cf/meta/m2m100-1.2b");
-  assert.deepEqual(calls[0].input, { text: "Welcome to De VERVE", source_lang: "en", target_lang: "ur" });
+  assert.equal(calls[0].url, "https://deverve-translation.internal/translate");
+  assert.deepEqual(calls[0].input, { text: "Welcome to De VERVE", target_lang: "ur" });
 });
 
 test("public website translation rejects unsupported languages, oversized input and cross-origin requests", async () => {
   const db = new FakeD1();
   let calls = 0;
-  const testEnv = { ...env(db), AI: { run: async () => { calls += 1; return { translated_text: "translated" }; } } };
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async () => { calls += 1; return Response.json({ translatedText: "translated" }); } } };
   const send = (body, headers = {}) => handleRequest(new Request(origin + "/api/translate", {
     method: "POST", headers: { origin, "sec-fetch-site": "same-origin", "content-type": "application/json", "cf-connecting-ip": "203.0.113.71", ...headers },
     body: JSON.stringify(body)
@@ -3124,7 +3125,7 @@ test("public website translation rejects unsupported languages, oversized input 
 test("public website translation enforces an atomic account-wide daily inference ceiling", async () => {
   const db = new FakeD1();
   let calls = 0;
-  const testEnv = { ...env(db), AI: { run: async () => { calls += 1; return { translated_text: "translated" }; } } };
+  const testEnv = { ...env(db), TRANSLATION: { fetch: async () => { calls += 1; return Response.json({ translatedText: "translated" }); } } };
   for (let index = 0; index < 20; index += 1) {
     const response = await handleRequest(new Request(origin + "/api/translate", {
       method: "POST",
