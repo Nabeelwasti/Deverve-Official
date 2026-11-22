@@ -17,11 +17,11 @@ interface D1Database {
   batch<T = Record<string, unknown>>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]>;
 }
 export interface WorkerExecutionContext { waitUntil(promise:Promise<unknown>):void; }
-interface WorkersAI {
-  run(model: string, input: { text: string; source_lang: string; target_lang: string }): Promise<{ translated_text?: string }>;
+interface TranslationServiceBinding {
+  fetch(request: Request): Promise<Response>;
 }
 export interface Env {
-  AI?: WorkersAI;
+  TRANSLATION?: TranslationServiceBinding;
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
@@ -5170,7 +5170,7 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
   if (url.pathname !== "/api/translate") return null;
   if (request.method !== "POST") return error("Method not allowed", 405);
   if (!requireSameOrigin(request, url)) return error("Translation requests must come from this website", 403);
-  if (!env.AI) return error("Live translation is temporarily unavailable", 503);
+  if (!env.TRANSLATION) return error("Live translation is temporarily unavailable", 503);
 
   const visitorLimit = await enforcePublicRateLimit(request, env, "site_translation", 20, 60 * 60);
   if (visitorLimit) return visitorLimit;
@@ -5207,12 +5207,14 @@ async function publicSiteTranslationRoute(request: Request, env: Env, url: URL):
   }
 
   try {
-    const result = await env.AI.run("@cf/meta/m2m100-1.2b", {
-      text,
-      source_lang: "en",
-      target_lang: targetLang,
-    });
-    const translatedText = typeof result?.translated_text === "string" ? result.translated_text.trim() : "";
+    const serviceResponse = await env.TRANSLATION.fetch(new Request("https://deverve-translation.internal/translate", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ text, target_lang: targetLang }),
+    }));
+    const result = await serviceResponse.json().catch(() => ({})) as { translatedText?: string };
+    if (!serviceResponse.ok) return error("Translation is temporarily unavailable. Please try again later.", 503);
+    const translatedText = typeof result.translatedText === "string" ? result.translatedText.trim() : "";
     if (!translatedText || translatedText.length > 2_400) return error("The translation service returned an invalid result", 502);
     return json({ translatedText, remainingDailyRequests: Math.max(0, 20 - dailyCount) });
   } catch {
