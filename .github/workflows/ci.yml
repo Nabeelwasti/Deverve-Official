@@ -49,9 +49,9 @@ jobs:
         run: |
           test -s dist/_headers
           grep -q "Content-Security-Policy: default-src 'self'" dist/_headers
-          grep -q "script-src 'self' https://challenges.cloudflare.com" dist/_headers
-          grep -q "frame-src 'self' https://challenges.cloudflare.com" dist/_headers
-          grep -q "connect-src 'self' https://challenges.cloudflare.com" dist/_headers
+          grep -q "script-src 'self' https://challenges.cloudflare.com https://translate.google.com" dist/_headers
+          grep -q "frame-src 'self' https://challenges.cloudflare.com https://translate.google.com https://translate.googleapis.com" dist/_headers
+          grep -q "connect-src 'self' https://challenges.cloudflare.com https://translate.google.com https://translate.googleapis.com" dist/_headers
           grep -q "Permissions-Policy: camera=(self), microphone=(self), geolocation=()" dist/_headers
           expected_permissions="$(sed -n '/^[[:space:]]*Permissions-Policy:/s/^[[:space:]]*//p' public/_headers | head -n 1)"
           grep -Fq "\"$expected_permissions\"" .github/workflows/production-smoke.yml
