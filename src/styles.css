@@ -2402,3 +2402,5 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   color:#173b61;font:500 11px/1.55 "DM Sans",sans-serif;
   box-shadow:0 12px 32px rgba(5,30,58,.18);
 }
+
+.announcement-translate{position:relative}
