@@ -5197,7 +5197,7 @@ async function publicInspirationalQuoteRoute(request: Request, url: URL): Promis
         typeof item?.q === "string" && typeof item?.a === "string" &&
         item.q.trim().length > 0 && item.q.trim().length <= 180 &&
         item.a.trim().length > 0 && item.a.trim().length <= 70 &&
-        !/[<>\\u0000-\\u001f]/.test(item.q + item.a)
+        !/[<>\u0000-\u001f]/.test(item.q + item.a)
       ).map(item => ({ q: item.q.trim(), a: item.a.trim() })).slice(0, 500);
       if (!quotes.length) return error("The online quote source returned no usable quotes", 502);
       try {
