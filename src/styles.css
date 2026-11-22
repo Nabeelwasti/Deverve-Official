@@ -2303,3 +2303,58 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
     max-height:calc(100dvh - 180px - env(safe-area-inset-bottom))!important;
   }
 }
+
+
+/* Final measured customer controls: avoid flex-shrink rounding below accessible touch size. */
+.ai-chat-composer{gap:6px!important;align-items:center!important}
+.ai-chat-composer .ai-chat-icon-button,
+.ai-chat-composer .ai-chat-send{
+  box-sizing:border-box!important;
+  flex:0 0 48px!important;
+  width:48px!important;min-width:48px!important;
+  height:48px!important;min-height:48px!important;
+  padding:0!important;
+  touch-action:manipulation;
+}
+.ai-chat-composer .ai-chat-send{border-radius:13px!important}
+.ai-chat-composer textarea{min-width:0;min-height:38px}
+@media(max-width:480px){
+  .ai-chat-composer{gap:4px!important;padding:5px 6px!important}
+  .ai-chat-composer .ai-chat-icon-button,
+  .ai-chat-composer .ai-chat-send{
+    flex-basis:48px!important;width:48px!important;min-width:48px!important;
+    height:48px!important;min-height:48px!important;
+  }
+}
+
+/* Keep the launcher clear of page controls on desktop and the mobile dock on phones. */
+@media(min-width:761px){
+  .ai-chat-launcher{bottom:clamp(72px,9vh,96px)!important}
+  .ai-chat-panel{
+    bottom:calc(clamp(72px,9vh,96px) + 84px)!important;
+    height:min(600px,calc(100dvh - 190px))!important;
+    max-height:calc(100dvh - 190px)!important;
+  }
+}
+
+/* Short editorial quotes stay on one line; longer copy wraps without clipping. */
+.top-quote-strip{
+  display:flex;align-items:center;justify-content:center;flex-wrap:wrap;
+  column-gap:8px;row-gap:4px;padding:9px 14px;overflow:visible;
+}
+.top-quote-strip p{
+  flex:0 1 auto;width:auto;min-width:0;max-width:calc(100vw - 110px);
+  margin:0;white-space:normal;overflow:visible;text-overflow:clip;
+  overflow-wrap:anywhere;word-break:normal;line-height:1.4;
+}
+.top-quote-strip cite{
+  display:inline;flex:0 0 auto;max-width:none;white-space:nowrap;
+}
+@media(max-width:760px){
+  .top-quote-strip{justify-content:center;gap:5px 7px;padding:9px 10px}
+  .top-quote-strip p{flex:0 1 auto;width:auto;max-width:calc(100vw - 110px);font-size:11px;text-align:center}
+  .top-quote-strip cite{display:inline;flex:0 0 auto;max-width:none;font-size:8px}
+}
+@media(max-width:360px){
+  .top-quote-strip p{max-width:calc(100vw - 96px);font-size:10px}
+}
