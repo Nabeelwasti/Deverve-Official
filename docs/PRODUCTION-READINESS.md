@@ -28,7 +28,7 @@
 Do not label the whole platform 100% production-ready until these external and operational gates have evidence. The successful Pages deployment and 154-test CI run verify the application release; they do not certify disaster recovery, live payment/courier operations or physical-device acceptance.
 
 
-## Current verified status — 21 November 2026, after production release
+## Historical verified status — 21 November 2026 (superseded by the current release above)
 
 This section supersedes older source, deployment, migration and catalogue-state claims in the historical notes below.
 
