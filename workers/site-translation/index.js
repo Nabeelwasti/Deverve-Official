@@ -34,7 +34,7 @@ export default {
 
     try {
       const protectedBrands = [];
-      const protectedText = text.replace(/\\bDe VERVE\\b/gi, match => {
+      const protectedText = text.replace(/\bDe VERVE\b/gi, match => {
         const token = `ZXQDVBRAND${protectedBrands.length}ZXQ`;
         protectedBrands.push(match);
         return token;
