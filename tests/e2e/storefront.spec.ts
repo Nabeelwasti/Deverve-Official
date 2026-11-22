@@ -868,7 +868,7 @@ test("official wordmark remains legible on loading and inside AI support while l
   expect(loadingBox!.width / loadingBox!.height).toBeGreaterThan(3.5);
 
   await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
-  const launcher = page.getByRole("button", { name: "Open AI customer support chat" });
+  const launcher = page.getByRole("button", { name: "Open De VERVE AI chat" });
   await expect(launcher).toContainText("AI HELP");
   const launcherBox = await launcher.boundingBox();
   expect(launcherBox).not.toBeNull();
