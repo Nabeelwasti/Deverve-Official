@@ -287,13 +287,23 @@ function persistGoldenQuote(quote: { text: string; author: string }) {
   try { localStorage.setItem("deverve:golden-quote:last:v1", quote.text); } catch { /* Quote rotation must never block the storefront. */ }
 }
 
-const SITE_TRANSLATION_LANGUAGES = [
-  ["ur", "اردو"], ["hi", "हिन्दी"], ["ar", "العربية"], ["bn", "বাংলা"],
-  ["fa", "فارسی"], ["tr", "Türkçe"], ["id", "Bahasa Indonesia"], ["ms", "Bahasa Melayu"],
-  ["zh", "中文"], ["es", "Español"], ["fr", "Français"], ["de", "Deutsch"],
-  ["it", "Italiano"], ["pt", "Português"], ["ru", "Русский"], ["ja", "日本語"],
-  ["ko", "한국어"], ["th", "ไทย"], ["vi", "Tiếng Việt"]
+const SITE_TRANSLATION_LANGUAGE_CODES = [
+  "af","am","ar","ast","az","ba","be","bg","bn","br","bs","ca","ceb","cs","cy","da","de","el","es","et",
+  "fa","ff","fi","fr","fy","ga","gd","gl","gu","ha","he","hi","hr","ht","hu","hy","id","ig","ilo","is",
+  "it","ja","jv","ka","kk","km","kn","ko","lb","ln","lo","lt","lv","mg","mk","ml","mn","mr","ms","my",
+  "ne","nl","no","ns","oc","or","pa","pl","ps","pt","ro","ru","sd","si","sk","sl","so","sq","sr","ss",
+  "su","sv","sw","ta","th","tl","tn","tr","uk","ur","uz","vi","wo","xh","yi","yo","zh","zu",
+  "as","brx","doi","kok","ks","mai","mni","sa","sat","te"
 ] as const;
+const SITE_TRANSLATION_LANGUAGES = SITE_TRANSLATION_LANGUAGE_CODES.map((code) => {
+  const english = typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames(["en"], { type: "language" }).of(code) ?? code
+    : code;
+  const native = typeof Intl.DisplayNames === "function"
+    ? new Intl.DisplayNames([code], { type: "language" }).of(code)
+    : null;
+  return [code, native && native.toLowerCase() !== english.toLowerCase() ? english + " · " + native : english] as const;
+});
 
 const originalSiteTextNodes = new Map<Text, string>();
 const translatedSiteTextNodes = new Map<Text, string>();
@@ -347,7 +357,8 @@ function splitTranslationText(value: string, maximum = 450): string[] {
 async function translateRenderedSite(
   root: HTMLElement,
   language: string,
-  onProgress: (done: number, total: number) => void
+  onProgress: (done: number, total: number, provider?: string) => void,
+  signal?: AbortSignal
 ): Promise<void> {
   const excluded = "script,style,noscript,svg,textarea,input,select,option,code,pre,iframe,canvas,[contenteditable],[hidden],[aria-hidden='true'],[data-no-translate],.announcement-translate,.ai-chat-panel,.ai-chat-launcher,.customer-account,.customer-account-shell,.account-shell,.admin-shell,.brand-type,.brand-logo-image,.product-detail-price,.product-buy-row strong,.product-stock-badge,.product-urgency-badge,.product-variant-picker,.rental-price-estimate,.testimonial-rating,.top-quote-strip cite,[role='dialog']";
   for (const node of originalSiteTextNodes.keys()) if (!node.isConnected) { originalSiteTextNodes.delete(node); translatedSiteTextNodes.delete(node); }
@@ -387,30 +398,53 @@ async function translateRenderedSite(
   if (batch.length) batches.push(batch);
 
   onProgress(0, batches.length);
-  for (let index = 0; index < batches.length; index += 1) {
-    const currentBatch = batches[index];
-    const text = currentBatch.map(item => item.source).join(TRANSLATION_SEPARATOR);
-    const response = await fetch("/api/translate", {
-      method: "POST",
-      headers: { "content-type": "application/json", accept: "application/json" },
-      body: JSON.stringify({ text, target_lang: language })
-    });
-    const payload = await response.json().catch(() => ({})) as { translatedText?: string; error?: string };
-    if (!response.ok || typeof payload.translatedText !== "string") {
-      throw new Error(response.status === 429 ? "The shared daily translation allowance has been reached. Please try again tomorrow." : payload.error || "Translation is temporarily unavailable.");
+  const concurrency = 3;
+  for (let start = 0; start < batches.length; start += concurrency) {
+    if (signal?.aborted) throw new DOMException("Translation cancelled", "AbortError");
+    const group = batches.slice(start, start + concurrency);
+    const results = await Promise.allSettled(group.map(async currentBatch => {
+      const requestController = new AbortController();
+      const abortFromParent = () => requestController.abort();
+      signal?.addEventListener("abort", abortFromParent, { once: true });
+      const timeout = window.setTimeout(() => requestController.abort(), 18000);
+      try {
+        const text = currentBatch.map(item => item.source).join(TRANSLATION_SEPARATOR);
+        const response = await fetch("/api/translate", {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({ text, target_lang: language }),
+          signal: requestController.signal
+        });
+        const payload = await response.json().catch(() => ({})) as { translatedText?: string; error?: string; provider?: string };
+        if (!response.ok || typeof payload.translatedText !== "string") {
+          throw new Error(response.status === 429 ? "The shared daily translation allowance has been reached. Please try again after the daily reset." : payload.error || "Translation is temporarily unavailable.");
+        }
+        const translatedParts = currentBatch.length === 1
+          ? [payload.translatedText.trim()]
+          : payload.translatedText.split(TRANSLATION_SEPARATOR).map(part => part.trim());
+        if (translatedParts.length !== currentBatch.length || translatedParts.some(part => !part)) {
+          throw new Error("The translation service could not safely preserve the page layout. Please try again.");
+        }
+        return { currentBatch, translatedParts, provider: payload.provider ?? "cloudflare-ai" };
+      } finally {
+        window.clearTimeout(timeout);
+        signal?.removeEventListener("abort", abortFromParent);
+      }
+    }));
+    let failure: unknown = null;
+    let completed = 0;
+    for (const result of results) {
+      if (result.status === "rejected") { failure ??= result.reason; continue; }
+      const { currentBatch, translatedParts, provider } = result.value;
+      currentBatch.forEach((item, itemIndex) => {
+        const translated = translatedParts[itemIndex];
+        nodes[item.owner].translated[item.part] = translated;
+        writeCachedTranslation(language, item.source, translated);
+      });
+      completed += 1;
+      onProgress(start + completed, batches.length, provider);
     }
-    const translatedParts = currentBatch.length === 1
-      ? [payload.translatedText.trim()]
-      : payload.translatedText.split(TRANSLATION_SEPARATOR).map(part => part.trim());
-    if (translatedParts.length !== currentBatch.length || translatedParts.some(part => !part)) {
-      throw new Error("The translation service could not safely preserve the page layout. Please try again.");
-    }
-    currentBatch.forEach((item, itemIndex) => {
-      const translated = translatedParts[itemIndex];
-      nodes[item.owner].translated[item.part] = translated;
-      writeCachedTranslation(language, item.source, translated);
-    });
-    onProgress(index + 1, batches.length);
+    if (failure) throw failure;
   }
 
   for (const entry of nodes) {
@@ -439,6 +473,14 @@ function Storefront() {
   const menuToggleRef = useRef<HTMLButtonElement | null>(null);
   const [translationLanguage, setTranslationLanguage] = useState(readSavedSiteLanguage);
   const [translationStatus, setTranslationStatus] = useState("");
+  const [languagePickerOpen, setLanguagePickerOpen] = useState(false);
+  const [languageSearch, setLanguageSearch] = useState("");
+  const languagePickerRef = useRef<HTMLDivElement | null>(null);
+  const quoteChangedRef = useRef(false);
+  const filteredSiteLanguages = useMemo(() => {
+    const term = languageSearch.trim().toLocaleLowerCase();
+    return term ? SITE_TRANSLATION_LANGUAGES.filter(([code, label]) => (code + " " + label).toLocaleLowerCase().includes(term)) : SITE_TRANSLATION_LANGUAGES;
+  }, [languageSearch]);
   const [sizeGuideOpen, setSizeGuideOpen] = useState(false);
   const [openFaq, setOpenFaq] = useState<number | null>(null);
   const [featuredReviews,setFeaturedReviews]=useState<Array<{id:string;rating:number;title:string;body:string;verified_purchase:number;reviewer_name:string;product_name:string;product_slug:string}>>([]);
@@ -446,26 +488,36 @@ function Storefront() {
   useEffect(() => {
     let active = true;
     let running = false;
+    let rerunRequested = false;
     let scheduled = 0;
+    const controller = new AbortController();
     const root = document.querySelector<HTMLElement>(".site-shell");
     restoreOriginalSiteLanguage();
     if (!translationLanguage || !root) {
       setTranslationStatus("");
-      return;
+      return () => controller.abort();
     }
     const runTranslation = async () => {
-      if (!active || running) return;
+      if (!active) return;
+      if (running) { rerunRequested = true; return; }
       running = true;
+      let googleFallbackUsed = false;
       try {
-        await translateRenderedSite(root, translationLanguage, (done, total) => {
+        await translateRenderedSite(root, translationLanguage, (done, total, provider) => {
+          if (provider === "google-cloud-translation") googleFallbackUsed = true;
           if (active) setTranslationStatus(total ? `Translating website… ${done}/${total}` : "Checking saved translations…");
-        });
-        if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}`);
+        }, controller.signal);
+        if (active) setTranslationStatus(`Website translated · ${SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage}${googleFallbackUsed ? " · Google fallback used" : ""}`);
       } catch (caught) {
+        if (controller.signal.aborted) return;
         restoreOriginalSiteLanguage();
         if (active) setTranslationStatus(caught instanceof Error ? caught.message : "Translation is temporarily unavailable.");
       } finally {
         running = false;
+        if (rerunRequested && active && !controller.signal.aborted) {
+          rerunRequested = false;
+          scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 180);
+        }
       }
     };
     const observer = new MutationObserver(records => {
@@ -478,21 +530,46 @@ function Storefront() {
         }
         return record.type === "childList";
       });
-      if (!siteContentChanged || scheduled || !active) return;
-      scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 250);
+      if (!siteContentChanged || !active) return;
+      if (running) { rerunRequested = true; return; }
+      if (scheduled) return;
+      scheduled = window.setTimeout(() => { scheduled = 0; void runTranslation(); }, 180);
     });
     observer.observe(root, { childList: true, characterData: true, subtree: true });
     void runTranslation();
     return () => {
       active = false;
+      controller.abort();
       observer.disconnect();
       if (scheduled) window.clearTimeout(scheduled);
       restoreOriginalSiteLanguage();
     };
   }, [translationLanguage]);
 
+  useEffect(() => {
+    if (!translationStatus) return;
+    const timeout = window.setTimeout(() => setTranslationStatus(""), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [translationStatus]);
+
+  useEffect(() => {
+    if (!languagePickerOpen) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !languagePickerRef.current?.contains(event.target)) setLanguagePickerOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setLanguagePickerOpen(false); };
+    const timeout = window.setTimeout(() => setLanguagePickerOpen(false), 10_000);
+    document.addEventListener("pointerdown", closeOutside, true);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.clearTimeout(timeout);
+      document.removeEventListener("pointerdown", closeOutside, true);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [languagePickerOpen]);
+
   // Select a brand-approved quote on every fresh visit; never repeat the previous visit's quote.
-  const [goldenQuote, setGoldenQuote] = useState(selectGoldenQuote);
+  const [goldenQuote, setGoldenQuote] = useState<{ text: string; author: string; source?: string }>(selectGoldenQuote);
   useEffect(() => {
     if (!menuOpen) return;
     const handlePointerDown = (event: PointerEvent) => {
@@ -510,14 +587,38 @@ function Storefront() {
 
 
   useEffect(() => {
-    // Persist only after React commits the selected quote; keep the state initializer side-effect free.
-    persistGoldenQuote(goldenQuote);
+    // Do not overwrite the previous visit's quote while the online quote is still loading.
+    if (quoteChangedRef.current) persistGoldenQuote(goldenQuote);
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) setGoldenQuote(selectGoldenQuote());
+      if (event.persisted) {
+        quoteChangedRef.current = true;
+        setGoldenQuote(selectGoldenQuote());
+      }
     };
     window.addEventListener("pageshow", handlePageShow);
     return () => window.removeEventListener("pageshow", handlePageShow);
   }, [goldenQuote]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    let previous = "";
+    try { previous = localStorage.getItem("deverve:golden-quote:last:v1") || ""; } catch { /* Browser storage is optional. */ }
+    void fetch("/api/quotes/random", { headers: { accept: "application/json" }, signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error("Online quote source unavailable");
+        return await response.json() as { text?: string; author?: string; source?: string };
+      })
+      .then(item => {
+        if (!active || typeof item.text !== "string" || typeof item.author !== "string" || !item.text.trim() || !item.author.trim()) return;
+        const text = item.text.trim().slice(0, 180);
+        if (text === previous) return;
+        quoteChangedRef.current = true;
+        setGoldenQuote({ text, author: item.author.trim().slice(0, 70), source: item.source === "ZenQuotes" ? "ZenQuotes" : undefined });
+      })
+      .catch(() => { /* The rotating De VERVE quote remains as an offline fallback. */ });
+    return () => { active = false; controller.abort(); };
+  }, []);
   const validScreens = ["home", "fashion", "wholesale", "mobility", "contact", "favourites", "policies"] as const;
   type StoreScreen = typeof validScreens[number];
   const readScreen = (): StoreScreen => { const url = new URL(window.location.href); const value = url.searchParams.get("screen"); if (validScreens.includes(value as StoreScreen)) return value as StoreScreen; if (url.hash === "#collections" || url.hash === "#fashion") return "fashion"; if (url.hash === "#contact") return "contact"; if (url.hash === "#mobility" || url.hash === "#car-rental") return "mobility"; return "home"; };
@@ -874,6 +975,16 @@ function Storefront() {
   }, [search, showAll]);
 
   const closeMenu = () => setMenuOpen(false);
+  const chooseSiteLanguage = (language: string) => {
+    setTranslationLanguage(language);
+    setLanguagePickerOpen(false);
+    setLanguageSearch("");
+    setTranslationStatus(language ? "Starting website translation. Text is translated in place; saved sections load faster." : "Restoring the original English website.");
+    try {
+      if (language) localStorage.setItem("deverve:site-language:v1", language);
+      else localStorage.removeItem("deverve:site-language:v1");
+    } catch { /* The page remains usable when browser storage is unavailable. */ }
+  };
   const navigate = (screen: StoreScreen) => { if(screen==="home"){window.location.assign("/");return;} setActiveScreen(screen); const url = new URL(window.location.href); url.searchParams.set("screen", screen); if(screen!=="fashion")url.searchParams.delete("category"); url.hash = ""; setSelectedCategory(screen==="fashion"?url.searchParams.get("category")||"": ""); window.history.pushState({ screen }, "", url.pathname + url.search); closeMenu(); window.scrollTo({ top: 0, behavior: "smooth" }); };
   const toggleFavourite = (productId: string) => {
     playLuxuryChime("favourite");
@@ -886,20 +997,21 @@ function Storefront() {
         <span className="announcement-location">JHELUM, PAKISTAN</span>
         <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
         <div className="announcement-actions">
-          <div className="announcement-translate">
+          <div className="announcement-translate" ref={languagePickerRef}>
             <span aria-hidden="true">文</span>
-            <label className="sr-only" htmlFor="deverve-site-language">Translate website</label>
-            <select id="deverve-site-language" aria-label="Translate website" value={translationLanguage} onChange={event => {
-              const language = event.currentTarget.value;
-              setTranslationLanguage(language);
-              try {
-                if (language) localStorage.setItem("deverve:site-language:v1", language);
-                else localStorage.removeItem("deverve:site-language:v1");
-              } catch { /* The page remains usable when browser storage is unavailable. */ }
-            }}>
-              <option value="">English · Original</option>
-              {SITE_TRANSLATION_LANGUAGES.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-            </select>
+            <button type="button" className="language-picker-trigger" aria-label="Choose website language" aria-expanded={languagePickerOpen} aria-haspopup="dialog" onClick={() => { setLanguagePickerOpen(value => !value); setLanguageSearch(""); }}>
+              {translationLanguage ? SITE_TRANSLATION_LANGUAGES.find(([code]) => code === translationLanguage)?.[1] ?? translationLanguage : "English · Original"} <span aria-hidden="true">⌄</span>
+            </button>
+            {languagePickerOpen && <div className="language-picker-popover" role="dialog" aria-label="Choose a website language">
+              <label className="sr-only" htmlFor="deverve-language-search">Search languages</label>
+              <input id="deverve-language-search" type="search" autoComplete="off" value={languageSearch} onChange={event => setLanguageSearch(event.currentTarget.value)} placeholder="Search 100+ languages…" />
+              <div className="language-picker-options" role="listbox" aria-label="Available languages">
+                <button type="button" role="option" aria-selected={!translationLanguage} onClick={() => chooseSiteLanguage("")}>English · Original</button>
+                {filteredSiteLanguages.map(([code, label]) => <button type="button" role="option" aria-selected={translationLanguage === code} key={code} onClick={() => chooseSiteLanguage(code)}>{label}</button>)}
+                {!filteredSiteLanguages.length && <p className="language-picker-empty">No matching language. Try its English name or language code.</p>}
+              </div>
+              <p className="language-picker-help">The page translates in place. Saved text appears faster on later visits. If De VERVE translation is unavailable, Google Cloud Translation can be used when its secure service key is configured; otherwise use your browser’s built-in Google Translate option.</p>
+            </div>}
             {translationStatus && <span className="translation-status" role="status" aria-live="polite">{translationStatus}</span>}
           </div>
           <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
@@ -909,6 +1021,7 @@ function Storefront() {
         <span className="top-quote-mark" aria-hidden="true">“</span>
         <p>{goldenQuote.text}</p>
         <cite>— {goldenQuote.author}</cite>
+        {goldenQuote.source === "ZenQuotes" && <a className="quote-source-credit" href="https://zenquotes.io/" target="_blank" rel="noreferrer">Quotes via ZenQuotes</a>}
       </div>
 
       <header className="site-header">
