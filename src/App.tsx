@@ -553,6 +553,15 @@ function Storefront() {
   }, [translationStatus]);
 
   useEffect(() => {
+    if (!translationStatus) return;
+    const closeStatusOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !languagePickerRef.current?.contains(event.target)) setTranslationStatus("");
+    };
+    document.addEventListener("pointerdown", closeStatusOutside, true);
+    return () => document.removeEventListener("pointerdown", closeStatusOutside, true);
+  }, [translationStatus]);
+
+  useEffect(() => {
     if (!languagePickerOpen) return;
     const closeOutside = (event: PointerEvent) => {
       if (event.target instanceof Node && !languagePickerRef.current?.contains(event.target)) setLanguagePickerOpen(false);
