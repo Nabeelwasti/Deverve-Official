@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState, type FormEvent } 
 import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
+import BrandLogo from "./BrandLogo";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
 const WholesaleQuote = lazy(() => import("./WholesaleQuote"));
@@ -268,6 +269,8 @@ function Storefront() {
   const [favourites, setFavourites] = useState<string[]>(() => { try { return JSON.parse(localStorage.getItem("deverve-favourites") || "[]") as string[]; } catch { return []; } });
   const [activeTab, setActiveTab] = useState<"retail" | "wholesale">("retail");
   const [search, setSearch] = useState("");
+  const [siteSearch, setSiteSearch] = useState("");
+  const [siteSearchOpen, setSiteSearchOpen] = useState(false);
   const [selectedCategory,setSelectedCategory]=useState(()=>new URLSearchParams(window.location.search).get("category")||"");
   const [sortBy, setSortBy] = useState<"featured" | "price-asc" | "price-desc" | "name">("featured");
   const [showAll, setShowAll] = useState(false);
@@ -299,6 +302,17 @@ function Storefront() {
     return list;
   },[products,selectedCategory,search,sortBy]);
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
+  const siteSearchResults=useMemo(()=>{
+    const term=siteSearch.trim().toLocaleLowerCase();
+    if(!term)return [];
+    const results:Array<{label:string;detail:string;href:string}>=[];
+    for(const item of categories)if((item.name+" "+item.detail).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Fashion category",href:"/?screen=fashion&category="+encodeURIComponent(item.id)});
+    for(const item of products)if((item.name+" "+item.description+" "+item.category+" "+item.audience+" "+(item.variants||[]).map(v=>v.sku||"").join(" ")).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Product · "+item.category,href:"/product/"+encodeURIComponent(item.slug)});
+    for(const item of vehicles)if((item.name+" "+item.vehicle_type+" "+item.transmission+" "+item.fuel_type+" "+item.description).toLocaleLowerCase().includes(term))results.push({label:item.name,detail:"Car rental · "+item.vehicle_type,href:"/?screen=mobility"});
+    const pages=[{label:"Wholesale enquiries",detail:"Bulk garment enquiries",href:"/?screen=wholesale"},{label:"Car rental",detail:"Explore vehicles and rental requests",href:"/?screen=mobility"},{label:"Contact De VERVE",detail:"Contact details and enquiry form",href:"/?screen=contact"},{label:"Policies",detail:"Customer policies and information",href:"/?screen=policies"},{label:"My account",detail:"Orders and customer account",href:"/account"}];
+    for(const item of pages)if((item.label+" "+item.detail).toLocaleLowerCase().includes(term))results.push(item);
+    return results.slice(0,8);
+  },[siteSearch,products,vehicles]);
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
   const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
@@ -588,19 +602,22 @@ function Storefront() {
   return (
     <div className="site-shell">
       <div className="announcement">
-        <span>JHELUM, PAKISTAN</span>
-        <span>FASHION · WHOLESALE · CAR RENTALS</span>
-        <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
+        <span className="announcement-location">JHELUM, PAKISTAN</span>
+        <span className="announcement-services">FASHION · WHOLESALE · CAR RENTALS</span>
+        <div className="announcement-actions">
+          <label className="announcement-translate"><span aria-hidden="true">文</span><span className="sr-only">Translate this page</span>
+            <select aria-label="Translate this page" defaultValue="" onChange={event=>{const language=event.currentTarget.value;if(!language)return;const url="https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+encodeURIComponent(window.location.href);window.open(url,"_blank","noopener,noreferrer");event.currentTarget.value="";}}>
+              <option value="">Language</option>
+              <option value="ur">اردو</option><option value="pa">ਪੰਜਾਬੀ</option><option value="ar">العربية</option><option value="hi">हिन्दी</option><option value="bn">বাংলা</option><option value="zh-CN">中文（简体）</option><option value="zh-TW">中文（繁體）</option><option value="es">Español</option><option value="fr">Français</option><option value="tr">Türkçe</option><option value="de">Deutsch</option><option value="it">Italiano</option><option value="ru">Русский</option><option value="id">Bahasa Indonesia</option><option value="ms">Bahasa Melayu</option><option value="fa">فارسی</option><option value="ps">پښتو</option><option value="ku">Kurdî</option><option value="ja">日本語</option><option value="ko">한국어</option><option value="th">ไทย</option><option value="vi">Tiếng Việt</option><option value="nl">Nederlands</option><option value="pt">Português</option><option value="pt-BR">Português (Brasil)</option><option value="sv">Svenska</option><option value="no">Norsk</option><option value="da">Dansk</option><option value="fi">Suomi</option><option value="pl">Polski</option><option value="cs">Čeština</option><option value="sk">Slovenčina</option><option value="uk">Українська</option><option value="el">Ελληνικά</option><option value="he">עברית</option><option value="sw">Kiswahili</option><option value="am">አማርኛ</option><option value="af">Afrikaans</option><option value="sq">Shqip</option><option value="az">Azərbaycan</option><option value="hy">Հայերեն</option><option value="eu">Euskara</option><option value="be">Беларуская</option><option value="bs">Bosanski</option><option value="bg">Български</option><option value="ca">Català</option><option value="hr">Hrvatski</option><option value="et">Eesti</option><option value="gl">Galego</option><option value="ka">ქართული</option><option value="gu">ગુજરાતી</option><option value="ha">Hausa</option><option value="haw">ʻŌlelo Hawaiʻi</option><option value="hu">Magyar</option><option value="is">Íslenska</option><option value="ig">Igbo</option><option value="ga">Gaeilge</option><option value="jv">Basa Jawa</option><option value="kn">ಕನ್ನಡ</option><option value="kk">Қазақша</option><option value="km">ខ្មែរ</option><option value="rw">Kinyarwanda</option><option value="lo">ລາວ</option><option value="la">Latin</option><option value="lv">Latviešu</option><option value="lt">Lietuvių</option><option value="lb">Lëtzebuergesch</option><option value="mk">Македонски</option><option value="mg">Malagasy</option><option value="ml">മലയാളം</option><option value="mt">Malti</option><option value="mi">Māori</option><option value="mr">मराठी</option><option value="mn">Монгол</option><option value="my">မြန်မာ</option><option value="ne">नेपाली</option><option value="or">ଓଡ଼ିଆ</option><option value="om">Oromoo</option><option value="ro">Română</option><option value="sm">Gagana Samoa</option><option value="sr">Српски</option><option value="si">සිංහල</option><option value="sl">Slovenščina</option><option value="so">Soomaali</option><option value="su">Basa Sunda</option><option value="ta">தமிழ்</option><option value="te">తెలుగు</option><option value="tl">Filipino</option><option value="ti">ትግርኛ</option><option value="tk">Türkmençe</option><option value="uz">Oʻzbek</option><option value="cy">Cymraeg</option><option value="xh">isiXhosa</option><option value="yi">ייִדיש</option><option value="yo">Yorùbá</option><option value="zu">isiZulu</option>
+            </select>
+          </label>
+          <a href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">WhatsApp us ↗</a>
+        </div>
       </div>
       <div className="top-quote-strip" aria-label="Inspirational quote">
         <span className="top-quote-mark" aria-hidden="true">“</span>
         <p>{goldenQuote.text}</p>
         <cite>— {goldenQuote.author}</cite>
-        <label className="page-translate-control"><span className="sr-only">Translate this page</span>
-          <select aria-label="Translate this page" defaultValue="" onChange={event=>{const language=event.currentTarget.value;if(!language)return;const url="https://translate.google.com/translate?sl=auto&tl="+encodeURIComponent(language)+"&u="+encodeURIComponent(window.location.href);window.open(url,"_blank","noopener,noreferrer");event.currentTarget.value="";}}>
-            <option value="">Translate</option><option value="ur">اردو</option><option value="pa">ਪੰਜਾਬੀ</option><option value="ar">العربية</option><option value="hi">हिन्दी</option><option value="zh-CN">中文</option><option value="es">Español</option><option value="fr">Français</option><option value="tr">Türkçe</option><option value="de">Deutsch</option><option value="it">Italiano</option><option value="ru">Русский</option><option value="id">Bahasa Indonesia</option>
-          </select>
-        </label>
       </div>
 
       <header className="site-header">
@@ -613,7 +630,17 @@ function Storefront() {
         </button>
         {menuOpen && <button type="button" className="menu-dismiss" aria-label="Close navigation menu" onClick={closeMenu} />}
         <nav className={menuOpen ? "main-nav is-open" : "main-nav"} aria-label="Main navigation"><button type="button" onClick={() => navigate("home")}>Home</button><button type="button" onClick={() => navigate("fashion")}>Fashion</button><button type="button" onClick={() => navigate("wholesale")}>Wholesale</button><button type="button" onClick={() => navigate("mobility")}>Car rental</button><button type="button" onClick={() => navigate("favourites")}>Saved ({favourites.length})</button><button type="button" onClick={() => navigate("contact")}>Contact</button><button type="button" onClick={() => navigate("policies")}>Policies</button><button type="button" onClick={() => { window.location.href = "/account"; }}>My account</button></nav>
-        <div className="header-actions"><InstallPrompt /><button className="header-cart" type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a></div>
+        <div className="header-actions">
+          <form className="site-search" role="search" onSubmit={event=>{event.preventDefault();const first=siteSearchResults[0];if(first)window.location.href=first.href;else if(siteSearch.trim())setSiteSearchOpen(true);}}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
+            <input value={siteSearch} onChange={event=>{setSiteSearch(event.target.value);setSiteSearchOpen(true);}} onFocus={()=>setSiteSearchOpen(true)} onBlur={()=>window.setTimeout(()=>setSiteSearchOpen(false),160)} placeholder="Search the website" aria-label="Search products, categories, vehicles and pages" aria-expanded={siteSearchOpen&&!!siteSearch.trim()} aria-controls="site-search-results" />
+            {siteSearch&&<button type="button" className="site-search-clear" aria-label="Clear search" onMouseDown={event=>event.preventDefault()} onClick={()=>{setSiteSearch("");setSiteSearchOpen(false);}}>×</button>}
+            {siteSearchOpen&&siteSearch.trim()&&<div className="site-search-results" id="site-search-results" role="listbox" aria-label="Search results">
+              {siteSearchResults.length?siteSearchResults.map((item,index)=><a key={item.href+"-"+index} role="option" href={item.href}><strong>{item.label}</strong><small>{item.detail}</small></a>):<p>No matches found. Try another word or contact our team.</p>}
+            </div>}
+          </form>
+          <InstallPrompt /><button className="header-cart" type="button" onClick={() => { setCartOpen(true); setCheckoutMessage(""); setCheckoutResult(""); }}>Cart <span>{cart.reduce((sum, item) => sum + item.quantity, 0)}</span></button><a className="header-cta" href={whatsapp("Assalamu Alaikum, I would like to contact De VERVE.")} target="_blank" rel="noreferrer">Contact <span>↗</span></a>
+        </div>
       </header>
 
       <main id="home" className="store-main" data-screen={activeScreen}>
@@ -973,9 +1000,7 @@ function Storefront() {
 }
 
 function BrandLoadingScreen(){
-  const [logoUrl,setLogoUrl]=useState("/brand/de-verve-logo.svg");
-  useEffect(()=>{let active=true;void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(response=>response.ok?response.json():null).then((data:{brand_assets?:{logo_id?:string|null}}|null)=>{const id=data?.brand_assets?.logo_id;if(active&&id)setLogoUrl("/media/"+encodeURIComponent(id));}).catch(()=>{});return()=>{active=false;};},[]);
-  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><img className="brand-loader-logo" src={logoUrl} alt="De VERVE"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
+  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE"><div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/><BrandLogo className="brand-loader-logo"/><div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div></main>
 }
 
 function HomePageRoute() {
