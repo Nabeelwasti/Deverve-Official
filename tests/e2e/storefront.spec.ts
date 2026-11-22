@@ -789,7 +789,7 @@ test("storefront uses verified service wording instead of fabricated social proo
   await expect(page.getByRole("link", { name: /Chat on WhatsApp/ })).toHaveAttribute("href", /^https:\/\/wa\.me\//);
 });
 
-test("owner-managed category artwork replaces the default illustration without hiding its garment icon", async ({ page }) => {
+test("owner-managed category artwork fully replaces the default category illustration", async ({ page }) => {
   const mediaId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   await page.route("**/api/storefront/settings", async route => route.fulfill({
     status: 200,
@@ -804,14 +804,26 @@ test("owner-managed category artwork replaces the default illustration without h
   await page.goto("/?screen=fashion");
   const artworkLink = page.getByTestId("collection-men-art");
   const artwork = artworkLink.locator(".category-custom-art");
-  const garment = artworkLink.locator(".category-garment");
   await expect(artwork).toHaveAttribute("src", "/media/" + mediaId);
   await expect(artwork).toBeVisible();
-  await expect(garment).toBeVisible();
-  const iconZ = await garment.evaluate(el => Number(getComputedStyle(el).zIndex));
-  const imageZ = await artwork.evaluate(el => Number(getComputedStyle(el).zIndex));
-  expect(iconZ).toBeGreaterThan(imageZ);
+  await expect(artworkLink.locator(".category-garment")).toHaveCount(0);
+  await expect(artworkLink.locator(".category-art-word")).toHaveCount(0);
+  await expect(artworkLink.locator(".category-tag")).toBeVisible();
+  await expect(artworkLink.locator(".category-arrow")).toBeVisible();
   await expect(artworkLink).toHaveAttribute("href", "/?screen=fashion&category=men");
+});
+
+test("category cards retain the original illustration only when no uploaded artwork exists", async ({ page }) => {
+  await page.route("**/api/storefront/settings", async route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ social_links: {}, brand_assets: {}, category_assets: {} }),
+  }));
+  await page.goto("/?screen=fashion");
+  const artworkLink = page.getByTestId("collection-women-art");
+  await expect(artworkLink.locator(".category-garment")).toBeVisible();
+  await expect(artworkLink.locator(".category-art-word")).toBeVisible();
+  await expect(artworkLink.locator(".category-custom-art")).toHaveCount(0);
 });
 
 test("selected category opens a focused collection without repeating category cards above products", async ({ page }) => {
