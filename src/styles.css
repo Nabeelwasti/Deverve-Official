@@ -2389,3 +2389,14 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
     height:54px!important;max-height:54px!important;padding:4px!important;
   }
 }
+
+
+/* Live translation widget stays visually hidden; the branded language picker remains accessible. */
+.google-translate-host{
+  position:fixed!important;left:-10000px!important;top:0!important;
+  width:1px!important;height:1px!important;overflow:hidden!important;
+  opacity:0!important;pointer-events:none!important;
+}
+.goog-te-banner-frame.skiptranslate{display:none!important}
+body{top:0!important}
+.goog-tooltip,.goog-tooltip:hover,.goog-text-highlight{background:transparent!important;box-shadow:none!important}
