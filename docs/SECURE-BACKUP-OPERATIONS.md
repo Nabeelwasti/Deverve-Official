@@ -164,7 +164,7 @@ The repository includes `scripts/d1-backup-restore.mjs` and the manually trigger
 
 ### Existing legacy snapshot
 
-A pre-existing dated SQL snapshot in the private R2 backup bucket is a legacy plaintext export. Keep the bucket private. Do not copy that file to Drive or another third-party cloud. After the first encrypted backup and restore drill succeeds and the owner has verified the recovery key, remove the legacy plaintext snapshot under the normal backup-retention procedure.
+The current R2 inventory contains the legacy plaintext SQL object `d1/deverve-production-2026-11-21.sql` (139,921 bytes) in the private `deverve-db-backups` bucket. Cloudflare confirms the bucket has no enabled public `r2.dev` endpoint or custom domain. Keep the bucket private; do not copy this file to Drive or another third-party cloud. Do not delete the only existing SQL snapshot until the first AES-256-GCM backup and isolated restore drill succeeds and the owner has independently verified the recovery key. Then remove the legacy plaintext object under the normal backup-retention procedure.
 
 ### Current verification boundary
 
