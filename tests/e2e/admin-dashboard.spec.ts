@@ -105,7 +105,10 @@ test("product creation stays inside the catalogue workspace and exposes broad si
   });
   await page.goto("/admin?section=products");
   await expect(page.getByRole("heading", { name: "Product catalogue" })).toBeVisible();
-  await expect(page.locator(".admin-topbar .admin-brand-logo")).toHaveAttribute("src", "/api/brand/logo");
+  const adminBrandLogo = page.locator(".admin-topbar .admin-brand-logo");
+  await expect(adminBrandLogo).toBeVisible();
+  await expect(adminBrandLogo).toHaveAttribute("src", /^(\\/api\\/brand\\/logo|\\/brand\\/de-verve-logo\\.svg)$/);
+  await expect.poll(() => adminBrandLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBeTruthy();
   await expect(page.locator(".admin-topbar").getByRole("button", { name: /Add product/ })).toHaveCount(0);
   const addProductActions = page.locator(".admin-add-product-button");
   await expect(addProductActions).toHaveCount(2);
