@@ -864,7 +864,7 @@ test("storefront translates visible website copy in place and restores English",
   await page.reload();
   await expect(language).toHaveValue("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
-  expect(translationRequests.length).toBeLessThanOrEqual(22);
+  expect(translationRequests.length).toBeLessThanOrEqual(20);
   await language.selectOption("");
   await expect(serviceCopy).toHaveText(originalCopy ?? "");
   await expect(page.locator(".brand-logo-image").first()).toHaveAttribute("src", "/api/brand/logo");
