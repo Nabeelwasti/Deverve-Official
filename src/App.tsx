@@ -1131,6 +1131,11 @@ function HomePageRoute() {
 }
 
 export default function App() {
+  // Keep the HTML-shell logo visible while the app mounts, then remove only
+  // that temporary sibling after React has committed its first screen.
+  useEffect(() => {
+    document.getElementById("initial-brand-loader")?.remove();
+  }, []);
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
   return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoadingScreen/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
