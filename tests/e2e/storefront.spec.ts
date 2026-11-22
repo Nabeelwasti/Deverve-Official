@@ -840,6 +840,8 @@ test("storefront translates visible website copy in place and restores English",
   expect(order).toBeTruthy();
   const serviceCopy = page.locator(".announcement-services");
   const originalCopy = await serviceCopy.textContent();
+  const quoteAuthor = quote.locator("cite");
+  const quoteAuthorBefore = await quoteAuthor.textContent();
   const firstPrice = page.locator(".product-buy-row strong").first();
   const priceBefore = await firstPrice.count() ? await firstPrice.textContent() : null;
   const language = page.getByRole("combobox", { name: "Translate website" });
@@ -848,6 +850,8 @@ test("storefront translates visible website copy in place and restores English",
   const originalTabCount = page.context().pages().length;
   await language.selectOption("ur");
   await expect(serviceCopy).toContainText("ترجمہ");
+  await expect(quote.locator("p")).toContainText("ترجمہ");
+  await expect(quoteAuthor).toHaveText(quoteAuthorBefore ?? "");
   await expect(announcement.getByRole("status")).toContainText("Website translated");
   expect(translationRequests.length).toBeLessThanOrEqual(20);
   expect(translationRequests.every(text => text.length <= 600)).toBeTruthy();
