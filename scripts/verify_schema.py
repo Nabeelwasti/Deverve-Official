@@ -52,7 +52,8 @@ assert any(row[1] == "idx_order_items_order" for row in db.execute("PRAGMA index
 assert any(row[1] == "idx_orders_status_created" for row in db.execute("PRAGMA index_list(orders)")), "Order status/history index is missing"
 assert any(row[1] == "idx_pos_sales_status_created" for row in db.execute("PRAGMA index_list(pos_sales)")), "POS status/history index is missing"
 assert any(row[1] == "idx_payment_webhook_status" for row in db.execute("PRAGMA index_list(payment_webhook_events)")), "Payment webhook processing index is missing"
-# Seed a representative catalogue so SQLite's cost-based planner does not prefer a table scan merely because the in-memory test table is empty.
+# Seed a representative catalogue inside a savepoint so SQLite's planner can be checked without polluting later constraint tests.
+db.execute("SAVEPOINT index_probe")
 for number in range(100):
     product_id = f"INDEX-PRODUCT-{number}"
     db.execute(
@@ -74,6 +75,8 @@ order_plan = " ".join(str(row) for row in db.execute("EXPLAIN QUERY PLAN SELECT 
 assert "idx_order_items_order" in order_plan, f"Order-item query does not use its index: {order_plan}"
 pos_status_index_sql = db.execute("SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_pos_sales_status_created'").fetchone()[0]
 assert "ON pos_sales(status, created_at DESC)" in pos_status_index_sql, "POS status index must lead with status and sort by creation time"
+db.execute("ROLLBACK TO index_probe")
+db.execute("RELEASE index_probe")
 assert "reserved_quantity" in variant_columns, "COD stock reservation column is missing"
 variant_option_indexes = [row for row in db.execute("PRAGMA index_list(product_variants)") if row[1] == "idx_product_variants_unique_active_options"]
 assert variant_option_indexes and variant_option_indexes[0][2] == 1, "Active size/colour combinations must be unique per product"
