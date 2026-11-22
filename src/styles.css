@@ -2245,16 +2245,11 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   text-transform:uppercase;white-space:nowrap;
 }
 
-/* The landscape De VERVE wordmark must never be squeezed into a circular avatar. */
+/* Keep the loading-screen wordmark landscape; customer AI support uses its own circular logo frame. */
 .brand-loading-screen .brand-loader-logo{
   display:block;width:min(320px,76vw);height:auto;max-height:88px;aspect-ratio:564/114;
   object-fit:contain;object-position:center;border:0;border-radius:0;
   background:transparent;box-shadow:none;padding:0;
-}
-.ai-chat-head .ai-chat-brand-logo{
-  display:block;flex:0 0 auto;width:clamp(92px,28vw,116px);height:auto;max-height:34px;
-  aspect-ratio:564/114;object-fit:contain;object-position:left center;
-  border:0;border-radius:0;background:transparent;padding:0;
 }
 
 /* Clear AI-support affordance with a generous hit area and explicit dock clearance. */
