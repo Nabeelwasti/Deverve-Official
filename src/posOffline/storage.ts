@@ -56,8 +56,8 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-function createStore(database: IDBDatabase, name: string, options: IDBObjectStoreParameters): IDBObjectStore {
-  return database.objectStoreNames.contains(name) ? database.transaction.objectStore(name) : database.createObjectStore(name, options);
+function createStore(database: IDBDatabase, transaction: IDBTransaction, name: string, options: IDBObjectStoreParameters): IDBObjectStore {
+  return database.objectStoreNames.contains(name) ? transaction.objectStore(name) : database.createObjectStore(name, options);
 }
 
 export function openOfflinePosDatabase(): Promise<IDBDatabase> {
@@ -66,18 +66,20 @@ export function openOfflinePosDatabase(): Promise<IDBDatabase> {
     const request = indexedDB.open(OFFLINE_POS_DB_NAME, OFFLINE_POS_DB_VERSION);
     request.onupgradeneeded = () => {
       const database = request.result;
-      createStore(database, "meta", { keyPath: "id" });
-      createStore(database, "device", { keyPath: "id" });
-      createStore(database, "permit", { keyPath: "id" });
-      createStore(database, "catalogue", { keyPath: "id" });
-      createStore(database, "shift", { keyPath: "id" });
-      const sales = createStore(database, "sales", { keyPath: "eventId" });
+      const upgrade = request.transaction;
+      if (!upgrade) throw new Error("Local POS database upgrade transaction is unavailable.");
+      createStore(database, upgrade, "meta", { keyPath: "id" });
+      createStore(database, upgrade, "device", { keyPath: "id" });
+      createStore(database, upgrade, "permit", { keyPath: "id" });
+      createStore(database, upgrade, "catalogue", { keyPath: "id" });
+      createStore(database, upgrade, "shift", { keyPath: "id" });
+      const sales = createStore(database, upgrade, "sales", { keyPath: "eventId" });
       if (!sales.indexNames.contains("idempotencyKey")) sales.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
-      const outbox = createStore(database, "outbox", { keyPath: "eventId" });
+      const outbox = createStore(database, upgrade, "outbox", { keyPath: "eventId" });
       if (!outbox.indexNames.contains("sequence")) outbox.createIndex("sequence", "sequence", { unique: true });
       if (!outbox.indexNames.contains("status")) outbox.createIndex("status", "status");
-      createStore(database, "syncReceipts", { keyPath: "eventId" });
-      createStore(database, "audit", { keyPath: "id", autoIncrement: true });
+      createStore(database, upgrade, "syncReceipts", { keyPath: "eventId" });
+      createStore(database, upgrade, "audit", { keyPath: "id", autoIncrement: true });
     };
     request.onblocked = () => reject(new Error("Close other De VERVE POS tabs to finish the local database upgrade."));
     request.onerror = () => reject(request.error ?? new Error("Local POS database could not be opened."));
