@@ -10,9 +10,9 @@
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
-| Cloudflare Pages | Existing production Pages project and prior successful deployment | Deployed; latest merged artwork repair requires a controlled release |
+| Cloudflare Pages | Production deployment `41aca77d-20ca-4110-a92c-09a9e95ac3fd` completed successfully from application commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; PRs #30 and #31 are included | Deployed; deployment stages passed; external HTTP smoke workflow still needs a successful run |
 | D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables | Schema exists; integration tests outstanding |
-| Catalogue indexes | Live production has barcode, order, inventory-reference and product/variant indexes; live inspection found a BINARY SKU uniqueness index but no NOCASE SKU index for case-insensitive lookups, and no POS-status-leading index | Migration 0039 adds SKU and POS status indexes; pending CI, merge and controlled production migration. Query-plan and workload review still required |
+| Catalogue indexes | Production D1 contains `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created`; migration 0039 is applied and query plans were verified against the live database | Applied and query-plan verified; sustained workload/concurrency acceptance remains outstanding |
 | POS | Registers, sessions, sales, sale items, payments, voids, cashbook and receipt outbox exist | Online workflows implemented; owner reconciliation and device acceptance outstanding |
 | Shared stock | Inventory movement and order reservation ledgers exist | Concurrent cross-channel tests outstanding |
 | Payments | Payment attempts and webhook-event foundations exist | COD active; live provider acceptance outstanding |
