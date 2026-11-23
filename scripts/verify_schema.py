@@ -59,6 +59,14 @@ db.executescript(Path("migrations/0042_cms_category_artwork.sql").read_text(enco
 category_content = __import__("json").loads(db.execute("SELECT content_json FROM site_page_sections WHERE page_id=? AND section_type='category_grid'", (home[0],)).fetchone()[0])
 assert set(category_content["category_images"]) == {"Sweat Shirt", "hoodie", "Trouser"}, "CMS category artwork mapping is incomplete"
 assert category_content["category_images"]["hoodie"] == "98e4595d-7a79-4bd7-bfe6-08dc211a3673", "Hoodie artwork does not match the verified product image"
+db.executescript(Path("migrations/0043_cms_category_images_json_string.sql").read_text(encoding="utf-8"))
+category_content = __import__("json").loads(db.execute("SELECT content_json FROM site_page_sections WHERE page_id=? AND section_type='category_grid'", (home[0],)).fetchone()[0])
+category_images = __import__("json").loads(category_content["category_images"])
+assert set(category_images) == {"Sweat Shirt", "hoodie", "Trouser"}, "CMS category image JSON string is incomplete"
+assert category_images["hoodie"] == "/media/98e4595d-7a79-4bd7-bfe6-08dc211a3673", "CMS category image URL is not renderer-compatible"
+for media_id in ["793fae1f-d9a2-45b6-90a2-ded785964b4a", "98e4595d-7a79-4bd7-bfe6-08dc211a3673", "0c6f6c8b-2680-434b-bc60-d58b04f5cff7"]:
+    reference = db.execute("SELECT 1 FROM site_page_sections ps JOIN site_pages p ON p.id=ps.page_id, json_each(json_extract(ps.content_json,'$.category_images')) ci WHERE p.status='published' AND ps.is_visible=1 AND ci.value IN (?,?) LIMIT 1", (media_id, "/media/"+media_id)).fetchone()
+    assert reference, f"Published category image {media_id} is not publicly referenced"
 assert db.execute("SELECT COUNT(*) FROM site_navigation_items").fetchone()[0] == 5, "CMS homepage navigation seed is incomplete"
 assert db.execute("SELECT COUNT(*) FROM audit_logs WHERE action='website.homepage_seeded'").fetchone()[0] == 1, "CMS homepage seed audit event is missing"
 db.executescript(Path("migrations/0041_seed_cms_homepage.sql").read_text(encoding="utf-8"))
