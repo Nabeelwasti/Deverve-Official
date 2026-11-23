@@ -1215,7 +1215,12 @@ test("the homepage never flashes the legacy storefront while the published-home 
   await page.goto("/");
   await expect(page.locator(".brand-loader-screen")).toBeVisible();
   await expect(page.locator(".site-shell")).toHaveCount(0);
-  await expect(page.locator(".brand-loader-orbit")).toBeVisible();
+  const orbit = await page.locator(".brand-loader-orbit").boundingBox();
+  const mark = await page.locator(".brand-loader-logo").boundingBox();
+  expect(orbit).not.toBeNull();
+  expect(mark).not.toBeNull();
+  expect(Math.abs((orbit!.x + orbit!.width / 2) - (mark!.x + mark!.width / 2))).toBeLessThan(2);
+  expect(Math.abs((orbit!.y + orbit!.height / 2) - (mark!.y + mark!.height / 2))).toBeLessThan(2);
   await expect(page.locator(".site-shell")).toBeVisible({ timeout: 5000 });
   await expect(page.locator(".brand-loader-screen")).toHaveCount(0);
 });
