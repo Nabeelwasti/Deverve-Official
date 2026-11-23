@@ -10,7 +10,7 @@
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
-| POS cashier RBAC | PR #34 merged; separate revocable grant and invite tables; server-side deny-by-default route boundary; cash-only sale guard; own-shift and own-sale scoping; atomic shift close | Code merged, production D1 migration 0040 applied and verified; controlled Pages deployment and owner-operated invitation/shift/device acceptance still pending |
+| POS cashier RBAC | PR #34 merged; separate revocable grant and invite tables; server-side deny-by-default route boundary; cash-only sale guard; own-shift and own-sale scoping; atomic shift close. Production D1 migration 0040 applied; Pages deployment `0b6f305a-c834-4477-8a1e-8ffdca7a6cb7` succeeded from main commit `7840388c05699cfdb9f6640a5b3bcb76bae98daf`. | Code and schema deployed; zero cashier grants exist. Owner-operated invitation, live authenticated cashier workflow and physical shift/device acceptance still pending |
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
