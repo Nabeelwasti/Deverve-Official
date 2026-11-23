@@ -15,7 +15,7 @@ test("saving general admin settings never silently enables CNIC uploads", () => 
 test("owner-managed category artwork is persisted and exposed without weakening CNIC settings", () => {
   const admin = readFileSync(new URL("../src/Admin.tsx", import.meta.url), "utf8");
   const worker = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
-  assert.match(admin, /category_assets\s*:\s*categoryAssets/, "owner settings save must include category image IDs");
+  assert.match(admin, /category_assets\s*:\s*next/, "category image uploads and resets must persist their complete updated ID map");
   assert.match(admin, /Homepage category artwork/, "owner settings must expose the six live category cards");
   assert.match(admin, /uploadCategoryAsset/, "category image upload workflow must exist");
   assert.match(worker, /const allowed=new Set\(\["men","women","kids","essentials","layers","bottoms"\]\)/, "only the six supported category keys may be written");
