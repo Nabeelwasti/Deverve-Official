@@ -2602,3 +2602,99 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 /* CMS content transitions use the canonical logo only — never a white text-only loading page. */
 .public-page-loading{min-height:100svh;display:grid;place-items:center;overflow:hidden;background:#071a30}
 .public-page-loading .public-page-loading-logo{width:84px!important;height:84px!important;max-width:84px!important;max-height:84px!important;aspect-ratio:1/1!important;object-fit:var(--dv-brand-logo-fit,cover)!important;object-position:var(--dv-brand-logo-position,center)!important;border:0!important;border-radius:50%!important;background:transparent!important;padding:0!important;box-shadow:none!important}
+
+
+/* Unified De VERVE launch and logo system.
+   One canonical image, fully visible, centered, and clipped by the same circular frame. */
+.deverve-round-logo{
+  object-fit:contain!important;
+  object-position:50% 50%!important;
+  border:0!important;
+  border-radius:50%!important;
+  background:transparent!important;
+  padding:0!important;
+  box-shadow:none!important;
+}
+.brand-logo-image.deverve-round-logo,
+.admin-brand-logo.deverve-round-logo,
+.customer-brand-logo.deverve-round-logo,
+.ai-chat-brand-logo.deverve-round-logo{
+  object-fit:contain!important;
+  object-position:50% 50%!important;
+}
+.footer-wordmark{
+  display:inline-flex;
+  width:56px;
+  height:56px;
+  min-width:56px;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 56px;
+  overflow:hidden;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+}
+.footer-brand-logo.deverve-round-logo{
+  display:block!important;
+  width:52px!important;
+  height:52px!important;
+  min-width:52px!important;
+  max-width:52px!important;
+  max-height:52px!important;
+  flex:0 0 52px!important;
+  aspect-ratio:1/1!important;
+  object-fit:contain!important;
+  object-position:center!important;
+  border:0!important;
+  border-radius:50%!important;
+  background:transparent!important;
+  padding:0!important;
+  box-shadow:none!important;
+}
+.public-page-footer-main .footer-wordmark{width:56px;height:56px;min-width:56px;flex-basis:56px}
+.brand-loader-screen{
+  position:fixed;
+  inset:0;
+  z-index:99998;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  isolation:isolate;
+  background:#071a30;
+  color:#d6b777;
+}
+.brand-loader-orbit{
+  position:absolute;
+  width:112px;
+  height:112px;
+  border:2px solid rgba(214,183,119,.18);
+  border-top-color:#e1c58c;
+  border-right-color:rgba(214,183,119,.62);
+  border-radius:50%;
+  animation:deverve-loader-spin .82s linear infinite;
+  will-change:transform;
+}
+.brand-loader-logo{
+  display:block!important;
+  width:82px!important;
+  height:82px!important;
+  min-width:82px!important;
+  max-width:82px!important;
+  max-height:82px!important;
+  aspect-ratio:1/1!important;
+  object-fit:contain!important;
+  object-position:center!important;
+  border:0!important;
+  border-radius:50%!important;
+  background:transparent!important;
+  padding:0!important;
+  box-shadow:none!important;
+  animation:deverve-loader-breathe 1.35s ease-in-out infinite;
+  will-change:transform,opacity;
+}
+@keyframes deverve-loader-spin{to{transform:rotate(360deg)}}
+@keyframes deverve-loader-breathe{0%,100%{transform:scale(.96);opacity:.9}50%{transform:scale(1);opacity:1}}
+@media(prefers-reduced-motion:reduce){
+  .brand-loader-orbit,.brand-loader-logo{animation:none!important;will-change:auto}
+}
