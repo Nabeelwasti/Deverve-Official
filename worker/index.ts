@@ -3565,10 +3565,10 @@ async function adminSystemHealthRoutes(request: Request, env: Env, url: URL): Pr
     catch { return null; }
   };
   const [notificationQueue,receiptQueue,payments,inventory,pos,staff,audit] = await Promise.all([
-    read("SELECT COUNT(*) AS total, SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued, SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS processing, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed FROM notification_outbox"),
-    read("SELECT COUNT(*) AS total, SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END) AS queued, SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END) AS processing, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed FROM pos_receipt_outbox"),
-    read("SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('created','pending') THEN 1 ELSE 0 END) AS pending, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END) AS succeeded FROM payment_attempts"),
-    read("SELECT COUNT(*) AS active_variants, SUM(CASE WHEN stock_on_hand < 0 OR reserved_quantity > stock_on_hand THEN 1 ELSE 0 END) AS stock_anomalies FROM product_variants WHERE is_active=1"),
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) AS queued, COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END),0) AS processing, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed FROM notification_outbox"),
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) AS queued, COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END),0) AS processing, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed FROM pos_receipt_outbox"),
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status IN ('created','pending') THEN 1 ELSE 0 END),0) AS pending, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed, COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded FROM payment_attempts"),
+    read("SELECT COUNT(*) AS active_variants, COALESCE(SUM(CASE WHEN stock_on_hand < 0 OR reserved_quantity > stock_on_hand THEN 1 ELSE 0 END),0) AS stock_anomalies FROM product_variants WHERE is_active=1"),
     read("SELECT COUNT(*) AS open_sessions FROM pos_sessions WHERE status='open'"),
     read("SELECT (SELECT COUNT(*) FROM admin_users WHERE is_active=1) AS active_staff, (SELECT COUNT(*) FROM admin_pos_cashiers pc JOIN admin_users u ON u.id=pc.admin_user_id WHERE pc.revoked_at IS NULL AND u.is_active=1) AS active_cashiers, (SELECT COUNT(*) FROM admin_invites WHERE accepted_at IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) AS pending_invites"),
     read("SELECT COUNT(*) AS events_24h FROM audit_logs WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')"),
