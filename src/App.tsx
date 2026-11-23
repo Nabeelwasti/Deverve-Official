@@ -4,6 +4,7 @@ import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
 import BrandLogo from "./BrandLogo";
+import BrandLoader from "./BrandLoader";
 import SocialLinks from "./SocialLinks";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
@@ -512,11 +513,9 @@ function Storefront() {
     root.style.setProperty("--dv-site-button-radius",siteDesign.button_style==="pill"?"999px":siteDesign.button_style==="square"?"4px":"12px");
     root.style.setProperty("--dv-site-shadow",siteDesign.card_shadow==="flat"?"none":siteDesign.card_shadow==="bold"?"0 14px 38px rgba(12,37,64,.16)":"0 8px 24px rgba(12,37,64,.06)");
     for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
-    const logoFrame=siteDesign.image_settings?.brand_logo;
-    const logoX=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.x)?logoFrame.x:50));
-    const logoY=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.y)?logoFrame.y:50));
-    root.style.setProperty("--dv-brand-logo-fit",logoFrame?.fit==="contain"?"contain":"cover");
-    root.style.setProperty("--dv-brand-logo-position",logoX+"% "+logoY+"%");
+    // Brand marks are always centered and fully visible in their circular frames.
+    root.style.setProperty("--dv-brand-logo-fit","contain");
+    root.style.setProperty("--dv-brand-logo-position","50% 50%");
     for(const [key,setting] of Object.entries(siteDesign.image_settings||{})){
       if(key==="brand_logo")continue;
       const x=Math.max(0,Math.min(100,Number.isFinite(setting?.x)?setting.x:50));
@@ -1100,7 +1099,8 @@ function HomePageRoute() {
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
   useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
   if(requestedScreen&&["fashion","wholesale","mobility","contact","favourites","policies"].includes(requestedScreen))return <Storefront/>;
-  if(hasCmsHome===null)return <Storefront/>;
+  // Do not flash the legacy storefront while deciding which published homepage to show.
+  if(hasCmsHome===null)return <BrandLoader/>;
   return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
 }
 
@@ -1112,6 +1112,6 @@ export default function App() {
   }, []);
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={null}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoader/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
 }
 
