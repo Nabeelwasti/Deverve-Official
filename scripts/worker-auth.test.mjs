@@ -680,7 +680,7 @@ test("POS cashier capability is separate from the viewer role and cannot access 
   assert.match((await settings.json()).error,/restricted to the point-of-sale/i);
   const reports = await handleRequest(request("/api/admin/pos/summary","GET",undefined,{cookie}),env(db));
   assert.equal(reports.status,403);
-  assert.match((await reports.json()).error,/owner or manager/i);
+  assert.match((await reports.json()).error,/cashier access is limited/i);
   db.posCashiers.get(ownerId).revoked_at = new Date().toISOString();
   const revoked = await handleRequest(new Request(origin + "/api/admin/me", {headers:{cookie}}),env(db));
   assert.equal(revoked.status,200);
