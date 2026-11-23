@@ -46,18 +46,23 @@ The scheduled workflow performs the isolated restore drill too. Monitor its Acti
 
 ### 2. Offline-first POS
 
-The current service worker intentionally excludes API requests and POS uses live admin API calls. The current POS is not offline-first. Do not enable offline sales by simply caching /api/admin/pos/*.
+The current service worker intentionally excludes API requests and the POS uses live admin API calls. The current POS is not offline-first. Do not enable offline sales by caching /api/admin/pos/* or by replaying arbitrary requests to the existing online-sale route.
+
+The implementation contract is maintained in [OFFLINE-FIRST-POS-ENGINEERING-DESIGN.md](OFFLINE-FIRST-POS-ENGINEERING-DESIGN.md). That design is the detailed source of truth for the client queue, device permits, stock allocations, sync API, conflict handling and acceptance tests.
 
 Required implementation and acceptance:
-- Cache only the minimum POS catalogue snapshot in IndexedDB, partitioned by authenticated staff account and schema version; purge on logout, account switch or permission revocation.
-- Persist a cash-only offline queue with unique idempotency keys, immutable price/quantity snapshots, staff/session identity and visible pending status.
-- Never queue card, bank, wallet, hosted checkout, refunds, voids, account edits, stock adjustments or session open/close while offline.
-- On reconnect, submit queued sales through the existing server-authoritative POS endpoint; server must revalidate role, open session, current price, product status and stock in one atomic D1 transaction.
-- Keep pending sales visibly pending until acknowledged. Handle duplicate retries, expired sessions, changed prices, insufficient stock, revoked access and partial network failures without silently dropping or double-charging.
-- Provide cashier reconciliation for rejected/ambiguous queued sales. Never silently auto-adjust cash already received.
-- Test airplane-mode reload, browser/tab termination, low storage, logout, multiple devices, duplicate replay and stock sold online while offline.
+- Use versioned IndexedDB as the durable outbox; commit the complete immutable sale and queue record atomically before showing a local sale as recorded. Fail closed if storage cannot commit. Request persistent storage but do not assume it is guaranteed.
+- Keep the service worker limited to the public app shell and safe static assets. Keep all /api/ routes network-only; never cache authenticated POS bootstrap, reports, sessions, customer data or mutation responses.
+- Enroll one owner-approved physical device per register with a device key pair and short-lived server-signed permit. Do not store or replay admin passwords/session cookies. Device revocation and cashier permission must be rechecked on reconnect.
+- Allow cash-only offline sales against an already-open online shift. No offline session open/close, refunds, voids, expenses, cash movements, account changes, inventory adjustments, bank/card/wallet payments, customer-account changes or other privileged operations.
+- Reserve stock centrally for each device before offline operation. Online channels and other registers must not consume that allocation. Never rely only on a stale cached stock count and never auto-release an allocation while unsynced events may exist.
+- Sync only through a dedicated authenticated offline-sync endpoint. Enforce event/device uniqueness, stable idempotency keys, payload hashes, device signatures, sequence ordering, current authorization and shift policy, authoritative price snapshots, allocation limits and atomic per-sale D1 writes for sale, items, cash payment, stock, ledger, audit and receipt records.
+- Same event/key and same payload must return its original result without repeating business effects. Same key with a different payload is a hard conflict. Unknown network outcomes retry the exact same event and key.
+- Preserve every queued event after timeout, logout, restart, permission change, validation failure or conflict. Do not silently alter prices, stock or cash already collected. Route ambiguous/rejected cases to an audited owner reconciliation process.
+- Show explicit OFFLINE — NOT YET SYNCED receipt status, pending/syncing/accepted/conflict counts, last successful sync, permit expiry, allocation remaining and storage health. Do not present cached financial reports as current.
+- Test airplane-mode checkout/reload, app/browser termination, low or denied storage, multiple tabs, duplicate replay, same-key/different-payload conflict, lost response after server commit, device revocation, expired permit, changed prices, disabled products, stock allocation exhaustion, concurrent online sales, D1 rollback and real Android scanner/printer behavior.
 
-Until implemented and passed on real Android devices, use online POS only and do not advertise offline sales as supported.
+Until the implementation, automated tests, remote D1 acceptance and supervised physical Android acceptance all pass, use online POS only and do not advertise offline sales as supported.
 
 ### 3. POS cashier RBAC — implemented and deployed; operational acceptance pending
 
@@ -115,3 +120,17 @@ A capability is accepted only when all four exist:
 4. Production rollout, monitoring, rollback and owner sign-off.
 
 Do not state that the platform is 100% production-ready while any critical release gate above remains unverified.
+
+## Live production verification addendum — 23 November 2026
+
+Read-only Cloudflare API and production D1 checks were performed during continuation of PR #40. No production data, schema, secrets or deployment settings were modified.
+
+- Cloudflare Pages project `deverve-official` has production and automatic deployments disabled; preview deployment setting is `none`. The latest successful production deployment remains `bea6a0c6`, built from main commit `46c68c94ce2b689dbff00b863259e32a458025e3`. A new PR therefore cannot be treated as preview-deployed or production-deployed.
+- The production D1 database `deverve-production` contains the live commerce/POS schema (including `pos_sales`, `pos_sessions`, `pos_sale_items`, `pos_payments`, `pos_receipt_outbox`, `inventory_movements`, `financial_transactions` and `admin_pos_cashiers`). No offline POS device, permit, allocation, event or reconciliation tables exist.
+- Read-only aggregate checks found one active staff account, zero active POS cashier grants, one open register session, one existing POS sale (voided), seven active product variants, two queued POS receipt deliveries (one email and one WhatsApp), and two queued owner-notification outbox entries. These are operational follow-ups, not permission to modify or close existing records automatically.
+- The open register session belongs to the existing main register and has been open since 18 November 2026. Owner must verify the physical drawer and shift records before any close/reconciliation action.
+- The current production D1 has no migration-history table. Schema acceptance must therefore compare actual table/index/trigger definitions with repository migrations and recorded deployment evidence; do not assume a local migration ledger exists.
+- PR #40 documentation CI run `45156253162` completed successfully. This validates the repository CI job for the documentation-only change; it does not validate offline POS implementation, production Worker behavior or physical hardware.
+- The backup workflow exists at `.github/workflows/d1-backup-restore.yml`, with required GitHub Actions secrets and a scheduled run. A successful encrypted export plus isolated restore must still be confirmed from the workflow's actual run evidence before backup protection is called operational. The dedicated APAC R2 bucket `deverve-db-backups` exists but read-only listing of both `d1/encrypted/` and `manifests/` returned no objects during this check; therefore there is no verified encrypted D1 backup artifact in that bucket at this time.
+
+**Operational hold:** do not close the existing open POS session, clear queued outbox records, grant cashier access, alter stock allocations, create an offline permit, run a production migration, or enable automatic deployments as part of this design-only work. These actions require owner verification and the relevant acceptance procedure.
