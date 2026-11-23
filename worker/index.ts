@@ -3286,7 +3286,19 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
       if(!media)return error("A selected homepage image is unavailable",404);
       section_images[key]=value;
     }
-    siteDesign={preset,primary_color,accent_color,surface_color,text_color,corner_radius,font_family,density,button_style,card_shadow,hero_title,hero_subtitle,section_images};
+    const allowedFrameSettings=new Set([...allowedImages,"category_men","category_women","category_kids","category_essentials","category_layers","category_bottoms"]);
+    const rawFrameSettings=source.image_settings;
+    if(rawFrameSettings!==undefined&&(!rawFrameSettings||typeof rawFrameSettings!=="object"||Array.isArray(rawFrameSettings)))return error("Submit valid image frame settings",400);
+    const image_settings:Record<string,{fit:"cover"|"contain";x:number;y:number}>={};
+    for(const [key,value] of Object.entries((rawFrameSettings||{}) as Record<string,unknown>)){
+      if(!allowedFrameSettings.has(key)||!value||typeof value!=="object"||Array.isArray(value))return error("One of the image frame settings is not supported",400);
+      const frame=value as Record<string,unknown>;
+      const fit=frame.fit==="contain"?"contain":frame.fit==="cover"?"cover":null;
+      const x=Number(frame.x),y=Number(frame.y);
+      if(!fit||!Number.isInteger(x)||!Number.isInteger(y)||x<0||x>100||y<0||y>100)return error("Image focus values must be whole percentages from 0 to 100",400);
+      image_settings[key]={fit,x,y};
+    }
+    siteDesign={preset,primary_color,accent_color,surface_color,text_color,corner_radius,font_family,density,button_style,card_shadow,hero_title,hero_subtitle,section_images,image_settings};
   }
   let paymentMethods: {methods:Array<{id:string;label:string;kind:string;provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>}|undefined;
   if(hasPaymentMethods){
@@ -5546,9 +5558,9 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
   const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null}:null;
   const id=assets?.logo_id;
   if(id&&/^[a-f0-9-]{36}$/i.test(id)){
-   const asset=await env.DB.prepare("SELECT mime_type,width_px,height_px FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{mime_type:string;width_px:number|null;height_px:number|null}>();
-   // The brand editor exports a square 1200px crop; use that single source for all app icons.
-   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)&&asset.width_px===asset.height_px&&asset.width_px!==null&&asset.width_px>=512){
+   const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
+   // The owner logo editor presents a square crop; use the same canonical image for every app icon.
+   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){
     logoUrl="/api/brand/logo?v="+encodeURIComponent(id);
     logoType=asset.mime_type;
    }
