@@ -75,6 +75,11 @@ test("every admin artwork slot has a live rendering target and editable frame co
     assert.ok(admin.includes('id:"' + key + '"'), "admin exposes " + key);
     assert.ok(worker.includes('"' + key + '"'), "Worker accepts " + key);
   }
+  assert.ok(admin.includes('id:"brand_logo"'), "admin exposes the shared logo frame");
+  assert.ok(worker.includes('"brand_logo"'), "Worker accepts the shared logo frame");
+  assert.match(app, /--dv-brand-logo-fit/);
+  assert.match(styles, /--dv-brand-logo-fit/);
+  assert.match(styles, /--dv-brand-logo-position/);
   assert.match(admin, /Horizontal focus/);
   assert.match(admin, /Vertical focus/);
   assert.match(admin, /Fill frame \(cover\)/);
