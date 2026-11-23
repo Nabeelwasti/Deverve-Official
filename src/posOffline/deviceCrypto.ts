@@ -45,6 +45,31 @@ async function thumbprint(jwk: JsonWebKey): Promise<string> {
   return toBase64Url(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical))));
 }
 
+async function validateStoredIdentity(identity: StoredDeviceIdentity): Promise<void> {
+  const privateAlgorithm = identity.privateKey?.algorithm as EcKeyAlgorithm | undefined;
+  const publicAlgorithm = identity.publicKey?.algorithm as EcKeyAlgorithm | undefined;
+  if (
+    !identity.privateKey ||
+    identity.privateKey.type !== "private" ||
+    identity.privateKey.extractable !== false ||
+    identity.privateKey.usages.length !== 1 ||
+    !identity.privateKey.usages.includes("sign") ||
+    privateAlgorithm?.name !== "ECDSA" ||
+    privateAlgorithm.namedCurve !== "P-256" ||
+    !identity.publicKey ||
+    identity.publicKey.type !== "public" ||
+    !identity.publicKey.usages.includes("verify") ||
+    publicAlgorithm?.name !== "ECDSA" ||
+    publicAlgorithm.namedCurve !== "P-256"
+  ) {
+    throw new Error("The stored offline POS signing identity failed its cryptographic integrity checks. Re-enrol this device online.");
+  }
+  const calculatedThumbprint = await thumbprint(identity.publicKeyJwk);
+  if (calculatedThumbprint !== identity.publicKeyThumbprint) {
+    throw new Error("The stored offline POS public-key fingerprint does not match its identity record.");
+  }
+}
+
 function readIdentity(database: IDBDatabase): Promise<StoredDeviceIdentity | undefined> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(["device"], "readonly");
@@ -62,6 +87,7 @@ export async function getOrCreateOfflineDeviceIdentity(): Promise<OfflineDeviceI
   try {
     const existing = await readIdentity(database);
     if (existing?.privateKey && existing.publicKey && existing.publicKeyJwk) {
+      await validateStoredIdentity(existing);
       return {
         id: existing.id,
         deviceId: existing.deviceId,
@@ -103,6 +129,7 @@ export async function getOrCreateOfflineDeviceIdentity(): Promise<OfflineDeviceI
 
     const saved = await readIdentity(database);
     if (!saved?.privateKey) throw new Error("The local device signing key was not persisted.");
+    await validateStoredIdentity(saved);
     return {
       id: saved.id,
       deviceId: saved.deviceId,
