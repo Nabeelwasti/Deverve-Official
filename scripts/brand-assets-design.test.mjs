@@ -47,7 +47,7 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
     assert.ok(read(path).includes("data:image/png;base64,"), path + " must embed the mark without nested network requests");
   }
-  assert.match(read("public/sw.js"), /de-verve-shell-v5/);
+  assert.match(read("public/sw.js"), /de-verve-shell-v6/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
   const pagesManifest = read("functions/manifest.webmanifest.ts");
   assert.match(pagesManifest, /logo_id/);
@@ -59,6 +59,23 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.doesNotMatch(brandHead, /favicon_id|de-verve-loader\.svg/);
   assert.match(cropper, /allowOriginal\?:boolean/);
   assert.match(admin, /allowOriginal=\{false\}/, "official logo and favicon uploads must be square-cropped for app icons");
+});
+
+
+test("launch, storefront, footer and installed app use the canonical circular logo", () => {
+  assert.match(brandLogo, /"\/api\/brand\/logo"/);
+  assert.match(html, /id="initial-brand-loader"[^>]*aria-hidden="true"/);
+  assert.match(html, /class="initial-brand-logo" src="\/api\/brand\/logo"/);
+  assert.doesNotMatch(html, /initial-brand-loader[^<]*<strong|ELEVATE YOUR EVERYDAY/);
+  assert.match(app, /placeholder="Explore DeVerve"/);
+  assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
+  assert.doesNotMatch(app, /wholesale-art-mark/);
+  assert.match(styles, /\.footer-brand-logo\.deverve-round-logo\{width:52px!important;height:52px!important/);
+  assert.match(worker, /"cache-control":"no-store, max-age=0"/);
+  const manifestRoute = worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("export function aggregateOrderVariantQuantities"));
+  assert.match(manifestRoute, /\{src:logoUrl,sizes:"192x192"/);
+  assert.match(manifestRoute, /\{src:logoUrl,sizes:"512x512"/);
+  assert.doesNotMatch(manifestRoute, /icon-maskable\.svg/);
 });
 
 test("social profile saving is isolated, verified, and visibly reported", () => {
