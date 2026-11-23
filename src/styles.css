@@ -2558,3 +2558,61 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 }
 
 .brand-loader-logo{display:block!important;width:104px!important;height:104px!important;max-width:32vw!important;max-height:32vw!important;aspect-ratio:1/1!important;object-fit:contain!important;object-position:center!important;border:1px solid rgba(225,194,139,.85);border-radius:50%;background:#fff;padding:5px;box-shadow:0 0 42px rgba(209,174,111,.18)}
+
+
+/* CMS homepage storefront chrome: keep the same navigation, quote and discovery
+   experience as the catalogue screens instead of a disconnected CMS shell. */
+.public-site-shell{padding:0;min-height:100vh;background:#fbfaf7;color:#19324b;overflow-x:clip}
+.public-site-shell>.announcement{padding:7px clamp(16px,5vw,72px);background:#082b55;color:#f1d8a4}
+.public-site-shell>.announcement .announcement-location,.public-site-shell>.announcement .announcement-services{font-size:9px;font-weight:750;letter-spacing:.12em}
+.public-site-shell>.announcement .announcement-actions a{color:#f1d8a4;font-size:10px;font-weight:750;text-decoration:none}
+.public-site-shell>.top-quote-strip{min-height:40px}
+.public-site-header{position:sticky;top:0;z-index:170;isolation:isolate;display:flex;align-items:center;gap:clamp(12px,2vw,24px);width:100%;min-height:76px;padding:12px clamp(16px,5vw,72px);background:rgba(255,255,255,.97);border-bottom:1px solid #e2e8ef;box-shadow:0 5px 20px rgba(9,35,63,.055);backdrop-filter:blur(16px)}
+.public-site-brand{display:inline-flex;align-items:center;gap:10px;min-width:0;margin-right:auto;color:#12395f;text-decoration:none}
+.public-site-brand .brand-logo-image{width:42px;height:42px;max-width:42px;max-height:42px;flex:0 0 42px;border-radius:50%;object-fit:contain}
+.public-site-brand .brand-type{display:flex;flex-direction:column;gap:2px;white-space:nowrap}
+.public-site-brand .brand-type strong{font:850 18px/1 Manrope,sans-serif;letter-spacing:-.045em;color:#102d49}
+.public-site-brand .brand-type small{font:750 8px/1.2 "DM Sans",sans-serif;letter-spacing:.14em;color:#9a7a43}
+.public-site-header .menu-toggle{position:relative;z-index:3;order:2;display:inline-flex;align-items:center;justify-content:center;flex:0 0 42px;width:42px;height:42px;gap:5px;border:1px solid #dce5ef;border-radius:12px;background:#fff;cursor:pointer}
+.public-site-header .menu-toggle span{display:block;width:18px;height:2px;border-radius:2px;background:#163d65}
+.public-site-header .header-actions{order:3;flex:0 1 300px;min-width:0}
+.public-site-header .site-search{width:100%;min-width:0;height:42px}
+.public-site-header .site-search input{font-size:12px}
+.public-site-header .main-nav.is-open{display:flex;position:absolute;z-index:3;right:clamp(12px,5vw,72px);top:calc(100% + 4px);width:min(310px,calc(100vw - 24px));max-height:min(70dvh,560px);overflow:auto;padding:10px;background:#fff;border:1px solid #dce5ef;border-radius:16px;box-shadow:0 18px 50px rgba(11,39,66,.18);flex-direction:column;align-items:stretch;gap:3px}
+.public-site-header .main-nav a{display:flex;align-items:center;min-height:46px;padding:11px 14px;border-radius:10px;color:#183c60;text-decoration:none;font:750 13px/1.35 "DM Sans",sans-serif}
+.public-site-header .main-nav a:hover,.public-site-header .main-nav a:focus-visible{outline:0;background:#edf4fb}
+.public-site-shell .menu-dismiss{position:fixed;inset:0;z-index:169;border:0;background:rgba(6,24,43,.22);cursor:pointer}
+.public-site-shell .site-search-results{z-index:190}
+.public-page-content{width:min(1200px,90%);max-width:1200px;margin:clamp(28px,5vw,68px) auto;min-width:0}
+.public-page-content>h1{color:#102d49}
+.public-page-footer{width:100%;margin-top:auto;padding:0;background:#0a2d52;color:#eaf1f8}
+.public-page-footer-main{display:flex;align-items:center;justify-content:space-between;gap:20px;max-width:1200px;margin:0 auto;padding:30px clamp(16px,5vw,72px)}
+.public-page-footer-main>a{display:inline-flex;align-items:center;flex:0 0 auto}
+.public-page-footer-main .brand-logo-image{width:42px;height:42px;max-width:42px;max-height:42px;border-radius:50%}
+.public-page-footer-main>p{margin:0;color:#d5e1ee;font:650 11px/1.5 "DM Sans",sans-serif;letter-spacing:.04em}
+.public-page-footer-main nav{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px 16px}
+.public-page-footer-main nav a{color:#e5edf5;text-decoration:none;font:650 10px/1.5 "DM Sans",sans-serif}
+.public-page-footer-main nav a:hover{text-decoration:underline;text-underline-offset:3px}
+.public-page-footer-strip{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:13px clamp(16px,5vw,72px);border-top:1px solid rgba(255,255,255,.15);background:#06213e;color:#c4d2e1;font:700 8px/1.5 "DM Sans",sans-serif;letter-spacing:.1em}
+.public-page-footer-strip small{color:#c4d2e1;font-size:8px;letter-spacing:.04em}
+.public-page-footer-strip strong{color:#fff}
+@media(max-width:760px){
+ .public-site-shell>.announcement{min-height:42px;padding:6px 5%;gap:8px}
+ .public-site-shell>.announcement .announcement-services{display:none}
+ .public-site-header{position:sticky;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 42px;gap:10px;padding:11px 5% 10px}
+ .public-site-brand{grid-column:1;grid-row:1}
+ .public-site-header .menu-toggle{grid-column:2;grid-row:1}
+ .public-site-header .header-actions{grid-column:1/-1;grid-row:2;width:100%;max-width:none}
+ .public-site-header .site-search{width:100%;height:42px}
+ .public-site-header .main-nav.is-open{right:5%;top:calc(100% + 3px);width:min(320px,90vw)}
+ .public-page-content{width:90%;margin:32px auto 44px}
+ .public-page-footer-main{display:grid;grid-template-columns:auto 1fr;gap:12px 16px;padding:24px 5%}
+ .public-page-footer-main>p{font-size:10px}
+ .public-page-footer-main nav{grid-column:1/-1;justify-content:flex-start;gap:10px 16px}
+ .public-page-footer-strip{align-items:flex-start;flex-direction:column;gap:5px;padding:12px 5%}
+}
+@media(max-width:380px){
+ .public-site-brand .brand-type strong{font-size:16px}
+ .public-site-brand .brand-logo-image{width:38px;height:38px;flex-basis:38px}
+ .public-page-footer-strip{font-size:7px}
+}

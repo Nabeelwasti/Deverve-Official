@@ -1260,3 +1260,64 @@ test("customer AI chat plays server-generated Urdu speech without requiring a de
   expect(speechRequest).toMatchObject({ language: "ur-PK", voice: "Kore" });
   expect(speechRequest?.text).toContain("Aap kaise hain");
 });
+
+
+test("published CMS homepage restores the storefront header, search, golden quote and ending footer strip", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 800 });
+  await page.route("**/api/pages/home", async route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      page: { slug: "home", title: "A new home for De VERVE", seo_title: "De VERVE", seo_description: "Fashion, wholesale and mobility in Jhelum.", page_type: "home" },
+      sections: [{ id: "hero-e2e", section_type: "hero", position: 0, is_visible: true, content: { eyebrow: "DE VERVE", heading: "Elevate your style", body: "Fashion, wholesale and mobility." } }],
+    }),
+  }));
+  await page.route("**/api/navigation", async route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ items: [
+      { id: "home", label: "Home", href: "/", position: 0 },
+      { id: "fashion", label: "Fashion", href: "/?screen=fashion", position: 1 },
+      { id: "wholesale", label: "Wholesale", href: "/?screen=wholesale", position: 2 },
+      { id: "mobility", label: "Car rental", href: "/?screen=mobility", position: 3 },
+      { id: "contact", label: "Contact", href: "/?screen=contact", position: 4 },
+    ] }),
+  }));
+  await page.route("**/api/quotes/random*", async route => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ text: "Confidence is your best everyday style.", author: "De VERVE Editorial" }),
+  }));
+
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "A new home for De VERVE" })).toBeVisible();
+  await expect(page.locator(".top-quote-strip")).toContainText("Confidence is your best everyday style.");
+  await expect(page.locator(".top-quote-strip")).not.toContainText(/DummyJSON|provider/i);
+  const search = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
+  await expect(search).toBeVisible();
+  const searchBounds = await search.boundingBox();
+  expect(searchBounds).not.toBeNull();
+  expect(searchBounds!.width).toBeGreaterThanOrEqual(250);
+
+  const menuButton = page.getByRole("button", { name: "Toggle navigation" });
+  await expect(menuButton).toBeVisible();
+  await menuButton.click();
+  const menu = page.getByRole("navigation", { name: "Main navigation" });
+  await expect(menu.getByRole("link", { name: "Fashion" })).toBeVisible();
+  await expect(menu.getByRole("link", { name: "Car rental" })).toBeVisible();
+  await menuButton.click();
+  await expect(menu).toBeHidden();
+
+  await search.fill("hoodie");
+  const result = page.locator("#public-site-search-results").getByRole("option", { name: /Hoodies & jackets/ });
+  await expect(result).toBeVisible();
+  await expect(result).toHaveAttribute("href", /screen=fashion.*category=layers/);
+  await search.fill("car rental");
+  const rentalResult = page.locator("#public-site-search-results").getByRole("option", { name: /Car rental/ }).first();
+  await expect(rentalResult).toBeVisible();
+  await expect(rentalResult).toHaveAttribute("href", /screen=mobility/);
+  await expect(page.locator(".public-page-footer-strip")).toContainText("ALL RIGHTS RESERVED");
+  await expect(page.locator(".public-page-footer-strip")).toContainText("Syed Nabeel Wasti");
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
