@@ -55,6 +55,10 @@ faq_content = __import__("json").loads(next(content for kind, content in section
 assert len(faq_content["faqs"].splitlines()) == 4, "CMS homepage FAQs must remain four separate entries"
 category_content = __import__("json").loads(next(content for kind, content in sections if kind == "category_grid"))
 assert category_content["categories"].replace("\\n", "\n").splitlines() == ["Sweat Shirt", "hoodie", "Trouser"], "CMS category grid line breaks are malformed"
+db.executescript(Path("migrations/0042_cms_category_artwork.sql").read_text(encoding="utf-8"))
+category_content = __import__("json").loads(db.execute("SELECT content_json FROM site_page_sections WHERE page_id=? AND section_type='category_grid'", (home[0],)).fetchone()[0])
+assert set(category_content["category_images"]) == {"Sweat Shirt", "hoodie", "Trouser"}, "CMS category artwork mapping is incomplete"
+assert category_content["category_images"]["hoodie"] == "98e4595d-7a79-4bd7-bfe6-08dc211a3673", "Hoodie artwork does not match the verified product image"
 assert db.execute("SELECT COUNT(*) FROM site_navigation_items").fetchone()[0] == 5, "CMS homepage navigation seed is incomplete"
 assert db.execute("SELECT COUNT(*) FROM audit_logs WHERE action='website.homepage_seeded'").fetchone()[0] == 1, "CMS homepage seed audit event is missing"
 db.executescript(Path("migrations/0041_seed_cms_homepage.sql").read_text(encoding="utf-8"))
