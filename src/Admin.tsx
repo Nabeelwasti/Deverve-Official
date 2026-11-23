@@ -411,7 +411,7 @@ export default function Admin() {
       const tasks = [loadOverview()];
       if (!admin.can_use_pos) tasks.push(loadProducts());
       if (admin.role === "owner") { tasks.push(loadStaff()); tasks.push(loadSettings()); }
-      if (admin.role !== "catalogue") tasks.push(loadEnquiries());
+      if (admin.role !== "catalogue" && !admin.can_use_pos) tasks.push(loadEnquiries());
       if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadCustomers()); tasks.push(loadOrders()); tasks.push(loadReturns()); tasks.push(loadExchanges()); tasks.push(loadWholesaleQuotes()); }
       if (["owner", "manager", "rental"].includes(admin.role)) { tasks.push(loadVehicles()); tasks.push(loadRentals()); }
       void Promise.all(tasks).catch((error: unknown) => setMessage(error instanceof Error ? error.message : "Could not load dashboard data."));
