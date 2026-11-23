@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS pos_offline_stock_allocations (
   device_id TEXT NOT NULL REFERENCES pos_offline_devices(id) ON DELETE RESTRICT,
   register_id TEXT NOT NULL REFERENCES pos_registers(id) ON DELETE RESTRICT,
   variant_id TEXT NOT NULL REFERENCES product_variants(id) ON DELETE RESTRICT,
-  allocated_quantity INTEGER NOT NULL CHECK (allocated_quantity BETWEEN 1 AND 100),
+  allocated_quantity INTEGER NOT NULL CHECK (allocated_quantity BETWEEN 1 AND 20),
   consumed_quantity INTEGER NOT NULL DEFAULT 0 CHECK (consumed_quantity >= 0),
   released_quantity INTEGER NOT NULL DEFAULT 0 CHECK (released_quantity >= 0),
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','released','closed')),
@@ -114,3 +114,39 @@ CREATE TABLE IF NOT EXISTS pos_offline_reconciliation_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_pos_offline_reconciliation_actions_case
   ON pos_offline_reconciliation_actions(case_id, created_at);
+
+-- Device identity and sale evidence are immutable; revocation/status is the only mutable device state.
+CREATE TRIGGER IF NOT EXISTS pos_offline_device_identity_immutable
+BEFORE UPDATE OF id, register_id, enrolled_by_admin_id, public_key_jwk_json, public_key_thumbprint, created_at
+ON pos_offline_devices
+BEGIN
+  SELECT RAISE(ABORT, 'offline device identity is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS pos_offline_device_no_delete
+BEFORE DELETE ON pos_offline_devices
+BEGIN
+  SELECT RAISE(ABORT, 'offline device records cannot be deleted');
+END;
+
+CREATE TRIGGER IF NOT EXISTS pos_offline_event_payload_immutable
+BEFORE UPDATE OF event_id, device_id, permit_id, idempotency_key, device_sequence, payload_hash, payload_json, device_signature_base64url, received_at
+ON pos_offline_events
+BEGIN
+  SELECT RAISE(ABORT, 'offline event payload is immutable');
+END;
+CREATE TRIGGER IF NOT EXISTS pos_offline_event_no_delete
+BEFORE DELETE ON pos_offline_events
+BEGIN
+  SELECT RAISE(ABORT, 'offline event evidence cannot be deleted');
+END;
+
+CREATE TRIGGER IF NOT EXISTS pos_offline_reconciliation_action_no_update
+BEFORE UPDATE ON pos_offline_reconciliation_actions
+BEGIN
+  SELECT RAISE(ABORT, 'offline reconciliation actions are append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS pos_offline_reconciliation_action_no_delete
+BEFORE DELETE ON pos_offline_reconciliation_actions
+BEGIN
+  SELECT RAISE(ABORT, 'offline reconciliation actions cannot be deleted');
+END;
