@@ -1207,6 +1207,19 @@ test("the pre-React shell shows only the canonical logo with no loading copy", a
   await expect(initialLoader).not.toContainText(/loading|elevate|de verve/i);
 });
 
+test("the homepage never flashes the legacy storefront while the published-home check is pending", async ({ page }) => {
+  await page.route("**/api/pages/home", async route => {
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+  });
+  await page.goto("/");
+  await expect(page.locator(".brand-loader-screen")).toBeVisible();
+  await expect(page.locator(".site-shell")).toHaveCount(0);
+  await expect(page.locator(".brand-loader-orbit")).toBeVisible();
+  await expect(page.locator(".site-shell")).toBeVisible({ timeout: 5000 });
+  await expect(page.locator(".brand-loader-screen")).toHaveCount(0);
+});
+
 test("customer AI chat plays server-generated Urdu speech without requiring a device Urdu voice", async ({ page }) => {
   await page.addInitScript(() => {
     class FakeSource {
@@ -1311,6 +1324,10 @@ test("published CMS homepage restores the storefront header, search, golden quot
   await expect(rentalResult).toHaveAttribute("href", /screen=mobility/);
   await expect(page.locator(".public-page-footer-strip")).toContainText("ALL RIGHTS RESERVED");
   await expect(page.locator(".public-page-footer-strip")).toContainText("Syed Nabeel Wasti");
+  const footerLogo = page.locator(".public-page-footer-main .footer-wordmark .footer-brand-logo");
+  await expect(footerLogo).toBeVisible();
+  await expect(footerLogo).toHaveCSS("border-radius", "50%");
+  await expect(footerLogo).toHaveCSS("object-fit", "contain");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 });
