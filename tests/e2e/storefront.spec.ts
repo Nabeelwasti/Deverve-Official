@@ -1194,6 +1194,11 @@ test("golden quote uses the local De VERVE fallback when the online feed is unav
 test("the pre-React shell shows only the canonical logo with no loading copy", async ({ page }) => {
   await page.route("**/src/main.tsx", route => route.abort());
   await page.route("**/*.js", route => route.abort());
+  await page.route("**/api/brand/logo", route => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="#fff" stroke="#123f70" stroke-width="8"/></svg>'
+  }));
   await page.goto("/");
   const initialLoader = page.locator("#initial-brand-loader");
   await expect(initialLoader).toBeVisible();
