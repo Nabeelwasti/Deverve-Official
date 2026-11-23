@@ -45,6 +45,8 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.match(pagesManifest, /\/api\/brand\/logo/);
   assert.doesNotMatch(pagesManifest, /favicon_id|de-verve-loader\.svg|icon-192\.svg/);
   assert.match(brandHead, /&v=2/);
+  assert.match(brandHead, /image_settings\?\.brand_logo/);
+  assert.match(brandHead, /--dv-brand-logo-fit/);
   assert.doesNotMatch(brandHead, /favicon_id|de-verve-loader\.svg/);
 });
 
