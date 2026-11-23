@@ -1,3 +1,16 @@
+# Current production release reconciliation — 23 November 2026 (supersedes older snapshots below)
+
+- Current application release is PR #38, merge commit `e05059648267cf469fc5ea61042010d85e3931d0`; its full CI run [45140369544](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45140369544) passed all 17 steps.
+- Production Pages deployment `ea1ed48c-32ba-40e4-9310-ded65b4b134f` from application commit `9919d9025e5dd55a7f2ccc9a82a2df0b309f7aec` completed all five stages. Canonical URL: https://deverve-official.pages.dev ; deployment URL: https://ea1ed48c.deverve-official.pages.dev. Automatic production and preview deployments were disabled again after release.
+- A fresh mobile-sized production render confirmed the hero, navigation, FAQs, product cards and all three CMS category-artwork references. Production D1 read-back confirms one published home page, seven sections, five visible navigation items, three category image mappings and both critical POS/SKU indexes. There are currently zero active cashier grants.
+- The live `/api/health` endpoint returned `status=ok` and `database=connected`. Browser-rendering rate limits prevented a fresh protected-route sweep in this pass; the previously verified unauthenticated System Health route returned 401. The owner-only dashboard exists and is deployed; owner review remains pending.
+- PR #38 fixes category image normalization, published-media authorization, archive protection and CMS save-time validation. Migrations 0042–0043 are applied; all three media references are present in the published page and rendered in the live homepage.
+- The main branch also contains later documentation-only commits; they do not change the deployed application bundle. The README and this document are release records, not claims that all operational acceptance gates have passed.
+
+**Not fully production-accepted:** encrypted backup and isolated restore, independent off-account recovery, offline-first POS, cashier invitation and real shift/device acceptance, remote D1 integration suite, sustained inventory load tests, live payment/courier/email/WhatsApp acceptance, Turnstile negative and public-form acceptance, physical Android/scanner/printer checks, owner catalogue/content/business-data review, custom domain, and CNIC deletion/retention implementation and formal policy acceptance. COD remains the active checkout method. See the acceptance matrix and owner handover register. Do not bypass storage locks, migration safeguards or legal/evidence controls to make a checklist appear complete.
+
+---
+
 # Production readiness — verified 23 November 2026 release
 
 ## Latest release evidence
