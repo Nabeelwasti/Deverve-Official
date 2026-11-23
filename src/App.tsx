@@ -4,6 +4,7 @@ import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
 import BrandLogo from "./BrandLogo";
+import BrandLoader from "./BrandLoader";
 import SocialLinks from "./SocialLinks";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
@@ -1100,7 +1101,8 @@ function HomePageRoute() {
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
   useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
   if(requestedScreen&&["fashion","wholesale","mobility","contact","favourites","policies"].includes(requestedScreen))return <Storefront/>;
-  if(hasCmsHome===null)return <Storefront/>;
+  // Do not flash the legacy storefront while deciding which published homepage to show.
+  if(hasCmsHome===null)return <BrandLoader/>;
   return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
 }
 
@@ -1112,6 +1114,6 @@ export default function App() {
   }, []);
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={null}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoader/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
 }
 
