@@ -71,7 +71,7 @@ test("social profile saving is isolated, verified, and visibly reported", () => 
   assert.match(handler, /\/api\/storefront\/settings/);
   assert.match(handler, /setSocialMessage\(\{kind:"success"/);
   assert.match(admin, /admin-social-feedback/);
-  assert.match(app, /<SocialLinks links=\\{socialLinks\\} \\/>/);
+  assert.ok(app.includes("<SocialLinks links={socialLinks}/>"));
   assert.match(app, /contact-social-links/);
 });
 
