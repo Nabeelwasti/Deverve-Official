@@ -1,3 +1,10 @@
+export class AdminRequestError extends Error {
+  constructor(message: string, readonly status: number, readonly code?: string) {
+    super(message);
+    this.name = "AdminRequestError";
+  }
+}
+
 export async function adminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "application/json");
@@ -22,7 +29,8 @@ export async function adminRequest<T>(path: string, options: RequestInit = {}): 
     const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
       ? payload.error
       : "Request failed (HTTP " + response.status + "). Please try again.";
-    throw new Error(message);
+    const code = payload && typeof payload === "object" && "code" in payload && typeof payload.code === "string" ? payload.code : undefined;
+    throw new AdminRequestError(message, response.status, code);
   }
   return payload as T;
 }
