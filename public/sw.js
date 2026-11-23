@@ -1,4 +1,4 @@
-const CACHE_NAME = "de-verve-shell-v5";
+const CACHE_NAME = "de-verve-shell-v6";
 const SHELL = ["/", "/icons/icon-192.svg", "/icons/icon-512.svg", "/icons/icon-maskable.svg", "/brand/de-verve-mark.svg"];
 
 self.addEventListener("install", (event) => {
