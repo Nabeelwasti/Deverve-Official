@@ -4,7 +4,7 @@ export default function BrandLogo({className=""}:{className?:string}){
  const [version,setVersion]=useState(0);
  const [fallback,setFallback]=useState(false);
  useEffect(()=>{
-  const refresh=()=>setVersion(Date.now());
+  const refresh=()=>{setFallback(false);setVersion(Date.now());};
   window.addEventListener("deverve:brand-assets-updated",refresh);
   return()=>window.removeEventListener("deverve:brand-assets-updated",refresh);
  },[]);
