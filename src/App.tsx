@@ -1028,7 +1028,7 @@ function Storefront() {
             <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
             <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=De+VERVE+Jhelum+Pakistan" target="_blank" rel="noopener noreferrer">Find De VERVE on Maps <span>↗</span></a>
           </div>
-          {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0&&<nav className="contact-social-links" aria-label="Official De VERVE social profiles">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"De VERVE on "+platform}>{socialGlyphs[platform]??"↗"} <span>{platform}</span></a>)}</nav>}
+          {Object.values(socialLinks).some(url=>Boolean(url))&&<div className="contact-social-links"><SocialLinks links={socialLinks}/></div>}
           <form className="enquiry-form" data-draft-key="storefront-enquiry" onSubmit={submitEnquiry}>
             <h3>Send us an enquiry</h3>
             <div className="enquiry-fields">
