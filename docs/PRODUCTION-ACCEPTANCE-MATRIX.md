@@ -10,6 +10,10 @@
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
+| POS cashier RBAC | PR #34 merged; separate revocable grant and invite tables; server-side deny-by-default route boundary; cash-only sale guard; own-shift and own-sale scoping; atomic shift close | Code merged, production D1 migration 0040 applied and verified; controlled Pages deployment and owner-operated invitation/shift/device acceptance still pending |
+
+| Capability | Verified foundation | Acceptance status |
+|---|---|---|
 | Cloudflare Pages | Production deployment `41aca77d-20ca-4110-a92c-09a9e95ac3fd` completed successfully from application commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; PRs #30 and #31 are included. On 23 November, the homepage HTML/title and `/api/health` (`status=ok`, `database=connected`) were confirmed through Cloudflare Browser Rendering. | Deployed; targeted live health check passed; complete production-smoke workflow, protected-route checks, security-header checks and provider health acceptance still outstanding |
 | D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables | Schema exists; integration tests outstanding |
 | Public catalogue API | Live `/api/products` returned 3 published products; a response inspection confirmed no `cost_price_paisa` field on products or variants | Targeted public-data check passed; owner catalogue/authenticity reconciliation remains outstanding |
