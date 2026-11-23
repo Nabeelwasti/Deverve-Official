@@ -2666,8 +2666,11 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 }
 .brand-loader-orbit{
   position:absolute;
+  left:50%;
+  top:50%;
   width:112px;
   height:112px;
+  transform:translate(-50%,-50%);
   border:2px solid rgba(214,183,119,.18);
   border-top-color:#e1c58c;
   border-right-color:rgba(214,183,119,.62);
@@ -2693,7 +2696,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
   animation:deverve-loader-breathe 1.35s ease-in-out infinite;
   will-change:transform,opacity;
 }
-@keyframes deverve-loader-spin{to{transform:rotate(360deg)}}
+@keyframes deverve-loader-spin{to{transform:translate(-50%,-50%) rotate(360deg)}}
 @keyframes deverve-loader-breathe{0%,100%{transform:scale(.96);opacity:.9}50%{transform:scale(1);opacity:1}}
 @media(prefers-reduced-motion:reduce){
   .brand-loader-orbit,.brand-loader-logo{animation:none!important;will-change:auto}
