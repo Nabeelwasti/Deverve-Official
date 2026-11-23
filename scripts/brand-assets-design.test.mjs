@@ -10,6 +10,8 @@ const styles = read("src/styles.css");
 const brandLogo = read("src/BrandLogo.tsx");
 const brandHead = read("src/BrandHead.tsx");
 const account = read("src/CustomerAccount.tsx");
+const cropper = read("src/ImageCropper.tsx");
+const html = read("index.html");
 const chat = read("src/AIChatWidget.tsx");
 
 test("all customer-facing brand marks use the one owner-managed logo component and endpoint", () => {
@@ -17,6 +19,10 @@ test("all customer-facing brand marks use the one owner-managed logo component a
   assert.match(brandHead, /\/api\/brand\/logo/);
   assert.match(account, /import BrandLogo from "\.\/BrandLogo"/);
   assert.match(account, /<BrandLogo className="customer-brand-logo"\/>/);
+  assert.match(account, /\/api\/brand\/logo/);
+  assert.doesNotMatch(account, /\/brand\/de-verve-logo\.svg/);
+  assert.doesNotMatch(brandLogo, /\/brand\/de-verve-logo\.svg/);
+  assert.doesNotMatch(html, /\/brand\/de-verve-logo\.svg/);
   assert.doesNotMatch(account, /<span>DV<\/span>/);
   assert.match(app, /<BrandLogo className="brand-logo-image" \/>/);
   assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
@@ -48,6 +54,8 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.match(brandHead, /image_settings\?\.brand_logo/);
   assert.match(brandHead, /--dv-brand-logo-fit/);
   assert.doesNotMatch(brandHead, /favicon_id|de-verve-loader\.svg/);
+  assert.match(cropper, /allowOriginal\?:boolean/);
+  assert.match(admin, /allowOriginal=\{false\}/, "official logo and favicon uploads must be square-cropped for app icons");
 });
 
 test("social profile saving is isolated, verified, and visibly reported", () => {
