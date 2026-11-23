@@ -2588,7 +2588,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const payments = Array.isArray(body?.payments) ? body.payments : [];
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
     try {
-      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=? AND (? = 0 OR cashier_admin_id = ?)").bind(idempotency,isCashier ? 1 : 0,admin.admin_user_id).first<Record<string,unknown>>();
       if (duplicate) {
         const [itemsResult,paymentsResult,deliveryResult] = await Promise.all([
           env.DB.prepare("SELECT product_name_snapshot AS product_name,sku_snapshot AS sku,size_snapshot AS size,color_snapshot AS color,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
@@ -2636,6 +2636,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         const accountId=typeof payment?.account_id==="string"?payment.account_id:"";
         const methodValue=payment?.payment_method;
         const method=methodValue as "cash"|"bank_transfer"|"mobile_wallet"|"card";
+        if (isCashier && method !== "cash") return error("Cashier sales can only accept physical cash. Ask a manager to record any other payment method.",403);
         const amount=payment?.amount_paisa;
         const tendered=payment?.tendered_paisa;
         if (!accountId || !["cash","bank_transfer","mobile_wallet","card"].includes(method) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !Number.isSafeInteger(tendered) || Number(tendered)<Number(amount)) return error("A payment entry is invalid",400);
@@ -3185,7 +3186,7 @@ async function adminStaffRoutes(request: Request, env: Env, url: URL): Promise<R
     const body = await readJson(request);
     if (!body || (body.role !== undefined && !["manager","catalogue","orders","rental","viewer","cashier"].includes(String(body.role))) || (body.is_active !== undefined && ![0,1,true,false].includes(body.is_active as boolean))) return error("Choose a valid role or account status",400);
     try {
-      const target = await env.DB.prepare("SELECT id,email,role,is_active FROM admin_users WHERE id = ? LIMIT 1").bind(targetId).first<{id:string;email:string;role:string;is_active:number}>();
+      const target = await env.DB.prepare("SELECT u.id,u.email,CASE WHEN EXISTS (SELECT 1 FROM admin_pos_cashiers pc WHERE pc.admin_user_id=u.id AND pc.revoked_at IS NULL) THEN 'cashier' ELSE u.role END AS role,u.is_active FROM admin_users u WHERE u.id = ? LIMIT 1").bind(targetId).first<{id:string;email:string;role:string;is_active:number}>();
       if (!target) return error("Staff account not found",404);
       if (target.role === "owner") return error("Owner access cannot be changed from staff management",403);
       const requestedRole = body.role === undefined ? target.role : String(body.role);
@@ -3658,7 +3659,8 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       await env.DB.prepare("DELETE FROM admin_login_attempts WHERE key_hash = ?").bind(attemptKey).run();
       const session = await createSession(env.DB, admin.id);
       await env.DB.prepare("UPDATE admin_users SET last_login_at = ? WHERE id = ?").bind(now, admin.id).run();
-      return json({ authenticated: true, admin: { id: admin.id, email: admin.email, role: admin.role, can_use_pos: false } }, 200, { "set-cookie": sessionCookie(session.token, 12 * 60 * 60) });
+      const cashierGrant = await env.DB.prepare("SELECT EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AS can_use_pos").bind(admin.id).first<{can_use_pos:number}>();
+      return json({ authenticated: true, admin: { id: admin.id, email: admin.email, role: admin.role, can_use_pos: Number(cashierGrant?.can_use_pos) === 1 } }, 200, { "set-cookie": sessionCookie(session.token, 12 * 60 * 60) });
     } catch {
       return error("Sign-in is temporarily unavailable", 503);
     }
@@ -5509,6 +5511,13 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
+
+  if (url.pathname.startsWith("/api/admin/") && !["/api/admin/me", "/api/admin/logout"].includes(url.pathname) && !url.pathname.startsWith("/api/admin/pos/")) {
+    try {
+      const scopedAdmin = await currentAdmin(request, env.DB);
+      if (scopedAdmin && Number(scopedAdmin.can_use_pos) === 1) return error("This account is restricted to the point-of-sale workspace", 403);
+    } catch { return error("Authorization could not be verified", 503); }
+  }
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
