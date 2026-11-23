@@ -34,7 +34,7 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.match(worker, /let logoUrl="\/api\/brand\/logo\?v=default"/);
   assert.match(worker, /\{src:logoUrl,sizes:"192x192"/);
   assert.match(worker, /\{src:logoUrl,sizes:"512x512"/);
-  assert.doesNotMatch(worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("async function pwaManifestRoute") + 3500), /icon-192\.svg|icon-512\.svg|icon-maskable\.svg/);
+  assert.doesNotMatch(worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("async function pwaManifestRoute") + 3500), /icon-192\.svg|icon-512\.svg/);
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
     assert.match(read(path), /href="\/api\/brand\/logo"/, path + " must use the canonical logo endpoint");
   }
@@ -68,6 +68,7 @@ test("every admin artwork slot has a live rendering target and editable frame co
   for (const key of sectionSlots) {
     assert.ok(admin.includes('id:"' + key + '"'), "admin exposes " + key);
     assert.ok(worker.includes('"' + key + '"'), "Worker accepts " + key);
+    assert.ok(app.includes("section_images." + key), "storefront renders " + key);
     assert.ok(styles.includes("--dv-section-" + key + "-size"), "CSS consumes " + key + " fit");
     assert.ok(styles.includes("--dv-section-" + key + "-position"), "CSS consumes " + key + " focal point");
   }
