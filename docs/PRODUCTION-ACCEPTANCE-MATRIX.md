@@ -10,7 +10,7 @@
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
-| Cloudflare Pages | Production deployment `41aca77d-20ca-4110-a92c-09a9e95ac3fd` completed successfully from application commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; PRs #30 and #31 are included | Deployed; deployment stages passed; external HTTP smoke workflow still needs a successful run |
+| Cloudflare Pages | Production deployment `41aca77d-20ca-4110-a92c-09a9e95ac3fd` completed successfully from application commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; PRs #30 and #31 are included. On 23 November, the homepage HTML/title and `/api/health` (`status=ok`, `database=connected`) were confirmed through Cloudflare Browser Rendering. | Deployed; targeted live health check passed; complete production-smoke workflow, protected-route checks, security-header checks and provider health acceptance still outstanding |
 | D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables | Schema exists; integration tests outstanding |
 | Catalogue indexes | Production D1 contains `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created`; migration 0039 is applied and query plans were verified against the live database | Applied and query-plan verified; sustained workload/concurrency acceptance remains outstanding |
 | POS | Registers, sessions, sales, sale items, payments, voids, cashbook and receipt outbox exist | Online workflows implemented; owner reconciliation and device acceptance outstanding |
@@ -19,7 +19,7 @@
 | Turnstile | Public form verification calls a private verification Worker | Live configuration and form acceptance outstanding |
 | Email / WhatsApp | Outbox and retry logic exist | Provider credentials, consent and delivery acceptance outstanding |
 | PWA | Manifest and service worker cache the shell and static assets | Installable shell; not an offline-first POS |
-| Encrypted D1 backup | AES-256-GCM export and isolated restore script plus GitHub Actions workflow exist | Not accepted until secrets, scheduled execution and isolated restore pass |
+| Encrypted D1 backup | AES-256-GCM export and isolated restore script plus GitHub Actions workflow exist. PR #33 makes temporary recovery-database deletion failure fatal, preventing a false successful restore result. | Not accepted until required secrets, an actual encrypted export, isolated restore, confirmed cleanup and retention verification pass |
 
 ## Release blockers and owner-controlled prerequisites
 
@@ -32,7 +32,7 @@ The repository workflow .github/workflows/d1-backup-restore.yml is scheduled dai
 - D1_BACKUP_ENCRYPTION_KEY: 32 random bytes encoded as 64 hex characters. Generate offline with openssl rand -hex 32; store in an owner-controlled password manager, never in the repository or backup bucket.
 - Confirm private bucket deverve-db-backups exists and token permissions are sufficient.
 
-Required evidence: encrypted production snapshot, SHA-256 integrity check, successful decrypt and restore into an isolated non-production D1 database, row-count/schema comparison, cleanup of the isolated database, retention verification and a documented recovery exercise. A green syntax check is not a backup. A successful upload is not a restore test.
+Required evidence: encrypted production snapshot, SHA-256 integrity check, successful decrypt and restore into an isolated non-production D1 database, row-count/schema comparison, confirmed deletion of the isolated database, retention verification and a documented recovery exercise. The restore script now exits unsuccessfully if temporary database deletion cannot be confirmed (PR #33). A green syntax check is not a backup. A successful upload is not a restore test.
 
 The scheduled workflow performs the isolated restore drill too. Monitor its Actions history and configure failure notifications. No backup is guaranteed until the first successful run is observed. Keep the encryption key independently from the R2 bucket.
 
