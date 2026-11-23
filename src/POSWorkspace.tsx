@@ -66,7 +66,7 @@ export default function POSWorkspace({canManageMoney,canUseAI=false}:{canManageM
  };
  const completeSale=async()=>{
   if(!cart.length||!session||!selectedAccount)return;
-  if(customerEmail.trim()&&!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(customerEmail.trim())){notify("Enter a valid customer email address for the invoice copy.",true);return;}
+  if(customerEmail.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())){notify("Enter a valid customer email address for the invoice copy.",true);return;}
   if(whatsappReceiptConsent&&!customerPhone.trim()){notify("Enter the customer WhatsApp number or turn off WhatsApp receipt delivery.",true);return;}
   const method=selectedAccount.kind==="cash"?"cash":selectedAccount.kind==="bank"?"bank_transfer":selectedAccount.kind==="wallet"?"mobile_wallet":"card";
   const tendered=method==="cash"?paisa(cashTendered):total;
