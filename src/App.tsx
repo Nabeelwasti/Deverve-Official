@@ -514,7 +514,13 @@ function Storefront() {
     root.style.setProperty("--dv-site-button-radius",siteDesign.button_style==="pill"?"999px":siteDesign.button_style==="square"?"4px":"12px");
     root.style.setProperty("--dv-site-shadow",siteDesign.card_shadow==="flat"?"none":siteDesign.card_shadow==="bold"?"0 14px 38px rgba(12,37,64,.16)":"0 8px 24px rgba(12,37,64,.06)");
     for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
+    const logoFrame=siteDesign.image_settings?.brand_logo;
+    const logoX=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.x)?logoFrame.x:50));
+    const logoY=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.y)?logoFrame.y:50));
+    root.style.setProperty("--dv-brand-logo-fit",logoFrame?.fit==="contain"?"contain":"cover");
+    root.style.setProperty("--dv-brand-logo-position",logoX+"% "+logoY+"%");
     for(const [key,setting] of Object.entries(siteDesign.image_settings||{})){
+      if(key==="brand_logo")continue;
       const x=Math.max(0,Math.min(100,Number.isFinite(setting?.x)?setting.x:50));
       const y=Math.max(0,Math.min(100,Number.isFinite(setting?.y)?setting.y:50));
       root.style.setProperty("--dv-section-"+key+"-size",setting?.fit==="contain"?"contain":"cover");
