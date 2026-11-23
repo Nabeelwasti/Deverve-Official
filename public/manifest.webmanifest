@@ -30,9 +30,10 @@
       "purpose": "any"
     },
     {
-      "src": "/api/brand/logo",
+      "src": "/icons/icon-maskable.svg",
       "sizes": "512x512",
-      "purpose": "maskable"
+      "purpose": "maskable",
+      "type": "image/svg+xml"
     }
   ]
 }
