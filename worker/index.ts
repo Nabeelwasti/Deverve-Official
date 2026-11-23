@@ -2409,7 +2409,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/cash-movements"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
+  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
   if (request.method === "GET" && path === "/api/admin/pos/bootstrap") {
     try {
