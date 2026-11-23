@@ -2583,7 +2583,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .public-site-header .main-nav a:hover,.public-site-header .main-nav a:focus-visible{outline:0;background:#edf4fb}
 .public-site-shell .menu-dismiss{position:fixed;inset:0;z-index:169;border:0;background:rgba(6,24,43,.22);cursor:pointer}
 .public-site-shell .site-search-results{z-index:190}
-.public-page-content{width:min(1200px,calc(100% - 2 * clamp(16px,5vw,72px)));max-width:1200px;margin:clamp(28px,5vw,68px) auto;min-width:0}
+.public-page-content{width:min(1200px,90%);max-width:1200px;margin:clamp(28px,5vw,68px) auto;min-width:0}
 .public-page-content>h1{color:#102d49}
 .public-page-footer{width:100%;margin-top:auto;padding:0;background:#0a2d52;color:#eaf1f8}
 .public-page-footer-main{display:flex;align-items:center;justify-content:space-between;gap:20px;max-width:1200px;margin:0 auto;padding:30px clamp(16px,5vw,72px)}
