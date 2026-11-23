@@ -702,7 +702,7 @@ function Storefront() {
 
       <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
-          <img className="brand-logo-image deverve-round-logo" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
+          <BrandLogo className="brand-logo-image" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
         <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
@@ -1016,8 +1016,9 @@ function Storefront() {
           <div className="contact-actions">
             <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">Chat on WhatsApp <span>↗</span></a>
             <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
-            <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span>↗</span></a>
+            <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=De+VERVE+Jhelum+Pakistan" target="_blank" rel="noopener noreferrer">Find De VERVE on Maps <span>↗</span></a>
           </div>
+          {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0&&<nav className="contact-social-links" aria-label="Official De VERVE social profiles">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"De VERVE on "+platform}>{socialGlyphs[platform]??"↗"} <span>{platform}</span></a>)}</nav>}
           <form className="enquiry-form" data-draft-key="storefront-enquiry" onSubmit={submitEnquiry}>
             <h3>Send us an enquiry</h3>
             <div className="enquiry-fields">
@@ -1072,10 +1073,10 @@ function Storefront() {
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
       <footer className={"site-footer"+(siteDesign.section_images.footer?" has-owner-art":"")}>
-        <a className="footer-wordmark" href="#home"><img className="brand-logo-image" src={brandAssets.logo_id?"/media/"+brandAssets.logo_id:"/api/brand/logo"} alt="De VERVE"/></a>
+        <a className="footer-wordmark" href="#home" aria-label="De VERVE home"><BrandLogo className="footer-brand-logo"/></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
-        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
+        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
