@@ -5569,7 +5569,7 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  const icons:Array<{src:string;sizes:string;type:string;purpose:string}>=[
   {src:logoUrl,sizes:"192x192",type:logoType,purpose:"any"},
   {src:logoUrl,sizes:"512x512",type:logoType,purpose:"any"},
-  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"maskable"}
+  {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
  ];
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
