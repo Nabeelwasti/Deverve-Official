@@ -72,7 +72,7 @@ test("social profile saving is isolated, verified, and visibly reported", () => 
   assert.match(handler, /setSocialMessage\(\{kind:"success"/);
   assert.match(admin, /admin-social-feedback/);
   assert.ok(app.includes("<SocialLinks links={socialLinks}/>"));
-  assert.match(app, /contact-social-links/);
+  assert.match(app, /social-follow-section/);
 });
 
 test("every admin artwork slot has a live rendering target and editable frame controls", () => {
