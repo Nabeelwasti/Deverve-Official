@@ -25,9 +25,9 @@ test("all customer-facing brand marks use the one owner-managed logo component a
 });
 
 test("round logo frames do not add a second white border or inset padding", () => {
-  assert.match(styles, /\.deverve-round-logo\{[^}]*object-fit:cover[^}]*border:0[^}]*background:transparent[^}]*padding:0/);
-  assert.match(styles, /\.brand-logo-image\.deverve-round-logo\{[^}]*object-fit:cover!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
-  assert.match(styles, /\.ai-chat-head \.ai-chat-brand-logo\{[^}]*object-fit:cover!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
+  assert.match(styles, /\.deverve-round-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)[^}]*border:0[^}]*background:transparent[^}]*padding:0/);
+  assert.match(styles, /\.brand-logo-image\.deverve-round-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
+  assert.match(styles, /\.ai-chat-head \.ai-chat-brand-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
 });
 
 test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs", () => {
