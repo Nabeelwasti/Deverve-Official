@@ -115,20 +115,21 @@ test("outlet map lookup searches the De VERVE business name, not only the street
 
 test("canonical logo fallback and loading screen preserve the circular De VERVE mark", () => {
   const route = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
-  assert.match(route, /de-verve-mark\\.svg/);
-  assert.doesNotMatch(route, /de-verve-logo\\.svg/);
-  assert.match(brandLogo, /fallback\\?"/brand/de-verve-mark\\.svg"/);
-  assert.match(html, /onerror="this\\.onerror=null/);
+  assert.ok(route.includes("/brand/de-verve-mark.svg"));
+  assert.ok(!route.includes("/brand/de-verve-logo.svg"));
+  assert.ok(brandLogo.includes('fallback?="/brand/de-verve-mark.svg"') === false);
+  assert.ok(brandLogo.includes('"/brand/de-verve-mark.svg"'));
+  assert.ok(html.includes("onerror=\"this.onerror=null"));
 });
 
 test("social links render icon-only brand marks in storefront and CMS homepage", () => {
   const social = read("src/SocialLinks.tsx");
   const publicPage = read("src/PublicPage.tsx");
-  assert.match(social, /<svg viewBox=/);
-  assert.match(social, /aria-label=\\{\\"Visit De VERVE on \\"\\+platform\\}/);
-  assert.doesNotMatch(social, /footer-social-label|socialGlyphs/);
-  assert.match(app, /<SocialLinks links=\\{socialLinks\\} \\/>/);
-  assert.match(publicPage, /<SocialLinks links=\\{socialLinks\\} \\/>/);
-  assert.match(styles, /social-follow-section/);
-  assert.match(styles, /background:#fff/);
+  assert.ok(social.includes("<svg viewBox="));
+  assert.ok(social.includes("aria-label={\"Visit De VERVE on \"+platform}"));
+  assert.ok(!social.includes("footer-social-label"));
+  assert.ok(app.includes("<SocialLinks links={socialLinks}/>"));
+  assert.ok(publicPage.includes("<SocialLinks links={socialLinks}/>"));
+  assert.ok(styles.includes(".social-follow-section{"));
+  assert.ok(styles.includes("background:#fff"));
 });
