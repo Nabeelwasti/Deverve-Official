@@ -247,6 +247,24 @@ test("POS receipt outbox never sends a successful-sale receipt after the sale is
   assert.equal(updates.some(update=>update.sql.includes("last_error_code='sale_not_completed'")),true);
 });
 
+test("POS receipt outbox fails a queued voided sale when the provider-ready claim guard blocks it", async () => {
+  const queueRows=[{id:"voided-email-claim",sale_id:"sale-voided-claim",channel:"email",attempts:0}];
+  const updates=[];
+  const db={
+    prepare(sql){
+      let values=[];
+      return {
+        bind(...next){values=next;return this;},
+        async first(){return {id:"sale-voided-claim",status:"voided"};},
+        async all(){if(sql.includes("FROM pos_receipt_outbox"))return {results:queueRows};throw new Error("Unexpected query: "+sql);},
+        async run(){updates.push({sql,values});return {success:true,meta:{changes:sql.includes("SET status='processing'")?0:1}};}
+      };
+    }
+  };
+  await processPosReceiptOutbox({DB:db,RESEND_API_KEY:"test-resend-key",RESEND_FROM_EMAIL:"receipts@deverve.example"});
+  assert.equal(updates.some(update=>update.sql.includes("status IN ('queued','processing')")&&update.values[0]==="voided-email-claim"),true);
+});
+
 test("POS receipt outbox suppresses already-voided receipts even without provider credentials", async () => {
   const queueRows=[{id:"voided-email-unconfigured",sale_id:"sale-voided-unconfigured",channel:"email",attempts:0}];
   const updates=[];
