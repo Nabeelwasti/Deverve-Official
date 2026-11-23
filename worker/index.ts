@@ -139,6 +139,7 @@ interface SessionRow {
   is_active: number;
   expires_at: string;
   revoked_at: string | null;
+  can_use_pos: number;
 }
 
 
@@ -440,7 +441,7 @@ async function currentAdmin(request: Request, db: D1Database): Promise<SessionRo
   const token = cookieValue(request, "__Host-deverve_admin");
   if (!token || token.length > 100) return null;
   return db.prepare(
-    "SELECT s.id, s.admin_user_id, u.email, u.role, u.is_active, s.expires_at, s.revoked_at FROM admin_sessions s JOIN admin_users u ON u.id = s.admin_user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.is_active = 1 LIMIT 1",
+    "SELECT s.id, s.admin_user_id, u.email, u.role, u.is_active, s.expires_at, s.revoked_at, EXISTS (SELECT 1 FROM admin_pos_cashiers pc WHERE pc.admin_user_id=u.id AND pc.revoked_at IS NULL) AS can_use_pos FROM admin_sessions s JOIN admin_users u ON u.id = s.admin_user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.is_active = 1 LIMIT 1",
   ).bind(await sha256(token), new Date().toISOString()).first<SessionRow>();
 }
 
@@ -2406,14 +2407,16 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); } catch { return error("POS service is temporarily unavailable", 503); }
   if (!admin) return error("Authentication required", 401);
-  if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to use the POS", 403);
+  const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
+  if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
+  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/cash-movements"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
   if (request.method === "GET" && path === "/api/admin/pos/bootstrap") {
     try {
       const [accounts, registers, session, products] = await Promise.all([
-        env.DB.prepare("SELECT id, name, kind, masked_reference, opening_balance_paisa FROM financial_accounts WHERE is_active = 1 ORDER BY kind, name").all<Record<string, unknown>>(),
+        env.DB.prepare("SELECT id, name, kind, masked_reference, opening_balance_paisa FROM financial_accounts WHERE is_active = 1 AND (? = 0 OR kind = 'cash') ORDER BY kind, name").bind(isCashier ? 1 : 0).all<Record<string, unknown>>(),
         env.DB.prepare("SELECT id, name, location_label FROM pos_registers WHERE is_active = 1 ORDER BY name").all<Record<string, unknown>>(),
-        env.DB.prepare("SELECT id, register_id, opening_cash_paisa, expected_cash_paisa, status, opened_at FROM pos_sessions WHERE status = 'open' ORDER BY opened_at DESC LIMIT 1").first<Record<string, unknown>>(),
+        env.DB.prepare("SELECT id, register_id, opening_cash_paisa, expected_cash_paisa, status, opened_at FROM pos_sessions WHERE status = 'open' AND (? = 0 OR opened_by_admin_id = ?) ORDER BY opened_at DESC LIMIT 1").bind(isCashier ? 1 : 0, admin.admin_user_id).first<Record<string, unknown>>(),
         env.DB.prepare("SELECT p.id AS product_id, p.name AS product_name, p.category, p.retail_price_paisa, v.id AS variant_id, v.sku, v.barcode, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.reorder_level, v.cost_price_paisa FROM products p JOIN product_variants v ON v.product_id = p.id WHERE p.status = 'published' AND v.is_active = 1 ORDER BY p.name, v.size, v.color LIMIT 500").all<Record<string, unknown>>(),
       ]);
       const items = (products.results ?? []).map(row => ({ ...row, available_quantity: Math.max(0, Number(row.stock_on_hand ?? 0) - Number(row.reserved_quantity ?? 0)), cost_price_paisa: canManageMoney ? Number(row.cost_price_paisa ?? 0) : undefined }));
@@ -2470,7 +2473,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (request.method === "GET" && path === "/api/admin/pos/sales") {
     const limit = Math.max(1, Math.min(100, Number(url.searchParams.get("limit") ?? 50) || 50));
     try {
-      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.email AS cashier_name, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='email' LIMIT 1),'not_requested') AS email_receipt_status, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='whatsapp' LIMIT 1),'not_requested') AS whatsapp_receipt_status FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id ORDER BY s.created_at DESC LIMIT ?").bind(limit).all<Record<string, unknown>>();
+      const rows = await env.DB.prepare("SELECT s.id, s.receipt_number, s.customer_name, s.customer_phone, s.subtotal_paisa, s.discount_paisa, s.total_paisa, s.status, s.created_at, a.email AS cashier_name, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='email' LIMIT 1),'not_requested') AS email_receipt_status, COALESCE((SELECT q.status FROM pos_receipt_outbox q WHERE q.sale_id=s.id AND q.channel='whatsapp' LIMIT 1),'not_requested') AS whatsapp_receipt_status FROM pos_sales s LEFT JOIN admin_users a ON a.id = s.cashier_admin_id WHERE (? = 0 OR s.cashier_admin_id = ?) ORDER BY s.created_at DESC LIMIT ?").bind(isCashier ? 1 : 0, admin.admin_user_id, limit).all<Record<string, unknown>>();
       return json({ sales: rows.results ?? [] });
     } catch (caught) { console.error("[pos_sales_history] failed", caught instanceof Error ? caught.message : "unknown error"); return error("POS sales history could not be loaded", 503); }
   }
@@ -2535,6 +2538,8 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       if (!register) return error("POS register not found", 404);
       const open = await env.DB.prepare("SELECT id FROM pos_sessions WHERE register_id=? AND status='open' LIMIT 1").bind(registerId).first<{id:string}>();
       if (open) return error("This register already has an open session", 409);
+      const anotherCashierShift = isCashier ? await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' AND opened_by_admin_id=? LIMIT 1").bind(admin.admin_user_id).first<{id:string}>() : null;
+      if (anotherCashierShift) return error("You already have an open register shift",409);
       const previous = await env.DB.prepare("SELECT counted_cash_paisa FROM pos_sessions WHERE register_id=? AND status='closed' ORDER BY closed_at DESC LIMIT 1").bind(registerId).first<{counted_cash_paisa:number|null}>();
       const sessionId = crypto.randomUUID();
       const statements = [env.DB.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status,opening_note) VALUES (?,?,?,?,?,'open',?)").bind(sessionId,registerId,admin.admin_user_id,Number(openingCash),Number(openingCash),note)];
@@ -2556,7 +2561,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const note = typeof body?.note === "string" ? body.note.trim().slice(0,500) : "";
     if (!/^[a-f0-9-]{36}$/i.test(sessionId) || !Number.isSafeInteger(counted) || Number(counted)<0) return error("Enter a valid counted cash amount",400);
     try {
-      const session = await env.DB.prepare("SELECT id,opening_cash_paisa FROM pos_sessions WHERE id=? AND status='open'").bind(sessionId).first<{id:string;opening_cash_paisa:number}>();
+      const session = await env.DB.prepare("SELECT id,opening_cash_paisa FROM pos_sessions WHERE id=? AND status='open' AND (? = 0 OR opened_by_admin_id = ?)").bind(sessionId,isCashier ? 1 : 0,admin.admin_user_id).first<{id:string;opening_cash_paisa:number}>();
       if (!session) return error("Open POS session not found",404);
       const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(sessionId).first<{net:number}>();
       const expected = Number(session.opening_cash_paisa)+Number(movement?.net??0);
@@ -2605,7 +2610,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           payments
         },duplicate:true });
       }
-      const session = await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>();
+      const session = await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' AND (? = 0 OR opened_by_admin_id = ?) ORDER BY opened_at DESC LIMIT 1").bind(isCashier ? 1 : 0, admin.admin_user_id).first<{id:string}>();
       if (!session) return error("Open the cash register before completing a sale",409);
       const combined = new Map<string,number>();
       for (const item of lines) {
@@ -2722,12 +2727,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const amount=body?.amount_paisa;
     const accountId=typeof body?.account_id==="string"?body.account_id:"";
     const note=typeof body?.note==="string"?body.note.trim().slice(0,300):"";
-    if (typeof direction!=="string" || !["in","out"].includes(direction) || !Number.isSafeInteger(amount) || Number(amount)<=0 || !accountId || note.length<3) return error("Enter a valid amount, account and reason",400);
+    if (typeof direction!=="string" || !["in","out"].includes(direction) || (isCashier && direction !== "in") || !Number.isSafeInteger(amount) || Number(amount)<=0 || !accountId || note.length<3) return error("Enter a valid cash-in amount, account and reason",400);
     try {
       const account=await env.DB.prepare("SELECT id,kind FROM financial_accounts WHERE id=? AND is_active=1").bind(accountId).first<{id:string;kind:string}>();
       if(!account)return error("Financial account not found",404);
       if(!canManageMoney && account.kind!=="cash")return error("Cashiers can only record movements in the cash drawer",403);
-      const session=account.kind==="cash"?await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' ORDER BY opened_at DESC LIMIT 1").first<{id:string}>():null;
+      const session=account.kind==="cash"?await env.DB.prepare("SELECT id FROM pos_sessions WHERE status='open' AND (? = 0 OR opened_by_admin_id = ?) ORDER BY opened_at DESC LIMIT 1").bind(isCashier ? 1 : 0,admin.admin_user_id).first<{id:string}>():null;
       if(account.kind==="cash"&&!session)return error("Open the cash register before recording cash movement",409);
       if(direction==="out"){const balance=await env.DB.prepare("SELECT a.opening_balance_paisa+COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS balance FROM financial_accounts a LEFT JOIN financial_transactions t ON t.account_id=a.id WHERE a.id=? GROUP BY a.id").bind(accountId).first<{balance:number}>();if(Number(balance?.balance??0)<Number(amount))return error("The selected account does not have enough recorded balance",409);}
       const txId=crypto.randomUUID();
@@ -3646,7 +3651,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
       await env.DB.prepare("DELETE FROM admin_login_attempts WHERE key_hash = ?").bind(attemptKey).run();
       const session = await createSession(env.DB, admin.id);
       await env.DB.prepare("UPDATE admin_users SET last_login_at = ? WHERE id = ?").bind(now, admin.id).run();
-      return json({ authenticated: true, admin: { id: admin.id, email: admin.email, role: admin.role } }, 200, { "set-cookie": sessionCookie(session.token, 12 * 60 * 60) });
+      return json({ authenticated: true, admin: { id: admin.id, email: admin.email, role: admin.role, can_use_pos: false } }, 200, { "set-cookie": sessionCookie(session.token, 12 * 60 * 60) });
     } catch {
       return error("Sign-in is temporarily unavailable", 503);
     }
@@ -3656,7 +3661,7 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
     try {
       const admin = await currentAdmin(request, env.DB);
       if (!admin) return error("Authentication required", 401);
-      return json({ authenticated: true, admin: { id: admin.admin_user_id, email: admin.email, role: admin.role } });
+      return json({ authenticated: true, admin: { id: admin.admin_user_id, email: admin.email, role: admin.role, can_use_pos: Number(admin.can_use_pos) === 1 } });
     } catch {
       return error("Sign-in is temporarily unavailable", 503);
     }
