@@ -25,7 +25,7 @@ test("all customer-facing brand marks use the one owner-managed logo component a
   assert.doesNotMatch(html, /\/brand\/de-verve-logo\.svg/);
   assert.doesNotMatch(account, /<span>DV<\/span>/);
   assert.match(app, /<BrandLogo className="brand-logo-image" \/>/);
-  assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
+  assert.match(app, /if\(hasCmsHome===null\)return <BrandLoader\/>/);\n  assert.doesNotMatch(app, /if\(hasCmsHome===null\)return <Storefront\/>/);\n  assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);\n  assert.match(read("src/PublicPage.tsx"), /className="footer-wordmark" href="\/" aria-label="De VERVE home"><BrandLogo className="footer-brand-logo"\/>/);
   assert.match(chat, /<BrandLogo className="ai-chat-brand-logo" \/>/);
   assert.match(worker, /publicPath==="\/api\/brand\/logo"/);
   const logoRoute = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
@@ -34,7 +34,7 @@ test("all customer-facing brand marks use the one owner-managed logo component a
 });
 
 test("round logo frames do not add a second white border or inset padding", () => {
-  assert.match(styles, /\.deverve-round-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)[^}]*border:0[^}]*background:transparent[^}]*padding:0/);
+  assert.match(styles, /\.deverve-round-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)[^}]*border:0[^}]*background:transparent[^}]*padding:0/);\n  assert.match(styles, /\.deverve-round-logo\{[^}]*object-fit:contain!important[^}]*object-position:50% 50%!important/);
   assert.match(styles, /\.brand-logo-image\.deverve-round-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
   assert.match(styles, /\.ai-chat-head \.ai-chat-brand-logo\{[^}]*object-fit:var\(--dv-brand-logo-fit,cover\)!important[^}]*border:0!important[^}]*background:transparent!important[^}]*padding:0!important/);
 });
@@ -47,7 +47,7 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
     assert.ok(read(path).includes("data:image/png;base64,"), path + " must embed the mark without nested network requests");
   }
-  assert.match(read("public/sw.js"), /de-verve-shell-v6/);
+  assert.match(read("public/sw.js"), /de-verve-shell-v7/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
   const pagesManifest = read("functions/manifest.webmanifest.ts");
   assert.match(pagesManifest, /logo_id/);
@@ -69,10 +69,10 @@ test("launch, storefront, footer and installed app use the canonical circular lo
   assert.doesNotMatch(html, /initial-brand-loader[^<]*<strong|ELEVATE YOUR EVERYDAY/);
   assert.match(app, /placeholder="Explore DeVerve"/);
   assert.doesNotMatch(read("src/PublicPage.tsx"), /Loading page…/);
-  assert.match(read("src/PublicPage.tsx"), /public-page-loading.*BrandLogo/);
+  assert.match(read("src/PublicPage.tsx"), /if\(!page\)return <BrandLoader\/>/);\n  assert.match(read("src/BrandLoader.tsx"), /brand-loader-orbit/);
   assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
   assert.doesNotMatch(app, /wholesale-art-mark/);
-  assert.match(styles, /\.footer-brand-logo\.deverve-round-logo\{width:52px!important;height:52px!important/);
+  assert.match(styles, /\.footer-brand-logo\.deverve-round-logo\{width:52px!important;height:52px!important/);\n  assert.match(html, /#initial-brand-loader::before[^}]*animation:deverve-loader-spin/);\n  assert.match(html, /animation:deverve-loader-breathe/);
   assert.match(worker, /"cache-control":"no-store, max-age=0"/);
   const manifestRoute = worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("export function aggregateOrderVariantQuantities"));
   assert.match(manifestRoute, /\{src:logoUrl,sizes:"192x192"/);
