@@ -5575,7 +5575,7 @@ export function aggregateOrderVariantQuantities(lines: ReadonlyArray<{ variant_i
 
 export async function fingerprintPosSaleRequest(value: unknown): Promise<string> {
   const canonical = (input: unknown): string => {
-    if (Array.isArray(input)) return "[" + input.map(canonical).join(",") + "]";
+    if (Array.isArray(input)) return "[" + input.map(canonical).sort().join(",") + "]";
     if (input !== null && typeof input === "object") {
       const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
       return "{" + entries.map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
