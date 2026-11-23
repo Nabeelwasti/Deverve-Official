@@ -214,6 +214,8 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
    const receipt=String(sale.receipt_number);
    const total=Number(sale.total_paisa);
    if(!Number.isSafeInteger(total)||total<0)throw new Error("receipt_total_invalid");
+   const stillClaimed=await env.DB.prepare("SELECT id FROM pos_receipt_outbox WHERE id=? AND status='processing' LIMIT 1").bind(id).first<{id:string}>();
+   if(!stillClaimed)continue;
    let providerId="";
    if(channel==="email"){
     const recipient=String(sale.customer_email||"");
@@ -2724,7 +2726,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const statements=[
         env.DB.prepare("INSERT INTO pos_sale_voids (sale_id,voided_by_admin_id,reason,created_at) VALUES (?,?,?,?)").bind(sale.id,admin.admin_user_id,reason,now),
         env.DB.prepare("UPDATE pos_sales SET status='voided',voided_by_admin_id=?,void_reason=?,voided_at=? WHERE id=? AND status='completed'").bind(admin.admin_user_id,reason,now,sale.id),
-        env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_voided_before_delivery',processing_started_at=NULL WHERE sale_id=? AND status='queued'").bind(sale.id),
+        env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_voided_before_delivery',processing_started_at=NULL WHERE sale_id=? AND status IN ('queued','processing')").bind(sale.id),
       ];
       for(const item of items.results){
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand+?,updated_at=? WHERE id=?").bind(item.quantity,now,item.variant_id));
