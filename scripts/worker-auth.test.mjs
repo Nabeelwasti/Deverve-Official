@@ -682,8 +682,9 @@ test("POS cashier capability is separate from the viewer role and cannot access 
   assert.equal(reports.status,403);
   assert.match((await reports.json()).error,/owner or manager/i);
   db.posCashiers.get(ownerId).revoked_at = new Date().toISOString();
-  const revoked = await handleRequest(request("/api/admin/settings","GET",undefined,{cookie}),env(db));
-  assert.notEqual(revoked.status,403);
+  const revoked = await handleRequest(new Request(origin + "/api/admin/me", {headers:{cookie}}),env(db));
+  assert.equal(revoked.status,200);
+  assert.equal((await revoked.json()).admin.can_use_pos,false);
 });
 
 test("private media library and file previews are unavailable to read-only staff", async () => {
