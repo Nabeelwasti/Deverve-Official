@@ -877,8 +877,8 @@ test("uses the uploaded brand logo as the browser tab icon when no dedicated fav
     });
   });
   await page.goto("/");
-  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
-  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/media/" + logoId + "\\?v="));
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", new RegExp("/api/brand/logo\\?v=" + logoId));
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", new RegExp("/api/brand/logo\\?v=" + logoId));
 });
 
 test("storefront keeps original English copy and does not expose the unreliable translator", async ({ page }) => {
