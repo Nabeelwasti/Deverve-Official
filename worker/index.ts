@@ -3409,9 +3409,9 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
   if(publicPath==="/api/brand/logo"&&request.method==="GET"){
     try{
       const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
-      if(row){const assets=JSON.parse(row.setting_value_json) as {logo_id?:string|null};const id=assets.logo_id;if(typeof id==="string"&&/^[a-f0-9-]{36}$/i.test(id)){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(media)return new Response(null,{status:302,headers:{location:new URL("/media/"+id,request.url).toString(),"cache-control":"public, max-age=300"}});}}
+      if(row){const assets=JSON.parse(row.setting_value_json) as {logo_id?:string|null};const id=assets.logo_id;if(typeof id==="string"&&/^[a-f0-9-]{36}$/i.test(id)){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(media)return new Response(null,{status:302,headers:{location:new URL("/media/"+id,request.url).toString(),"cache-control":"no-store, max-age=0","pragma":"no-cache"}});}}
     }catch{/* Keep the canonical logo endpoint resilient by falling through to the built-in official mark. */}
-    return new Response(null,{status:302,headers:{location:new URL("/brand/de-verve-mark.svg",request.url).toString(),"cache-control":"public, max-age=300"}});
+    return new Response(null,{status:302,headers:{location:new URL("/brand/de-verve-mark.svg",request.url).toString(),"cache-control":"no-store, max-age=0","pragma":"no-cache"}});
   }
   if(publicPath==="/api/storefront/settings" && request.method==="GET"){
     try{
@@ -5587,8 +5587,7 @@ async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Respons
  }catch{/* The canonical logo endpoint remains the fallback if settings are unavailable. */}
  const icons:Array<{src:string;sizes:string;type:string;purpose:string}>=[
   {src:logoUrl,sizes:"192x192",type:logoType,purpose:"any"},
-  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"any"},
-  {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
+  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"any"}
  ];
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
