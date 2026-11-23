@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 
 test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
@@ -22,6 +22,27 @@ test("order inventory aggregation combines duplicate variant lines before cancel
   assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 0 }]), /positive integer/);
   assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: 1.5 }]), /positive integer/);
   assert.throws(() => aggregateOrderVariantQuantities([{ variant_id: "v1", quantity: Number.MAX_SAFE_INTEGER }, { variant_id: "v1", quantity: 1 }]), /supported range/);
+});
+
+test("POS checkout fingerprints are stable across object key order and reject changed sale details", async () => {
+  const first = await fingerprintPosSaleRequest({
+    customer_name: "Walk-in customer",
+    items: [{ variant_id: "variant-a", quantity: 2 }],
+    payments: [{ account_id: "cash-main", amount_paisa: 5000, payment_method: "cash", tendered_paisa: 6000 }],
+  });
+  const reordered = await fingerprintPosSaleRequest({
+    payments: [{ payment_method: "cash", tendered_paisa: 6000, amount_paisa: 5000, account_id: "cash-main" }],
+    items: [{ quantity: 2, variant_id: "variant-a" }],
+    customer_name: "Walk-in customer",
+  });
+  const changed = await fingerprintPosSaleRequest({
+    customer_name: "Walk-in customer",
+    items: [{ variant_id: "variant-a", quantity: 3 }],
+    payments: [{ account_id: "cash-main", amount_paisa: 7500, payment_method: "cash", tendered_paisa: 8000 }],
+  });
+  assert.match(first, /^[a-f0-9]{64}$/);
+  assert.equal(first, reordered);
+  assert.notEqual(first, changed);
 });
 
 test("POS stock guard binds every exact variant and rejects oversold combined quantities", () => {
