@@ -92,16 +92,26 @@ export function openOfflinePosDatabase(): Promise<IDBDatabase> {
 }
 
 function validateSaleDraft(draft: OfflineSaleDraft): void {
+  if (!draft || typeof draft !== "object" || Array.isArray(draft)) throw new Error("Offline sale payload is invalid.");
+  const allowedDraftKeys = new Set(["eventId", "idempotencyKey", "deviceId", "permitId", "registerId", "sessionId", "cashierId", "snapshotVersion", "createdAt", "currency", "lines", "subtotalPaisa", "totalPaisa", "cashTenderedPaisa", "changePaisa"]);
+  if (Object.keys(draft).some((key) => !allowedDraftKeys.has(key))) throw new Error("Offline sale contains fields that are not permitted for local storage.");
   const requiredIds = [draft.eventId, draft.idempotencyKey, draft.deviceId, draft.permitId, draft.registerId, draft.sessionId, draft.cashierId, draft.snapshotVersion];
   if (requiredIds.some((value) => typeof value !== "string" || value.length < 8 || value.length > 160)) {
     throw new Error("Offline sale is missing a valid device, permit, shift or event reference.");
   }
-  if (draft.currency !== "PKR" || !Number.isSafeInteger(Date.parse(draft.createdAt))) throw new Error("Offline sale currency or timestamp is invalid.");
+  if (!/^[a-f0-9-]{36}$/i.test(draft.eventId) || !/^[a-f0-9-]{36}$/i.test(draft.idempotencyKey)) throw new Error("Offline sale event and idempotency references must be UUIDs.");
+  if (draft.currency !== "PKR" || typeof draft.createdAt !== "string" || !Number.isSafeInteger(Date.parse(draft.createdAt))) throw new Error("Offline sale currency or timestamp is invalid.");
   if (!Array.isArray(draft.lines) || draft.lines.length < 1 || draft.lines.length > 30) throw new Error("Offline sale must contain between 1 and 30 item lines.");
+  const seenVariants = new Set<string>();
   for (const line of draft.lines) {
-    if (!line.variantId || line.variantId.length > 160 || line.productName.length > 160 || line.sku.length > 100 || line.size.length > 50 || line.color.length > 80) {
+    if (!line || typeof line !== "object" || Array.isArray(line)) throw new Error("Offline sale contains an invalid product snapshot.");
+    const allowedLineKeys = new Set(["variantId", "sku", "productName", "size", "color", "quantity", "unitPricePaisa", "lineTotalPaisa"]);
+    if (Object.keys(line).some((key) => !allowedLineKeys.has(key))) throw new Error("Offline sale product snapshot contains unsupported fields.");
+    if ([line.variantId, line.productName, line.sku, line.size, line.color].some((value) => typeof value !== "string") || !line.variantId || line.variantId.length > 160 || line.productName.length > 160 || line.sku.length > 100 || line.size.length > 50 || line.color.length > 80) {
       throw new Error("Offline sale contains an invalid product snapshot.");
     }
+    if (seenVariants.has(line.variantId)) throw new Error("Offline sale product lines must be combined by variant.");
+    seenVariants.add(line.variantId);
     if (!Number.isSafeInteger(line.quantity) || line.quantity < 1 || line.quantity > 30) throw new Error("Offline sale quantity is outside the allowed limit.");
     if (!Number.isSafeInteger(line.unitPricePaisa) || line.unitPricePaisa < 0 || !Number.isSafeInteger(line.lineTotalPaisa) || line.lineTotalPaisa < 0) {
       throw new Error("Offline sale contains an invalid price.");
@@ -183,6 +193,7 @@ export async function inspectOfflineStorage(requestPersistence = true): Promise<
   let usageBytes: number | null = null;
   let availableBytes: number | null = null;
   let databaseWritable = false;
+  let quotaInspected = false;
 
   try {
     if (navigator.storage?.persisted) {
@@ -201,11 +212,15 @@ export async function inspectOfflineStorage(requestPersistence = true): Promise<
     if (estimate) {
       quotaBytes = typeof estimate.quota === "number" ? estimate.quota : null;
       usageBytes = typeof estimate.usage === "number" ? estimate.usage : null;
-      if (quotaBytes !== null && usageBytes !== null) availableBytes = Math.max(0, quotaBytes - usageBytes);
+      if (quotaBytes !== null && usageBytes !== null) {
+        availableBytes = Math.max(0, quotaBytes - usageBytes);
+        quotaInspected = true;
+      }
     }
   } catch {
     reasons.push("Browser storage quota could not be inspected.");
   }
+  if (!quotaInspected) reasons.push("Browser storage quota information is unavailable.");
   if (availableBytes !== null && availableBytes < 5 * 1024 * 1024) reasons.push("Less than 5 MiB of estimated browser storage remains.");
 
   let database: IDBDatabase | null = null;
@@ -233,7 +248,7 @@ export async function inspectOfflineStorage(requestPersistence = true): Promise<
     usageBytes,
     availableBytes,
     databaseWritable,
-    checkoutStorageReady: supported && secureContext && persistentStorageGranted && databaseWritable && (availableBytes === null || availableBytes >= 5 * 1024 * 1024),
+    checkoutStorageReady: supported && secureContext && persistentStorageGranted && databaseWritable && quotaInspected && availableBytes !== null && availableBytes >= 5 * 1024 * 1024,
     reasons,
   };
 }
