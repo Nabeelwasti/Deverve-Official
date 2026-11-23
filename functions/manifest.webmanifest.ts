@@ -15,7 +15,7 @@ export async function onRequest(context:{request:Request;env:Env}):Promise<Respo
  const icons=[
   {src:icon,sizes:"192x192",type:iconType,purpose:"any"},
   {src:icon,sizes:"512x512",type:iconType,purpose:"any"},
-  {src:icon,sizes:"512x512",type:iconType,purpose:"maskable"}
+  {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
  ];
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Fashion, wholesale and car rental enquiries in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff","etag":'"'+version+'"'}});
