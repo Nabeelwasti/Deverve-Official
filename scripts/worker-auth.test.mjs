@@ -184,7 +184,7 @@ test("POS receipt outbox sends transactional email invoices and opt-in WhatsApp 
       let values=[];
       return {
         bind(...next){values=next;return this;},
-        async first(){if(sql.includes("FROM pos_sales WHERE id=?"))return sale;return null;},
+        async first(){if(sql.includes("FROM pos_sales WHERE id=?"))return sale;if(sql.includes("FROM pos_receipt_outbox WHERE id=?"))return {id:values[0]};return null;},
         async all(){if(sql.includes("FROM pos_receipt_outbox"))return {results:queueRows};if(sql.includes("FROM pos_sale_items"))return {results:items};throw new Error("Unexpected receipt queue query: "+sql);},
         async run(){updates.push({sql,values});return {success:true,meta:{changes:1}};}
       };
@@ -245,6 +245,37 @@ test("POS receipt outbox never sends a successful-sale receipt after the sale is
   }
   assert.equal(calls.length,0);
   assert.equal(updates.some(update=>update.sql.includes("last_error_code='sale_not_completed'")),true);
+});
+
+test("POS receipt outbox stops before provider delivery when a void races with a claimed job", async () => {
+  const queueRows=[{id:"racing-email",sale_id:"sale-racing",channel:"email",attempts:0}];
+  const updates=[],calls=[];
+  const sale={id:"sale-racing",receipt_number:"DV-RACE",customer_name:"Race Customer",customer_phone:"",customer_email:"buyer@example.com",email_receipt_requested:1,whatsapp_receipt_consent:0,total_paisa:10000,status:"completed"};
+  const items=[{product_name_snapshot:"Test item",size_snapshot:"M",color_snapshot:"Black",quantity:1,line_total_paisa:10000}];
+  const db={
+    prepare(sql){
+      let values=[];
+      return {
+        bind(...next){values=next;return this;},
+        async first(){
+          if(sql.includes("FROM pos_sales WHERE id=?"))return sale;
+          if(sql.includes("FROM pos_receipt_outbox WHERE id=?"))return null;
+          return null;
+        },
+        async all(){if(sql.includes("FROM pos_receipt_outbox"))return {results:queueRows};if(sql.includes("FROM pos_sale_items"))return {results:items};throw new Error("Unexpected query: "+sql);},
+        async run(){updates.push({sql,values});return {success:true,meta:{changes:1}};}
+      };
+    }
+  };
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(input)=>{calls.push(String(input));throw new Error("Provider must not be called after void cancellation");};
+  try {
+    await processPosReceiptOutbox({DB:db,RESEND_API_KEY:"test-resend-key",RESEND_FROM_EMAIL:"receipts@deverve.example"});
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
+  assert.equal(calls.length,0);
+  assert.equal(updates.some(update=>update.sql.includes("SET status='sent'")),false);
 });
 
 test("POS receipt outbox fails a queued voided sale when the provider-ready claim guard blocks it", async () => {
