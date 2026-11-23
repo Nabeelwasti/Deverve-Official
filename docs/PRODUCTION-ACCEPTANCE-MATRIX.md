@@ -120,3 +120,17 @@ A capability is accepted only when all four exist:
 4. Production rollout, monitoring, rollback and owner sign-off.
 
 Do not state that the platform is 100% production-ready while any critical release gate above remains unverified.
+
+## Live production verification addendum — 23 November 2026
+
+Read-only Cloudflare API and production D1 checks were performed during continuation of PR #40. No production data, schema, secrets or deployment settings were modified.
+
+- Cloudflare Pages project `deverve-official` has production and automatic deployments disabled; preview deployment setting is `none`. The latest successful production deployment remains `bea6a0c6`, built from main commit `46c68c94ce2b689dbff00b863259e32a458025e3`. A new PR therefore cannot be treated as preview-deployed or production-deployed.
+- The production D1 database `deverve-production` contains the live commerce/POS schema (including `pos_sales`, `pos_sessions`, `pos_sale_items`, `pos_payments`, `pos_receipt_outbox`, `inventory_movements`, `financial_transactions` and `admin_pos_cashiers`). No offline POS device, permit, allocation, event or reconciliation tables exist.
+- Read-only aggregate checks found one active staff account, zero active POS cashier grants, one open register session, one existing POS sale (voided), seven active product variants, two queued POS receipt deliveries (one email and one WhatsApp), and two queued owner-notification outbox entries. These are operational follow-ups, not permission to modify or close existing records automatically.
+- The open register session belongs to the existing main register and has been open since 18 November 2026. Owner must verify the physical drawer and shift records before any close/reconciliation action.
+- The current production D1 has no migration-history table. Schema acceptance must therefore compare actual table/index/trigger definitions with repository migrations and recorded deployment evidence; do not assume a local migration ledger exists.
+- PR #40 documentation CI run `45156253162` completed successfully. This validates the repository CI job for the documentation-only change; it does not validate offline POS implementation, production Worker behavior or physical hardware.
+- The backup workflow exists at `.github/workflows/d1-backup-restore.yml`, with required GitHub Actions secrets and a scheduled run. A successful encrypted export plus isolated restore must still be confirmed from the workflow's actual run evidence before backup protection is called operational.
+
+**Operational hold:** do not close the existing open POS session, clear queued outbox records, grant cashier access, alter stock allocations, create an offline permit, run a production migration, or enable automatic deployments as part of this design-only work. These actions require owner verification and the relevant acceptance procedure.
