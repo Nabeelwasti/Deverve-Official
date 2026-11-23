@@ -87,6 +87,12 @@ test("every admin artwork slot has a live rendering target and editable frame co
   assert.match(admin, /Vertical focus/);
   assert.match(admin, /Fill frame \(cover\)/);
   assert.match(admin, /Show full image \(contain\)/);
+  assert.match(admin, /Homepage hero · 6:5 frame/);
+  assert.match(admin, /Live category card · 4:5 frame/);
+  assert.match(admin, /aspectRatio=\{4\/5\}/);
+  assert.match(styles, /\.hero-art\{width:100%;height:auto;aspect-ratio:6\/5/);
+  assert.match(styles, /\.collection-art\{height:auto;aspect-ratio:4\/5/);
+  assert.match(styles, /\.trust-pillar-card\{[^}]*aspect-ratio:4\/3/);
   assert.match(app, /category_"\+item\.id/);
   assert.match(worker, /Image focus values must be whole percentages from 0 to 100/);
 });
