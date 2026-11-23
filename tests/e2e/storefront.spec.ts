@@ -1312,6 +1312,10 @@ test("published CMS homepage restores the storefront header, search, golden quot
   const result = page.locator("#public-site-search-results").getByRole("option", { name: /Hoodies & jackets/ });
   await expect(result).toBeVisible();
   await expect(result).toHaveAttribute("href", /screen=fashion.*category=layers/);
+  await search.fill("car rental");
+  const rentalResult = page.locator("#public-site-search-results").getByRole("option", { name: /Car rental/ }).first();
+  await expect(rentalResult).toBeVisible();
+  await expect(rentalResult).toHaveAttribute("href", /screen=mobility/);
   await expect(page.locator(".public-page-footer-strip")).toContainText("ALL RIGHTS RESERVED");
   await expect(page.locator(".public-page-footer-strip")).toContainText("Syed Nabeel Wasti");
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
