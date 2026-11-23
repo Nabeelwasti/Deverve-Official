@@ -183,7 +183,7 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
   if((channel==="email"&&!emailReady)||(channel==="whatsapp"&&!whatsappReady)){
    try{
     const linkedSale=await env.DB.prepare("SELECT status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<{status:string}>();
-    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status='queued'").bind(id).run();
+    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status IN ('queued','processing')").bind(id).run();
    }catch{}
    continue;
   }
