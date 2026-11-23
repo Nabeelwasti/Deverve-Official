@@ -2477,7 +2477,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .collection-art.has-custom-art .category-garment{z-index:2;opacity:.98;filter:drop-shadow(0 4px 12px rgba(0,0,0,.36)) drop-shadow(0 0 4px rgba(255,255,255,.75));}
 
 /* Force square logo frames before applying the circular mask. */
-.brand-logo-image.deverve-round-logo{display:block;box-sizing:border-box;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;aspect-ratio:1;object-fit:cover!important;object-position:center;border:0!important;border-radius:50%;background:transparent!important;padding:0!important;flex:0 0 40px!important;overflow:hidden}
+.brand-logo-image.deverve-round-logo{display:block;box-sizing:border-box;width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important;aspect-ratio:1;object-fit:var(--dv-brand-logo-fit,cover)!important;object-position:var(--dv-brand-logo-position,center)!important;border:0!important;border-radius:50%;background:transparent!important;padding:0!important;flex:0 0 40px!important;overflow:hidden}
 .brand-loader-logo.deverve-round-logo{width:100px!important;height:100px!important;max-width:100px!important;max-height:100px!important;aspect-ratio:1!important;border-radius:50%!important;object-fit:contain!important}
 .public-page-brand .brand-logo-image.deverve-round-logo{width:40px!important;height:40px!important;max-width:40px!important;max-height:40px!important}
 
