@@ -1,18 +1,6 @@
 export const OFFLINE_POS_DB_NAME = "deverve-pos-emergency";
 export const OFFLINE_POS_DB_VERSION = 1;
 
-const STORE_NAMES = [
-  "meta",
-  "device",
-  "permit",
-  "catalogue",
-  "shift",
-  "sales",
-  "outbox",
-  "syncReceipts",
-  "audit",
-] as const;
-
 export type OfflineSaleLine = {
   variantId: string;
   sku: string;
@@ -60,13 +48,6 @@ export type OfflineStorageHealth = {
   reasons: string[];
 };
 
-function requestResult<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("IndexedDB request failed."));
-  });
-}
-
 function transactionDone(transaction: IDBTransaction): Promise<void> {
   return new Promise((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -75,8 +56,8 @@ function transactionDone(transaction: IDBTransaction): Promise<void> {
   });
 }
 
-function createStore(database: IDBDatabase, name: string, options: IDBObjectStoreParameters): void {
-  if (!database.objectStoreNames.contains(name)) database.createObjectStore(name, options);
+function createStore(database: IDBDatabase, name: string, options: IDBObjectStoreParameters): IDBObjectStore {
+  return database.objectStoreNames.contains(name) ? database.transaction.objectStore(name) : database.createObjectStore(name, options);
 }
 
 export function openOfflinePosDatabase(): Promise<IDBDatabase> {
@@ -90,8 +71,11 @@ export function openOfflinePosDatabase(): Promise<IDBDatabase> {
       createStore(database, "permit", { keyPath: "id" });
       createStore(database, "catalogue", { keyPath: "id" });
       createStore(database, "shift", { keyPath: "id" });
-      createStore(database, "sales", { keyPath: "eventId" });
-      createStore(database, "outbox", { keyPath: "eventId" });
+      const sales = createStore(database, "sales", { keyPath: "eventId" });
+      if (!sales.indexNames.contains("idempotencyKey")) sales.createIndex("idempotencyKey", "idempotencyKey", { unique: true });
+      const outbox = createStore(database, "outbox", { keyPath: "eventId" });
+      if (!outbox.indexNames.contains("sequence")) outbox.createIndex("sequence", "sequence", { unique: true });
+      if (!outbox.indexNames.contains("status")) outbox.createIndex("status", "status");
       createStore(database, "syncReceipts", { keyPath: "eventId" });
       createStore(database, "audit", { keyPath: "id", autoIncrement: true });
     };
@@ -120,7 +104,8 @@ function validateSaleDraft(draft: OfflineSaleDraft): void {
     if (!Number.isSafeInteger(line.unitPricePaisa) || line.unitPricePaisa < 0 || !Number.isSafeInteger(line.lineTotalPaisa) || line.lineTotalPaisa < 0) {
       throw new Error("Offline sale contains an invalid price.");
     }
-    if (line.quantity * line.unitPricePaisa !== line.lineTotalPaisa) throw new Error("Offline sale line total does not match its quantity and unit price.");
+    const computedLineTotal = line.quantity * line.unitPricePaisa;
+    if (!Number.isSafeInteger(computedLineTotal) || computedLineTotal !== line.lineTotalPaisa) throw new Error("Offline sale line total does not match its quantity and unit price.");
   }
   const values = [draft.subtotalPaisa, draft.totalPaisa, draft.cashTenderedPaisa, draft.changePaisa];
   if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error("Offline sale contains an invalid amount.");
@@ -251,7 +236,3 @@ export async function inspectOfflineStorage(requestPersistence = true): Promise<
   };
 }
 
-export function closeOfflinePosConnections(): void {
-  // The browser closes an IndexedDB connection when the owning page is discarded.
-  // Explicit connection tracking is intentionally avoided until the app has a single DB owner.
-}
