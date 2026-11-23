@@ -67,7 +67,7 @@ test("launch, storefront, footer and installed app use the canonical circular lo
   assert.match(html, /id="initial-brand-loader"[^>]*aria-hidden="true"/);
   assert.match(html, /class="initial-brand-logo" src="\/api\/brand\/logo"/);
   assert.doesNotMatch(html, /initial-brand-loader[^<]*<strong|ELEVATE YOUR EVERYDAY/);
-  assert.match(app, /placeholder="Explore DeVerve"/);
+  assert.match(app, /placeholder="Explore DeVerve"/);\n  assert.doesNotMatch(read("src/PublicPage.tsx"), /Loading page…/);\n  assert.match(read("src/PublicPage.tsx"), /public-page-loading.*BrandLogo/);
   assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
   assert.doesNotMatch(app, /wholesale-art-mark/);
   assert.match(styles, /\.footer-brand-logo\.deverve-round-logo\{width:52px!important;height:52px!important/);
