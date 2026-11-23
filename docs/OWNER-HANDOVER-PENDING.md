@@ -1,114 +1,96 @@
-# De VERVE — Owner handover and pending acceptance checklist
+# De VERVE — Current owner handover and production acceptance register
 
-**Last updated:** 19 November 2026  
-**Repository:** `Nabeelwasti/Deverve-Official`  
-**Working branch:** `fix/variants-camera-multilingual`  
-**Tracking PR:** https://github.com/Nabeelwasti/Deverve-Official/pull/3
+**Last updated:** 23 November 2026  
+**Production:** https://deverve-official.pages.dev/  
+**Repository:** https://github.com/Nabeelwasti/Deverve-Official  
+**Production branch:** `main`  
+**Cloudflare Pages project:** `deverve-official`  
+**Production D1:** `deverve-production` (APAC)
 
-This file is the owner-side pending register. It is intentionally safe to keep in Git: **never put passwords, API keys, private tokens, CNIC images/numbers, customer data, payment details or recovery passwords in this file, GitHub issues, commits or chat.** Add secrets only in the named provider's secret manager after verifying the account and hostname.
+This is the current owner-action register. It supersedes the historical 19 November checklist below. Keep credentials, CNIC evidence, customer information, payment details and recovery keys out of Git, issues and chat.
 
-## 1. Owner inputs — business decisions and data
+## 1. Verified engineering and production state
 
-- [ ] Confirm legal business name, registered address (if applicable), public phone/WhatsApp number, customer support email and business hours.
-- [ ] Approve the final brand name spelling and logo/brand assets for website, invoices, labels and social channels.
-- [ ] Supply verified product catalogue: product title, description, category, genuine brand/authenticity claims only where evidenced, sizes, colours, SKU/barcode, images, cost, retail price, wholesale price, tax treatment and opening stock.
-- [ ] Physically count stock by exact size/colour combination. Reconcile old shared-stock variants before deactivating them or generating new individual variants. Never copy one shared aggregate quantity into every new variant.
-- [ ] Supply verified vehicle/fleet data: registration/identifiers, make/model/year, photos, availability, self-drive and with-driver rates, deposits, mileage/fuel terms, insurance/driver requirements and service/maintenance status.
-- [ ] Approve delivery coverage, delivery charges, dispatch/courier process, cash-on-delivery rules, order cancellation rules and customer support process.
-- [ ] Approve privacy notice, terms, return/exchange/refund policy, rental agreement, damage/deposit policy, CNIC notice and complaint handling. Owner-confirmed CNIC policy is recorded in `docs/CNIC-RETENTION-APPROVAL-RECORD.md`: both CNIC sides required for rental requests; identity/rental verification and fraud/security purposes; owner and specifically authorized rental manager/staff access; deletion after 90 days from full clearance of all rental amounts/obligations; customer deletion requests reviewed by staff and decided by owner/authorized manager. Formal owner signature and named authorized users remain outstanding; no external lawyer review is claimed or recorded.
-- [ ] Confirm staff roles and named authorized users. Use individual accounts; do not share the owner login.
+- PR #34 deployed least-privilege POS cashier access: separate invitation/grant tables, server-side POS-only authorization, cash-only cashier sales, own-shift and own-sale scoping, session revocation on permission changes and atomic shift close. Production migration 0040 is applied. **No cashier grants exist yet.**
+- PR #35 deployed the owner-only System Health dashboard. It reports read-only database, queue, payment, inventory, POS, staff and provider-configuration metrics. It never returns secret values and does not infer provider delivery or backup/restore success from configuration.
+- PR #36 published the CMS homepage through migration 0041. It has seven sections, five navigation links, four FAQs and two ready R2 media assets. A live mobile-sized browser render confirmed the hero, wholesale/rental CTAs, navigation and FAQs. Owner copy/merchandising review remains.
+- PR #33 hardened the encrypted D1 restore drill: inability to delete its temporary restore database now fails the workflow.
+- Latest production Pages deployment: `f41edaad-e700-4a5f-90d3-6ec9d827dbae`, all five stages successful, URL https://f41edaad.deverve-official.pages.dev. Production and preview auto-deployments are disabled again; releases use controlled deployments.
+- Latest full CI: PR #36 run [45138379523](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45138379523), all 17 steps passed, including build/type checks, dependency audit, Worker tests, schema checks and storefront browser tests. The remote D1 integration suite remains skipped when dedicated credentials are absent.
+- Production `/api/health` returned `status=ok` and `database=connected`. Unauthenticated `/api/admin/system-health` correctly returns 401.
+- Production migrations 0039 (POS/SKU indexes), 0040 (cashier grants) and 0041 (CMS homepage) are applied and read-back verified.
+- An isolated APAC D1 concurrency test ran a website reservation and two-line POS sale concurrently against five units. Exactly one transaction won; the winning POS batch committed stock movements, payment, financial ledger, audit and receipt outbox consistently. The temporary database was deleted and its absence verified.
+- The live Turnstile verifier health endpoint returned `status=ok`, `secret_configured=true` and the expected hostname `deverve-official.pages.dev`. The invalid-token negative test and end-to-end public form acceptance remain pending.
+- Production currently uses COD as the only active checkout method. No Safepay live/sandbox merchant acceptance is recorded.
 
-## 2. Provider accounts and credentials — owner action
+## 2. Owner business data and decisions
 
-Only configure these after the final production hostname is confirmed. Never commit secrets.
+- [ ] Confirm the public business phone/WhatsApp number, support email, business hours and exact address/service area for publication.
+- [ ] Review the published CMS homepage in Admin → Content Studio: title, hero image, category labels, product collection, wholesale wording, rental feature, FAQs and navigation.
+- [ ] Reconcile the catalogue physically by exact size/colour variant: SKU/barcode, images, stock, retail price, wholesale price, cost and authenticity claims only where evidenced.
+- [ ] Confirm delivery coverage, delivery charges, dispatch/courier process, COD rules, cancellation and exchange policies.
+- [ ] Verify the vehicle fleet, rental prices, dates/availability, deposits, mileage/fuel, insurance, driver requirements and rental terms.
+- [ ] Confirm named authorized staff. Use individual accounts; never share the owner login.
+- [ ] Review privacy notice, terms, exchange/refund policy, rental agreement, CNIC notice and complaint handling with qualified Pakistan counsel.
 
-- [ ] **Domain/DNS:** purchase or confirm ownership of the final domain; provide the exact hostname choice and complete DNS verification.
-- [ ] **Safepay:** create/verify merchant account; complete merchant onboarding; request sandbox credentials first. Add the sandbox API key, secret and webhook/signature secret to the production platform secret manager only when instructed by the approved release plan. Verify callback/webhook URL and perform a real sandbox payment, retry and failure test. Live credentials and live transactions require a separate explicit business decision.
-- [ ] **Email provider (Resend):** verify sender domain, publish SPF/DKIM/DMARC records, choose approved From/Reply-To addresses, add the API key as a secret and test enquiry, order and owner notifications, retries and bounce handling.
-- [ ] **WhatsApp Cloud API:** confirm Meta Business Portfolio, WhatsApp Business Account and phone number; complete display-name/number verification; create and obtain approval for required templates; provide phone-number ID, WABA ID and access token through secret settings; test opted-in customer receipt and owner notification. Do not send marketing messages without the required consent.
-- [ ] **Turnstile:** confirm production hostname and widget; add public site key to the appropriate public configuration and secret key only to server-side secrets; test success and rejection.
-- [ ] **Google Business Profile:** finish verification and confirm public address/service area, phone, hours and website URL.
-- [ ] **Google Drive/Dropbox backup destination:** owner selects the independent storage account and authorized custodians. Google Drive upload is currently manual; Dropbox vault folders exist but no automatic upload integration is verified.
+## 3. Provider accounts and custom domain
 
-## 3. Physical device and real-provider acceptance
+- [ ] Choose and verify ownership of the final custom domain. Only `deverve-official.pages.dev` is currently configured.
+- [ ] Safepay: verify merchant account and complete sandbox onboarding. Add server-side credentials only through the approved secret manager; test success, decline, retry, duplicate webhook, wrong amount/currency and signature rejection. COD remains active until separate owner approval and sandbox/live acceptance.
+- [ ] Email (Resend): verify sender domain and SPF/DKIM/DMARC, approve From/Reply-To addresses, configure secret, then test enquiry/order/owner notifications, bounce and retry behavior.
+- [ ] WhatsApp Cloud API: verify Meta business, WABA and phone number; approve templates; configure secrets; test opted-in receipts and delivery failures. No marketing without consent.
+- [ ] Turnstile: verifier secret and hostname are confirmed. Complete invalid-token Siteverify negative testing and test all public forms on the final hostname.
+- [ ] Google Business Profile: complete verification and confirm public details, hours and website.
+- [ ] Select an independent backup destination and named custodians; keep it outside the Cloudflare account.
 
-- [ ] On the actual Android phone, test camera permission grant/deny, rear/front camera availability, autofocus, low light, glare, QR, Code 128 and common retail barcodes; test repeated open/close and camera release.
-- [ ] Test USB/Bluetooth scanner and manual SKU/barcode entry as alternatives.
-- [ ] Test AI support in Urdu script, Roman Urdu and English with realistic product, delivery, return and rental questions. Confirm no fabricated stock, prices, policies or vehicle availability.
-- [ ] Confirm AI does not receive CNIC evidence, customer payment data, HR, finance or rental-contract personal data. Review retention and provider data-processing terms before enabling public AI.
-- [ ] Run Safepay sandbox success, decline, retry, duplicate webhook, delayed success, wrong amount/currency and signature-rejection scenarios.
-- [ ] Test email and WhatsApp delivery end-to-end, including opt-in, invalid recipient, provider outage, retry, duplicate event and staff-visible delivery status.
-- [ ] Test customer signup/login, password/session recovery policy, order placement, stock reservation, cancellation, dispatch, return request, manual refund recording and receipt delivery.
-- [ ] Test rental enquiry, CNIC consent/upload, authorized staff-only retrieval, confirmation gating, rental pricing, cancellation and document access audit.
-- [ ] Test admin permissions using separate owner, manager, inventory, orders and rental staff accounts; verify staff cannot access unrelated sensitive records.
+## 4. POS cashier and physical-device acceptance
 
-## 4. Backup, recovery and evidence protection
+- [ ] Owner invites the intended cashier from Admin → Staff. Verify that the staff list shows the cashier role and that the user can only access POS.
+- [ ] Supervise one real shift on the actual Android device: open register, cash-only sale, barcode/QR scan, receipt, sale history, shift close, counted cash and variance.
+- [ ] Verify the cashier cannot access catalogue, inventory, staff, settings, expenses, cashbook, reports, refunds/voids or bulk customer-data exports.
+- [ ] Revoke cashier access and verify the active session is invalidated.
+- [ ] Test camera permission grant/deny, rear camera, autofocus, low light, glare, QR, Code 128 and retail barcodes. Test USB/Bluetooth scanner and manual SKU entry.
+- [ ] Test actual thermal printer model, paper width, receipt alignment, Bluetooth/USB pairing and repeated prints. Test cash drawer if used.
+- [ ] Test Android touch targets, page reload, slow network and recovery on the actual phone.
+- [ ] **Offline-first POS is not enabled or accepted.** Do not take cash sales while disconnected; use the online POS until a persistent queue, idempotent server reconciliation, conflict handling and physical-device tests have passed.
 
-- [ ] Keep CNIC originals private and protected. Never upload raw CNIC files to public folders, GitHub, AI tools, email or public links.
-- [ ] Implement the owner-confirmed 90-day post-clearance deletion schedule only through a reviewed, tested migration and auditable workflow; do not leave the current permanent-retention trigger in place indefinitely once the replacement is safely accepted.
-- [ ] Export D1 and verify archive integrity. Store an encrypted copy outside the Cloudflare account and keep recovery credentials separately.
-- [ ] Back up private R2/media objects separately; a D1 export does not contain R2 image bytes.
-- [ ] Keep at least one independent off-account copy with access restricted to named custodians, with a documented expiry/purge process for CNIC evidence.
-- [ ] Perform a restore drill into an isolated non-production environment. Verify D1 records and private R2 objects together, then document results and recovery time.
-- [ ] Decide and document backup frequency, retention, custodians, recovery-point objective and recovery-time objective.
-- [ ] Preserve existing CNIC evidence until the replacement retention, deletion-request and legal-hold workflows have passed isolated tests and production acceptance. Do not bypass the current immutability triggers as a shortcut.
+## 5. Encrypted backups and recovery
 
-## 5. Release gates — do not bypass
+The AES-256-GCM backup/restore script and scheduled workflow are in the repository. The schedule is daily at 02:00 Pakistan Standard Time (21:00 UTC). The workflow is **not operationally accepted** until the following are completed:
 
-- [ ] Reconcile live production schema immediately before release. Production has no migration-ledger table; inspect actual tables, columns, indexes and triggers.
-- [ ] Verify and back up production before applying the pending additive migrations. The documented production sequence must be reconciled against current main and the migration ledger; migrations 0032, 0037 and 0038 have been applied/verified. Do not replay additive migrations without checking the live schema first.
-- [ ] Complete a real D1 integration test for simultaneous online/POS stock contention and full rollback of all dependent sale/payment/ledger/outbox records.
-- [ ] Resolve and test reservation lifecycle/payment reconciliation. Do not expire a reservation solely by elapsed time while a payment can still succeed or a webhook can be retried.
-- [ ] Obtain a green CI run for the exact release commit and review the complete diff.
-- [ ] Obtain owner approval for business data, legal policies, provider configuration and operational support.
-- [ ] Owner explicitly authorizes deployment by saying **“deploy now”**.
-- [ ] After deployment, run production-origin smoke tests and low-risk end-to-end transactions; monitor errors, webhook queues, email/WhatsApp queues and stock/finance reconciliation.
+- [ ] Configure GitHub Actions secret `CLOUDFLARE_API_TOKEN` with the narrowly scoped D1 export, R2 backup and isolated restore permissions required by the workflow.
+- [ ] Configure `CLOUDFLARE_ACCOUNT_ID`.
+- [ ] Generate `D1_BACKUP_ENCRYPTION_KEY` offline with `openssl rand -hex 32`; store it in an owner-controlled password manager independently of the R2 bucket and GitHub.
+- [ ] Confirm private bucket `deverve-db-backups` and workflow permissions.
+- [ ] Run a complete encrypted production export, SHA-256 integrity check, decrypt, isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup.
+- [ ] Verify retention and a documented recovery-point/recovery-time objective.
+- [ ] Back up private R2 media separately. A D1 SQL export does not include media bytes.
+- [ ] Store an independent encrypted recovery copy outside the Cloudflare account and document named custodians.
+- [ ] Do not claim backup safety until the complete restore drill and independent copy are verified.
 
-## 6. Engineering work tracked by the development team
+Never paste tokens or recovery keys into this file or chat.
 
-- [x] Add mutually dependent SQL guards to the Safepay payment-attempt, order-paid and gateway-ledger writes; reject same event ID with a different payload digest. Add regression coverage for duplicate delivery, ledger exactly-once, conflicting payload replay and ineligible-order state preservation. See [the 19 November payment and inventory audit](PAYMENT-INVENTORY-AUDIT-2026-11-19.md).
-- [x] New Safepay regression suite passed in CI run `44504567013` on commit `a8325a09b656f33397f15de7de59ac65082abd33`; all workflow steps passed, including Worker tests, D1 schema validation and storefront browser tests. [View run](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44504567013).
-- [ ] Confirm final documentation-only branch head CI run `44504634498` completes successfully.
-- [ ] Add isolated Cloudflare D1 integration tests for concurrent duplicate delivery, rollback, SQL constraints and payment/ledger atomicity. The in-memory FakeD1 is not a substitute.
-- [ ] Redesign Safepay webhook ingestion for durable event storage, prompt acknowledgement and asynchronous processing using a durable queue/worker. Confirm the exact merchant product's event contract against sandbox fixtures before enabling live payments.
+## 6. CNIC retention and legal review
 
-- [ ] Add first-class reservation records with immutable identifiers, order-item/variant linkage, quantity, state transitions, timestamps, payment tracker linkage, idempotency and audit history. Design safe expiry/reconciliation around provider webhook guarantees.
-- [ ] Add real D1 integration tests for competing online and POS writes, transaction atomicity, retries and rollback.
-- [ ] Complete stock movement/reconciliation paths for adjustments, sales, returns, exchanges, damaged goods, transfers and corrections, with permission checks and audit entries.
-- [ ] Verify production schema/migration release ordering and compatibility in an isolated copy before any production mutation.
-- [ ] Complete full D1 + R2 backup automation/restore strategy and test it independently.
-- [ ] Review rate limits, abuse controls, security headers, session invalidation, role boundaries, webhook idempotency, logs/PII redaction and operational monitoring on the final release SHA.
+- [ ] Review `docs/CNIC-RETENTION-APPROVAL-RECORD.md` and obtain written owner confirmation of purpose, collection scope, authorized roles, customer notice, retention period, deletion requests and legal-hold exceptions.
+- [ ] Obtain written review from Pakistan-qualified counsel.
+- [ ] Current production CNIC retention is not yet legally accepted; the existing retention behavior must not be shortened or bypassed until the replacement policy, deletion workflow and audit trail have been reviewed and tested.
+- [ ] Keep CNIC originals private. Never put CNIC images/numbers in GitHub, public storage, AI prompts, email or public links.
 
-## Current verified state (19 November 2026)
+## 7. Remaining engineering acceptance
 
-- [x] Feature branch and draft PR maintained separately from main. PR #3 remains open, draft, unmerged and mergeable; current head `685b858b2318e34e296beee02c9d50579ff61bc3`, base `main` at `0bfd7141de2ec69e56a7245748cd4ec0cefeab0c`.
-- [x] Latest feature-branch CI run `44496743936` completed successfully on exact current PR head `685b858b2318e34e296beee02c9d50579ff61bc3` (19 November 2026). All 13 workflow steps passed: locked dependency install, dependency-audit artifact capture, TypeScript/build, production dependency audit, Pages security-header validation, Worker authentication/regression tests, D1 schema/constraint validation, Chromium setup and storefront browser tests. [View run](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/44496743936).
-- [x] POS conditional stock guard added; its unit test validates guard construction.
-- [x] PR description and production-readiness notes identify integration and operational blockers.
-- [x] Latest CI job and every step independently inspected; all completed successfully. This is automated source validation only, not production-origin or physical-device acceptance.
-- [x] Focused checkout/payment source audit completed; the high-severity Safepay partial-commit risk has a guarded feature-branch remediation and regression tests. Real D1 integration, durable webhook processing and provider sandbox verification remain release blockers.
-- [x] No production deployment, merge, production migration, secret change, live-data mutation or R2 object change was performed as part of this work.
-- [ ] This successful CI run is not proof of production deployment, physical Android behavior, live payment/email/WhatsApp delivery or business acceptance.
+- [ ] Run the committed remote D1 integration suite from an authorized environment with dedicated test credentials; include Worker/API-level concurrency, rollback, reservation lifecycle, duplicate webhook and payment/ledger atomicity.
+- [ ] Run sustained production-like inventory load tests and reconcile results against real stock processes.
+- [ ] Complete live payment/courier/email/WhatsApp provider contract tests after credentials and accounts are configured.
+- [ ] Complete the full production-smoke workflow, security-header checks and protected-route checks on the final controlled deployment.
+- [ ] Review owner System Health dashboard after login. Investigate queued/failed notifications and POS receipts; configuration presence is not delivery proof.
+- [ ] Review the published CMS homepage and product catalogue; ensure public copy matches verified stock, prices and service terms.
+- [ ] Complete physical Android, scanner, printer and cash-drawer acceptance.
+- [ ] Add the custom domain only after domain ownership and DNS verification.
 
+## Release safety rules
 
-## Variant inventory lifecycle — 19 November 2026
-
-- [x] Aggregate duplicate order-item quantities by variant before admin dispatch/cancellation and customer delivery-quotation decline.
-- [x] Add grouped SQL guards so combined quantities cannot exceed physical stock or reserved stock.
-- [x] Add regression tests for duplicate checkout lines, duplicate order-item dispatch and insufficient combined reservations.
-- [x] Run isolated remote Cloudflare D1 checks for concurrent checkout contention, duplicate-line dispatch/cancellation, insufficient stock/reservation, Safepay reconciliation and paid-order inventory fulfilment. The test database was temporary and separate from `deverve-production`.
-- [x] Add a repeatable `npm run test:d1:integration` suite. It requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (D1 read/write only) and automatically creates/deletes a uniquely named test database.
-- [ ] Run the committed integration script from the owner's authorized environment and retain its output as a release artifact.
-- [ ] Expand the isolated integration suite against the complete current migration set and add SQL constraint-failure/rollback and concurrent duplicate webhook replay tests.
-- [ ] Keep first-class reservation records, durable async Safepay webhook ingestion, provider sandbox acceptance, backups/restore and production schema release sequencing as separate release gates.
-
-
-## 7. CNIC retention — owner policy and technical implementation
-
-- Staff handling procedure: [CNIC-STAFF-HANDLING-SOP.md](CNIC-STAFF-HANDLING-SOP.md).
-
-- [ ] Complete the draft decision record in [CNIC-RETENTION-APPROVAL-RECORD.md](CNIC-RETENTION-APPROVAL-RECORD.md).
-- [ ] Owner confirms the business purpose, collection scope, mandatory/optional cases, authorized roles, customer notice, retention period, legal-hold exceptions and review date in writing.
-- [ ] Pakistan-qualified counsel reviews the actual rental workflow, privacy notice, rental agreement, cloud/storage locations, access controls and proposed retention schedule; obtain written advice.
-- [ ] Do not treat the historical indefinite-retention owner instruction as a legal requirement. Keep existing evidence private and protected while review is pending; do not make new indefinite-retention promises.
-- [ ] After approval, implement only the agreed policy through a reviewed, tested change. Preserve existing evidence unless counsel authorizes a lawful disposition process.
+- Keep Pages production and preview auto-deployments disabled between controlled releases.
+- Before any production migration, inspect the live schema and back up first; do not replay a migration blindly.
+- Require exact-release CI, reviewed diffs and post-deployment smoke checks.
+- Never mark a capability production-accepted based only on UI presence, build success, configuration flags or a mocked test.
