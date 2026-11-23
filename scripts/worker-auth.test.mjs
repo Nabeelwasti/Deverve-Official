@@ -177,7 +177,7 @@ test("POS receipt outbox sends transactional email invoices and opt-in WhatsApp 
     {id:"wa-queue",sale_id:"sale-1",channel:"whatsapp",attempts:0}
   ];
   const updates=[],calls=[];
-  const sale={id:"sale-1",receipt_number:"DV-20261118-ABC123",customer_name:"Receipt Customer",customer_phone:"+923001234567",customer_email:"buyer@example.com",email_receipt_requested:1,whatsapp_receipt_consent:1,total_paisa:199900};
+  const sale={id:"sale-1",receipt_number:"DV-20261118-ABC123",customer_name:"Receipt Customer",customer_phone:"+923001234567",customer_email:"buyer@example.com",email_receipt_requested:1,whatsapp_receipt_consent:1,total_paisa:199900,status:"completed"};
   const items=[{product_name_snapshot:"Premium Hoodie",sku_snapshot:"DV-HOOD-M",size_snapshot:"M",color_snapshot:"Black",quantity:1,unit_price_paisa:199900,line_total_paisa:199900}];
   const db={
     prepare(sql){
@@ -222,12 +222,37 @@ test("POS receipt outbox sends transactional email invoices and opt-in WhatsApp 
   assert.equal(updates.filter(update=>update.sql.includes("SET status='sent'")).length,2);
 });
 
+test("POS receipt outbox never sends a successful-sale receipt after the sale is voided", async () => {
+  const queueRows=[{id:"voided-email",sale_id:"sale-voided",channel:"email",attempts:0}];
+  const updates=[],calls=[];
+  const db={
+    prepare(sql){
+      let values=[];
+      return {
+        bind(...next){values=next;return this;},
+        async first(){return {id:"sale-voided",status:"voided"};},
+        async all(){if(sql.includes("FROM pos_receipt_outbox"))return {results:queueRows};throw new Error("Unexpected query: "+sql);},
+        async run(){updates.push({sql,values});return {success:true,meta:{changes:1}};}
+      };
+    }
+  };
+  const originalFetch=globalThis.fetch;
+  globalThis.fetch=async(input)=>{calls.push(String(input));throw new Error("Provider must not be called for a voided sale");};
+  try {
+    await processPosReceiptOutbox({DB:db,RESEND_API_KEY:"test-resend-key",RESEND_FROM_EMAIL:"receipts@deverve.example"});
+  } finally {
+    globalThis.fetch=originalFetch;
+  }
+  assert.equal(calls.length,0);
+  assert.equal(updates.some(update=>update.sql.includes("last_error_code='sale_not_completed'")),true);
+});
+
 test("authorized POS staff can retry only failed receipts with recorded customer consent", async () => {
   const db=new FakeD1();
   const setup=await bootstrap(db);
   const cookie=setup.headers.get("set-cookie").split(";")[0];
   const saleId=crypto.randomUUID();
-  db.posSales.set(saleId,{customer_email:"buyer@example.com",customer_phone:"+923001234567",email_receipt_requested:1,whatsapp_receipt_consent:1});
+  db.posSales.set(saleId,{status:"completed",customer_email:"buyer@example.com",customer_phone:"+923001234567",email_receipt_requested:1,whatsapp_receipt_consent:1});
   db.posReceiptOutbox.set("failed-email",{id:"failed-email",sale_id:saleId,channel:"email",status:"failed",attempts:5,last_error_code:"resend_http_503"});
   const response=await handleRequest(request("/api/admin/pos/receipts/retry","POST",{sale_id:saleId,channel:"email"},{cookie}),env(db));
   assert.equal(response.status,200);
@@ -235,6 +260,19 @@ test("authorized POS staff can retry only failed receipts with recorded customer
   assert.equal(db.posReceiptOutbox.get("failed-email").status,"queued");
   assert.equal(db.posReceiptOutbox.get("failed-email").attempts,0);
   assert.equal(db.audits.some(row=>row.action==="pos.receipt_retry_requested"),true);
+});
+
+test("authorized POS staff cannot retry receipts for a voided sale", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const saleId=crypto.randomUUID();
+  db.posSales.set(saleId,{status:"voided",customer_email:"buyer@example.com",customer_phone:"+923001234567",email_receipt_requested:1,whatsapp_receipt_consent:1});
+  db.posReceiptOutbox.set("failed-voided-email",{id:"failed-voided-email",sale_id:saleId,channel:"email",status:"failed",attempts:5,last_error_code:"sale_not_completed"});
+  const response=await handleRequest(request("/api/admin/pos/receipts/retry","POST",{sale_id:saleId,channel:"email"},{cookie}),env(db));
+  assert.equal(response.status,409);
+  assert.equal(db.posReceiptOutbox.get("failed-voided-email").status,"failed");
+  assert.equal(db.audits.some(row=>row.action==="pos.receipt_retry_requested"),false);
 });
 
 test("same-origin admin writes remain usable when embedded browsers omit Origin and Referer", async () => {
@@ -783,7 +821,7 @@ class FakeStatement {
   async first() {
     const q = this.sql;
     const v = this.values;
-    if (q.startsWith("SELECT customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=?")) return this.db.posSales.get(v[0]) ?? null;
+    if (q.startsWith("SELECT status,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=?")) return this.db.posSales.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed'")) return [...this.db.posReceiptOutbox.values()].find(row=>row.sale_id===v[0]&&row.channel===v[1]&&row.status==="failed")??null;
     if (q.startsWith("SELECT id FROM ai_provider_keys WHERE key_fingerprint")) return [...this.db.aiKeys.values()].find((row) => row.key_fingerprint === v[0]) ?? null;
     if (q.startsWith("SELECT s.id, s.customer_id")) {
