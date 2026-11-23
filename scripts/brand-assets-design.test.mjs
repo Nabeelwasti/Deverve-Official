@@ -28,6 +28,9 @@ test("all customer-facing brand marks use the one owner-managed logo component a
   assert.match(app, /<BrandLogo className="footer-brand-logo"\/>/);
   assert.match(chat, /<BrandLogo className="ai-chat-brand-logo" \/>/);
   assert.match(worker, /publicPath==="\/api\/brand\/logo"/);
+  const logoRoute = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
+  assert.match(logoRoute, /catch\{\/\*.*falling through to the built-in official mark/);
+  assert.match(logoRoute, /\/brand\/de-verve-logo\.svg/);
 });
 
 test("round logo frames do not add a second white border or inset padding", () => {
