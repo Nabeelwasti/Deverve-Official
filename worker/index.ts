@@ -169,7 +169,6 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const waVersion=env.WHATSAPP_API_VERSION?.trim()||"v27.0";
  const emailReady=Boolean(emailApiKey&&emailFrom&&isValidEmailAddress(emailFrom));
  const whatsappReady=Boolean(waToken&&waPhoneId&&/^\d+$/.test(waPhoneId)&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
- if(!emailReady&&!whatsappReady)return;
  const now=new Date().toISOString();
  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
  let rows:Record<string,unknown>[]=[];
@@ -180,9 +179,14 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const esc=(value:string)=>value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
  for(const row of rows){
   const channel=String(row.channel),id=String(row.id),saleId=String(row.sale_id);
-  if(channel==="email"&&!emailReady)continue;
-  if(channel==="whatsapp"&&!whatsappReady)continue;
   if(channel!=="email"&&channel!=="whatsapp")continue;
+  if((channel==="email"&&!emailReady)||(channel==="whatsapp"&&!whatsappReady)){
+   try{
+    const linkedSale=await env.DB.prepare("SELECT status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<{status:string}>();
+    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status='queued'").bind(id).run();
+   }catch{}
+   continue;
+  }
   const claimedAt=new Date().toISOString();
   try{
    const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) AND EXISTS (SELECT 1 FROM pos_sales WHERE pos_sales.id=pos_receipt_outbox.sale_id AND pos_sales.status='completed')").bind(claimedAt,id,now,staleBefore).run();
