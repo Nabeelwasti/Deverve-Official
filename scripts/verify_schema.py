@@ -43,6 +43,28 @@ assert db.execute("SELECT COUNT(*) FROM admin_pos_cashiers WHERE admin_user_id='
 db.execute("DELETE FROM admin_users WHERE id='schema-owner'")
 db.execute("DELETE FROM admin_users WHERE id='schema-viewer'")
 
+# Migration 0041 publishes a starter homepage only when an active owner exists; test that
+# seed explicitly and prove the migration can be safely replayed without duplicate rows.
+db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES ('cms-seed-owner','cms-owner@example.test','hash','owner')")
+db.executescript(Path("migrations/0041_seed_cms_homepage.sql").read_text(encoding="utf-8"))
+home = db.execute("SELECT id,slug,page_type,status,seo_title FROM site_pages WHERE slug='home'").fetchone()
+assert home and home[1:] == ("home", "home", "published", "De VERVE | Fashion, Wholesale & Vehicle Rentals in Jhelum"), "CMS homepage seed is missing or not published"
+sections = db.execute("SELECT section_type,content_json FROM site_page_sections WHERE page_id=? ORDER BY position", (home[0],)).fetchall()
+assert len(sections) == 7, f"CMS homepage should contain seven sections, found {len(sections)}"
+faq_content = __import__("json").loads(next(content for kind, content in sections if kind == "faq"))
+assert len(faq_content["faqs"].splitlines()) == 4, "CMS homepage FAQs must remain four separate entries"
+category_content = __import__("json").loads(next(content for kind, content in sections if kind == "category_grid"))
+assert category_content["categories"].replace("\\n", "\n").splitlines() == ["Sweat Shirt", "hoodie", "Trouser"], "CMS category grid line breaks are malformed"
+assert db.execute("SELECT COUNT(*) FROM site_navigation_items").fetchone()[0] == 5, "CMS homepage navigation seed is incomplete"
+assert db.execute("SELECT COUNT(*) FROM audit_logs WHERE action='website.homepage_seeded'").fetchone()[0] == 1, "CMS homepage seed audit event is missing"
+db.executescript(Path("migrations/0041_seed_cms_homepage.sql").read_text(encoding="utf-8"))
+assert db.execute("SELECT COUNT(*) FROM site_pages WHERE slug='home'").fetchone()[0] == 1, "Reapplying homepage seed created a duplicate page"
+assert db.execute("SELECT COUNT(*) FROM site_page_sections WHERE page_id=?", (home[0],)).fetchone()[0] == 7, "Reapplying homepage seed duplicated sections"
+db.execute("DELETE FROM site_navigation_items")
+db.execute("DELETE FROM site_pages WHERE id=?", (home[0],))
+db.execute("DELETE FROM audit_logs WHERE action='website.homepage_seeded'")
+db.execute("DELETE FROM admin_users WHERE id='cms-seed-owner'")
+
 reservation_columns = {row[1] for row in db.execute("PRAGMA table_info(order_inventory_reservations)")}
 assert {"order_id", "variant_id", "quantity", "status", "payment_provider", "payment_reference", "reserved_at", "released_at", "consumed_at"} <= reservation_columns, "First-class order reservation lifecycle fields are missing"
 assert any(row[1] == "idx_order_inventory_reservations_order_status" for row in db.execute("PRAGMA index_list(order_inventory_reservations)")), "Order reservation lifecycle index is missing"
