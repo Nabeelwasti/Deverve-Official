@@ -196,7 +196,11 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
   const claimedAt=new Date().toISOString();
   try{
    const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) AND EXISTS (SELECT 1 FROM pos_sales WHERE pos_sales.id=pos_receipt_outbox.sale_id AND pos_sales.status='completed')").bind(claimedAt,id,now,staleBefore).run();
-   if((claim.meta?.changes??0)!==1)continue;
+   if((claim.meta?.changes??0)!==1){
+    const linkedSale=await env.DB.prepare("SELECT status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<{status:string}>();
+    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status IN ('queued','processing')").bind(id).run();
+    continue;
+   }
    const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,total_paisa,status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
    if(!sale)throw new Error("receipt_sale_missing");
    if(String(sale.status)!=="completed"){
