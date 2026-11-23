@@ -262,7 +262,7 @@ test("POS receipt outbox suppresses already-voided receipts even without provide
     }
   };
   await processPosReceiptOutbox({DB:db});
-  assert.equal(updates.some(update=>update.sql.includes("status='failed'")&&update.values[0]==="voided-email-unconfigured"),true);
+  assert.equal(updates.some(update=>update.sql.includes("status!='completed'")&&update.sql.includes("status='failed'")&&update.values.length===2),true);
 });
 
 test("authorized POS staff can retry only failed receipts with recorded customer consent", async () => {
