@@ -1241,3 +1241,5 @@
 .admin-design-selects select{width:100%;min-width:0;padding:10px;border:1px solid #d5dee8;border-radius:9px;background:#fff;color:#24415d;font:12px inherit}
 .admin-design-actions .admin-secondary{padding:10px 14px;border:1px solid #d4deea;border-radius:10px;background:#fff;color:#24415d;font-size:11px;font-weight:750;cursor:pointer}
 .admin-design-actions .admin-secondary:disabled{opacity:.55;cursor:not-allowed}
+
+.admin-brand-asset-guidance{display:grid;align-content:center;gap:8px;padding:18px;border:1px dashed #c9d7e6;border-radius:12px;background:#f7fafd;color:#526984}.admin-brand-asset-guidance strong{font-size:12px;color:#173454}.admin-brand-asset-guidance p{margin:0;font-size:11px;line-height:1.6}
