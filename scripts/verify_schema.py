@@ -14,7 +14,7 @@ required_tables = {
     "wholesale_quotes", "vehicles", "rental_requests", "admin_users", "audit_logs",
     "media_assets", "site_pages", "site_page_sections", "site_navigation_items",
     "collections", "collection_products", "inventory_movements", "vehicle_media_assets", "financial_accounts", "financial_transactions", "pos_registers", "pos_sessions", "pos_sales", "pos_sale_items", "pos_payments", "business_expenses", "pos_sale_voids", "pos_receipt_outbox", "enquiry_email_queue", "admin_sessions",
-    "admin_invites", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
+    "admin_invites", "admin_pos_cashier_invites", "admin_pos_cashiers", "admin_login_attempts", "sales_channels", "channel_listings", "channel_sync_events",
     "store_settings", "content_revisions", "product_media_assets", "rental_documents", "public_rate_limits",
     "customers", "customer_sessions", "customer_account_tokens", "order_status_events",
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
@@ -28,6 +28,20 @@ actual_tables = {
 }
 missing = required_tables - actual_tables
 assert not missing, f"Missing tables: {sorted(missing)}"
+
+# Cashier capability is additive and separately revocable; legacy admin role CHECKs remain unchanged.
+admin_role_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='admin_users'").fetchone()[0]
+invite_role_sql = db.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='admin_invites'").fetchone()[0]
+assert "'cashier'" not in admin_role_sql and "'cashier'" not in invite_role_sql, "Cashier must not bypass the legacy role constraints"
+assert any(row[1] == "idx_admin_pos_cashiers_active" for row in db.execute("PRAGMA index_list(admin_pos_cashiers)")), "Active cashier grant lookup index is missing"
+db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES ('schema-owner','owner@example.test','hash','owner')")
+db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES ('schema-viewer','viewer@example.test','hash','viewer')")
+db.execute("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES ('schema-viewer','schema-owner')")
+assert db.execute("SELECT COUNT(*) FROM admin_pos_cashiers WHERE admin_user_id='schema-viewer' AND revoked_at IS NULL").fetchone()[0] == 1
+db.execute("UPDATE admin_pos_cashiers SET revoked_at='2026-11-23T00:00:00.000Z' WHERE admin_user_id='schema-viewer'")
+assert db.execute("SELECT COUNT(*) FROM admin_pos_cashiers WHERE admin_user_id='schema-viewer' AND revoked_at IS NULL").fetchone()[0] == 0
+db.execute("DELETE FROM admin_users WHERE id='schema-owner'")
+db.execute("DELETE FROM admin_users WHERE id='schema-viewer'")
 
 reservation_columns = {row[1] for row in db.execute("PRAGMA table_info(order_inventory_reservations)")}
 assert {"order_id", "variant_id", "quantity", "status", "payment_provider", "payment_reference", "reserved_at", "released_at", "consumed_at"} <= reservation_columns, "First-class order reservation lifecycle fields are missing"

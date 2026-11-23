@@ -664,6 +664,29 @@ test("owner cannot disable mandatory CNIC evidence through website settings", as
   assert.match((await response.json()).error, /mandatory/i);
 });
 
+test("POS cashier capability is separate from the viewer role and cannot access other admin APIs", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const ownerId = [...db.admins.keys()][0];
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const owner = db.admins.get(ownerId);
+  owner.role = "viewer";
+  db.posCashiers.set(ownerId,{revoked_at:null});
+  const me = await handleRequest(new Request(origin + "/api/admin/me", {headers:{cookie}}),env(db));
+  assert.equal(me.status,200);
+  assert.equal((await me.json()).admin.can_use_pos,true);
+  const settings = await handleRequest(request("/api/admin/settings","GET",undefined,{cookie}),env(db));
+  assert.equal(settings.status,403);
+  assert.match((await settings.json()).error,/restricted to the point-of-sale/i);
+  const reports = await handleRequest(request("/api/admin/pos/summary","GET",undefined,{cookie}),env(db));
+  assert.equal(reports.status,403);
+  assert.match((await reports.json()).error,/cashier access is limited/i);
+  db.posCashiers.get(ownerId).revoked_at = new Date().toISOString();
+  const revoked = await handleRequest(new Request(origin + "/api/admin/me", {headers:{cookie}}),env(db));
+  assert.equal(revoked.status,200);
+  assert.equal((await revoked.json()).admin.can_use_pos,false);
+});
+
 test("private media library and file previews are unavailable to read-only staff", async () => {
   const db = new FakeD1();
   const setup = await bootstrap(db);
@@ -771,6 +794,7 @@ class FakeStatement {
     if (q.startsWith("SELECT COUNT(*) AS document_count FROM rental_documents")) return { document_count: [...this.db.rentalDocuments.values()].filter((item) => item.rental_request_id === v[0] && ["cnic_front","cnic_back"].includes(item.document_side)).length };
     if (q.startsWith("SELECT object_key, mime_type, document_side FROM rental_documents")) return [...this.db.rentalDocuments.values()].find(item => item.rental_request_id === v[0] && item.document_side === v[1]) ?? null;
     if (q.startsWith("SELECT id, daily_rate_paisa, with_driver_daily_rate_paisa FROM vehicles")) return this.db.vehicles.get(v[0]) ?? null;
+    if (q.startsWith("SELECT EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AS can_use_pos")) return {can_use_pos:this.db.posCashiers.has(v[0]) && this.db.posCashiers.get(v[0])?.revoked_at == null ? 1 : 0};
     if (q.startsWith("SELECT id, email, password_hash, full_name, phone, status FROM customers")) return [...this.db.customers.values()].find((item) => item.email.toLowerCase() === String(v[0]).toLowerCase()) ?? null;
     if (q.startsWith("SELECT password_hash FROM customers")) { const row = this.db.customers.get(v[0]); return row ? { password_hash: row.password_hash } : null; }
     if (q.startsWith("SELECT setting_value_json FROM store_settings WHERE setting_key")) { const key=q.match(/setting_key\s*=\s*'([^']+)'/i)?.[1]??v[0]; return this.db.storeSettings.get(key) ?? null; }
@@ -813,7 +837,7 @@ class FakeStatement {
     if (q.startsWith("SELECT s.id, s.admin_user_id")) {
       const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const admin = session && this.db.admins.get(session.admin_user_id);
-      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at } : null;
+      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at, can_use_pos: this.db.posCashiers.get(admin.id)?.revoked_at == null && this.db.posCashiers.has(admin.id) ? 1 : 0 } : null;
     }
     if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.wholesale_price_paisa")) {
       const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
@@ -1610,6 +1634,7 @@ class FakeD1 {
   orderStatusEvents = [];
   admins = new Map();
   sessions = new Map();
+  posCashiers = new Map();
   aiKeys = new Map();
   failAiKeyRead = false;
   attempts = new Map();
