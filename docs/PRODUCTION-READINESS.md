@@ -22,7 +22,7 @@
 
 ## Remaining critical acceptance gates
 
-The platform is deployed and the tested release is healthy at the Cloudflare deployment-stage level, but it is **not fully production-accepted**. Outstanding work includes offline-first POS and reconciliation, a dedicated least-privilege CASHIER role, owner-only system-health telemetry, concurrent cross-channel inventory tests, a verified encrypted backup/restore and independent recovery copy, live payment/courier/provider acceptance, Turnstile/email/WhatsApp production acceptance, physical Android and thermal-printer tests, owner catalogue reconciliation, CMS homepage publication, custom domain setup, and qualified legal review of CNIC consent/retention. COD remains the only active checkout method.
+The platform is deployed and the tested release is healthy at the Cloudflare deployment-stage level, but it is **not fully production-accepted**. Outstanding work includes offline-first POS and reconciliation, a dedicated least-privilege CASHIER role, owner-only system-health telemetry, full Worker/API remote integration and sustained production-like inventory load tests, a verified encrypted backup/restore and independent recovery copy, live payment/courier/provider acceptance, Turnstile/email/WhatsApp production acceptance, physical Android and thermal-printer tests, owner catalogue reconciliation, CMS homepage publication, custom domain setup, and qualified legal review of CNIC consent/retention. COD remains the only active checkout method.
 
 See [PRODUCTION-ACCEPTANCE-MATRIX.md](PRODUCTION-ACCEPTANCE-MATRIX.md) for evidence required before each capability can be marked accepted.
 
