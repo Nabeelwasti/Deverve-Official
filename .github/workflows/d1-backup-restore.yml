@@ -37,5 +37,6 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
           [[ "$D1_BACKUP_ENCRYPTION_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "::error::Add D1_BACKUP_ENCRYPTION_KEY (64 hex characters) in GitHub Actions secrets. Generate it with openssl rand -hex 32."; exit 1; }
+          echo "::notice::CLOUDFLARE_API_TOKEN must have D1 Edit and R2 Object Read and Write permissions."
       - name: Run encrypted backup and isolated restore drill
         run: node scripts/d1-backup-restore.mjs
