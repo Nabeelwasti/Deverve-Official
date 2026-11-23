@@ -1305,7 +1305,7 @@ test("published CMS homepage restores the storefront header, search, golden quot
   const menu = page.getByRole("navigation", { name: "Main navigation" });
   await expect(menu.getByRole("link", { name: "Fashion" })).toBeVisible();
   await expect(menu.getByRole("link", { name: "Car rental" })).toBeVisible();
-  await page.getByRole("button", { name: "Close navigation menu" }).click();
+  await menuButton.click();
   await expect(menu).toBeHidden();
 
   await search.fill("hoodie");
