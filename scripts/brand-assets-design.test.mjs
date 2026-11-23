@@ -45,7 +45,7 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.match(worker, /\{src:logoUrl,sizes:"512x512"/);
   assert.doesNotMatch(worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("async function pwaManifestRoute") + 3500), /icon-192\.svg|icon-512\.svg/);
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
-    assert.match(read(path), /data:image\\/png;base64,/, path + " must embed the mark without nested network requests");
+    assert.ok(read(path).includes("data:image/png;base64,"), path + " must embed the mark without nested network requests");
   }
   assert.match(read("public/sw.js"), /de-verve-shell-v5/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
