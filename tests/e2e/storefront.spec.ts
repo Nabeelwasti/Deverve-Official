@@ -967,7 +967,7 @@ test("customer header search and AI support launcher remain usable", async ({ pa
   await expect(page.locator(".top-quote-strip p")).toBeVisible();
 });
 
-test("loading wordmark stays legible and customer AI logo uses a centered circular frame", async ({ page }) => {
+test("fast logo-only launch and customer AI logo use centered circular frames", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   let quoteApiRequests = 0;
   const onlineQuotes = [
@@ -989,24 +989,16 @@ test("loading wordmark stays legible and customer AI logo uses a centered circul
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="#fff" stroke="#123f70" stroke-width="8"/><text x="100" y="112" text-anchor="middle" font-size="30" font-weight="700" fill="#123f70">DE</text><text x="100" y="142" text-anchor="middle" font-size="20" fill="#123f70">VERVE</text></svg>'
   }));
   await page.goto("/");
-  const loadingLogo = page.locator(".brand-loading-screen .brand-loader-logo");
-  await expect(loadingLogo).toBeVisible();
-  await expect(loadingLogo).toHaveAttribute("alt", "De VERVE");
-  await expect(loadingLogo).toHaveAttribute("src", /\/api\/brand\/logo/);
-  await expect.poll(() => loadingLogo.evaluate((image: HTMLImageElement) => image.complete && image.naturalWidth > 0)).toBe(true);
-  const loadingBox = await loadingLogo.boundingBox();
-  expect(loadingBox).not.toBeNull();
-  expect(loadingBox!.width / loadingBox!.height).toBeCloseTo(1, 1);
-  await expect(loadingLogo).toHaveCSS("width", "100px");
-  await expect(loadingLogo).toHaveCSS("height", "100px");
-  await expect(loadingLogo).toHaveCSS("object-fit", "contain");
-  await expect(loadingLogo).toHaveCSS("object-position", "50% 50%");
-  await expect(loadingLogo).toHaveCSS("border-radius", "50%");
-
-  await expect(page.locator(".brand-loading-screen")).toHaveCount(0, { timeout: 5000 });
+  // The first paint is logo-only; the former full-screen wordmark/animation is not shown.
+  const shellLogo = page.locator("#initial-brand-loader .initial-brand-logo");
+  await expect(shellLogo).toBeVisible();
+  await expect(shellLogo).toHaveAttribute("src", /\/api\/brand\/logo/);
+  await expect(page.locator("#initial-brand-loader")).not.toContainText(/loading|elevate|de verve/i);
+  await expect(page.locator(".brand-loading-screen")).toHaveCount(0);
   await expect(page.locator("#initial-brand-loader")).toHaveCount(0, { timeout: 5000 });
   const mobileSearch = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(mobileSearch).toBeVisible();
+  await expect(mobileSearch).toHaveAttribute("placeholder", "Explore DeVerve");
   const mobileSearchBox = await mobileSearch.boundingBox();
   expect(mobileSearchBox).not.toBeNull();
   expect(mobileSearchBox!.width).toBeGreaterThanOrEqual(130);
@@ -1201,17 +1193,15 @@ test("golden quote uses the local De VERVE fallback when the online feed is unav
   await expect.poll(() => page.evaluate(() => localStorage.getItem("deverve:golden-quote:last:v1"))).not.toBeNull();
 });
 
-test("the HTML shell shows the circular De VERVE logo before React mounts", async ({ page }) => {
-  // Abort app JavaScript for this test: the shell logo must render without
-  // waiting for a bundle, an API response, a font, or React hydration.
+test("the pre-React shell shows only the canonical logo with no loading copy", async ({ page }) => {
   await page.route("**/src/main.tsx", route => route.abort());
   await page.route("**/*.js", route => route.abort());
   await page.goto("/");
   const initialLoader = page.locator("#initial-brand-loader");
   await expect(initialLoader).toBeVisible();
-  await expect(initialLoader.locator("svg")).toBeVisible();
-  await expect(initialLoader.locator("svg circle")).toHaveCount(2);
-  await expect(initialLoader.locator("strong")).toHaveText("DE VERVE");
+  await expect(initialLoader.locator("img.initial-brand-logo")).toHaveAttribute("src", "/api/brand/logo");
+  await expect(initialLoader.locator("img")).toHaveCount(1);
+  await expect(initialLoader).not.toContainText(/loading|elevate|de verve/i);
 });
 
 test("customer AI chat plays server-generated Urdu speech without requiring a device Urdu voice", async ({ page }) => {
