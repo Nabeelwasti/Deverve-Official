@@ -989,13 +989,11 @@ test("fast logo-only launch and customer AI logo use centered circular frames", 
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="#fff" stroke="#123f70" stroke-width="8"/><text x="100" y="112" text-anchor="middle" font-size="30" font-weight="700" fill="#123f70">DE</text><text x="100" y="142" text-anchor="middle" font-size="20" fill="#123f70">VERVE</text></svg>'
   }));
   await page.goto("/");
-  // The first paint is logo-only; the former full-screen wordmark/animation is not shown.
-  const shellLogo = page.locator("#initial-brand-loader .initial-brand-logo");
-  await expect(shellLogo).toBeVisible();
-  await expect(shellLogo).toHaveAttribute("src", /\/api\/brand\/logo/);
-  await expect(page.locator("#initial-brand-loader")).not.toContainText(/loading|elevate|de verve/i);
-  await expect(page.locator(".brand-loading-screen")).toHaveCount(0);
+  // The logo-only HTML shell is removed as soon as React paints; no full-screen loading copy remains.
   await expect(page.locator("#initial-brand-loader")).toHaveCount(0, { timeout: 5000 });
+  await expect(page.locator(".brand-loading-screen")).toHaveCount(0);
+  await expect(page.locator(".site-shell")).toBeVisible();
+  await expect(page.locator("body")).not.toContainText(/Loading page…|Loading De VERVE/i);
   const mobileSearch = page.getByRole("searchbox", { name: "Search products, categories, vehicles and pages" });
   await expect(mobileSearch).toBeVisible();
   await expect(mobileSearch).toHaveAttribute("placeholder", "Explore DeVerve");
