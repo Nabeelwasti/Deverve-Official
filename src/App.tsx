@@ -364,7 +364,6 @@ function Storefront() {
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
 
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
-  const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
   const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>,image_settings:{} as Record<string,{fit:"cover"|"contain";x:number;y:number}>});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
@@ -489,7 +488,7 @@ function Storefront() {
       }
     };
     void loadProducts();
-    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};category_assets?:Record<string,string>;site_design?:Partial<typeof siteDesign>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);if(payload.site_design&&typeof payload.site_design==="object")setSiteDesign(current=>({...current,...payload.site_design,section_images:{...current.section_images,...(payload.site_design?.section_images||{})},image_settings:{...current.image_settings,...(payload.site_design?.image_settings||{})}}));}).catch(()=>undefined);
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;category_assets?:Record<string,string>;site_design?:Partial<typeof siteDesign>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);if(payload.site_design&&typeof payload.site_design==="object")setSiteDesign(current=>({...current,...payload.site_design,section_images:{...current.section_images,...(payload.site_design?.section_images||{})},image_settings:{...current.image_settings,...(payload.site_design?.image_settings||{})}}));}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
