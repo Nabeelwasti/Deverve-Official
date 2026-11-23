@@ -2591,6 +2591,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
     try {
       const requestFingerprint = await fingerprintPosSaleRequest({
+        cashier_admin_id: admin.admin_user_id,
         customer_name: customerName,
         customer_phone: customerPhone,
         customer_email: customerEmail,
@@ -2598,7 +2599,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         items: lines,
         payments,
       });
-      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,request_fingerprint FROM pos_sales WHERE idempotency_key=? AND (? = 0 OR cashier_admin_id = ?)").bind(idempotency,isCashier ? 1 : 0,admin.admin_user_id).first<Record<string,unknown>>();
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,request_fingerprint FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
       if (duplicate) {
         if (String(duplicate.request_fingerprint ?? "") !== requestFingerprint) {
           return json({ error: "A previous checkout already used this transaction key with different sale details. Review sales history before starting a new sale.", code: "idempotency_conflict" }, 409);
