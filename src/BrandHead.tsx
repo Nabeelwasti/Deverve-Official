@@ -8,11 +8,9 @@ export default function BrandHead(){
     if(!response.ok)return;
     const data=await response.json() as {brand_assets?:{logo_id?:string|null};site_design?:{image_settings?:Record<string,{fit?:string;x?:number;y?:number}>}};
     if(!active)return;
-    const logoFrame=data.site_design?.image_settings?.brand_logo;
-    const logoX=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.x)?Number(logoFrame?.x):50));
-    const logoY=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.y)?Number(logoFrame?.y):50));
-    document.documentElement.style.setProperty("--dv-brand-logo-fit",logoFrame?.fit==="contain"?"contain":"cover");
-    document.documentElement.style.setProperty("--dv-brand-logo-position",logoX+"% "+logoY+"%");
+    // All customer-facing brand marks use the same centered, fully visible artwork.
+    document.documentElement.style.setProperty("--dv-brand-logo-fit","contain");
+    document.documentElement.style.setProperty("--dv-brand-logo-position","50% 50%");
     const logoId=data.brand_assets?.logo_id??"default";
     // The same canonical, owner-managed logo endpoint feeds every browser and installed-app brand mark.
     const iconUrl="/api/brand/logo?v="+encodeURIComponent(logoId);
