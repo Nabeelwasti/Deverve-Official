@@ -20,6 +20,12 @@ async function putR2(key,body,contentType){
  const payload=await response.json().catch(()=>({}));
  if(!response.ok||payload.success===false){const message=payload.errors?.map(x=>x.message).filter(Boolean).join("; ");throw new Error("Private R2 upload failed ("+response.status+"): "+(message||"check R2 Storage Edit permission"));}
 }
+async function getR2(key){
+ const encoded=key.split("/").map(encodeURIComponent).join("/");
+ const response=await fetch(API+"/accounts/"+accountId+"/r2/buckets/"+bucket+"/objects/"+encoded,{method:"GET",headers:{Authorization:"Bearer "+token},cache:"no-store",signal:AbortSignal.timeout(120000)});
+ if(!response.ok){const payload=await response.json().catch(()=>({}));const message=payload.errors?.map(x=>x.message).filter(Boolean).join("; ");throw new Error("Private R2 read-back failed ("+response.status+"): "+(message||"check R2 Object Read permission"));}
+ return Buffer.from(await response.arrayBuffer());
+}
 async function queryRows(id,sql){
  const result=await api("POST","/accounts/"+accountId+"/d1/database/"+id+"/query",{sql});
  return (Array.isArray(result)?result:[]).flatMap(item=>item.results||[]);
@@ -73,14 +79,18 @@ async function restoreDrill(sql,expected){
 }
 async function main(){
  const before=await snapshot(databaseId),{sql,bookmark}=await exportSql(),after=await snapshot(databaseId);
- if(stable(before.tables)!==stable(after.tables)||stable(before.schemaObjects)!==stable(after.schemaObjects))throw new Error("Production D1 schema changed during export.");
+ if(stable(before.tables)!==stable(after.tables)||stable(before.schemaObjects)!==stable(after.schemaObjects)||stable(before.schemaDefinitions)!==stable(after.schemaDefinitions))throw new Error("Production D1 schema changed during export.");
  const stableRows=stable(before.rowCounts)===stable(after.rowCounts);
  const stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
  const backupKey="d1/encrypted/"+databaseName+"-"+stamp+".dvbackup",manifestKey="manifests/"+databaseName+"-"+stamp+".json";
- const archive=encrypt(sql),plain=decrypt(archive);if(sha(plain)!==sha(sql))throw new Error("AES-256-GCM self-check failed.");
- const manifest={format:"deverve-d1-backup-v1",database_name:databaseName,database_id:databaseId,created_at:new Date().toISOString(),source_bookmark:bookmark,source_commit:process.env.GITHUB_SHA||null,encrypted:true,algorithm:"AES-256-GCM",archive_header:"DVDBKUP1",key_id:keyId,backup_object:backupKey,backup_bytes:archive.length,plaintext_bytes:sql.length,ciphertext_sha256:sha(archive),plaintext_sha256:sha(sql),table_count:before.tables.length,schema_objects:before.schemaObjects,row_counts_sha256:sha(Buffer.from(stable(before.rowCounts))),row_count_snapshot_stable_during_export:stableRows,restore_status:"running"};
- await putR2(backupKey,archive,"application/octet-stream");await putR2(manifestKey,Buffer.from(JSON.stringify(manifest,null,2)),"application/json");
- try{const drill=await restoreDrill(plain,{...before,rowCounts:stableRows?before.rowCounts:null});manifest.restore_status=drill.status;manifest.restore_completed_at=new Date().toISOString();manifest.restore_verification=drill;await putR2(manifestKey,Buffer.from(JSON.stringify(manifest,null,2)),"application/json");console.log(JSON.stringify({backup:"uploaded_encrypted",bucket,backup_object:backupKey,manifest_object:manifestKey,backup_bytes:archive.length,table_count:before.tables.length,restore_status:drill.status,temporary_database_deleted:true}));}
+ const archive=encrypt(sql),localPlain=decrypt(archive);if(sha(localPlain)!==sha(sql))throw new Error("AES-256-GCM local self-check failed.");
+ await putR2(backupKey,archive,"application/octet-stream");
+ const storedArchive=await getR2(backupKey);
+ if(storedArchive.length!==archive.length||sha(storedArchive)!==sha(archive))throw new Error("R2 backup read-back checksum or byte-length mismatch.");
+ const plain=decrypt(storedArchive);if(sha(plain)!==sha(sql))throw new Error("R2 backup plaintext checksum mismatch after decryption.");
+ const manifest={format:"deverve-d1-backup-v1",database_name:databaseName,database_id:databaseId,created_at:new Date().toISOString(),source_bookmark:bookmark,source_commit:process.env.GITHUB_SHA||null,encrypted:true,algorithm:"AES-256-GCM",archive_header:"DVDBKUP1",key_id:keyId,backup_object:backupKey,backup_bytes:archive.length,r2_readback_verified:true,r2_readback_bytes:storedArchive.length,ciphertext_sha256:sha(storedArchive),plaintext_bytes:sql.length,plaintext_sha256:sha(plain),table_count:before.tables.length,schema_objects:before.schemaObjects,row_counts_sha256:sha(Buffer.from(stable(before.rowCounts))),row_count_snapshot_stable_during_export:stableRows,restore_status:"running"};
+ await putR2(manifestKey,Buffer.from(JSON.stringify(manifest,null,2)),"application/json");
+ try{const drill=await restoreDrill(plain,{...before,rowCounts:stableRows?before.rowCounts:null});manifest.restore_status=drill.status;manifest.restore_completed_at=new Date().toISOString();manifest.restore_verification=drill;await putR2(manifestKey,Buffer.from(JSON.stringify(manifest,null,2)),"application/json");console.log(JSON.stringify({backup:"uploaded_encrypted",bucket,backup_object:backupKey,manifest_object:manifestKey,backup_bytes:archive.length,r2_readback_verified:true,table_count:before.tables.length,restore_status:drill.status,temporary_database_deleted:true}));}
  catch(error){manifest.restore_status="failed";manifest.restore_completed_at=new Date().toISOString();manifest.restore_failure=error instanceof Error?error.name:"UnknownError";try{await putR2(manifestKey,Buffer.from(JSON.stringify(manifest,null,2)),"application/json");}catch{}throw error;}
 }
 main().catch(error=>{console.error(error instanceof Error?error.message:"D1 encrypted backup/restore failed.");process.exitCode=1;});
