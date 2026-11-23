@@ -2,6 +2,13 @@
 
 ## Latest release evidence
 
+- PR #34 (least-privilege POS cashier access) merged as `700a6521970ee783d7065259a908ae5a1cce475d`.
+- CI run [45136071155](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45136071155) passed all 17 steps, including type-check/build, dependency audit, Worker auth tests, schema validation and the full storefront browser suite. The remote production-like D1 integration test step reports success but was skipped because dedicated remote test credentials are not configured.
+- Production D1 migration `0040_pos_cashier_permissions.sql` was applied and read-back verified. It creates separate cashier invitation/grant tables and an active-grant index without changing legacy admin role constraints. Foreign keys were verified. The production database currently has zero cashier grants; no admin accounts or POS records were changed.
+- Cashier permissions are implemented in source but are not live until the controlled Pages deployment completes. Cashier access is limited to cash-only sales, own shift lifecycle and own sales history; refunds, cash movements, expenses, finance reports, customer-data exports, catalogue, inventory and other admin APIs are denied. Permission changes revoke active sessions.
+- The POS remains online-only. Offline queued sales are not enabled; do not accept offline cash without a persistent, idempotent, server-reconciled workflow and physical-device acceptance.
+
+
 - PRs #30 (category artwork), #31 (D1 lookup indexes, barcode query-plan fix and backup schedule), #32 (acceptance documentation) and #33 (backup restore-drill cleanup hardening) are merged. PR #33 merged as `d066894cced09fd6dc5446a3d998037635d7215a`; subsequent main commits only update release documentation.
 - PR #33 CI [45130147023](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45130147023) passed all 17 validation steps, including type-check/build, dependency audit, Worker tests, D1 schema checks, backup-script syntax and the storefront browser suite. The isolated remote D1 integration suite was not executed because dedicated test credentials are not configured.
 - Cloudflare Pages production deployment [41aca77d](https://41aca77d.deverve-official.pages.dev) completed successfully from controlled trigger commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; all deployment stages passed.
