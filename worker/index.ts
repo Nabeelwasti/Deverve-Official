@@ -3286,7 +3286,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
       if(!media)return error("A selected homepage image is unavailable",404);
       section_images[key]=value;
     }
-    const allowedFrameSettings=new Set([...allowedImages,"category_men","category_women","category_kids","category_essentials","category_layers","category_bottoms"]);
+    const allowedFrameSettings=new Set([...allowedImages,"brand_logo","category_men","category_women","category_kids","category_essentials","category_layers","category_bottoms"]);
     const rawFrameSettings=source.image_settings;
     if(rawFrameSettings!==undefined&&(!rawFrameSettings||typeof rawFrameSettings!=="object"||Array.isArray(rawFrameSettings)))return error("Submit valid image frame settings",400);
     const image_settings:Record<string,{fit:"cover"|"contain";x:number;y:number}>={};
