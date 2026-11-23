@@ -28,6 +28,6 @@
       "src": "/api/brand/logo?v=default",
       "sizes": "512x512",
       "purpose": "any"
-    },
+    }
   ]
 }
