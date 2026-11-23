@@ -2597,7 +2597,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         customer_email: customerEmail,
         whatsapp_receipt_consent: whatsappReceiptConsent,
         items: lines.map((item: Record<string, unknown>) => ({ variant_id: item?.variant_id, quantity: item?.quantity }))
-          .sort((a, b) => String(a.variant_id ?? "").localeCompare(String(b.variant_id ?? ""))),
+          .sort((a, b) => String(a.variant_id ?? "").localeCompare(String(b.variant_id ?? "")) || Number(a.quantity ?? 0) - Number(b.quantity ?? 0)),
         payments: payments.map((payment: Record<string, unknown>) => ({
           account_id: payment?.account_id,
           payment_method: payment?.payment_method,
