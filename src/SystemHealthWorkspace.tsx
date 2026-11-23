@@ -59,13 +59,13 @@ export default function SystemHealthWorkspace({onClose}:{onClose:()=>void}){
     </div>
     <div className="admin-panel"><div className="admin-panel-heading"><div><h2>Provider configuration</h2><p className="admin-muted">Configuration presence only. This dashboard does not send test emails, WhatsApp messages or payments.</p></div></div>
      <div className="owner-notification-list">
-      <article className="owner-notification"><div><strong>Email delivery</strong><p>{statusText(snapshot.providers.email.configured)}</p></div></article>
-      <article className="owner-notification"><div><strong>WhatsApp delivery</strong><p>{statusText(snapshot.providers.whatsapp.configured)}</p></div></article>
-      <article className="owner-notification"><div><strong>Safepay</strong><p>{statusText(snapshot.providers.safepay.configured)} · {snapshot.providers.safepay.live_enabled?"Live mode enabled":"Live mode disabled"}</p></div></article>
-      <article className="owner-notification"><div><strong>Turnstile</strong><p>External verifier not probed from this application</p></div></article>
-      <article className="owner-notification"><div><strong>Private media storage</strong><p>{statusText(snapshot.bindings.private_media)}</p></div></article>
-      <article className="owner-notification"><div><strong>Translation service binding</strong><p>{statusText(snapshot.bindings.translation_service)}</p></div></article>
-      <article className="owner-notification"><div><strong>Encrypted D1 backup & restore</strong><p>Requires a verified encrypted backup and isolated restore drill; not inferred from workflow configuration</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">✉</span><div><strong>Email delivery</strong><p>{statusText(snapshot.providers.email.configured)}</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">◉</span><div><strong>WhatsApp delivery</strong><p>{statusText(snapshot.providers.whatsapp.configured)}</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">↗</span><div><strong>Safepay</strong><p>{statusText(snapshot.providers.safepay.configured)} · {snapshot.providers.safepay.live_enabled?"Live mode enabled":"Live mode disabled"}</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">◇</span><div><strong>Turnstile</strong><p>External verifier not probed from this application</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">▣</span><div><strong>Private media storage</strong><p>{statusText(snapshot.bindings.private_media)}</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">文</span><div><strong>Translation service binding</strong><p>{statusText(snapshot.bindings.translation_service)}</p></div></article>
+      <article className="owner-notification"><span className="owner-notification-icon">◫</span><div><strong>Encrypted D1 backup & restore</strong><p>Requires a verified encrypted backup and isolated restore drill; not inferred from workflow configuration</p></div></article>
      </div>
     </div>
    </>}
