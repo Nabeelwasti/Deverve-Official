@@ -16,7 +16,7 @@ const localDate=()=>new Date(Date.now()+5*3600000).toISOString().slice(0,10);
 export default function POSWorkspace({canManageMoney,canUseAI=false}:{canManageMoney:boolean;canUseAI?:boolean}){
  const [items,setItems]=useState<Item[]>([]),[accounts,setAccounts]=useState<Account[]>([]),[registers,setRegisters]=useState<Array<{id:string;name:string;location_label:string}>>([]),[session,setSession]=useState<Session|null>(null);
  const [cart,setCart]=useState<SaleLine[]>([]),[search,setSearch]=useState(""),[barcode,setBarcode]=useState(""),[cameraOpen,setCameraOpen]=useState(false),[unknownCode,setUnknownCode]=useState(""),[customerName,setCustomerName]=useState("Walk-in customer"),[customerPhone,setCustomerPhone]=useState(""),[customerEmail,setCustomerEmail]=useState(""),[whatsappReceiptConsent,setWhatsappReceiptConsent]=useState(false);
- const [pendingSaleKey,setPendingSaleKey]=useState(()=>{try{const saved=sessionStorage.getItem("deverve-pos-pending-sale-key");return saved&&/^[a-f0-9-]{36}$/i.test(saved)?saved:"";}catch{return "";}});
+ const [pendingSaleKey,setPendingSaleKey]=useState(()=>{try{const saved=localStorage.getItem("deverve-pos-pending-sale-key");return saved&&/^[a-f0-9-]{36}$/i.test(saved)?saved:"";}catch{return "";}});
  const [pendingSaleConflict,setPendingSaleConflict]=useState(false);
  const pendingSaleKeyRef=useRef(pendingSaleKey);
  const [accountId,setAccountId]=useState("cash-main"),[cashTendered,setCashTendered]=useState(""),[openingCash,setOpeningCash]=useState("0"),[countedCash,setCountedCash]=useState("");
@@ -60,7 +60,7 @@ export default function POSWorkspace({canManageMoney,canUseAI=false}:{canManageM
  const openSession=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();setBusy(true);try{await request("/api/admin/pos/sessions/open",{method:"POST",body:JSON.stringify({register_id:registers[0]?.id||"main-register",opening_cash_paisa:paisa(openingCash),note:"Opening shift"})});notify("Cash register opened successfully.");await load();}catch(e){notify(e instanceof Error?e.message:"Register could not be opened.",true);}finally{setBusy(false);}};
  const closeSession=async(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!session)return;setBusy(true);try{const result=await request<{expected_cash_paisa:number;counted_cash_paisa:number;variance_paisa:number}>("/api/admin/pos/sessions/close",{method:"POST",body:JSON.stringify({session_id:session.id,counted_cash_paisa:paisa(countedCash),note:"Shift closing count"})});notify("Shift closed. Expected "+money(result.expected_cash_paisa)+" · Counted "+money(result.counted_cash_paisa)+" · Difference "+money(Math.abs(result.variance_paisa)));setCountedCash("");await load();}catch(e){notify(e instanceof Error?e.message:"Register could not be closed.",true);}finally{setBusy(false);}};
  const clearPendingSaleAttempt=()=>{
-  try{sessionStorage.removeItem("deverve-pos-pending-sale-key");}catch{}
+  try{localStorage.removeItem("deverve-pos-pending-sale-key");}catch{}
   pendingSaleKeyRef.current="";setPendingSaleKey("");setPendingSaleConflict(false);setCart([]);setCustomerName("Walk-in customer");setCustomerPhone("");setCustomerEmail("");setWhatsappReceiptConsent(false);
   notify("Previous checkout key cleared. Review the sales history before recording another sale.");
  };
@@ -72,11 +72,11 @@ export default function POSWorkspace({canManageMoney,canUseAI=false}:{canManageM
   const tendered=method==="cash"?paisa(cashTendered):total;
   if(tendered<total){notify("Cash received is less than the sale total.",true);return;}
   const idempotencyKey=pendingSaleKeyRef.current||crypto.randomUUID();
-  if(!pendingSaleKeyRef.current){pendingSaleKeyRef.current=idempotencyKey;setPendingSaleKey(idempotencyKey);try{sessionStorage.setItem("deverve-pos-pending-sale-key",idempotencyKey);}catch{}}
+  if(!pendingSaleKeyRef.current){pendingSaleKeyRef.current=idempotencyKey;setPendingSaleKey(idempotencyKey);try{localStorage.setItem("deverve-pos-pending-sale-key",idempotencyKey);}catch{}}
   setBusy(true);
   try{
    const result=await request<{sale:SaleReceipt;duplicate?:boolean}>("/api/admin/pos/sales",{method:"POST",body:JSON.stringify({idempotency_key:idempotencyKey,customer_name:customerName,customer_phone:customerPhone,customer_email:customerEmail,whatsapp_receipt_consent:whatsappReceiptConsent,items:cart.map(line=>({variant_id:line.item.variant_id,quantity:line.quantity})),payments:[{account_id:selectedAccount.id,payment_method:method,amount_paisa:total,tendered_paisa:tendered}]})});
-   setReceipt(result.sale);setCart([]);setCustomerName("Walk-in customer");setCustomerPhone("");setCustomerEmail("");setWhatsappReceiptConsent(false);pendingSaleKeyRef.current="";setPendingSaleKey("");setPendingSaleConflict(false);try{sessionStorage.removeItem("deverve-pos-pending-sale-key");}catch{}
+   setReceipt(result.sale);setCart([]);setCustomerName("Walk-in customer");setCustomerPhone("");setCustomerEmail("");setWhatsappReceiptConsent(false);pendingSaleKeyRef.current="";setPendingSaleKey("");setPendingSaleConflict(false);try{localStorage.removeItem("deverve-pos-pending-sale-key");}catch{}
    notify((result.duplicate?"Previous sale confirmed. Receipt ":"Sale completed. Receipt ")+result.sale.receipt_number);
    await Promise.all([load(),loadSummary(),loadSales()]);
   }catch(e){
