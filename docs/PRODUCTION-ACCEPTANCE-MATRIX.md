@@ -94,7 +94,7 @@ Run a documented physical Android acceptance pass for camera/gallery uploads, mi
 
 ### 8. Content, legal and catalogue acceptance
 
-- Review the published CMS homepage in Admin → Content Studio. The current home page has seven sections, five navigation links and verified ready media; owner should confirm product assortment, final copy, pricing language and contact paths before broad promotion.
+- Review the published CMS homepage in Admin → Content Studio. The current home page has seven sections, five navigation links, four FAQs and three verified category artworks. PR #38 deployed category-image save validation, public media authorization and archive protection; migrations 0042–0043 are applied. Owner should confirm product assortment, final copy, pricing language and contact paths before broad promotion.
 - Verify product authenticity, image/variant matching, physical size/colour stock and barcode quality with the owner.
 - Obtain qualified legal review for CNIC collection, consent, retention, access and deletion policy before treating current retention as compliant.
 - Attach and verify a custom domain only after DNS, TLS, redirects, canonical URLs, email and security headers are tested.
