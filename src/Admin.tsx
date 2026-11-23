@@ -408,8 +408,8 @@ export default function Admin() {
 
   useEffect(() => {
     if (admin) {
-      const tasks = [loadOverview()];
-      if (!admin.can_use_pos) tasks.push(loadProducts());
+      const tasks: Array<Promise<unknown>> = [];
+      if (!admin.can_use_pos) { tasks.push(loadOverview()); tasks.push(loadProducts()); }
       if (admin.role === "owner") { tasks.push(loadStaff()); tasks.push(loadSettings()); }
       if (admin.role !== "catalogue" && !admin.can_use_pos) tasks.push(loadEnquiries());
       if (["owner", "manager", "orders"].includes(admin.role)) { tasks.push(loadCustomers()); tasks.push(loadOrders()); tasks.push(loadReturns()); tasks.push(loadExchanges()); tasks.push(loadWholesaleQuotes()); }
