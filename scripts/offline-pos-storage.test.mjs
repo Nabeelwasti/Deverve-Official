@@ -41,3 +41,8 @@ assert.match(crypto, /same-origin script compromise/);
 assert.doesNotMatch(crypto, /localStorage|sessionStorage|document\.cookie/);
 
 console.log("Offline POS device-identity and signing guardrails passed.");
+
+assert.match(crypto, /validateStoredIdentity/);
+assert.match(crypto, /extractable !== false/);
+assert.match(crypto, /privateAlgorithm\.namedCurve !== "P-256"/);
+assert.match(crypto, /calculatedThumbprint !== identity\.publicKeyThumbprint/);
