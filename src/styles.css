@@ -2622,7 +2622,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .public-page-brand .brand-logo-image.deverve-round-logo,
 .brand-loader-logo.deverve-round-logo{
   display:block!important;box-sizing:border-box!important;aspect-ratio:1/1!important;
-  object-fit:cover!important;object-position:center!important;border:0!important;
+  object-fit:var(--dv-brand-logo-fit,cover)!important;object-position:var(--dv-brand-logo-position,center)!important;border:0!important;
   border-radius:50%!important;background:transparent!important;padding:0!important;
   box-shadow:none!important;overflow:hidden!important;
 }
