@@ -408,6 +408,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (admin) {
+      if (admin.can_use_pos && activeAdminScreen !== "pos") navigateAdminScreen("pos");
       const tasks: Array<Promise<unknown>> = [];
       if (!admin.can_use_pos) { tasks.push(loadOverview()); tasks.push(loadProducts()); }
       if (admin.role === "owner") { tasks.push(loadStaff()); tasks.push(loadSettings()); }
