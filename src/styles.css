@@ -2598,3 +2598,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .brand-logo-image.deverve-round-logo{width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important;max-height:40px!important;flex:0 0 40px!important}
 .footer-brand-logo.deverve-round-logo{width:52px!important;height:52px!important;min-width:52px!important;max-width:52px!important;max-height:52px!important;flex:0 0 52px!important}
 .wholesale-art-mark{display:none!important}
+\n
+/* CMS content transitions use the canonical logo only — never a white text-only loading page. */
+.public-page-loading{min-height:100svh;display:grid;place-items:center;overflow:hidden;background:#071a30}
+.public-page-loading .public-page-loading-logo{width:84px!important;height:84px!important;max-width:84px!important;max-height:84px!important;aspect-ratio:1/1!important;object-fit:var(--dv-brand-logo-fit,cover)!important;object-position:var(--dv-brand-logo-position,center)!important;border:0!important;border-radius:50%!important;background:transparent!important;padding:0!important;box-shadow:none!important}
