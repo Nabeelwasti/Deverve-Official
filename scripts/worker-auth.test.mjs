@@ -28,13 +28,13 @@ test("POS checkout fingerprints are stable across object key order and reject ch
   const first = await fingerprintPosSaleRequest({
     cashier_admin_id: "cashier-1",
     customer_name: "Walk-in customer",
-    items: [{ variant_id: "variant-a", quantity: 2 }],
-    payments: [{ account_id: "cash-main", amount_paisa: 5000, payment_method: "cash", tendered_paisa: 6000 }],
+    items: [{ variant_id: "variant-a", quantity: 2 }, { variant_id: "variant-b", quantity: 1 }],
+    payments: [{ account_id: "cash-main", amount_paisa: 3000, payment_method: "cash", tendered_paisa: 4000 }, { account_id: "bank-clearing", amount_paisa: 2000, payment_method: "bank_transfer", tendered_paisa: 2000 }],
   });
   const reordered = await fingerprintPosSaleRequest({
     cashier_admin_id: "cashier-1",
-    payments: [{ payment_method: "cash", tendered_paisa: 6000, amount_paisa: 5000, account_id: "cash-main" }],
-    items: [{ quantity: 2, variant_id: "variant-a" }],
+    payments: [{ payment_method: "bank_transfer", tendered_paisa: 2000, amount_paisa: 2000, account_id: "bank-clearing" }, { payment_method: "cash", tendered_paisa: 4000, amount_paisa: 3000, account_id: "cash-main" }],
+    items: [{ quantity: 1, variant_id: "variant-b" }, { quantity: 2, variant_id: "variant-a" }],
     customer_name: "Walk-in customer",
   });
   const changed = await fingerprintPosSaleRequest({
