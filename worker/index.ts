@@ -169,9 +169,14 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const waVersion=env.WHATSAPP_API_VERSION?.trim()||"v27.0";
  const emailReady=Boolean(emailApiKey&&emailFrom&&isValidEmailAddress(emailFrom));
  const whatsappReady=Boolean(waToken&&waPhoneId&&/^\d+$/.test(waPhoneId)&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
- if(!emailReady&&!whatsappReady)return;
  const now=new Date().toISOString();
  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
+ if(!emailReady&&!whatsappReady){
+  try{
+   await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) AND EXISTS (SELECT 1 FROM pos_sales WHERE pos_sales.id=pos_receipt_outbox.sale_id AND pos_sales.status!='completed')").bind(now,staleBefore).run();
+  }catch{}
+  return;
+ }
  let rows:Record<string,unknown>[]=[];
  try{
   const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE (status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?) ORDER BY created_at LIMIT 20").bind(now,staleBefore).all<Record<string,unknown>>();
@@ -180,15 +185,28 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const esc=(value:string)=>value.replace(/[&<>"']/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[char]||char));
  for(const row of rows){
   const channel=String(row.channel),id=String(row.id),saleId=String(row.sale_id);
-  if(channel==="email"&&!emailReady)continue;
-  if(channel==="whatsapp"&&!whatsappReady)continue;
   if(channel!=="email"&&channel!=="whatsapp")continue;
+  if((channel==="email"&&!emailReady)||(channel==="whatsapp"&&!whatsappReady)){
+   try{
+    const linkedSale=await env.DB.prepare("SELECT status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<{status:string}>();
+    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status IN ('queued','processing')").bind(id).run();
+   }catch{}
+   continue;
+  }
   const claimedAt=new Date().toISOString();
   try{
-   const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?))").bind(claimedAt,id,now,staleBefore).run();
-   if((claim.meta?.changes??0)!==1)continue;
-   const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,total_paisa FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+   const claim=await env.DB.prepare("UPDATE pos_receipt_outbox SET status='processing',attempts=attempts+1,processing_started_at=? WHERE id=? AND ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) AND EXISTS (SELECT 1 FROM pos_sales WHERE pos_sales.id=pos_receipt_outbox.sale_id AND pos_sales.status='completed')").bind(claimedAt,id,now,staleBefore).run();
+   if((claim.meta?.changes??0)!==1){
+    const linkedSale=await env.DB.prepare("SELECT status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<{status:string}>();
+    if(!linkedSale||String(linkedSale.status)!=="completed")await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status IN ('queued','processing')").bind(id).run();
+    continue;
+   }
+   const sale=await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,total_paisa,status FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
    if(!sale)throw new Error("receipt_sale_missing");
+   if(String(sale.status)!=="completed"){
+    await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE id=? AND status='processing'").bind(id).run();
+    continue;
+   }
    const itemsResult=await env.DB.prepare("SELECT product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(saleId).all<Record<string,unknown>>();
    const items=itemsResult.results??[];
    if(!items.length)throw new Error("receipt_items_missing");
@@ -196,6 +214,8 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
    const receipt=String(sale.receipt_number);
    const total=Number(sale.total_paisa);
    if(!Number.isSafeInteger(total)||total<0)throw new Error("receipt_total_invalid");
+   const stillClaimed=await env.DB.prepare("SELECT id FROM pos_receipt_outbox WHERE id=? AND status='processing' LIMIT 1").bind(id).first<{id:string}>();
+   if(!stillClaimed)continue;
    let providerId="";
    if(channel==="email"){
     const recipient=String(sale.customer_email||"");
@@ -2484,8 +2504,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const channel=body?.channel;
     if(!/^[a-f0-9-]{36}$/i.test(saleId)||!(channel==="email"||channel==="whatsapp"))return error("Choose a valid sale and receipt channel",400);
     try{
-      const sale=await env.DB.prepare("SELECT customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
+      const sale=await env.DB.prepare("SELECT status,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=? LIMIT 1").bind(saleId).first<Record<string,unknown>>();
       if(!sale)return error("POS sale not found",404);
+      if(String(sale.status)!=="completed")return error("Receipts cannot be retried for a voided or refunded sale",409);
       if(channel==="email"&&(Number(sale.email_receipt_requested)!==1||!isValidEmailAddress(String(sale.customer_email??""))))return error("This sale has no valid customer email address for a receipt",409);
       if(channel==="whatsapp"&&(Number(sale.whatsapp_receipt_consent)!==1||!validPhone(String(sale.customer_phone??""))))return error("This sale has no valid WhatsApp consent",409);
       const queue=await env.DB.prepare("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed' LIMIT 1").bind(saleId,channel).first<{id:string}>();
@@ -2705,6 +2726,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const statements=[
         env.DB.prepare("INSERT INTO pos_sale_voids (sale_id,voided_by_admin_id,reason,created_at) VALUES (?,?,?,?)").bind(sale.id,admin.admin_user_id,reason,now),
         env.DB.prepare("UPDATE pos_sales SET status='voided',voided_by_admin_id=?,void_reason=?,voided_at=? WHERE id=? AND status='completed'").bind(admin.admin_user_id,reason,now,sale.id),
+        env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_voided_before_delivery',processing_started_at=NULL WHERE sale_id=? AND status IN ('queued','processing')").bind(sale.id),
       ];
       for(const item of items.results){
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand+?,updated_at=? WHERE id=?").bind(item.quantity,now,item.variant_id));
