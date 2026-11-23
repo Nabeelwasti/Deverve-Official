@@ -24,7 +24,7 @@ export default function BrandHead(){
     touch.href=iconUrl;
     let manifest=document.head.querySelector<HTMLLinkElement>('link[rel="manifest"]');
     if(!manifest){manifest=document.createElement("link");manifest.rel="manifest";document.head.appendChild(manifest);}
-    manifest.href="/api/pwa/manifest?brand="+encodeURIComponent(logoId)+"&v=2";
+    manifest.href="/api/pwa/manifest?brand="+encodeURIComponent(logoId)+"&v=3";
    }catch{/* Keep the static fallback icon if settings cannot be loaded. */}
   };
   void refresh();
