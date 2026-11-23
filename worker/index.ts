@@ -3362,7 +3362,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   let categoryAssets:Record<string,string> | undefined;
   if(siteDesign){
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('site_design',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(siteDesign),admin.admin_user_id,now));
-    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.site_design_updated','store_settings','site_design',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({preset:siteDesign.preset,section_image_count:Object.keys(siteDesign.section_images).length})));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.site_design_updated','store_settings','site_design',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({preset:siteDesign.preset,section_image_count:Object.keys(siteDesign.section_images).length,image_frame_count:Object.keys(siteDesign.image_settings).length})));
   }
   if(hasCategoryAssets){
     const raw=body?.category_assets;
