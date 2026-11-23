@@ -2566,11 +2566,13 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(sessionId).first<{net:number}>();
       const expected = Number(session.opening_cash_paisa)+Number(movement?.net??0);
       const variance = Number(counted)-expected;
-      const statements = [];
-      if (variance !== 0) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main',?,?,?,'pos_session',?,?,?,?)").bind(crypto.randomUUID(),variance>0?"in":"out",Math.abs(variance),variance>0?"cash_overage":"cash_shortage",sessionId,sessionId,note || "Cash count reconciliation",admin.admin_user_id));
-      statements.push(env.DB.prepare("UPDATE pos_sessions SET expected_cash_paisa=?,counted_cash_paisa=?,variance_paisa=?,status='closed',closing_note=?,closed_by_admin_id=?,closed_at=? WHERE id=? AND status='open'").bind(expected,Number(counted),variance,note,admin.admin_user_id,new Date().toISOString(),sessionId));
-      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'pos.session_closed','pos_session',?,?)").bind(crypto.randomUUID(),admin.admin_user_id,sessionId,JSON.stringify({expected_cash_paisa:expected,counted_cash_paisa:Number(counted),variance_paisa:variance})));
-      await env.DB.batch(statements);
+      const statements = [
+        env.DB.prepare("UPDATE pos_sessions SET expected_cash_paisa=?,counted_cash_paisa=?,variance_paisa=?,status='closed',closing_note=?,closed_by_admin_id=?,closed_at=? WHERE id=? AND status='open' AND (? = 0 OR opened_by_admin_id = ?)").bind(expected,Number(counted),variance,note,admin.admin_user_id,new Date().toISOString(),sessionId,isCashier ? 1 : 0,admin.admin_user_id),
+      ];
+      if (variance !== 0) statements.push(env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) SELECT ?,'cash-main',?,?,?,'pos_session',?,?,?,? WHERE changes()=1").bind(crypto.randomUUID(),variance>0?"in":"out",Math.abs(variance),variance>0?"cash_overage":"cash_shortage",sessionId,sessionId,note || "Cash count reconciliation",admin.admin_user_id));
+      statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.session_closed','pos_session',?,? WHERE changes()=1").bind(crypto.randomUUID(),admin.admin_user_id,sessionId,JSON.stringify({expected_cash_paisa:expected,counted_cash_paisa:Number(counted),variance_paisa:variance})));
+      const results = await env.DB.batch(statements);
+      if ((results[0]?.meta?.changes ?? 0) !== 1) return error("This register shift was already closed or is not assigned to your account",409);
       return json({ closed:true,expected_cash_paisa:expected,counted_cash_paisa:Number(counted),variance_paisa:variance });
     } catch { return error("POS session could not be closed",503); }
   }
