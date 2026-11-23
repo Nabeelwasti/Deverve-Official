@@ -1,7 +1,7 @@
-import type { SVGProps } from "react";
+import type { ReactElement, SVGProps } from "react";
 
 type Platform = "facebook" | "instagram" | "tiktok" | "youtube" | "linkedin" | "pinterest" | "threads" | "x";
-const icons: Record<Platform, (props: SVGProps<SVGSVGElement>) => JSX.Element> = {
+const icons: Record<Platform, (props: SVGProps<SVGSVGElement>) => ReactElement> = {
  facebook: p => <svg viewBox="0 0 24 24" {...p}><path d="M13.5 21v-8h2.7l.4-3.1h-3.1v-2c0-.9.3-1.5 1.6-1.5h1.7V3.6c-.3 0-1.3-.1-2.4-.1-2.4 0-4.1 1.5-4.1 4.2v2.2H7.6V13h2.7v8h3.2Z"/></svg>,
  instagram: p => <svg viewBox="0 0 24 24" {...p}><path d="M7.2 2.5h9.6a4.7 4.7 0 0 1 4.7 4.7v9.6a4.7 4.7 0 0 1-4.7 4.7H7.2a4.7 4.7 0 0 1-4.7-4.7V7.2a4.7 4.7 0 0 1 4.7-4.7Zm0 2A2.7 2.7 0 0 0 4.5 7.2v9.6a2.7 2.7 0 0 0 2.7 2.7h9.6a2.7 2.7 0 0 0 2.7-2.7V7.2a2.7 2.7 0 0 0-2.7-2.7H7.2Zm4.8 2.7a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6Zm0 2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6Zm5.1-3a1.2 1.2 0 1 1 0 2.4 1.2 1.2 0 0 1 0-2.4Z"/></svg>,
  tiktok: p => <svg viewBox="0 0 24 24" {...p}><path d="M19.6 7.1a6.2 6.2 0 0 1-4.1-1.5v8.1a5.7 5.7 0 1 1-5.7-5.7c.4 0 .8 0 1.2.1v3.2a2.6 2.6 0 1 0 1.4 2.3V2.5h3.1c.2 2.1 1.9 3.9 4.1 4.1v.5Z"/></svg>,
