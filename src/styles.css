@@ -2616,3 +2616,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 .contact-social-links{display:flex;align-items:center;justify-content:center;gap:9px;flex-wrap:wrap;margin:14px 0 20px}
 .contact-social-links a{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid #dce5ef;border-radius:999px;background:#fff;color:#315a80;text-decoration:none;font-size:11px;font-weight:800;text-transform:capitalize}
 .contact-social-links a:hover,.contact-social-links a:focus-visible{border-color:#9ebbd7;background:#edf4fb}
+.contact-social-links .footer-social-links{margin:0}
+.contact-social-links a{width:42px;height:42px;padding:0;border:0;border-radius:50%;background:transparent;color:#173b63}
+.contact-social-links a:hover,.contact-social-links a:focus-visible{border:0;background:#f0f4f8;color:#b28b50}
+.contact-social-links svg{width:22px;height:22px;fill:currentColor}
