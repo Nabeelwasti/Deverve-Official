@@ -883,6 +883,7 @@ class FakeStatement {
     if (q.startsWith("SELECT id FROM products WHERE id = ?")) return this.db.products.get(v[0]) ?? null;
     if (q.startsWith("SELECT (SELECT COUNT(*)")) return { published_products: 0, draft_products: this.db.products.size, new_enquiries: 0, pending_orders: 0, rental_requests: 0 };
     if (q.startsWith("SELECT 1 AS ok")) return { ok: 1 };
+    if (q.startsWith("SELECT 1 AS connected")) return { connected: 1 };
     throw new Error("Unexpected first query: " + q);
   }
   async all() {
@@ -1718,6 +1719,26 @@ const customerSession = async (db, email = "buyer@example.com") => {
 const login = (db, password) => handleRequest(request("/api/admin/login", "POST", {
   email: "owner@deverve.example", password,
 }, { "cf-connecting-ip": "203.0.113.10", "sec-fetch-site": "same-origin" }), env(db));
+
+test("system health is owner-only and never returns provider secret values", async () => {
+  const db = new FakeD1();
+  const setup = await bootstrap(db);
+  const cookie = setup.headers.get("set-cookie").split(";")[0];
+  const response = await handleRequest(request("/api/admin/system-health","GET",undefined,{cookie}),{
+    ...env(db),RESEND_API_KEY:"never-return-this-secret",RESEND_FROM_EMAIL:"alerts@deverve.example",
+    SAFEPAY_SECRET_KEY:"another-never-return-secret",SAFEPAY_MERCHANT_API_KEY:"merchant-secret",SAFEPAY_WEBHOOK_SECRET:"webhook-secret",
+  });
+  assert.equal(response.status,200);
+  const payload = await response.json();
+  assert.equal(payload.database.status,"connected");
+  assert.equal(payload.providers.email.configured,true);
+  assert.equal(payload.overall_status,"partial");
+  const serialized=JSON.stringify(payload);
+  assert.doesNotMatch(serialized,/never-return-this-secret|another-never-return-secret|merchant-secret|webhook-secret/);
+  db.admins.get([...db.admins.keys()][0]).role="manager";
+  const denied=await handleRequest(request("/api/admin/system-health","GET",undefined,{cookie}),env(db));
+  assert.equal(denied.status,403);
+});
 
 test("bootstrap creates exactly one owner and stores only a hashed session token", async () => {
   const db = new FakeD1();

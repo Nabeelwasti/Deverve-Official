@@ -3552,6 +3552,51 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
   return error("Method not allowed",405);
 }
 
+async function adminSystemHealthRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
+  if (url.pathname !== "/api/admin/system-health") return null;
+  if (request.method !== "GET") return error("Method not allowed",405);
+  let admin: SessionRow | null;
+  try { admin = await currentAdmin(request,env.DB); } catch { return error("Authorization could not be verified",503); }
+  if (!admin) return error("Authentication required",401);
+  if (admin.role !== "owner") return error("Only the owner can view system health",403);
+
+  const read = async (sql:string):Promise<Record<string,number>|null> => {
+    try { return await env.DB.prepare(sql).first<Record<string,number>>() ?? null; }
+    catch { return null; }
+  };
+  const [notificationQueue,receiptQueue,payments,inventory,pos,staff,audit] = await Promise.all([
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) AS queued, COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END),0) AS processing, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed FROM notification_outbox"),
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status='queued' THEN 1 ELSE 0 END),0) AS queued, COALESCE(SUM(CASE WHEN status='processing' THEN 1 ELSE 0 END),0) AS processing, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed FROM pos_receipt_outbox"),
+    read("SELECT COUNT(*) AS total, COALESCE(SUM(CASE WHEN status IN ('created','pending') THEN 1 ELSE 0 END),0) AS pending, COALESCE(SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),0) AS failed, COALESCE(SUM(CASE WHEN status='succeeded' THEN 1 ELSE 0 END),0) AS succeeded FROM payment_attempts"),
+    read("SELECT COUNT(*) AS active_variants, COALESCE(SUM(CASE WHEN stock_on_hand < 0 OR reserved_quantity > stock_on_hand THEN 1 ELSE 0 END),0) AS stock_anomalies FROM product_variants WHERE is_active=1"),
+    read("SELECT COUNT(*) AS open_sessions FROM pos_sessions WHERE status='open'"),
+    read("SELECT (SELECT COUNT(*) FROM admin_users WHERE is_active=1) AS active_staff, (SELECT COUNT(*) FROM admin_pos_cashiers pc JOIN admin_users u ON u.id=pc.admin_user_id WHERE pc.revoked_at IS NULL AND u.is_active=1) AS active_cashiers, (SELECT COUNT(*) FROM admin_invites WHERE accepted_at IS NULL AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')) AS pending_invites"),
+    read("SELECT COUNT(*) AS events_24h FROM audit_logs WHERE created_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','-1 day')"),
+  ]);
+  const database = await read("SELECT 1 AS connected");
+  const unavailable = [notificationQueue,receiptQueue,payments,inventory,pos,staff,audit].filter(value=>value===null).length;
+  return json({
+    checked_at:new Date().toISOString(),
+    overall_status:database?.connected===1?(unavailable===0?"available":"partial"):"unavailable",
+    database:{status:database?.connected===1?"connected":"unavailable"},
+    bindings:{private_media:Boolean(env.MEDIA),translation_service:Boolean(env.TRANSLATION)},
+    providers:{
+      email:{configured:Boolean(env.RESEND_API_KEY?.trim()&&env.RESEND_FROM_EMAIL?.trim())},
+      whatsapp:{configured:Boolean(env.WHATSAPP_ACCESS_TOKEN?.trim()&&env.WHATSAPP_PHONE_NUMBER_ID?.trim())},
+      safepay:{configured:Boolean(env.SAFEPAY_MERCHANT_API_KEY?.trim()&&env.SAFEPAY_SECRET_KEY?.trim()&&env.SAFEPAY_WEBHOOK_SECRET?.trim()),live_enabled:env.SAFEPAY_LIVE_ENABLED?.trim().toLowerCase()==="true"},
+      turnstile:{status:"external_verification_not_probed"},
+    },
+    queues:{owner_notifications:notificationQueue,pos_receipts:receiptQueue},
+    payments,
+    inventory,
+    pos,
+    staff,
+    audit,
+    backup:{status:"requires_verified_encrypted_backup_and_isolated_restore"},
+    unavailable_sections:unavailable,
+  });
+}
+
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (path.startsWith("/api/admin/") && !["/api/admin/me", "/api/admin/logout"].includes(path) && !path.startsWith("/api/admin/pos/")) {
@@ -3564,6 +3609,8 @@ async function adminAuth(request: Request, env: Env, url: URL): Promise<Response
   if (cmsResponse) return cmsResponse;
   const notificationResponse = await ownerNotificationRoutes(request, env, url);
   if (notificationResponse) return notificationResponse;
+  const systemHealthResponse = await adminSystemHealthRoutes(request,env,url);
+  if (systemHealthResponse) return systemHealthResponse;
   if (!path.startsWith("/api/admin/")) return null;
 
 
