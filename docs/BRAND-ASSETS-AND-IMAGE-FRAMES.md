@@ -27,6 +27,8 @@ Section slots:
 - `testimonials` → `.testimonials-section`
 - `footer` → `.site-footer`
 
+The `brand_logo` frame applies to the shared circular logo component across header, account, admin, footer, AI chat and loading surfaces.
+
 Category slots use the existing `category_assets` media IDs and keys `category_men`, `category_women`, `category_kids`, `category_essentials`, `category_layers`, and `category_bottoms`.
 
 Each frame stores only a validated `fit` value (`cover` or `contain`) and integer horizontal/vertical focal points from 0–100. These values live in `site_design.image_settings`; no schema migration is needed. The admin preview uses the matching frame ratio and the same fit/focal-point settings applied by the storefront. Category source photos continue to be uploaded/cropped in the Homepage category artwork panel.
