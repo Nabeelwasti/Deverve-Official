@@ -2613,3 +2613,21 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
  .public-page-footer-strip{font-size:7px}
 }
 
+
+
+/* Final brand system: one circular frame, one canonical logo image, no competing padding. */
+.brand-logo-image.deverve-round-logo,
+.footer-brand-logo.deverve-round-logo,
+.public-site-brand .brand-logo-image.deverve-round-logo,
+.public-page-brand .brand-logo-image.deverve-round-logo,
+.brand-loader-logo.deverve-round-logo{
+  display:block!important;box-sizing:border-box!important;aspect-ratio:1/1!important;
+  object-fit:cover!important;object-position:center!important;border:0!important;
+  border-radius:50%!important;background:transparent!important;padding:0!important;
+  box-shadow:none!important;overflow:hidden!important;
+}
+.brand-logo-image.deverve-round-logo{width:40px!important;height:40px!important;min-width:40px!important;max-width:40px!important;max-height:40px!important;flex:0 0 40px!important}
+.footer-brand-logo.deverve-round-logo{width:52px!important;height:52px!important;min-width:52px!important;max-width:52px!important;max-height:52px!important;flex:0 0 52px!important}
+.brand-loader-logo.deverve-round-logo{width:88px!important;height:88px!important;max-width:88px!important;max-height:88px!important}
+.brand-loading-screen{display:none!important}
+.wholesale-art-mark{display:none!important}
