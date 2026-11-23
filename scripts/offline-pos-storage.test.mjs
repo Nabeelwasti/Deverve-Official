@@ -28,3 +28,16 @@ assert.match(design, /Never fall back to RAM or localStorage/);
 assert.doesNotMatch(source, /localStorage|sessionStorage|document\.cookie/);
 
 console.log("Emergency offline POS storage guardrails passed.");
+
+const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
+assert.match(crypto, /generateKey\([\s\S]*?false,[\s\S]*?\["sign", "verify"\]/);
+assert.match(crypto, /privateKey: pair\.privateKey/);
+assert.match(crypto, /objectStore\("device"\)\.add\(record\)/);
+assert.match(crypto, /ECDSA.*P-256|namedCurve: "P-256"/);
+assert.match(crypto, /SIGNING_CONTEXT \+ canonicalize\(payload\)/);
+assert.match(crypto, /subtle\.sign\([\s\S]*?hash: "SHA-256"/);
+assert.match(crypto, /publicKeyThumbprint/);
+assert.match(crypto, /same-origin script compromise/);
+assert.doesNotMatch(crypto, /localStorage|sessionStorage|document\.cookie/);
+
+console.log("Offline POS device-identity and signing guardrails passed.");
