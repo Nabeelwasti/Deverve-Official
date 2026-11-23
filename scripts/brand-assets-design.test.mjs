@@ -40,6 +40,12 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   }
   assert.match(read("public/sw.js"), /de-verve-shell-v4/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
+  const pagesManifest = read("functions/manifest.webmanifest.ts");
+  assert.match(pagesManifest, /logo_id/);
+  assert.match(pagesManifest, /\/api\/brand\/logo/);
+  assert.doesNotMatch(pagesManifest, /favicon_id|de-verve-loader\.svg|icon-192\.svg/);
+  assert.match(brandHead, /&v=2/);
+  assert.doesNotMatch(brandHead, /favicon_id|de-verve-loader\.svg/);
 });
 
 test("social profile saving is isolated, verified, and visibly reported", () => {
