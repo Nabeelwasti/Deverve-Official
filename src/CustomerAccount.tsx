@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
+import BrandLogo from "./BrandLogo";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
 import "./customer-account.css";
 
@@ -222,7 +223,7 @@ export default function CustomerAccount() {
   const signOut = async () => { setBusy(true); try { await api("/api/customer/logout", { method: "POST", body: "{}" }); setCustomer(null); setOrders([]); setRentals([]); setExchanges([]); setMessage("You have signed out."); } catch (error) { setMessage(error instanceof Error ? error.message : "Sign-out failed."); } finally { setBusy(false); } };
 
   return <main className="customer-account-page">
-    <header className="customer-account-header"><a href="/" className="customer-brand"><span>DV</span><strong>De VERVE</strong></a><a href="/">Back to store ↗</a></header>
+    <header className="customer-account-header"><a href="/" className="customer-brand"><BrandLogo className="customer-brand-logo"/><strong>De VERVE</strong></a><a href="/">Back to store ↗</a></header>
     <section className="customer-account-wrap">
       <div className="customer-account-intro"><p className="customer-eyebrow">YOUR DE VERVE ACCOUNT</p><h1>Good to have<br/><em>you here.</em></h1><p>Manage your details and keep track of your orders and rental requests in one place.</p></div>
       {loading ? <div className="customer-panel">Loading your account…</div> : !customer ? <section className="customer-panel customer-auth-panel">

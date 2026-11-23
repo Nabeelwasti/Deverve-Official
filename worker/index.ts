@@ -3260,7 +3260,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   if(!admin)return error("Authentication required",401);
   if(admin.role!=="owner")return error("Only the owner can change website settings",403);
   if(request.method==="GET"){
-    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:true,notification_emails:{primary:"",secondary:[],enabled:false},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else if(row.setting_key==="cnic_uploads_enabled")settings.cnic_uploads_enabled=true;else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
+    try{const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 OR setting_key IN ('cnic_uploads_enabled','notification_emails')").all<{setting_key:string;setting_value_json:string}>();const settings:Record<string,unknown>={cnic_uploads_enabled:true,notification_emails:{primary:"",secondary:[],enabled:false},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{},image_settings:{}}};for(const row of rows.results??[]){try{const value=JSON.parse(row.setting_value_json);if(row.setting_key==="notification_emails"&&value&&typeof value==="object"){const saved=value as {primary?:string;secondary?:string[];enabled?:boolean};const primary=isSafeNotificationRecipient(saved.primary??"")?(saved.primary??""):"";settings.notification_emails={primary,secondary:Array.isArray(saved.secondary)?saved.secondary.filter(isSafeNotificationRecipient):[],enabled:Boolean(saved.enabled&&primary)};}else if(row.setting_key==="cnic_uploads_enabled")settings.cnic_uploads_enabled=true;else settings[row.setting_key]=value;}catch{}}return json({settings});}catch{return error("Website settings could not be loaded",503);}
   }
   if(request.method!=="PATCH")return error("Method not allowed",405);
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
@@ -3277,7 +3277,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
    if(hasCnicUploads&&body?.cnic_uploads_enabled!==true)return error("CNIC uploads are mandatory and cannot be disabled",409);
   let notificationEmails:{primary:string;secondary:string[];enabled:boolean}|undefined;
   if(hasNotificationEmails){const raw=body?.notification_emails;if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid notification email settings",400);const source=raw as Record<string,unknown>;const primary=cleanText(source.primary,160).toLowerCase();const secondaryRaw=Array.isArray(source.secondary)?source.secondary:[];if(!isSafeNotificationRecipient(primary)||secondaryRaw.length>5||typeof source.enabled!=="boolean")return error("Enter a valid business-owned primary email (the legacy placeholder is blocked), up to five secondary emails, and an enabled/disabled choice",400);const secondary:string[]=[];for(const candidate of secondaryRaw){const address=cleanText(candidate,160).toLowerCase();if(!isSafeNotificationRecipient(address))return error("One of the secondary email addresses is invalid or is the blocked legacy placeholder",400);if(address!==primary&&!secondary.includes(address))secondary.push(address);}notificationEmails={primary,secondary,enabled:source.enabled};}
-  let siteDesign:{preset:string;primary_color:string;accent_color:string;surface_color:string;text_color:string;corner_radius:number;font_family:string;density:string;button_style:string;card_shadow:string;hero_title:string;hero_subtitle:string;section_images:Record<string,string>}|undefined;
+  let siteDesign:{preset:string;primary_color:string;accent_color:string;surface_color:string;text_color:string;corner_radius:number;font_family:string;density:string;button_style:string;card_shadow:string;hero_title:string;hero_subtitle:string;section_images:Record<string,string>;image_settings:Record<string,{fit:"cover"|"contain";x:number;y:number}>}|undefined;
   if(hasSiteDesign){
     const raw=body?.site_design;
     if(!raw||typeof raw!=="object"||Array.isArray(raw))return error("Submit valid visual design settings",400);
@@ -3305,7 +3305,19 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
       if(!media)return error("A selected homepage image is unavailable",404);
       section_images[key]=value;
     }
-    siteDesign={preset,primary_color,accent_color,surface_color,text_color,corner_radius,font_family,density,button_style,card_shadow,hero_title,hero_subtitle,section_images};
+    const allowedFrameSettings=new Set([...allowedImages,"brand_logo","category_men","category_women","category_kids","category_essentials","category_layers","category_bottoms"]);
+    const rawFrameSettings=source.image_settings;
+    if(rawFrameSettings!==undefined&&(!rawFrameSettings||typeof rawFrameSettings!=="object"||Array.isArray(rawFrameSettings)))return error("Submit valid image frame settings",400);
+    const image_settings:Record<string,{fit:"cover"|"contain";x:number;y:number}>={};
+    for(const [key,value] of Object.entries((rawFrameSettings||{}) as Record<string,unknown>)){
+      if(!allowedFrameSettings.has(key)||!value||typeof value!=="object"||Array.isArray(value))return error("One of the image frame settings is not supported",400);
+      const frame=value as Record<string,unknown>;
+      const fit=frame.fit==="contain"?"contain":frame.fit==="cover"?"cover":null;
+      const x=Number(frame.x),y=Number(frame.y);
+      if(!fit||!Number.isInteger(x)||!Number.isInteger(y)||x<0||x>100||y<0||y>100)return error("Image focus values must be whole percentages from 0 to 100",400);
+      image_settings[key]={fit,x,y};
+    }
+    siteDesign={preset,primary_color,accent_color,surface_color,text_color,corner_radius,font_family,density,button_style,card_shadow,hero_title,hero_subtitle,section_images,image_settings};
   }
   let paymentMethods: {methods:Array<{id:string;label:string;kind:string;provider:string;enabled:boolean;account_title:string;bank_name:string;account_number:string;iban:string;payment_url:string;instructions:string;qr_media_id:string|null}>}|undefined;
   if(hasPaymentMethods){
@@ -3369,7 +3381,7 @@ async function adminStoreSettingsRoutes(request:Request,env:Env,url:URL):Promise
   let categoryAssets:Record<string,string> | undefined;
   if(siteDesign){
     statements.push(env.DB.prepare("INSERT INTO store_settings (setting_key,setting_value_json,is_public,updated_by,updated_at) VALUES ('site_design',?,1,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value_json=excluded.setting_value_json,is_public=1,updated_by=excluded.updated_by,updated_at=excluded.updated_at").bind(JSON.stringify(siteDesign),admin.admin_user_id,now));
-    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.site_design_updated','store_settings','site_design',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({preset:siteDesign.preset,section_image_count:Object.keys(siteDesign.section_images).length})));
+    statements.push(env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?, 'website.site_design_updated','store_settings','site_design',?)").bind(crypto.randomUUID(),admin.admin_user_id,JSON.stringify({preset:siteDesign.preset,section_image_count:Object.keys(siteDesign.section_images).length,image_frame_count:Object.keys(siteDesign.image_settings).length})));
   }
   if(hasCategoryAssets){
     const raw=body?.category_assets;
@@ -3404,7 +3416,7 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
   if(publicPath==="/api/storefront/settings" && request.method==="GET"){
     try{
       const rows=await env.DB.prepare("SELECT setting_key,setting_value_json FROM store_settings WHERE is_public=1 AND setting_key IN ('social_links','brand_assets','category_assets','site_design')").all<{setting_key:string;setting_value_json:string}>();
-      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{}}};
+      const settings:Record<string,unknown>={social_links:{},brand_assets:{logo_id:null,favicon_id:null},category_assets:{},site_design:{preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{},image_settings:{}}};
       for(const row of rows.results??[]){try{settings[row.setting_key]=JSON.parse(row.setting_value_json);}catch{}}
       return json(settings);
     }catch{return error("Store settings are temporarily unavailable",503);}
@@ -5559,26 +5571,25 @@ async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> 
 async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
  if(url.pathname!=="/api/pwa/manifest")return null;
  if(request.method!=="GET")return error("Method not allowed",405);
- let iconUrl="/icons/icon-192.svg",iconType="image/svg+xml";
+ let logoUrl="/api/brand/logo?v=default",logoType="image/svg+xml";
  try{
   const setting=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
-  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null;favicon_id?:string|null}:null;
-  // Prefer the square favicon for installed-app icons; a horizontal logo is not an app icon.
-  const id=assets?.favicon_id??assets?.logo_id;
+  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null}:null;
+  const id=assets?.logo_id;
   if(id&&/^[a-f0-9-]{36}$/i.test(id)){
-   const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
-   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
+   const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
+   // The owner logo editor presents a square crop; use the same canonical image for every app icon.
+   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){
+    logoUrl="/api/brand/logo?v="+encodeURIComponent(id);
+    logoType=asset.mime_type;
+   }
   }
- }catch{/* Keep the built-in icon if public brand settings are temporarily unavailable. */}
+ }catch{/* The canonical logo endpoint remains the fallback if settings are unavailable. */}
  const icons:Array<{src:string;sizes:string;type:string;purpose:string}>=[
-  // Keep guaranteed, correctly sized square app icons as the installability baseline.
-  // A merchant-uploaded favicon is an optional brand icon, not a substitute for the
-  // 192px and 512px install icons (the uploaded asset's dimensions are not trusted).
-  {src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},
-  {src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"},
+  {src:logoUrl,sizes:"192x192",type:logoType,purpose:"any"},
+  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"any"},
   {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
  ];
- if(iconUrl.startsWith("/media/"))icons.push({src:iconUrl,sizes:"any",type:iconType,purpose:"any"});
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }

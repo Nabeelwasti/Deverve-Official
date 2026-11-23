@@ -364,9 +364,8 @@ function Storefront() {
   useEffect(()=>{setVisibleProductCount(8);},[selectedCategory,search,sortBy]);
 
   const [socialLinks,setSocialLinks]=useState<Record<string,string>>({});
-  const [brandAssets,setBrandAssets]=useState<{logo_id:string|null;favicon_id:string|null}>({logo_id:null,favicon_id:null});
   const [categoryAssets,setCategoryAssets]=useState<Record<string,string>>({});
-  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>});
+  const [siteDesign,setSiteDesign]=useState({preset:"midnight-gold",primary_color:"#102d49",accent_color:"#c8a96d",surface_color:"#fbfaf7",text_color:"#19324b",corner_radius:16,font_family:"dm-sans",density:"comfortable",button_style:"rounded",card_shadow:"soft",hero_title:"Elevate your style.",hero_subtitle:"Everyday fashion for men, women and kids. Explore our garment collections, connect for wholesale enquiries, or talk to our team about your next journey.",section_images:{} as Record<string,string>,image_settings:{} as Record<string,{fit:"cover"|"contain";x:number;y:number}>});
   const [detailProduct, setDetailProduct] = useState<StoreProduct | null>(null);
   const [vehicles, setVehicles] = useState<StoreVehicle[]>([]);
   const siteSearchResults=useMemo(()=>{
@@ -489,7 +488,7 @@ function Storefront() {
       }
     };
     void loadProducts();
-    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;brand_assets?:{logo_id?:string|null;favicon_id?:string|null};category_assets?:Record<string,string>;site_design?:Partial<typeof siteDesign>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.brand_assets&&typeof payload.brand_assets==="object")setBrandAssets({logo_id:payload.brand_assets.logo_id??null,favicon_id:payload.brand_assets.favicon_id??null});if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);if(payload.site_design&&typeof payload.site_design==="object")setSiteDesign(current=>({...current,...payload.site_design,section_images:{...current.section_images,...(payload.site_design?.section_images||{})}}));}).catch(()=>undefined);
+    void fetch("/api/storefront/settings",{headers:{accept:"application/json"}}).then(async(response)=>{if(!response.ok)return;const payload=await response.json() as {social_links?:Record<string,string>;category_assets?:Record<string,string>;site_design?:Partial<typeof siteDesign>};if(!active)return;if(payload.social_links&&typeof payload.social_links==="object")setSocialLinks(payload.social_links);if(payload.category_assets&&typeof payload.category_assets==="object")setCategoryAssets(payload.category_assets);if(payload.site_design&&typeof payload.site_design==="object")setSiteDesign(current=>({...current,...payload.site_design,section_images:{...current.section_images,...(payload.site_design?.section_images||{})},image_settings:{...current.image_settings,...(payload.site_design?.image_settings||{})}}));}).catch(()=>undefined);
     const loadVehicles = async () => {
       try {
         const response = await fetch("/api/vehicles", { headers: { accept: "application/json" } });
@@ -514,6 +513,18 @@ function Storefront() {
     root.style.setProperty("--dv-site-button-radius",siteDesign.button_style==="pill"?"999px":siteDesign.button_style==="square"?"4px":"12px");
     root.style.setProperty("--dv-site-shadow",siteDesign.card_shadow==="flat"?"none":siteDesign.card_shadow==="bold"?"0 14px 38px rgba(12,37,64,.16)":"0 8px 24px rgba(12,37,64,.06)");
     for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
+    const logoFrame=siteDesign.image_settings?.brand_logo;
+    const logoX=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.x)?logoFrame.x:50));
+    const logoY=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.y)?logoFrame.y:50));
+    root.style.setProperty("--dv-brand-logo-fit",logoFrame?.fit==="contain"?"contain":"cover");
+    root.style.setProperty("--dv-brand-logo-position",logoX+"% "+logoY+"%");
+    for(const [key,setting] of Object.entries(siteDesign.image_settings||{})){
+      if(key==="brand_logo")continue;
+      const x=Math.max(0,Math.min(100,Number.isFinite(setting?.x)?setting.x:50));
+      const y=Math.max(0,Math.min(100,Number.isFinite(setting?.y)?setting.y:50));
+      root.style.setProperty("--dv-section-"+key+"-size",setting?.fit==="contain"?"contain":"cover");
+      root.style.setProperty("--dv-section-"+key+"-position",x+"% "+y+"%");
+    }
   },[siteDesign]);
   const formatPrice = (paisa: number | null) => paisa === null
     ? "Ask for price"
@@ -702,7 +713,7 @@ function Storefront() {
 
       <header className="site-header">
         <button className="brand-lockup brand-home-button" type="button" aria-label="De VERVE home" onClick={() => navigate("home")}>
-          <img className="brand-logo-image deverve-round-logo" src={brandAssets.logo_id ? "/media/"+brandAssets.logo_id : "/api/brand/logo"} alt="De VERVE" />
+          <BrandLogo className="brand-logo-image" />
           <span className="brand-type"><strong>De VERVE</strong><small>ELEVATE YOUR STYLE</small></span>
         </button>
         <button ref={menuToggleRef} className="menu-toggle" type="button" aria-label="Toggle navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>
@@ -789,7 +800,7 @@ function Storefront() {
                 <a className={categoryAssets[item.id] ? "collection-art has-custom-art" : "collection-art"} data-testid={`collection-${item.id}-art`} href={"/?screen=fashion&category=" + encodeURIComponent(item.id)} aria-label={`Shop ${item.name} collection`}>
                   <span className="category-tag">{item.tag} / DE VERVE</span>
                   {categoryAssets[item.id] ? (
-                    <img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy"/>
+                    <img className="category-custom-art" src={"/media/"+categoryAssets[item.id]} alt={item.name+" collection"} loading="lazy" style={{objectFit:siteDesign.image_settings?.["category_"+item.id]?.fit==="contain"?"contain":"cover",objectPosition:(Math.max(0,Math.min(100,siteDesign.image_settings?.["category_"+item.id]?.x??50)))+"% "+(Math.max(0,Math.min(100,siteDesign.image_settings?.["category_"+item.id]?.y??50)))+"%"}}/>
                   ) : (
                     <>
                       <span className="category-garment" aria-hidden="true"><i /></span>
@@ -1016,8 +1027,9 @@ function Storefront() {
           <div className="contact-actions">
             <a className="button button-primary" href={whatsapp("Assalamu Alaikum De VERVE, I would like to enquire.")} target="_blank" rel="noreferrer">Chat on WhatsApp <span>↗</span></a>
             <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
-            <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=Ali+Plaza+Kachahri+Road+Jhelum+Pakistan" target="_blank" rel="noreferrer">Find our location <span>↗</span></a>
+            <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=De+VERVE+Jhelum+Pakistan" target="_blank" rel="noopener noreferrer">Find De VERVE on Maps <span>↗</span></a>
           </div>
+          {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0&&<nav className="contact-social-links" aria-label="Official De VERVE social profiles">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"De VERVE on "+platform}>{socialGlyphs[platform]??"↗"} <span>{platform}</span></a>)}</nav>}
           <form className="enquiry-form" data-draft-key="storefront-enquiry" onSubmit={submitEnquiry}>
             <h3>Send us an enquiry</h3>
             <div className="enquiry-fields">
@@ -1072,10 +1084,10 @@ function Storefront() {
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
       <footer className={"site-footer"+(siteDesign.section_images.footer?" has-owner-art":"")}>
-        <a className="footer-wordmark" href="#home"><img className="brand-logo-image" src={brandAssets.logo_id?"/media/"+brandAssets.logo_id:"/api/brand/logo"} alt="De VERVE"/></a>
+        <a className="footer-wordmark" href="#home" aria-label="De VERVE home"><BrandLogo className="footer-brand-logo"/></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
-        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
+        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>

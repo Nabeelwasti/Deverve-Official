@@ -12,14 +12,14 @@
     <style>
       #initial-brand-loader{position:fixed;inset:0;z-index:99999;display:grid;place-content:center;justify-items:center;gap:12px;overflow:hidden;background:radial-gradient(ellipse at 50% 45%,#15395c 0%,#071a30 46%,#030b16 100%);color:#f4e7cb;font-family:Arial,sans-serif}
       #initial-brand-loader .initial-brand-loader-frame{position:absolute;display:block;width:112px;height:112px;max-width:32vw;max-height:32vw}
-      #initial-brand-loader .initial-brand-logo{position:relative;z-index:1;display:block;width:100px;height:100px;max-width:29vw;max-height:29vw;aspect-ratio:1;object-fit:contain;object-position:center;border:1px solid rgba(225,194,139,.85);border-radius:50%;background:#fff;padding:5px;box-shadow:0 0 42px rgba(209,174,111,.18)}
+      #initial-brand-loader .initial-brand-logo{position:relative;z-index:1;display:block;width:100px;height:100px;max-width:29vw;max-height:29vw;aspect-ratio:1;object-fit:var(--dv-brand-logo-fit,cover);object-position:var(--dv-brand-logo-position,center);border:0;border-radius:50%;background:transparent;padding:0;box-shadow:none;overflow:hidden}
       #initial-brand-loader strong{margin-top:8px;font-size:12px;letter-spacing:.38em}
       #initial-brand-loader small{color:#bba77f;font-size:8px;letter-spacing:.24em}
       @media(prefers-reduced-motion:reduce){#initial-brand-loader{animation:none}}
     </style>
     <link rel="manifest" href="/api/pwa/manifest" />
-    <link rel="icon" href="/brand/de-verve-loader.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/brand/de-verve-loader.svg" />
+    <link rel="icon" href="/api/brand/logo" />
+    <link rel="apple-touch-icon" href="/api/brand/logo" />
     <link rel="canonical" href="https://deverve-official.pages.dev/" />
     <meta name="description" content="De VERVE, Jhelum, Pakistan. Explore fashion for men, women and kids, wholesale garment enquiries and car rental services. Elevate Your Style." />
     <meta name="keywords" content="De VERVE, Jhelum fashion, garments Jhelum, wholesale garments Pakistan, men fashion, women fashion, kids fashion, car rentals Jhelum" />
