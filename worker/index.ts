@@ -2611,8 +2611,27 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     const payments = Array.isArray(body?.payments) ? body.payments : [];
     if (!/^[a-f0-9-]{36}$/i.test(idempotency) || !lines.length || lines.length>50 || !payments.length || payments.length>4) return error("Add sale items and payment details before completing the sale",400);
     try {
-      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status FROM pos_sales WHERE idempotency_key=? AND (? = 0 OR cashier_admin_id = ?)").bind(idempotency,isCashier ? 1 : 0,admin.admin_user_id).first<Record<string,unknown>>();
+      const requestFingerprint = await fingerprintPosSaleRequest({
+        cashier_admin_id: admin.admin_user_id,
+        customer_name: customerName,
+        customer_phone: customerPhone,
+        customer_email: customerEmail,
+        whatsapp_receipt_consent: whatsappReceiptConsent,
+        items: lines.map((item: Record<string, unknown>) => ({ variant_id: item?.variant_id, quantity: item?.quantity }))
+          .sort((a, b) => String(a.variant_id ?? "").localeCompare(String(b.variant_id ?? "")) || Number(a.quantity ?? 0) - Number(b.quantity ?? 0)),
+        payments: payments.map((payment: Record<string, unknown>) => ({
+          account_id: payment?.account_id,
+          payment_method: payment?.payment_method,
+          amount_paisa: payment?.amount_paisa,
+          tendered_paisa: payment?.tendered_paisa,
+          reference: typeof payment?.reference === "string" ? payment.reference.trim().slice(0, 120) : "",
+        })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+      });
+      const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,request_fingerprint FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
       if (duplicate) {
+        if (String(duplicate.request_fingerprint ?? "") !== requestFingerprint) {
+          return json({ error: "A previous checkout already used this transaction key with different sale details. Review sales history before starting a new sale.", code: "idempotency_conflict" }, 409);
+        }
         const [itemsResult,paymentsResult,deliveryResult] = await Promise.all([
           env.DB.prepare("SELECT product_name_snapshot AS product_name,sku_snapshot AS sku,size_snapshot AS size,color_snapshot AS color,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
           env.DB.prepare("SELECT p.payment_method AS method,p.amount_paisa,p.change_paisa,a.name AS account_name FROM pos_payments p JOIN financial_accounts a ON a.id=p.account_id WHERE p.sale_id=? ORDER BY p.rowid").bind(String(duplicate.id)).all<Record<string,unknown>>(),
@@ -2676,7 +2695,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const receipt="DV-"+new Date().toISOString().slice(0,10).replaceAll("-","")+"-"+crypto.randomUUID().slice(0,6).toUpperCase();
       const stockGuard = buildPosStockGuard(resolved);
       const saleExists = "EXISTS (SELECT 1 FROM pos_sales WHERE id=?)";
-      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) SELECT ?,?,?,?,?,?,?,?,?,0,?,'completed',?,? WHERE " + stockGuard.sql).bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptRequested?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,admin.admin_user_id,...stockGuard.bindings)];
+      const statements = [env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,request_fingerprint,cashier_admin_id) SELECT ?,?,?,?,?,?,?,?,?,0,?,'completed',?,?,? WHERE " + stockGuard.sql).bind(saleId,receipt,session.id,customerName,customerPhone,customerEmail||null,emailReceiptRequested?1:0,whatsappReceiptConsent?1:0,subtotal,subtotal,idempotency,requestFingerprint,admin.admin_user_id,...stockGuard.bindings)];
       for (const item of resolved) {
         statements.push(env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE " + saleExists).bind(crypto.randomUUID(),saleId,item.product_id,item.variant_id,item.product_name,String(item.sku??""),String(item.size??""),String(item.color??""),item.quantity,item.unit_price_paisa,Number(item.cost_price_paisa??0),item.line_total_paisa,saleId));
         statements.push(env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand-reserved_quantity>=? AND " + saleExists).bind(item.quantity,new Date().toISOString(),item.variant_id,item.quantity,saleId));
@@ -5574,6 +5593,19 @@ export function aggregateOrderVariantQuantities(lines: ReadonlyArray<{ variant_i
     totals.set(line.variant_id, next);
   }
   return [...totals].map(([variant_id, quantity]) => ({ variant_id, quantity }));
+}
+
+export async function fingerprintPosSaleRequest(value: unknown): Promise<string> {
+  const canonical = (input: unknown): string => {
+    if (Array.isArray(input)) return "[" + input.map(canonical).sort().join(",") + "]";
+    if (input !== null && typeof input === "object") {
+      const entries = Object.entries(input as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+      return "{" + entries.map(([key, item]) => JSON.stringify(key) + ":" + canonical(item)).join(",") + "}";
+    }
+    return JSON.stringify(input) ?? "null";
+  };
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(value)));
+  return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function buildPosStockGuard(items: ReadonlyArray<{ variant_id: string; quantity: number }>): { sql: string; bindings: Array<string | number> } {

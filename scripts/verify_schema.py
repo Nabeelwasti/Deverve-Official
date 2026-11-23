@@ -270,7 +270,7 @@ for table, columns in {
     "financial_transactions": {"id", "account_id", "direction", "amount_paisa", "category", "reference_type", "reference_id", "register_session_id"},
     "pos_registers": {"id", "name", "is_active"},
     "pos_sessions": {"id", "register_id", "opening_cash_paisa", "status", "expected_cash_paisa", "counted_cash_paisa"},
-    "pos_sales": {"id", "receipt_number", "session_id", "subtotal_paisa", "total_paisa", "idempotency_key", "status"},
+    "pos_sales": {"id", "receipt_number", "session_id", "subtotal_paisa", "total_paisa", "idempotency_key", "request_fingerprint", "status"},
     "pos_sale_items": {"id", "sale_id", "variant_id", "quantity", "unit_price_paisa", "unit_cost_paisa"},
     "pos_payments": {"id", "sale_id", "account_id", "amount_paisa", "tendered_paisa", "change_paisa"},
     "business_expenses": {"id", "category", "amount_paisa", "account_id", "financial_transaction_id", "status"},
