@@ -3411,7 +3411,7 @@ async function publicStoreSettingsRoute(request:Request,env:Env):Promise<Respons
       const row=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
       if(row){const assets=JSON.parse(row.setting_value_json) as {logo_id?:string|null};const id=assets.logo_id;if(typeof id==="string"&&/^[a-f0-9-]{36}$/i.test(id)){const media=await env.DB.prepare("SELECT id FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{id:string}>();if(media)return new Response(null,{status:302,headers:{location:new URL("/media/"+id,request.url).toString(),"cache-control":"public, max-age=300"}});}}
     }catch{/* Keep the canonical logo endpoint resilient by falling through to the built-in official mark. */}
-    return new Response(null,{status:302,headers:{location:new URL("/brand/de-verve-logo.svg",request.url).toString(),"cache-control":"public, max-age=300"}});
+    return new Response(null,{status:302,headers:{location:new URL("/brand/de-verve-mark.svg",request.url).toString(),"cache-control":"public, max-age=300"}});
   }
   if(publicPath==="/api/storefront/settings" && request.method==="GET"){
     try{

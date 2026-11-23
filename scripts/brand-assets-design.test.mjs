@@ -30,7 +30,7 @@ test("all customer-facing brand marks use the one owner-managed logo component a
   assert.match(worker, /publicPath==="\/api\/brand\/logo"/);
   const logoRoute = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
   assert.match(logoRoute, /catch\{\/\*.*falling through to the built-in official mark/);
-  assert.match(logoRoute, /\/brand\/de-verve-logo\.svg/);
+  assert.match(logoRoute, /\/brand\/de-verve-mark\.svg/);
 });
 
 test("round logo frames do not add a second white border or inset padding", () => {
@@ -45,9 +45,9 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   assert.match(worker, /\{src:logoUrl,sizes:"512x512"/);
   assert.doesNotMatch(worker.slice(worker.indexOf("async function pwaManifestRoute"), worker.indexOf("async function pwaManifestRoute") + 3500), /icon-192\.svg|icon-512\.svg/);
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
-    assert.match(read(path), /href="\/api\/brand\/logo"/, path + " must use the canonical logo endpoint");
+    assert.ok(read(path).includes("data:image/png;base64,"), path + " must embed the mark without nested network requests");
   }
-  assert.match(read("public/sw.js"), /de-verve-shell-v4/);
+  assert.match(read("public/sw.js"), /de-verve-shell-v5/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
   const pagesManifest = read("functions/manifest.webmanifest.ts");
   assert.match(pagesManifest, /logo_id/);
@@ -71,8 +71,8 @@ test("social profile saving is isolated, verified, and visibly reported", () => 
   assert.match(handler, /\/api\/storefront\/settings/);
   assert.match(handler, /setSocialMessage\(\{kind:"success"/);
   assert.match(admin, /admin-social-feedback/);
-  assert.match(app, /footer-social-links/);
-  assert.match(app, /contact-social-links/);
+  assert.ok(app.includes("<SocialLinks links={socialLinks}/>"));
+  assert.match(app, /social-follow-section/);
 });
 
 test("every admin artwork slot has a live rendering target and editable frame controls", () => {
@@ -110,4 +110,25 @@ test("every admin artwork slot has a live rendering target and editable frame co
 
 test("outlet map lookup searches the De VERVE business name, not only the street address", () => {
   assert.match(app, /maps\/search\/\?api=1&query=De\+VERVE\+Jhelum\+Pakistan/);
+});
+
+
+test("canonical logo fallback and loading screen preserve the circular De VERVE mark", () => {
+  const route = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
+  assert.ok(route.includes("/brand/de-verve-mark.svg"));
+  assert.ok(!route.includes("/brand/de-verve-logo.svg"));
+  assert.ok(brandLogo.includes('"/brand/de-verve-mark.svg"'));
+  assert.ok(html.includes("onerror=\"this.onerror=null"));
+});
+
+test("social links render icon-only brand marks in storefront and CMS homepage", () => {
+  const social = read("src/SocialLinks.tsx");
+  const publicPage = read("src/PublicPage.tsx");
+  assert.ok(social.includes("<svg viewBox="));
+  assert.ok(social.includes("aria-label={\"Visit De VERVE on \"+platform}"));
+  assert.ok(!social.includes("footer-social-label"));
+  assert.ok(app.includes("<SocialLinks links={socialLinks}/>"));
+  assert.ok(publicPage.includes("<SocialLinks links={socialLinks}/>"));
+  assert.ok(styles.includes(".social-follow-section{"));
+  assert.ok(styles.includes("background:#fff"));
 });

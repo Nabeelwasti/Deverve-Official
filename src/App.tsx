@@ -4,6 +4,7 @@ import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
 import BrandLogo from "./BrandLogo";
+import SocialLinks from "./SocialLinks";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
 const WholesaleQuote = lazy(() => import("./WholesaleQuote"));
@@ -125,8 +126,6 @@ function readStoredCart(): CartLine[] {
     return [...merged.values()].slice(0, 20);
   } catch { return []; }
 }
-
-const socialGlyphs: Record<string, string> = { facebook: "f", instagram: "◎", tiktok: "♪", youtube: "▶", linkedin: "in", pinterest: "p", threads: "@", x: "𝕏" };
 
 type TurnstileApi = {
   render: (container: HTMLElement, options: { sitekey: string; callback: (token: string) => void; "expired-callback": () => void; "error-callback": (errorCode?: string) => void; "timeout-callback"?: () => void; "unsupported-callback"?: () => void; theme?: "light" | "dark" | "auto"; size?: "normal" | "flexible" | "compact"; appearance?: "always" | "execute" | "interaction-only" }) => string;
@@ -1029,7 +1028,6 @@ function Storefront() {
             <a className="button button-outline" href="mailto:deverve61@gmail.com?subject=De%20VERVE%20Enquiry">Email De VERVE <span>↗</span></a>
             <a className="button button-outline" href="https://www.google.com/maps/search/?api=1&query=De+VERVE+Jhelum+Pakistan" target="_blank" rel="noopener noreferrer">Find De VERVE on Maps <span>↗</span></a>
           </div>
-          {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0&&<nav className="contact-social-links" aria-label="Official De VERVE social profiles">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"De VERVE on "+platform}>{socialGlyphs[platform]??"↗"} <span>{platform}</span></a>)}</nav>}
           <form className="enquiry-form" data-draft-key="storefront-enquiry" onSubmit={submitEnquiry}>
             <h3>Send us an enquiry</h3>
             <div className="enquiry-fields">
@@ -1083,11 +1081,12 @@ function Storefront() {
         <div className="section-heading"><div><p className="eyebrow">PUBLISHED CUSTOMER FEEDBACK</p><h2>Words from our<br/><em>customers.</em></h2></div><p className="section-aside">Customer experiences, shared in their own words.</p></div>
         <div className="testimonials-grid">{featuredReviews.map(review=><article className="testimonial-card" key={review.id}><div><div className="testimonial-rating" aria-label={review.rating+" out of 5 stars"}>{"★".repeat(Math.max(0,Math.min(5,review.rating)))}</div><p>{review.body}</p></div><div className="testimonial-author"><strong>{review.reviewer_name||"Customer"}</strong><small>{review.product_name} · {review.verified_purchase===1?"Verified purchase":"Customer feedback"}</small></div></article>)}</div>
       </section>}
+      {Object.values(socialLinks).some(url=>Boolean(url)) && <section className="social-follow-section" aria-label="Follow De VERVE"><p>CONNECT WITH DE VERVE</p><SocialLinks links={socialLinks}/></section>}
       <footer className={"site-footer"+(siteDesign.section_images.footer?" has-owner-art":"")}>
         <a className="footer-wordmark" href="#home" aria-label="De VERVE home"><BrandLogo className="footer-brand-logo"/></a>
         <p>Elevate Your Style · Jhelum, Pakistan</p>
         <nav className="footer-policy-links" aria-label="Customer policies"><button type="button" onClick={() => navigate("policies")}>Policies / پالیسیاں</button></nav>
-        {Object.entries(socialLinks).filter(([,url])=>Boolean(url)).length>0 && <nav className="footer-social-links" aria-label="De VERVE social accounts">{Object.entries(socialLinks).filter(([,url])=>Boolean(url)).map(([platform,url])=><a key={platform} href={url} target="_blank" rel="noopener noreferrer" aria-label={"Visit De VERVE on "+platform}><span className="footer-social-icon" aria-hidden="true">{socialGlyphs[platform] ?? "↗"}</span><span className="footer-social-label">{platform}</span></a>)}</nav>}
+        
         <span>© 2026 DE VERVE. ALL RIGHTS RESERVED.</span>
         <small className="site-credit">Website Design &amp; Development: <strong>Syed Nabeel Wasti</strong></small>
       </footer>
