@@ -34,8 +34,8 @@ assert not missing, f"Missing tables: {sorted(missing)}"
 # Emergency offline POS constraints are additive and are tested in an isolated savepoint.
 db.execute("SAVEPOINT offline_pos_schema_probe")
 db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES (?,?,?,'owner')", ("offline-owner","offline-owner@example.test","hash"))
-db.execute("INSERT INTO products (id,slug,name,category,audience,status) VALUES (?,?,?,?,?,'published')", ("offline-product","offline-pos-product","Offline POS product","test","unisex"))
-db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active,retail_price_paisa) VALUES (?,?,?,?,?,?,?,1,?)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0,10000))
+db.execute("INSERT INTO products (id,slug,name,category,audience,status,retail_price_paisa) VALUES (?,?,?,?,?,'published',?)", ("offline-product","offline-pos-product","Offline POS product","test","unisex",10000))
+db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active) VALUES (?,?,?,?,?,?,?,1)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0))
 db.execute("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,status) VALUES (?,?,?,0,'open')", ("offline-session","main-register","offline-owner"))
 public_jwk = '{"kty":"EC","crv":"P-256","x":"abc","y":"def"}'
 db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device","main-register","offline-owner","Pilot Android POS",public_jwk,"a"*43))
@@ -70,9 +70,17 @@ expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_events SET outcome='accepted' WHERE event_id='offline-event'"),
     "An accepted offline event must reference a canonical server sale",
 )
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_events SET payload_json='{\"tampered\":true}' WHERE event_id='offline-event'"),
+    "Offline sale payload evidence must be immutable",
+)
 db.execute("INSERT INTO pos_offline_reconciliation_cases (id,event_id,reason_code) VALUES (?,?,?)", ("offline-case","offline-event","test_conflict"))
 db.execute("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason) VALUES (?,?,?,?,?)", ("offline-action","offline-case","offline-owner","case_opened","Schema constraint verification"))
 assert db.execute("SELECT COUNT(*) FROM pos_offline_reconciliation_actions WHERE case_id='offline-case'").fetchone()[0] == 1
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_reconciliation_actions SET reason='edited' WHERE id='offline-action'"),
+    "Offline reconciliation actions must be append-only",
+)
 db.execute("ROLLBACK TO offline_pos_schema_probe")
 db.execute("RELEASE offline_pos_schema_probe")
 
