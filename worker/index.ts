@@ -5540,26 +5540,25 @@ async function aiRoutes(request:Request,env:Env,url:URL):Promise<Response|null> 
 async function pwaManifestRoute(request:Request,env:Env,url:URL):Promise<Response|null>{
  if(url.pathname!=="/api/pwa/manifest")return null;
  if(request.method!=="GET")return error("Method not allowed",405);
- let iconUrl="/icons/icon-192.svg",iconType="image/svg+xml";
+ let logoUrl="/api/brand/logo?v=default",logoType="image/svg+xml";
  try{
   const setting=await env.DB.prepare("SELECT setting_value_json FROM store_settings WHERE setting_key='brand_assets' AND is_public=1 LIMIT 1").first<{setting_value_json:string}>();
-  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null;favicon_id?:string|null}:null;
-  // Prefer the square favicon for installed-app icons; a horizontal logo is not an app icon.
-  const id=assets?.favicon_id??assets?.logo_id;
+  const assets=setting?.setting_value_json?JSON.parse(setting.setting_value_json) as {logo_id?:string|null}:null;
+  const id=assets?.logo_id;
   if(id&&/^[a-f0-9-]{36}$/i.test(id)){
-   const asset=await env.DB.prepare("SELECT mime_type FROM media_assets WHERE id=? AND status='ready' LIMIT 1").bind(id).first<{mime_type:string}>();
-   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)){iconUrl="/media/"+id+"?v="+encodeURIComponent(id);iconType=asset.mime_type;}
+   const asset=await env.DB.prepare("SELECT mime_type,width_px,height_px FROM media_assets WHERE id=? AND media_type='image' AND status='ready' LIMIT 1").bind(id).first<{mime_type:string;width_px:number|null;height_px:number|null}>();
+   // The brand editor exports a square 1200px crop; use that single source for all app icons.
+   if(asset&&["image/png","image/jpeg","image/webp"].includes(asset.mime_type)&&asset.width_px===asset.height_px&&asset.width_px!==null&&asset.width_px>=512){
+    logoUrl="/api/brand/logo?v="+encodeURIComponent(id);
+    logoType=asset.mime_type;
+   }
   }
- }catch{/* Keep the built-in icon if public brand settings are temporarily unavailable. */}
+ }catch{/* The canonical logo endpoint remains the fallback if settings are unavailable. */}
  const icons:Array<{src:string;sizes:string;type:string;purpose:string}>=[
-  // Keep guaranteed, correctly sized square app icons as the installability baseline.
-  // A merchant-uploaded favicon is an optional brand icon, not a substitute for the
-  // 192px and 512px install icons (the uploaded asset's dimensions are not trusted).
-  {src:"/icons/icon-192.svg",sizes:"192x192",type:"image/svg+xml",purpose:"any"},
-  {src:"/icons/icon-512.svg",sizes:"512x512",type:"image/svg+xml",purpose:"any"},
-  {src:"/icons/icon-maskable.svg",sizes:"512x512",type:"image/svg+xml",purpose:"maskable"}
+  {src:logoUrl,sizes:"192x192",type:logoType,purpose:"any"},
+  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"any"},
+  {src:logoUrl,sizes:"512x512",type:logoType,purpose:"maskable"}
  ];
- if(iconUrl.startsWith("/media/"))icons.push({src:iconUrl,sizes:"any",type:iconType,purpose:"any"});
  const manifest={id:"/",name:"De VERVE | Elevate Your Style",short_name:"De VERVE",description:"Shop fashion, wholesale garments and request car rentals from De VERVE in Jhelum, Pakistan.",lang:"en-PK",start_url:"/",scope:"/",display:"standalone",orientation:"portrait",background_color:"#ffffff",theme_color:"#06234f",categories:["shopping","lifestyle"],icons};
  return new Response(JSON.stringify(manifest),{headers:{"content-type":"application/manifest+json; charset=utf-8","cache-control":"no-store, max-age=0","pragma":"no-cache","x-content-type-options":"nosniff"}});
 }
