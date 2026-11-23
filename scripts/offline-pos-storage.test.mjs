@@ -9,6 +9,12 @@ assert.match(source, /database\.transaction\(\["meta", "sales", "outbox", "audit
 assert.match(source, /durability: "strict"/);
 assert.match(source, /transaction\.objectStore\("sales"\)\.add\(queued\)/);
 assert.match(source, /transaction\.objectStore\("outbox"\)\.add\(/);
+assert.match(source, /createIndex\("idempotencyKey", "idempotencyKey", \{ unique: true \}\)/);
+assert.match(source, /createIndex\("sequence", "sequence", \{ unique: true \}\)/);
+assert.match(source, /allowedDraftKeys/);
+assert.match(source, /allowedLineKeys/);
+assert.match(source, /quotaInspected/);
+assert.match(source, /Browser storage quota information is unavailable/);
 assert.match(source, /meta\.put\(\{ id: "device-sequence", value: sequence \}\)/);
 assert.match(source, /persistentStorageGranted && databaseWritable/);
 assert.match(source, /navigator\.storage\.persist\(\)/);
