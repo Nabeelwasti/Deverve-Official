@@ -397,16 +397,20 @@ h1 em, h2 em { font-family: Georgia, serif; font-weight: 400; color: var(--brigh
 @media(prefers-reduced-motion:reduce){html:focus-within{scroll-behavior:auto}.mobile-dock,.site-header .main-nav{transition:none!important}}
 
 
-.footer-social-links{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;margin:8px 0 4px}
-.footer-social-links a{display:inline-flex;align-items:center;justify-content:center;min-height:32px;padding:6px 11px;border:1px solid #dce5ef;border-radius:999px;color:#315a80;text-decoration:none;font-size:10px;font-weight:800;text-transform:capitalize;transition:background .18s ease,border-color .18s ease}
-.footer-social-links a:hover,.footer-social-links a:focus-visible{background:#edf4fb;border-color:#9ebbd7;outline:2px solid transparent}
+.social-follow-section{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;width:100%;padding:22px 20px;background:#fff;color:#183a5e;text-align:center;border-top:1px solid #e8edf3}
+.social-follow-section>p{margin:0;color:#6c7d90;font-size:9px;font-weight:800;letter-spacing:.2em}
+.footer-social-links{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:18px;margin:0 auto}
+.footer-social-links a{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;color:#173b63;text-decoration:none;transition:color .18s ease,background .18s ease,transform .18s ease}
+.footer-social-links a:hover,.footer-social-links a:focus-visible{background:#f0f4f8;color:#b28b50;transform:translateY(-2px);outline:2px solid #b28b50;outline-offset:2px}
+.footer-social-links svg{display:block;width:22px;height:22px;fill:currentColor}
+.social-follow-section-cms{max-width:1200px;margin:1.5rem auto 0;border:1px solid #ece8e0;border-radius:12px}
 
 
 .catalogue-pagination{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 0 4px;color:#667b90;font-size:12px}
 .catalogue-pagination .button{min-height:40px}
 @media(max-width:520px){.catalogue-pagination{align-items:stretch;flex-direction:column}.catalogue-pagination .button{width:100%}}
 
-.footer-social-links a{display:inline-flex;align-items:center;gap:7px}.footer-social-icon{display:inline-grid;place-items:center;width:24px;height:24px;border:1px solid currentColor;border-radius:50%;font-size:12px;font-weight:800;line-height:1}.footer-social-label{text-transform:capitalize}.site-credit{display:block;margin-top:12px;padding:9px 16px;color:#526d89;font-size:10px;letter-spacing:.12em;text-align:center;text-transform:uppercase;border-top:1px solid rgba(18,76,145,.16);flex-basis:100%}.site-credit strong{color:#082b55;font-family:Manrope,sans-serif;font-size:12px;font-weight:800;letter-spacing:.035em;text-transform:none;text-shadow:0 1px 0 rgba(40,116,199,.12)}
+.site-credit{display:block;margin-top:12px;padding:9px 16px;color:#526d89;font-size:10px;letter-spacing:.12em;text-align:center;text-transform:uppercase;border-top:1px solid rgba(18,76,145,.16);flex-basis:100%}.site-credit strong{color:#082b55;font-family:Manrope,sans-serif;font-size:12px;font-weight:800;letter-spacing:.035em;text-transform:none;text-shadow:0 1px 0 rgba(40,116,199,.12)}
 
 .policy-page{padding-top:clamp(3rem,7vw,6rem);padding-bottom:clamp(3rem,7vw,6rem)}
 .policy-intro{max-width:760px;color:var(--muted,#687386);line-height:1.8;margin:1rem 0 2rem}
@@ -2051,7 +2055,7 @@ h1 em,h2 em{color:#ad8955}
 
 .install-app-icon-only{width:34px!important;height:34px!important;min-width:34px!important;padding:0!important;display:inline-grid!important;place-items:center!important;border-radius:10px!important}
 .install-app-icon-only svg{width:17px!important;height:17px!important}
-.brand-loader-logo{position:relative;z-index:1;width:100px;height:100px;object-fit:contain;border-radius:50%;background:#fff;box-shadow:0 0 55px rgba(209,174,111,.17);padding:4px;animation:dvLoaderBreath 2.4s ease-in-out infinite}
+.brand-loader-logo{position:relative;z-index:1;width:112px;height:112px;object-fit:contain;object-position:center;border-radius:50%;background:transparent;box-shadow:0 0 55px rgba(209,174,111,.17);padding:0;animation:dvLoaderBreath 2.4s ease-in-out infinite}
 @media(max-width:800px){.install-app-icon-only{width:31px!important;height:31px!important;min-width:31px!important}.install-app-icon-only svg{width:16px!important;height:16px!important}}
 
 
