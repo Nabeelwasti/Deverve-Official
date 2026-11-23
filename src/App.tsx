@@ -1095,14 +1095,6 @@ function Storefront() {
   );
 }
 
-function BrandLoadingScreen(){
-  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE">
-    <div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/>
-    <BrandLogo className="brand-loader-logo"/>
-    <div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div>
-  </main>
-}
-
 function HomePageRoute() {
   const requestedScreen=new URLSearchParams(window.location.search).get("screen");
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
