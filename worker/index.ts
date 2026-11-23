@@ -3552,6 +3552,12 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
 
 async function adminAuth(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
+  if (path.startsWith("/api/admin/") && !["/api/admin/me", "/api/admin/logout"].includes(path) && !path.startsWith("/api/admin/pos/")) {
+    try {
+      const scopedAdmin = await currentAdmin(request, env.DB);
+      if (scopedAdmin && Number(scopedAdmin.can_use_pos) === 1) return error("This account is restricted to the point-of-sale workspace", 403);
+    } catch { return error("Authorization could not be verified", 503); }
+  }
   const cmsResponse = await cmsContentRoutes(request, env, url);
   if (cmsResponse) return cmsResponse;
   const notificationResponse = await ownerNotificationRoutes(request, env, url);
@@ -5511,13 +5517,6 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
   const adminResponse = await adminAuth(request, env, url);
   if (adminResponse) return adminResponse;
-
-  if (url.pathname.startsWith("/api/admin/") && !["/api/admin/me", "/api/admin/logout"].includes(url.pathname) && !url.pathname.startsWith("/api/admin/pos/")) {
-    try {
-      const scopedAdmin = await currentAdmin(request, env.DB);
-      if (scopedAdmin && Number(scopedAdmin.can_use_pos) === 1) return error("This account is restricted to the point-of-sale workspace", 403);
-    } catch { return error("Authorization could not be verified", 503); }
-  }
 
   const enquiryResponse = await adminEnquiryRoutes(request, env, url);
   if (enquiryResponse) return enquiryResponse;
