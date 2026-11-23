@@ -171,6 +171,12 @@ export async function processPosReceiptOutbox(env:Env):Promise<void>{
  const whatsappReady=Boolean(waToken&&waPhoneId&&/^\d+$/.test(waPhoneId)&&waTemplate&&/^[a-z0-9_]{1,512}$/.test(waTemplate)&&/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(waLanguage)&&/^v\d+\.\d+$/.test(waVersion));
  const now=new Date().toISOString();
  const staleBefore=new Date(Date.now()-10*60_000).toISOString();
+ if(!emailReady&&!whatsappReady){
+  try{
+   await env.DB.prepare("UPDATE pos_receipt_outbox SET status='failed',last_error_code='sale_not_completed',processing_started_at=NULL WHERE ((status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?)) AND EXISTS (SELECT 1 FROM pos_sales WHERE pos_sales.id=pos_receipt_outbox.sale_id AND pos_sales.status!='completed')").bind(now,staleBefore).run();
+  }catch{}
+  return;
+ }
  let rows:Record<string,unknown>[]=[];
  try{
   const result=await env.DB.prepare("SELECT id,sale_id,channel,attempts FROM pos_receipt_outbox WHERE (status='queued' AND next_attempt_at<=?) OR (status='processing' AND processing_started_at IS NOT NULL AND processing_started_at<=?) ORDER BY created_at LIMIT 20").bind(now,staleBefore).all<Record<string,unknown>>();
