@@ -10,13 +10,13 @@
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
-| POS cashier RBAC | PR #34 merged; separate revocable grant and invite tables; server-side deny-by-default route boundary; cash-only sale guard; own-shift and own-sale scoping; atomic shift close. Production D1 migration 0040 applied; Pages deployment `0b6f305a-c834-4477-8a1e-8ffdca7a6cb7` succeeded from main commit `7840388c05699cfdb9f6640a5b3bcb76bae98daf`. | Code and schema deployed; zero cashier grants exist. Owner-operated invitation, live authenticated cashier workflow and physical shift/device acceptance still pending |
+| POS cashier RBAC | PR #34 merged; separate revocable grant and invite tables; server-side deny-by-default route boundary; cash-only sale guard; own-shift and own-sale scoping; atomic shift close. Production D1 migration 0040 applied; Pages deployment `f41edaad-e700-4a5f-90d3-6ec9d827dbae` includes the code. | Code and schema deployed; zero cashier grants exist. Owner-operated invitation, live authenticated cashier workflow and physical shift/device acceptance still pending |
 | Owner system health | PR #35 merged; owner-only endpoint and workspace report D1, outbox queues, payment counts, stock anomalies, POS shifts, staff/cashier counts and provider configuration without returning secret values. Deployment `f41edaad-e700-4a5f-90d3-6ec9d827dbae` succeeded; unauthenticated route check returns 401. | Code deployed; owner login/dashboard review pending. Provider delivery, Turnstile and backup/restore are explicitly not considered verified by configuration telemetry |
 | CMS homepage | Migration 0041 published the `home` page with seven sections, four FAQs, five navigation items and two verified ready media assets. Live browser render confirmed hero, navigation, wholesale/rental CTAs and FAQ output. | Published and rendered; owner content review and final merchandising/copy approval remain pending |
 
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
-| Cloudflare Pages | Production deployment `41aca77d-20ca-4110-a92c-09a9e95ac3fd` completed successfully from application commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; PRs #30 and #31 are included. On 23 November, the homepage HTML/title and `/api/health` (`status=ok`, `database=connected`) were confirmed through Cloudflare Browser Rendering. | Deployed; targeted live health check passed; complete production-smoke workflow, protected-route checks, security-header checks and provider health acceptance still outstanding |
+| Cloudflare Pages | Production deployment `f41edaad-e700-4a5f-90d3-6ec9d827dbae` completed successfully from application commit `821707ee890eaa56c3eac0aaa059c837410aee51`; PRs #34 and #35 are included. `/api/health` returned `status=ok` and `database=connected`; unauthenticated `/api/admin/system-health` returned 401. CMS migration 0041 was applied after this deployment and the published homepage was rendered successfully. | Deployed; targeted health and route-auth checks passed; complete production-smoke workflow, full protected-route checks, security-header checks and provider health acceptance still outstanding |
 | D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables | Schema exists; integration tests outstanding |
 | Public catalogue API | Live `/api/products` returned 3 published products; a response inspection confirmed no `cost_price_paisa` field on products or variants | Targeted public-data check passed; owner catalogue/authenticity reconciliation remains outstanding |
 | Catalogue indexes | Production D1 contains `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created`; migration 0039 is applied and query plans were verified against the live database | Applied and query-plan verified; sustained workload/concurrency acceptance remains outstanding |
@@ -58,11 +58,11 @@ Required implementation and acceptance:
 
 Until implemented and passed on real Android devices, use online POS only and do not advertise offline sales as supported.
 
-### 3. RBAC and POS permissions
+### 3. POS cashier RBAC — implemented and deployed; operational acceptance pending
 
-The current POS route authorizes owner, manager and orders roles; it does not expose the proposed dedicated CASHIER role. Do not simply add a role string. Define a server-side permission matrix, role migration, UI visibility rules, session invalidation and tests for every route.
+PR #34 adds a separate cashier capability grant and invite marker without changing the legacy admin role CHECK constraints. The production migration 0040 is applied. Cashier access is restricted server-side to the POS workspace, cash-only sales, own shift open/close and own sale history. Other admin APIs, refunds/voids, cash movements, expenses, finance reports, bulk exports, catalogue, inventory, staff and configuration are denied. Permission changes revoke active sessions; shift close and reconciliation are atomic.
 
-Cashier permissions should be restricted to permitted register operations: catalogue lookup, sale creation, receipt view/print and own shift operations. Price overrides, discounts beyond approved rules, refunds/voids, cashbook, account management, exports, audit logs, staff and configuration require separate authorization. All checks must occur server-side.
+No cashier grant currently exists in production. Owner must invite the intended cashier, verify the account and role, then complete a supervised real-device shift, cash reconciliation, receipt and revocation test before enabling operational use.
 
 ### 4. Inventory and accounting
 
@@ -94,7 +94,7 @@ Run a documented physical Android acceptance pass for camera/gallery uploads, mi
 
 ### 8. Content, legal and catalogue acceptance
 
-- Publish owner-approved CMS homepage content; the last documented production inspection found the CMS page table empty and static homepage fallback active.
+- Review the published CMS homepage in Admin → Content Studio. The current home page has seven sections, five navigation links and verified ready media; owner should confirm product assortment, final copy, pricing language and contact paths before broad promotion.
 - Verify product authenticity, image/variant matching, physical size/colour stock and barcode quality with the owner.
 - Obtain qualified legal review for CNIC collection, consent, retention, access and deletion policy before treating current retention as compliant.
 - Attach and verify a custom domain only after DNS, TLS, redirects, canonical URLs, email and security headers are tested.
