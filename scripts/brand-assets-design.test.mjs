@@ -47,7 +47,7 @@ test("PWA icons use the selected brand logo instead of legacy E placeholder SVGs
   for (const path of ["public/icons/icon-192.svg", "public/icons/icon-512.svg", "public/icons/icon-maskable.svg"]) {
     assert.match(read(path), /href="\/api\/brand\/logo"/, path + " must use the canonical logo endpoint");
   }
-  assert.match(read("public/sw.js"), /de-verve-shell-v4/);
+  assert.match(read("public/sw.js"), /de-verve-shell-v5/);
   assert.match(read("public/manifest.webmanifest"), /"src": "\/api\/brand\/logo"/);
   const pagesManifest = read("functions/manifest.webmanifest.ts");
   assert.match(pagesManifest, /logo_id/);
@@ -71,7 +71,7 @@ test("social profile saving is isolated, verified, and visibly reported", () => 
   assert.match(handler, /\/api\/storefront\/settings/);
   assert.match(handler, /setSocialMessage\(\{kind:"success"/);
   assert.match(admin, /admin-social-feedback/);
-  assert.match(app, /footer-social-links/);
+  assert.match(app, /<SocialLinks links=\\{socialLinks\\} \\/>/);
   assert.match(app, /contact-social-links/);
 });
 
@@ -110,4 +110,25 @@ test("every admin artwork slot has a live rendering target and editable frame co
 
 test("outlet map lookup searches the De VERVE business name, not only the street address", () => {
   assert.match(app, /maps\/search\/\?api=1&query=De\+VERVE\+Jhelum\+Pakistan/);
+});
+
+
+test("canonical logo fallback and loading screen preserve the circular De VERVE mark", () => {
+  const route = worker.slice(worker.indexOf('if(publicPath==="/api/brand/logo"'), worker.indexOf('if(publicPath==="/api/storefront/settings"'));
+  assert.match(route, /de-verve-mark\\.svg/);
+  assert.doesNotMatch(route, /de-verve-logo\\.svg/);
+  assert.match(brandLogo, /fallback\\?"/brand/de-verve-mark\\.svg"/);
+  assert.match(html, /onerror="this\\.onerror=null/);
+});
+
+test("social links render icon-only brand marks in storefront and CMS homepage", () => {
+  const social = read("src/SocialLinks.tsx");
+  const publicPage = read("src/PublicPage.tsx");
+  assert.match(social, /<svg viewBox=/);
+  assert.match(social, /aria-label=\\{\\"Visit De VERVE on \\"\\+platform\\}/);
+  assert.doesNotMatch(social, /footer-social-label|socialGlyphs/);
+  assert.match(app, /<SocialLinks links=\\{socialLinks\\} \\/>/);
+  assert.match(publicPage, /<SocialLinks links=\\{socialLinks\\} \\/>/);
+  assert.match(styles, /social-follow-section/);
+  assert.match(styles, /background:#fff/);
 });
