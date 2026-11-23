@@ -2,7 +2,7 @@
 
 ## Latest release evidence
 
-- PRs #30 (category artwork), #31 (D1 lookup indexes, barcode query-plan fix and backup schedule), #32 (acceptance documentation) and #33 (backup restore-drill cleanup hardening) are merged. Current `main` HEAD after PR #33 is `d066894cced09fd6dc5446a3d998037635d7215a`.
+- PRs #30 (category artwork), #31 (D1 lookup indexes, barcode query-plan fix and backup schedule), #32 (acceptance documentation) and #33 (backup restore-drill cleanup hardening) are merged. PR #33 merged as `d066894cced09fd6dc5446a3d998037635d7215a`; subsequent main commits only update release documentation.
 - PR #33 CI [45130147023](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45130147023) passed all 17 validation steps, including type-check/build, dependency audit, Worker tests, D1 schema checks, backup-script syntax and the storefront browser suite. The isolated remote D1 integration suite was not executed because dedicated test credentials are not configured.
 - Cloudflare Pages production deployment [41aca77d](https://41aca77d.deverve-official.pages.dev) completed successfully from controlled trigger commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; all deployment stages passed.
 - Cloudflare Pages automatic production and preview deployments were restored to disabled after the controlled release.
