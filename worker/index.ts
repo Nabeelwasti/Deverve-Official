@@ -3435,7 +3435,7 @@ function normalizeCmsSection(value: unknown, position: number): {id:string;secti
       if(!source||typeof source!=="object"||Array.isArray(source))return null;
       categoryMap=source as Record<string,unknown>;
     }catch{return null;}
-    const allowed=new Set((content.categories||"").split(/\\r?\\n/).map(value=>value.trim().toLowerCase()).filter(Boolean));
+    const allowed=new Set((content.categories||"").split(/\r?\n/).map(value=>value.trim().toLowerCase()).filter(Boolean));
     const normalized:Record<string,string>={};
     for(const [rawCategory,rawPath] of Object.entries(categoryMap)){
       const category=cleanText(rawCategory,60),mediaPath=cleanText(rawPath,240);
@@ -3548,7 +3548,7 @@ async function cmsContentRoutes(request:Request,env:Env,url:URL):Promise<Respons
         const parsed=JSON.parse(section.content_json) as Record<string,string>;
         for(const key of ["image_url","images"]){
           const value=parsed[key]||"";
-          for(const mediaPath of (key==="images"?value.split("\\n"):[value])){
+          for(const mediaPath of (key==="images"?value.split("\n"):[value])){
             const match=cmsMediaPath.exec(mediaPath);if(match)referencedImages.add(match[1]);
           }
         }
