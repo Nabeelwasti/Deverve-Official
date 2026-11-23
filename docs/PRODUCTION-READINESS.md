@@ -2,13 +2,14 @@
 
 ## Latest release evidence
 
-- PR #30 (category artwork replacement) and PR #31 (D1 lookup indexes, barcode query-plan fix, nightly backup schedule and acceptance records) are merged.
-- Latest mainline CI [45072180096](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45072180096) passed, including the full storefront browser suite.
+- PRs #30 (category artwork), #31 (D1 lookup indexes, barcode query-plan fix and backup schedule), #32 (acceptance documentation) and #33 (backup restore-drill cleanup hardening) are merged. Current `main` HEAD after PR #33 is `d066894cced09fd6dc5446a3d998037635d7215a`.
+- PR #33 CI [45130147023](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45130147023) passed all 17 validation steps, including type-check/build, dependency audit, Worker tests, D1 schema checks, backup-script syntax and the storefront browser suite. The isolated remote D1 integration suite was not executed because dedicated test credentials are not configured.
 - Cloudflare Pages production deployment [41aca77d](https://41aca77d.deverve-official.pages.dev) completed successfully from controlled trigger commit `ec0a0119e1686a4b4ebdd89722d279066a4962cd`; all deployment stages passed.
 - Cloudflare Pages automatic production and preview deployments were restored to disabled after the controlled release.
 - Production D1 migration `0039_pos_lookup_and_status_indexes.sql` was applied. Live query plans confirm `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created` are used. The barcode scan query now qualifies for the existing partial barcode index and the live plan uses multi-index OR.
 - The encrypted backup workflow is scheduled daily at 02:00 Pakistan Standard Time. No successful scheduled backup/isolated restore has yet been verified; required GitHub Actions secrets and a complete run remain prerequisites.
 - The remote D1 integration suite was skipped in CI because dedicated test credentials are not configured.
+- On 23 November, a live Cloudflare Browser Rendering check confirmed the production homepage title/HTML and `/api/health` returned `{"status":"ok","database":"connected"}`. This is a targeted health check, not the full production-smoke workflow; additional browser-rendering requests were rate-limited.
 
 ## Remaining critical acceptance gates
 
