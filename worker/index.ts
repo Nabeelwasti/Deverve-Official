@@ -2596,8 +2596,15 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         customer_phone: customerPhone,
         customer_email: customerEmail,
         whatsapp_receipt_consent: whatsappReceiptConsent,
-        items: lines,
-        payments,
+        items: lines.map((item: Record<string, unknown>) => ({ variant_id: item?.variant_id, quantity: item?.quantity }))
+          .sort((a, b) => String(a.variant_id ?? "").localeCompare(String(b.variant_id ?? ""))),
+        payments: payments.map((payment: Record<string, unknown>) => ({
+          account_id: payment?.account_id,
+          payment_method: payment?.payment_method,
+          amount_paisa: payment?.amount_paisa,
+          tendered_paisa: payment?.tendered_paisa,
+          reference: typeof payment?.reference === "string" ? payment.reference.trim().slice(0, 120) : "",
+        })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
       });
       const duplicate = await env.DB.prepare("SELECT id,receipt_number,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,request_fingerprint FROM pos_sales WHERE idempotency_key=?").bind(idempotency).first<Record<string,unknown>>();
       if (duplicate) {
