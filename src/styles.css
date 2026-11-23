@@ -2447,7 +2447,7 @@ body,.site-shell{font-family:var(--dv-site-font,'DM Sans',Arial,sans-serif)}
 /* Brand marks use a centered circular frame in every UI placement. */
 .deverve-round-logo{display:block;box-sizing:border-box;aspect-ratio:1;object-fit:var(--dv-brand-logo-fit,cover);object-position:var(--dv-brand-logo-position,center);border:0;border-radius:50%;background:transparent;padding:0;overflow:hidden;flex-shrink:0}
 .ai-chat-brand-logo{display:block!important;box-sizing:border-box!important;width:58px!important;height:58px!important;min-width:58px!important;max-width:58px!important;max-height:58px!important;flex:0 0 58px!important;aspect-ratio:1/1!important;object-fit:var(--dv-brand-logo-fit,cover)!important;object-position:var(--dv-brand-logo-position,center)!important;border:0!important;border-radius:50%!important;background:transparent!important;padding:0!important;box-shadow:none!important;overflow:hidden!important}
-@media(max-width:360px){.ai-chat-brand-logo{width:54px!important;height:54px!important;min-width:54px!important;max-width:54px!important;max-height:54px!important;flex-basis:54px!important;padding:4px!important}}
+@media(max-width:360px){.ai-chat-brand-logo{width:54px!important;height:54px!important;min-width:54px!important;max-width:54px!important;max-height:54px!important;flex-basis:54px!important;padding:0!important}}
 .admin-brand-assets article:first-child>img{width:112px;height:112px;max-width:112px;max-height:112px;aspect-ratio:1;object-fit:contain;border-radius:50%;background:#fff;padding:6px;border:1px solid #dce5ef;box-shadow:0 4px 14px rgba(10,35,62,.08)}
 
 .image-cropper-canvas-circle{border-radius:50%;border:3px solid #cda45f;object-fit:contain}
