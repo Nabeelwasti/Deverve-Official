@@ -79,7 +79,7 @@ test("every admin artwork slot has a live rendering target and editable frame co
   assert.match(admin, /Vertical focus/);
   assert.match(admin, /Fill frame \(cover\)/);
   assert.match(admin, /Show full image \(contain\)/);
-  assert.match(app, /category_\"\+item\.id/);
+  assert.match(app, /category_"\+item\.id/);
   assert.match(worker, /Image focus values must be whole percentages from 0 to 100/);
 });
 
