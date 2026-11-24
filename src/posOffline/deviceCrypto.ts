@@ -1,4 +1,4 @@
-import { openOfflinePosDatabase } from "./storage";
+import { openOfflinePosDatabase } from "./storage.js";
 
 const DEVICE_RECORD_ID = "identity";
 const SIGNING_CONTEXT = "deverve-offline-pos:event:v1\n";
