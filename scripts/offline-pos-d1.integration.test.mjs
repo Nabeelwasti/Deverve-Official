@@ -55,7 +55,8 @@ try {
   check(migrations.includes("0045_pos_offline_emergency_foundation.sql")
     && migrations.includes("0046_pos_offline_enrollment_challenges.sql")
     && migrations.includes("0047_pos_offline_permit_guards.sql")
-    && migrations.includes("0048_pos_offline_permit_snapshot.sql"),
+    && migrations.includes("0048_pos_offline_permit_snapshot.sql")
+    && migrations.includes("0049_pos_offline_private_cost_snapshot.sql"),
   "offline-POS migrations 0045–0048 are included in the isolated migration chain");
 
   for (const filename of migrations) {
@@ -102,6 +103,8 @@ try {
     "pos_offline_permit_no_delete",
     "pos_offline_permit_snapshot_guard",
     "pos_offline_permit_snapshot_immutable",
+    "pos_offline_permit_cost_snapshot_guard",
+    "pos_offline_permit_cost_snapshot_immutable",
   ];
   check(expectedTriggers.every((name) => triggers.has(name)),
     "all immutable-evidence, stock-reservation, enrollment and permit guard triggers are installed");
@@ -109,6 +112,8 @@ try {
   const permitColumns = await rows(databaseId, "PRAGMA table_info(pos_offline_permits)");
   check(permitColumns.some((column) => column.name === "snapshot_json"),
     "migration 0048 adds the persisted signed catalogue snapshot column");
+  check(permitColumns.some((column) => column.name === "cost_snapshot_json"),
+    "migration 0049 stores purchase-cost snapshots privately on the server-side permit record");
 
   const foreignKeyErrors = await rows(databaseId, "PRAGMA foreign_key_check");
   check(foreignKeyErrors.length === 0,
