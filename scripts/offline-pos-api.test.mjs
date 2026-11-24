@@ -6,6 +6,11 @@ const migration = readFileSync(new URL("../migrations/0046_pos_offline_enrollmen
 const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
 
 assert.match(worker, /const offlineRoot = "\/api\/admin\/pos\/offline"/);
+assert.match(worker, /signed offline sale sync/);
+assert.match(worker, /isCashier && request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
+assert.match(worker, /admin\.admin_user_id !== permit\.cashier_admin_id/);
+assert.match(worker, /authenticated_cashier_mismatch/);
+assert.match(worker, /request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
 assert.match(worker, /Only an owner or manager can administer emergency offline POS devices/);
 assert.match(worker, /pos_offline_enrollment_challenges/);
 assert.match(worker, /deverve-offline-pos:enroll:v1\\n/);
