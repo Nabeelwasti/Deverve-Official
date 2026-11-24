@@ -5,7 +5,7 @@ const source = readFileSync(new URL("../src/posOffline/storage.ts", import.meta.
 const design = readFileSync(new URL("../docs/OFFLINE-POS-RESEARCH-REVIEW.md", import.meta.url), "utf8");
 
 assert.match(source, /indexedDB\.open\(OFFLINE_POS_DB_NAME, OFFLINE_POS_DB_VERSION\)/);
-assert.match(source, /database\.transaction\(\["meta", "sales", "outbox", "audit"\], "readwrite"/);
+assert.match(source, /database\.transaction\(\["meta", "permit", "catalogue", "shift", "sales", "outbox", "audit"\], "readwrite"/);
 assert.match(source, /durability: "strict"/);
 assert.match(source, /transaction\.objectStore\("sales"\)\.add\(queued\)/);
 assert.match(source, /transaction\.objectStore\("outbox"\)\.add\(/);
@@ -46,3 +46,37 @@ assert.match(crypto, /validateStoredIdentity/);
 assert.match(crypto, /extractable !== false/);
 assert.match(crypto, /privateAlgorithm\.namedCurve !== "P-256"/);
 assert.match(crypto, /calculatedThumbprint !== identity\.publicKeyThumbprint/);
+
+assert.match(source, /export async function listPendingOfflineSales/);
+assert.match(source, /sort\(\(a, b\) => a.sequence - b.sequence\)/);
+assert.match(source, /export async function recordOfflineSyncFailure/);
+assert.match(source, /export async function acknowledgeOfflineSale/);
+assert.match(source, /syncReceipts/);
+assert.match(source, /Offline sale acknowledgement could not be committed/);
+
+assert.match(source, /export async function claimOfflineSalesForSync/);
+assert.match(source, /claimedUntil/);
+assert.match(source, /status === "syncing".*claimedUntil/);
+assert.match(source, /nextAttemptAt <= now/);
+assert.match(source, /function selectSequentialSyncRecords/);
+assert.match(source, /record\.sequence !== expectedSequence/);
+assert.match(source, /record\.status === "synced"/);
+assert.match(source, /allowExpiredLease/);
+assert.match(source, /if \(!pendingDue && !expiredLease\) break/);
+
+
+const api = readFileSync(new URL("../src/posOffline/api.ts", import.meta.url), "utf8");
+assert.match(source, /export async function saveVerifiedOfflinePermit/);
+assert.match(source, /database\.transaction\(\["permit", "catalogue", "shift", "meta", "audit", "sales", "outbox"\], "readwrite"\)/);
+assert.match(source, /sale\.permitId !== record\.permitId/);
+assert.match(source, /entry\.status === "synced"/);
+
+assert.match(source, /export async function listOfflineSalesForPermit/);
+
+assert.match(source, /Offline permit cannot replace a permit with unresolved queued sales/);
+
+assert.match(source, /export async function readOfflineSyncReceipt/);
+
+assert.match(source, /export async function listOfflineQueueForPermit/);
+assert.match(source, /transaction\.objectStore\("syncReceipts"\)\.getAll\(\)/);
+assert.match(source, /Local offline sale evidence is incomplete/);

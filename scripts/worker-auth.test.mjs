@@ -6,8 +6,9 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
+import { verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "../.test-dist/src/posOffline/deviceCrypto.js";
 
 test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
   assert.deepEqual(aggregateOrderVariantQuantities([
@@ -72,6 +73,107 @@ test("AI support language signal distinguishes Urdu script, Roman Urdu and ordin
   assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
   assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
   assert.match(customerLanguageHint("Please check stock, aap have black?"), /No Urdu-specific signal is dominant/);
+});
+
+test("device verifies signed permit claims and exact cached catalogue snapshot", async () => {
+  const previousSecureContext = globalThis.isSecureContext;
+  Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+  try {
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+    const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+    const snapshot = [
+      { allocationId: "allocation-1", variantId: "variant-1", productId: "product-1", productName: "Hoodie", sku: "DV-H-1", barcode: "123", size: "M", color: "Black", allocatedQuantity: 2, unitPricePaisa: 150000 },
+    ];
+    const canonical = (value) => {
+      if (value === null || typeof value !== "object") return JSON.stringify(value);
+      if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+      return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+    };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(snapshot)));
+    const snapshotHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+    const claims = { permit_id: "permit-1", device_id: "device-1", snapshot_hash: snapshotHash, cash_only: true };
+    const signature = await signOfflinePermitClaims(claims, JSON.stringify(privateJwk), JSON.stringify(publicJwk));
+    assert.equal(await verifyOfflinePermitSignature(claims, signature, publicJwk), true);
+    assert.equal(await verifyOfflinePermitSignature({ ...claims, cash_only: false }, signature, publicJwk), false);
+    assert.equal(await verifyOfflinePermitSnapshot(snapshot, snapshotHash), true);
+    assert.equal(await verifyOfflinePermitSnapshot([{ ...snapshot[0], unitPricePaisa: 150001 }], snapshotHash), false);
+    assert.equal(await verifyOfflinePermitSignature(claims, signature, privateJwk), false);
+  } finally {
+    if (previousSecureContext === undefined) delete globalThis.isSecureContext;
+    else Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: previousSecureContext });
+  }
+});
+
+test("offline permits are signed by the configured matching P-256 keypair", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const claims = {
+    permit_id: "permit-1",
+    device_id: "device-1",
+    issued_at: "2026-11-24T00:00:00.000Z",
+    expires_at: "2026-11-24T04:00:00.000Z",
+    cash_only: true,
+    allocations: [{ variant_id: "variant-1", quantity: 2, unit_price_paisa: 150000 }],
+  };
+  const signature = await signOfflinePermitClaims(claims, JSON.stringify(privateJwk), JSON.stringify(publicJwk));
+  assert.equal(typeof signature, "string");
+  assert.equal(signature.length, 86);
+  const verifyKey = await crypto.subtle.importKey("jwk", publicJwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  const canonical = (value) => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+  };
+  const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonical(claims));
+  const signatureBytes = Uint8Array.from(atob(signature.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - signature.length % 4) % 4)), char => char.charCodeAt(0));
+  assert.equal(await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifyKey, signatureBytes, message), true);
+  const changed = { ...claims, cash_only: false };
+  const changedMessage = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonical(changed));
+  assert.equal(await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifyKey, signatureBytes, changedMessage), false);
+  const otherPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const otherPublic = await crypto.subtle.exportKey("jwk", otherPair.publicKey);
+  assert.equal(await signOfflinePermitClaims(claims, JSON.stringify(privateJwk), JSON.stringify(otherPublic)), null);
+});
+
+test("server verifies offline permit and event signatures against exact canonical payloads", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const canonical = (value) => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+  };
+  const sign = async (context, payload) => {
+    const bytes = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, new TextEncoder().encode(context + canonical(payload)));
+    return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+  const permitClaims = { permit_id: "permit-1", device_id: "device-1", cash_only: true, allocations: [] };
+  const permitSignature = await sign("deverve-offline-pos:permit:v1\n", permitClaims);
+  assert.equal(await verifyOfflinePermitSignatureServer(permitClaims, permitSignature, publicJwk), true);
+  assert.equal(await verifyOfflinePermitSignatureServer({ ...permitClaims, cash_only: false }, permitSignature, publicJwk), false);
+  const event = { eventId: "event-1", sequence: 1, totalPaisa: 1000, status: "pending" };
+  const eventSignature = await sign("deverve-offline-pos:event:v1\n", event);
+  assert.equal(await verifyOfflineEventSignature(event, eventSignature, publicJwk), true);
+  assert.equal(await verifyOfflineEventSignature({ ...event, totalPaisa: 1001 }, eventSignature, publicJwk), false);
+});
+
+test("offline device enrollment proof verifies only the bound P-256 challenge signature", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const challenge = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, "0")).join("");
+  const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
+  const signatureBytes = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message));
+  const signature = btoa(String.fromCharCode(...signatureBytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  assert.equal(signature.length, 86);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature), true);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge + "x", signature), false);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, (signature.startsWith("A") ? "B" : "A") + signature.slice(1)), false);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  assert.equal(await verifyOfflineEnrollmentProof(privateJwk, challenge, signature), false);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, "invalid"), false);
 });
 
 const nativeFetch = globalThis.fetch.bind(globalThis);

@@ -1,6 +1,6 @@
 # De VERVE — Current owner handover and production acceptance register
 
-**Last updated:** 23 November 2026 (after PR #39 homepage release)  
+**Last updated:** 24 November 2026 (after offline-POS migration and backup recovery validation)  
 **Production:** https://deverve-official.pages.dev/  
 **Repository:** https://github.com/Nabeelwasti/Deverve-Official  
 **Production branch:** `main`  
@@ -16,10 +16,11 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 - PR #36 published the CMS homepage through migration 0041. It has seven sections, five navigation links and four FAQs. PR #38 fixed category-image persistence, save validation, public media delivery and archive protection; migrations 0042–0043 are applied and three category artwork references are ready. PR #39 restored the shared storefront hamburger drawer, product/category/vehicle/page search, shared golden quote feed/fallback and complete branded footer with bottom credit strip. Owner copy/merchandising review remains.
 - PR #33 hardened the encrypted D1 restore drill: inability to delete its temporary restore database now fails the workflow.
 - Latest production Pages deployment: `bea6a0c6-8f3c-49d4-aa9e-2c1037bf6656`, all five stages successful, URL https://bea6a0c6.deverve-official.pages.dev, from merge commit `46c68c94ce2b689dbff00b863259e32a458025e3`. Production and preview auto-deployments remain disabled; releases use controlled deployments.
-- Latest full CI: PR #39 run [45149470914](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45149470914), all 17 steps passed, including build/type checks, dependency audit, Worker tests, schema checks and 158 desktop/mobile browser tests. PR #38 run [45140369544](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45140369544) also passed all 17 steps. PR #36 run [45138379523](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45138379523) passed the CMS homepage seed/idempotency tests. The remote D1 integration suite remains skipped when dedicated credentials are absent.
+- Final offline-POS CI run [45421372915](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45421372915) passed all 20 steps: type-check/build, dependency audit, Worker/auth tests, schema checks, 160 desktop/mobile browser tests, 16 remote D1 inventory checks, isolated migration chain `0001`–`0049`, and a restored-production-clone rehearsal applying `0045`–`0049` without changing existing row counts or adding foreign-key violations. Both temporary D1 test databases were deleted.
 - Production mobile browser render returned HTTP 200 and confirmed the homepage search, golden quote strip, hamburger navigation, CMS content, branded footer and bottom credit strip. The same-origin `/api/quotes/random` endpoint returned HTTP 200. The previously verified unauthenticated `/api/admin/system-health` correctly returns 401.
 - Production migrations 0039 (POS/SKU indexes), 0040 (cashier grants), 0041 (CMS homepage), 0042 (category artwork mapping) and 0043 (renderer-compatible category image JSON) are applied and read-back verified. Live D1 read-back confirms the published page contains all three category artwork references.
 - An isolated APAC D1 concurrency test ran a website reservation and two-line POS sale concurrently against five units. Exactly one transaction won; the winning POS batch committed stock movements, payment, financial ledger, audit and receipt outbox consistently. The temporary database was deleted and its absence verified.
+- PR #51 contains the offline-first POS implementation. Migrations `0045`–`0049` passed both a clean D1 migration-chain test and a rehearsal on an isolated restore of production data. **No offline-POS migration has been applied to production; no deployment or merge has occurred.** Purchase-cost snapshots remain server-only.
 - The live Turnstile verifier health endpoint returned `status=ok`, `secret_configured=true` and the expected hostname `deverve-official.pages.dev`. The invalid-token negative test and end-to-end public form acceptance remain pending.
 - Production currently uses COD as the only active checkout method. No Safepay live/sandbox merchant acceptance is recorded.
 
@@ -52,21 +53,24 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 - [ ] Test camera permission grant/deny, rear camera, autofocus, low light, glare, QR, Code 128 and retail barcodes. Test USB/Bluetooth scanner and manual SKU entry.
 - [ ] Test actual thermal printer model, paper width, receipt alignment, Bluetooth/USB pairing and repeated prints. Test cash drawer if used.
 - [ ] Test Android touch targets, page reload, slow network and recovery on the actual phone.
-- [ ] **Offline-first POS is not enabled or accepted.** Do not take cash sales while disconnected; use the online POS until a persistent queue, idempotent server reconciliation, conflict handling and physical-device tests have passed.
+- [x] Offline-POS migration chain and production-clone rehearsal passed in CI run `45421372915`; existing production-clone row counts remained unchanged, no new foreign-key violations appeared, all required tables/triggers were present, and the temporary clone was deleted.
+- [ ] Generate and securely custody the separate P-256 permit-signing keypair. Set Worker secret `POS_OFFLINE_PERMIT_PRIVATE_JWK` and public variable `POS_OFFLINE_PERMIT_PUBLIC_JWK`; never paste the private key into chat or Git. Keep `OFFLINE_POS_CHECKOUT_ENABLED` false until owner approval and all physical tests pass.
+- [ ] **Offline-first POS is not enabled or accepted.** Test airplane-mode cash sale, app reload/termination, reconnect/sync, exact duplicate replay, same-key/different-payload conflict, permit expiry/revocation, storage denial and real scanner/printer behavior on the actual Android device. Use online POS only until this is complete.
 
 ## 5. Encrypted backups and recovery
 
-The AES-256-GCM backup/restore script and scheduled workflow are in the repository. The schedule is daily at 02:00 Pakistan Standard Time (21:00 UTC). The workflow is **not operationally accepted** until the following are completed:
+The AES-256-GCM backup/restore workflow is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). The first complete encrypted export, R2 read-back, isolated restore, row/schema comparison and temporary-database cleanup passed. Independent recovery and least-privilege hardening remain open:
 
 - [x] Owner confirmed on 24 November 2026 that GitHub Actions secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured.
-- [ ] Configure `CLOUDFLARE_ACCOUNT_ID`.
-- [ ] Confirm `D1_BACKUP_ENCRYPTION_KEY` is also stored in an owner-controlled password manager independently of GitHub and R2; GitHub secret configuration alone is not a recoverable key-custody plan.
-- [x] Confirm private bucket `deverve-db-backups` and workflow permissions; successful run `45330719916` attempt 7 verified access.
 - [x] Successful encrypted backup/restore drill: run `45330719916` attempt 7 on 24 November 2026. R2 read-back and SHA-256 checks passed; isolated restore matched 66 tables, 102 indexes, 10 triggers and all row counts; temporary D1 database deletion was confirmed.
+- [ ] Review and reduce the current Cloudflare token scope before production acceptance: replace account-wide D1 Edit and Workers R2 Storage Edit with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list).
+- [ ] Confirm the encryption key is also stored in an owner-controlled password manager independently of GitHub and the R2 bucket; GitHub secret configuration alone is not a recoverable key-custody plan.
+- [x] Confirm private bucket `deverve-db-backups` and workflow permissions; successful run `45330719916` attempt 7 verified access.
+- [x] Complete the isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup. Run `45330719916` attempt 7 passed all checks.
 - [ ] Verify retention and a documented recovery-point/recovery-time objective.
 - [ ] Back up private R2 media separately. A D1 SQL export does not include media bytes.
 - [ ] Store an independent encrypted recovery copy outside the Cloudflare account and document named custodians.
-- [ ] Do not claim backup safety until the complete restore drill and independent copy are verified.
+- [ ] Do not claim full disaster-recovery readiness until independent off-account recovery copy, owner-controlled key custody and documented retention/RPO/RTO are verified.
 
 Never paste tokens or recovery keys into this file or chat.
 

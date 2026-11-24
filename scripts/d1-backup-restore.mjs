@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
+import { readFile } from "node:fs/promises";
 const API="https://api.cloudflare.com/client/v4";
 const accountId=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN,databaseId=process.env.D1_DATABASE_ID;
 const databaseName=process.env.D1_DATABASE_NAME||"deverve-production",bucket=process.env.D1_BACKUP_R2_BUCKET||"deverve-db-backups";
@@ -49,6 +50,26 @@ function stable(value){if(Array.isArray(value))return "["+value.map(stable).join
 const sha=data=>createHash("sha256").update(data).digest("hex");
 function encrypt(sql){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",encryptionKey,iv),ciphertext=Buffer.concat([cipher.update(sql),cipher.final()]);return Buffer.concat([Buffer.from("DVDBKUP1","ascii"),iv,cipher.getAuthTag(),ciphertext]);}
 function decrypt(archive){if(archive.subarray(0,8).toString("ascii")!=="DVDBKUP1"||archive.length<36)throw new Error("Invalid encrypted backup header.");const decipher=createDecipheriv("aes-256-gcm",encryptionKey,archive.subarray(8,20));decipher.setAuthTag(archive.subarray(20,36));return Buffer.concat([decipher.update(archive.subarray(36)),decipher.final()]);}
+async function latestSuccessfulBackup(){
+ const prefix="manifests/"+databaseName+"-";
+ const objects=await api("GET","/accounts/"+accountId+"/r2/buckets/"+bucket+"/objects?prefix="+encodeURIComponent(prefix)+"&per_page=100");
+ const candidates=(Array.isArray(objects)?objects:[]).map(item=>item.key).filter(key=>typeof key==="string"&&key.startsWith(prefix)).sort().reverse();
+ for(const manifestKey of candidates){
+  const manifestBytes=await getR2(manifestKey);
+  let manifest;
+  try{manifest=JSON.parse(manifestBytes.toString("utf8"));}catch{continue;}
+  const age=Date.now()-new Date(manifest.created_at||"").getTime();
+  if(manifest.restore_status!=="passed"||manifest.encrypted!==true||manifest.algorithm!=="AES-256-GCM"||
+     manifest.key_id!==keyId||manifest.database_id!==databaseId||manifest.database_name!==databaseName||
+     typeof manifest.backup_object!=="string"||!Number.isFinite(age)||age<0||age>7*24*60*60*1000)continue;
+  const archive=await getR2(manifest.backup_object);
+  if(archive.length!==manifest.backup_bytes||sha(archive)!==manifest.ciphertext_sha256)throw new Error("Latest successful D1 backup archive failed its ciphertext integrity check.");
+  const sql=decrypt(archive);
+  if(sql.length!==manifest.plaintext_bytes||sha(sql)!==manifest.plaintext_sha256)throw new Error("Latest successful D1 backup archive failed its plaintext integrity check.");
+  return {sql,manifest,manifestKey};
+ }
+ throw new Error("No recent successful encrypted D1 backup with a verified restore was found in the private R2 bucket.");
+}
 async function exportSql(dumpOptions={}){
  const path="/accounts/"+accountId+"/d1/database/"+databaseId+"/export";
  let state=await api("POST",path,{output_format:"polling",dump_options:{compatibility:"d1",...dumpOptions}}),bookmark=state.at_bookmark;
@@ -73,11 +94,54 @@ async function restoreDrill(sql,expected){
   if(stable(restored.schemaDefinitions)!==stable(expected.schemaDefinitions))throw new Error("Restored table/index/trigger/view definitions differ from the production export.");
   const compareRows=expected.rowCounts!==null&&expected.rowCounts!==undefined;
   if(compareRows&&stable(restored.rowCounts)!==stable(expected.rowCounts))throw new Error("Restored row counts differ from the exported snapshot.");
+  let offlineMigrationRehearsal=null;
+  if(process.env.OFFLINE_POS_MIGRATION_CHECK==="true"){
+   const migrationFiles=[
+    "0045_pos_offline_emergency_foundation.sql",
+    "0046_pos_offline_enrollment_challenges.sql",
+    "0047_pos_offline_permit_guards.sql",
+    "0048_pos_offline_permit_snapshot.sql",
+    "0049_pos_offline_private_cost_snapshot.sql"
+   ];
+   const foreignKeysBefore=await queryRows(id,"PRAGMA foreign_key_check");
+   for(const filename of migrationFiles){
+    const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
+    await api("POST",queryPath,{sql:migration});
+    console.log("APPLIED TO RESTORED PRODUCTION CLONE",filename);
+   }
+   const migrated=await snapshot(id);
+   const expectedTables=["pos_offline_devices","pos_offline_permits","pos_offline_stock_allocations","pos_offline_events","pos_offline_reconciliation_cases","pos_offline_reconciliation_actions","pos_offline_enrollment_challenges"];
+   const tableSet=new Set(migrated.tables);
+   if(!expectedTables.every(name=>tableSet.has(name)))throw new Error("Offline-POS migrations did not create every required table on the production clone.");
+   const expectedTriggers=["pos_offline_device_identity_immutable","pos_offline_device_no_delete","pos_offline_event_payload_immutable","pos_offline_event_no_delete","pos_offline_reconciliation_action_no_update","pos_offline_reconciliation_action_no_delete","pos_offline_allocation_reserve_on_insert","pos_offline_allocation_guard_update","pos_offline_allocation_reserve_on_update","pos_offline_allocation_no_delete","pos_offline_enrollment_challenge_update_guard","pos_offline_permit_authorization_guard","pos_offline_allocation_insert_guard_during_permit","pos_offline_allocation_release_guard_during_permit","pos_offline_permit_identity_immutable","pos_offline_permit_no_delete","pos_offline_permit_snapshot_guard","pos_offline_permit_snapshot_immutable","pos_offline_permit_cost_snapshot_guard","pos_offline_permit_cost_snapshot_immutable"];
+   const triggerRows=await queryRows(id,"SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'pos_offline_%'");
+   const triggerSet=new Set(triggerRows.map(row=>row.name));
+   if(!expectedTriggers.every(name=>triggerSet.has(name)))throw new Error("Offline-POS migration rehearsal is missing one or more required guard triggers.");
+   const permitColumns=await queryRows(id,"PRAGMA table_info(pos_offline_permits)");
+   if(!permitColumns.some(column=>column.name==="cost_snapshot_json"))throw new Error("Server-only offline permit cost snapshot column was not installed.");
+   for(const [table,count] of Object.entries(restored.rowCounts)){
+    if(migrated.rowCounts[table]!==count)throw new Error("Offline-POS migrations unexpectedly changed existing production-clone row counts in "+table+".");
+   }
+   const foreignKeysAfter=await queryRows(id,"PRAGMA foreign_key_check");
+   if(stable(foreignKeysAfter)!==stable(foreignKeysBefore))throw new Error("Offline-POS migrations introduced a foreign-key violation on the production clone.");
+   offlineMigrationRehearsal={status:"passed",migrations:migrationFiles.length,offline_tables:expectedTables.length,guard_triggers:expectedTriggers.length,existing_row_counts_unchanged:true,foreign_key_check:"no_new_violations"};
+  }
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");
-  return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null};
+  return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null,offline_migration_rehearsal:offlineMigrationRehearsal};
  }finally{if(id){try{await api("DELETE","/accounts/"+accountId+"/d1/database/"+id);}catch(error){console.error("ERROR: temporary D1 restore database cleanup failed:",name,error instanceof Error?error.message:"unknown error");throw new Error("Restore drill cannot pass because its temporary D1 database was not confirmed deleted.");}}}
 }
 async function main(){
+ if(process.env.OFFLINE_POS_MIGRATION_CHECK==="true"){
+  const {sql,manifest,manifestKey}=await latestSuccessfulBackup();
+  const current=await snapshot(databaseId);
+  if(manifest.table_count!==current.tables.length||stable(manifest.schema_objects)!==stable(current.schemaObjects))throw new Error("Latest successful backup schema no longer matches production; create a fresh verified backup before migration rehearsal.");
+  const rowCountsStable=sha(Buffer.from(stable(current.rowCounts)))===manifest.row_counts_sha256;
+  const restoreSql=Buffer.concat([Buffer.from("PRAGMA defer_foreign_keys = true;\n","utf8"),sql]);
+  const drill=await restoreDrill(restoreSql,{...current,rowCounts:rowCountsStable?current.rowCounts:null});
+  if(drill.offline_migration_rehearsal?.status!=="passed")throw new Error("Offline-POS production-clone migration rehearsal did not pass.");
+  console.log(JSON.stringify({mode:"offline_pos_production_clone_migration_rehearsal",source_backup_object:manifest.backup_object,source_manifest:manifestKey,backup_created_at:manifest.created_at,source_row_counts_match:rowCountsStable,...drill,temporary_database_deleted:true}));
+  return;
+ }
  const before=await snapshot(databaseId);
  const schemaExport=await exportSql({no_data:true});
  const dataExport=await exportSql({no_schema:true});
