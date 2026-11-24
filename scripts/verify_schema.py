@@ -76,8 +76,11 @@ expect_integrity_error(
     lambda: db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device-2","main-register","offline-owner","Second device",public_jwk,"d"*43)),
     "A register must not have two active emergency POS devices",
 )
+permit_claims_two = __import__("json").loads(permit_claims)
+permit_claims_two["permit_id"] = "offline-permit-2"
+permit_claims_two["snapshot_version"] = "snapshot-2"
 expect_integrity_error(
-    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner","snapshot-2","e"*64,"{}","f"*44,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
+    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-2","b"*64,__import__("json").dumps(permit_claims_two),"f"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
     "A device must not have two active offline permits",
 )
 expect_integrity_error(
@@ -104,6 +107,12 @@ expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_reconciliation_actions SET reason='edited' WHERE id='offline-action'"),
     "Offline reconciliation actions must be append-only",
 )
+
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_stock_allocations SET released_quantity=1,status='released',released_at='2026-11-24T01:00:00.000Z' WHERE id='offline-allocation'"),
+    "An active permit must prevent stock allocation release",
+)
+db.execute("UPDATE pos_offline_permits SET status='expired' WHERE id='offline-permit'")
 
 # Offline allocations must reserve the same inventory counter used by online checkout.
 reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
