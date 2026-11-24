@@ -25,7 +25,7 @@ BEGIN
     OR julianday(NEW.expires_at) > julianday(NEW.issued_at, '+8 hours')
     THEN RAISE(ABORT, 'offline permit duration exceeds policy') END;
 
-  SELECT CASE WHEN json_extract(NEW.claims_json, '$.permit_id') <> NEW.id
+  SELECT CASE WHEN json_extract(NEW.claims_json, '$.permit_id') IS NOT NEW.id
     OR json_extract(NEW.claims_json, '$.device_id') IS NOT NEW.device_id
     OR json_extract(NEW.claims_json, '$.register_id') IS NOT NEW.register_id
     OR json_extract(NEW.claims_json, '$.session_id') IS NOT NEW.session_id
