@@ -280,6 +280,39 @@ function assertEventId(eventId: string): void {
   }
 }
 
+/**
+ * Selects only the contiguous device-sequence prefix that is safe to send.
+ * A retry delay, live lease, missing sequence, or manual-review event blocks
+ * every later event. This prevents a later cash sale from being reconciled
+ * before an earlier event whose outcome is still unknown.
+ */
+function selectSequentialSyncRecords(
+  records: OfflineOutboxRecord[],
+  now: number,
+  limit: number,
+  allowExpiredLease: boolean,
+): OfflineOutboxRecord[] {
+  const ordered = [...records].sort((a, b) => a.sequence - b.sequence);
+  const selected: OfflineOutboxRecord[] = [];
+  let expectedSequence = 1;
+
+  for (const record of ordered) {
+    if (!Number.isSafeInteger(record.sequence) || record.sequence !== expectedSequence) {
+      throw new Error("Offline device sequence has a gap or duplicate. Stop syncing and request owner review.");
+    }
+    expectedSequence += 1;
+
+    if (record.status === "synced") continue;
+    const pendingDue = record.status === "pending" && record.nextAttemptAt <= now;
+    const expiredLease = allowExpiredLease && record.status === "syncing" && (record.claimedUntil ?? 0) <= now;
+    if (!pendingDue && !expiredLease) break;
+
+    selected.push(record);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
 /** Returns pending events in strict device sequence order. It never mutates or removes sale evidence. */
 export async function listPendingOfflineSales(limit = 10): Promise<QueuedOfflineSale[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error("Offline sync batch size must be between 1 and 20.");
@@ -290,10 +323,12 @@ export async function listPendingOfflineSales(limit = 10): Promise<QueuedOffline
       const salesRequest = transaction.objectStore("sales").getAll();
       const outboxRequest = transaction.objectStore("outbox").getAll();
       transaction.oncomplete = () => {
-        const outbox = (outboxRequest.result as OfflineOutboxRecord[])
-          .filter((record) => record.status === "pending" && record.nextAttemptAt <= Date.now())
-          .sort((a, b) => a.sequence - b.sequence)
-          .slice(0, limit);
+        const outbox = selectSequentialSyncRecords(
+          outboxRequest.result as OfflineOutboxRecord[],
+          Date.now(),
+          limit,
+          false,
+        );
         const byId = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
         const ordered: QueuedOfflineSale[] = [];
         for (const record of outbox) {
@@ -451,12 +486,12 @@ export async function claimOfflineSalesForSync(limit = 10, now = Date.now(), lea
         if (prepared || salesRequest.readyState !== "done" || outboxRequest.readyState !== "done") return;
         prepared = true;
         const saleById = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
-        const eligible = (outboxRequest.result as OfflineOutboxRecord[])
-          .filter((record) =>
-            (record.status === "pending" && record.nextAttemptAt <= now) ||
-            (record.status === "syncing" && (record.claimedUntil ?? 0) <= now))
-          .sort((a, b) => a.sequence - b.sequence)
-          .slice(0, limit);
+        const eligible = selectSequentialSyncRecords(
+          outboxRequest.result as OfflineOutboxRecord[],
+          now,
+          limit,
+          true,
+        );
         const audit = transaction.objectStore("audit");
         for (const record of eligible) {
           const sale = saleById.get(record.eventId);
