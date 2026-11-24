@@ -28,6 +28,18 @@ assert.match(worker, /pos\.offline_device_enrolled/);
 assert.match(worker, /pos\.offline_device_revoked/);
 assert.match(worker, /pos\.offline_stock_allocated/);
 assert.match(worker, /async function issueOfflinePermit/);
+assert.match(worker, /async function processOfflineSaleEvent/);
+assert.match(worker, /async function recordOfflineSaleConflict/);
+assert.match(worker, /offlineRoot \\+ "\/sync"/);
+assert.match(worker, /verifyOfflineEventSignature\(sale, signature, devicePublicKey\)/);
+assert.match(worker, /verifyOfflinePermitSignatureServer\(permitClaims/);
+assert.match(worker, /device_sequence_gap/);
+assert.match(worker, /pos_offline_sale_conflict/);
+assert.match(worker, /pos_payments/);
+assert.match(worker, /financial_transactions/);
+assert.match(worker, /inventory_movements/);
+assert.match(worker, /INSERT INTO pos_offline_events \\(device_id\\) SELECT NULL WHERE changes\\(\\)<>1/);
+
 assert.match(worker, /POS_OFFLINE_PERMIT_PRIVATE_JWK/);
 assert.match(worker, /POS_OFFLINE_PERMIT_PUBLIC_JWK/);
 assert.match(worker, /cash_only: true/);
