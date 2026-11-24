@@ -20,3 +20,20 @@ BEFORE DELETE ON pos_offline_enrollment_challenges
 BEGIN
   SELECT RAISE(ABORT, 'offline enrollment challenge evidence cannot be deleted');
 END;
+
+CREATE TRIGGER IF NOT EXISTS pos_offline_enrollment_challenge_update_guard
+BEFORE UPDATE ON pos_offline_enrollment_challenges
+BEGIN
+  SELECT CASE WHEN NEW.id <> OLD.id
+    OR NEW.device_id <> OLD.device_id
+    OR NEW.register_id <> OLD.register_id
+    OR NEW.public_key_thumbprint <> OLD.public_key_thumbprint
+    OR NEW.challenge_hash <> OLD.challenge_hash
+    OR NEW.expires_at <> OLD.expires_at
+    OR NEW.created_by_admin_id <> OLD.created_by_admin_id
+    OR NEW.created_at <> OLD.created_at
+    OR OLD.consumed_at IS NOT NULL
+    OR NEW.consumed_at IS NULL
+    THEN RAISE(ABORT, 'offline enrollment challenge is immutable and single-use')
+  END;
+END;
