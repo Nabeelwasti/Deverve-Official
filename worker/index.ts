@@ -3127,15 +3127,18 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           consumption.push({ id: String(allocation.id), quantity: line.quantity, variantId: line.variant_id });
         }
         const now = new Date().toISOString();
-        const statements: D1PreparedStatement[] = consumption.map((line) =>
+        const statements: D1PreparedStatement[] = consumption.flatMap((line) => [
           env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?")
-            .bind(line.quantity, now, line.id, String(reconciliation.device_id), line.variantId, line.quantity)
-        );
+            .bind(line.quantity, now, line.id, String(reconciliation.device_id), line.variantId, line.quantity),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+        ]);
         statements.push(
-          env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome IN ('conflict','rejected')")
-            .bind(canonicalSaleId, now, String(reconciliation.event_id)),
-          env.DB.prepare("UPDATE pos_offline_reconciliation_cases SET status='resolved',resolved_at=? WHERE id=? AND status='open'")
-            .bind(now, reconciliation.case_id),
+          env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome IN ('conflict','rejected') AND EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='open')")
+            .bind(canonicalSaleId, now, String(reconciliation.event_id), reconciliation.case_id),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+          env.DB.prepare("UPDATE pos_offline_reconciliation_cases SET status='resolved',resolved_at=? WHERE id=? AND status='open' AND EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='accepted' AND canonical_sale_id=?)")
+            .bind(now, reconciliation.case_id, String(reconciliation.event_id), canonicalSaleId),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
           env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) " +
             "SELECT ?,?,?, 'accepted',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='resolved' AND resolved_at=?)")
             .bind(crypto.randomUUID(), reconciliation.case_id, admin.admin_user_id, reason,
@@ -3145,11 +3148,10 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
             .bind(crypto.randomUUID(), admin.admin_user_id, reconciliation.case_id,
               JSON.stringify({ canonical_sale_id: canonicalSaleId, offline_event_id: reconciliation.event_id, matched_line_count: expected.length, reason }))
         );
-        const results = await env.DB.batch(statements);
-        if (results.slice(0, consumption.length).some((result) => (result.meta?.changes ?? 0) !== 1) ||
-            (results[consumption.length]?.meta?.changes ?? 0) !== 1 ||
-            (results[consumption.length + 1]?.meta?.changes ?? 0) !== 1) {
-          return error("Reconciliation changed concurrently; no resolution was confirmed. Refresh the case and retry.", 409);
+        try {
+          await env.DB.batch(statements);
+        } catch {
+          return error("Reconciliation changed concurrently or a stock reservation could not be reconciled. The transaction was rolled back; refresh the case and retry.", 409);
         }
         return json({ resolved: true, case_id: reconciliation.case_id, event_id: reconciliation.event_id, canonical_sale_id: canonicalSaleId });
       } catch {
