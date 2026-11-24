@@ -24,7 +24,7 @@ assert.match(worker, /deviceState\.status !== "revoked"/);
 assert.match(worker, /Resolve every pending or conflicted offline sale/);
 
 assert.match(migration, /challenge_hash TEXT NOT NULL CHECK \(length\(challenge_hash\) = 43\)/);
-assert.match(migration, /pos_offline_enrollment_challenge_no_delete/);
+assert.doesNotMatch(migration, /pos_offline_enrollment_challenge_no_delete/);
 assert.match(migration, /pos_offline_enrollment_challenge_update_guard/);
 assert.match(migration, /OLD\.consumed_at IS NOT NULL/);
 assert.match(migration, /NEW\.consumed_at IS NULL/);
