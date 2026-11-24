@@ -2496,6 +2496,92 @@ export async function verifyOfflineEnrollmentProof(
   }
 }
 
+async function issueOfflinePermit(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  body: Record<string, unknown> | null,
+): Promise<Response> {
+  const cashierId = body?.cashier_admin_id, sessionId = body?.session_id;
+  const durationHours = body?.duration_hours === undefined ? 4 : body.duration_hours;
+  if (typeof cashierId !== "string" || !/^[a-f0-9-]{36}$/i.test(cashierId) ||
+      typeof sessionId !== "string" || !/^[a-f0-9-]{36}$/i.test(sessionId) ||
+      !Number.isSafeInteger(durationHours) || Number(durationHours) < 1 || Number(durationHours) > 8) {
+    return error("Choose a valid cashier, open shift and permit duration of 1 to 8 hours", 400);
+  }
+  if (!env.POS_OFFLINE_PERMIT_PRIVATE_JWK || !env.POS_OFFLINE_PERMIT_PUBLIC_JWK) {
+    return error("Offline permit signing is not configured. No permit was issued and offline checkout remains disabled.", 503);
+  }
+  try {
+    const publicJwk = JSON.parse(env.POS_OFFLINE_PERMIT_PUBLIC_JWK) as JsonWebKey;
+    if (publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" || typeof publicJwk.x !== "string" ||
+        typeof publicJwk.y !== "string" || "d" in publicJwk) return error("Offline permit verification key configuration is invalid", 503);
+    await env.DB.prepare("UPDATE pos_offline_permits SET status='expired' WHERE device_id=? AND status='active' AND expires_at<=?")
+      .bind(deviceId, new Date().toISOString()).run();
+    const [device, session, cashier, activePermit] = await Promise.all([
+      env.DB.prepare("SELECT id,register_id,status FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<{ id: string; register_id: string; status: string }>(),
+      env.DB.prepare("SELECT id,register_id,opened_by_admin_id,status FROM pos_sessions WHERE id=? LIMIT 1").bind(sessionId).first<{ id: string; register_id: string; opened_by_admin_id: string; status: string }>(),
+      env.DB.prepare("SELECT u.id,pc.granted_at FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL LIMIT 1").bind(cashierId).first<{ id: string; granted_at: string }>(),
+      env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>(),
+    ]);
+    if (!device || device.status !== "active") return error("An active enrolled offline device is required", 409);
+    if (!session || session.status !== "open" || session.register_id !== device.register_id || session.opened_by_admin_id !== cashierId) return error("The selected open shift must belong to this device's register and the selected cashier", 409);
+    if (!cashier) return error("The selected cashier is inactive or their POS permission has been revoked", 403);
+    if (activePermit) return error("This device already has an active offline permit", 409);
+
+    const allocationResult = await env.DB.prepare(
+      "SELECT a.id AS allocation_id,a.variant_id,(a.allocated_quantity-a.consumed_quantity-a.released_quantity) AS allocated_quantity," +
+      "p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa," +
+      "v.sku,v.barcode,v.size,v.color,v.is_active " +
+      "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+      "WHERE a.device_id=? AND a.status='active' AND a.allocated_quantity>a.consumed_quantity+a.released_quantity ORDER BY a.variant_id LIMIT 31"
+    ).bind(deviceId).all<Record<string, unknown>>();
+    const allocationRows = allocationResult.results ?? [];
+    if (!allocationRows.length || allocationRows.length > 30) return error("Allocate between 1 and 30 stock variants before issuing an offline permit", 409);
+    const snapshot = allocationRows.map((row) => {
+      const quantity = Number(row.allocated_quantity), price = Number(row.retail_price_paisa);
+      if (row.product_status !== "published" || Number(row.is_active) !== 1 || !Number.isSafeInteger(quantity) || quantity < 1 ||
+          !Number.isSafeInteger(price) || price <= 0) throw new Error("offline_snapshot_invalid");
+      return {
+        allocationId: String(row.allocation_id), variantId: String(row.variant_id), productId: String(row.product_id),
+        productName: String(row.product_name).slice(0, 160), sku: typeof row.sku === "string" ? row.sku.slice(0, 100) : "",
+        barcode: typeof row.barcode === "string" ? row.barcode.slice(0, 100) : "",
+        size: typeof row.size === "string" ? row.size.slice(0, 50) : "",
+        color: typeof row.color === "string" ? row.color.slice(0, 80) : "",
+        allocatedQuantity: quantity, unitPricePaisa: price,
+      };
+    });
+    const snapshotVersion = crypto.randomUUID();
+    const snapshotHash = await fingerprintPosSaleRequest(snapshot);
+    const issuedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + Number(durationHours) * 60 * 60_000).toISOString();
+    const permitId = crypto.randomUUID();
+    const claims = {
+      version: 1, permit_id: permitId, device_id: deviceId, register_id: device.register_id,
+      session_id: sessionId, cashier_admin_id: cashierId, cashier_grant_version: cashier.granted_at,
+      snapshot_version: snapshotVersion, snapshot_hash: snapshotHash, issued_at: issuedAt, expires_at: expiresAt,
+      max_events: 20, cash_only: true, allow_refunds: false, allow_voids: false, allow_shift_close: false,
+      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa })),
+    };
+    const claimsJson = canonicalOfflineJson(claims);
+    if (new TextEncoder().encode(claimsJson).byteLength > 16_384) return error("The offline permit snapshot is too large", 413);
+    const signature = await signOfflinePermitClaims(claims, env.POS_OFFLINE_PERMIT_PRIVATE_JWK, env.POS_OFFLINE_PERMIT_PUBLIC_JWK);
+    if (!signature) return error("Offline permit signing failed because the configured keypair is invalid. No permit was issued.", 503);
+    const results = await env.DB.batch([
+      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
+        "SELECT ?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
+        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
+      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_permit_issued','pos_offline_permit',?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(), admin.admin_user_id, permitId, JSON.stringify({ device_id: deviceId, register_id: device.register_id, cashier_admin_id: cashierId, expires_at: expiresAt, max_events: 20, cash_only: true })),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("The offline permit was not committed because device, shift or cashier authorization changed", 409);
+    return json({ permit: { id: permitId, claims, signature_base64url: signature, verification_public_key_jwk: publicJwk, snapshot } }, 201);
+  } catch (caught) {
+    if (caught instanceof Error && caught.message === "offline_snapshot_invalid") return error("One or more allocated products are inactive or have an invalid price. Correct the catalogue before issuing a permit.", 409);
+    return error("Offline permit could not be issued safely", 503);
+  }
+}
+
 async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/pos/")) return null;
