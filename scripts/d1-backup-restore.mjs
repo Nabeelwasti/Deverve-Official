@@ -82,7 +82,11 @@ async function restoreDrill(sql,expected){
  }finally{if(id){try{await api("DELETE","/accounts/"+accountId+"/d1/database/"+id);}catch(error){console.error("ERROR: temporary D1 restore database cleanup failed:",name,error instanceof Error?error.message:"unknown error");throw new Error("Restore drill cannot pass because its temporary D1 database was not confirmed deleted.");}}}
 }
 async function main(){
- const before=await snapshot(databaseId);\n const schemaExport=await exportSql({no_data:true});\n const dataExport=await exportSql({no_schema:true});\n const sql=Buffer.concat([schemaExport.sql,Buffer.from("\\n","utf8"),dataExport.sql]);\n const bookmark=dataExport.bookmark,after=await snapshot(databaseId);
+ const before=await snapshot(databaseId);
+ const schemaExport=await exportSql({no_data:true});
+ const dataExport=await exportSql({no_schema:true});
+ const sql=Buffer.concat([schemaExport.sql,Buffer.from("\n","utf8"),dataExport.sql]);
+ const bookmark=dataExport.bookmark,after=await snapshot(databaseId);
  if(stable(before.tables)!==stable(after.tables)||stable(before.schemaObjects)!==stable(after.schemaObjects)||stable(before.schemaDefinitions)!==stable(after.schemaDefinitions))throw new Error("Production D1 schema changed during export.");
  const stableRows=stable(before.rowCounts)===stable(after.rowCounts);
  const stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
