@@ -2482,6 +2482,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         if (!register) return error("The selected register is inactive or unavailable", 404);
         const existing = await env.DB.prepare("SELECT id FROM pos_offline_devices WHERE id=? OR public_key_thumbprint=? LIMIT 1").bind(body.device_id, publicKey.thumbprint).first<{ id: string }>();
         if (existing) return error("This device identity or signing key is already enrolled. Revoke or recover the existing device instead.", 409);
+        const cleanupBefore = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+        await env.DB.prepare("DELETE FROM pos_offline_enrollment_challenges WHERE expires_at<? OR (consumed_at IS NOT NULL AND consumed_at<?)")
+          .bind(cleanupBefore, cleanupBefore).run();
         const recentChallenges = await env.DB.prepare(
           "SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges WHERE created_by_admin_id=? AND created_at>?"
         ).bind(admin.admin_user_id, new Date(Date.now() - 5 * 60_000).toISOString()).first<{ count: number }>();
