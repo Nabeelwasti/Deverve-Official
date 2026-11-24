@@ -35,7 +35,7 @@
 
 The repository workflow .github/workflows/d1-backup-restore.yml is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). It is not operationally active until all required GitHub Actions secrets are configured and a full run succeeds:
 
-- CLOUDFLARE_API_TOKEN: narrowly scoped D1 read, R2 object write/read and isolated restore permissions required by the script.
+- CLOUDFLARE_API_TOKEN: D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list); this permits the export, temporary restore-database lifecycle and encrypted-object read-back without broad account-wide R2 administration.
 - CLOUDFLARE_ACCOUNT_ID.
 - D1_BACKUP_ENCRYPTION_KEY: 32 random bytes encoded as 64 hex characters. Generate offline with openssl rand -hex 32; store in an owner-controlled password manager, never in the repository or backup bucket.
 - Confirm private bucket deverve-db-backups exists and token permissions are sufficient.
