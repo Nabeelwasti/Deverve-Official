@@ -582,7 +582,7 @@ function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change =
   const effectiveSessionId = overrides.sessionId ?? sessionId;
   // Keep enough fixture stock for deliberately mismatched quantities; this is
   // a synthetic canonical sale and must not fail before the reconciliation guard.
-  sqlite.prepare("UPDATE product_variants SET stock_on_hand=20 WHERE id=?").run(variantId);
+  if (quantity > 1) sqlite.prepare("UPDATE product_variants SET stock_on_hand=20 WHERE id=?").run(variantId);
   sqlite.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=?").run(quantity, variantId);
   sqlite.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,'Walk-in customer','',?,0,?,'completed',?,?)")
     .run(saleId, "DV-RECON-" + saleId.slice(0, 8), effectiveSessionId, subtotal, total, randomUUID(), cashierId);
