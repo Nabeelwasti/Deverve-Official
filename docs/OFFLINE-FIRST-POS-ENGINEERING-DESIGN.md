@@ -25,7 +25,8 @@ Automated validation currently available:
 - CI type-check and production build.
 - Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
 - Latest recorded CI run `45376677652` passed all executed steps, including the storefront browser suite.
-- At the 24 November review, the owner confirmed that all three GitHub Actions secrets (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY`) have since been added. The previously recorded CI run predates that confirmation; no remote D1 integration or encrypted backup/restore run has yet been observed. Re-run the relevant workflows and inspect their job steps before claiming remote integration or recovery acceptance.
+- CI run `45393119187` executed the existing remote D1 inventory integration suite: 16 checks passed and its isolated test database was deleted. The same run passed 160 desktop/mobile storefront browser tests. This suite does not exercise the new offline-POS migrations `0045`–`0048`; a dedicated offline migration/API integration suite remains outstanding.
+- The encrypted backup workflow now confirms all three GitHub Actions secrets are present. It has successfully exported, AES-256-GCM encrypted, uploaded and read-back-verified an archive in the private R2 bucket. The isolated restore stage has not passed yet; recent attempts exposed import-order and polling issues, and the latest script revision is being re-tested. Do not call recovery accepted until restore verification and temporary-database cleanup both pass.
 
 Not yet verified / release blockers:
 
