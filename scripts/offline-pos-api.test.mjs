@@ -10,8 +10,8 @@ assert.match(worker, /Only an owner or manager can administer emergency offline 
 assert.match(worker, /pos_offline_enrollment_challenges/);
 assert.match(worker, /deverve-offline-pos:enroll:v1\\n/);
 assert.match(worker, /export async function verifyOfflineEnrollmentProof/);
-assert.match(worker, /subtle\\.importKey\\([\\s\\S]*?namedCurve: "P-256"/);
-assert.match(worker, /verifyOfflineEnrollmentProof\\(publicKey\\.jwk, challenge, signature\\)/);
+assert.ok(worker.includes("subtle.importKey(") && worker.includes("namedCurve: \"P-256\""));
+assert.ok(worker.includes("verifyOfflineEnrollmentProof(publicKey.jwk, challenge, signature)"));
 assert.match(worker, /subtle\.verify\(\{ name: "ECDSA", hash: "SHA-256" \}/);
 assert.match(worker, /\[A-Za-z0-9_-\]\{86\}/);
 assert.match(worker, /Too many pending enrollment attempts/);
