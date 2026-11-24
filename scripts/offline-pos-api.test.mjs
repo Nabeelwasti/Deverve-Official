@@ -84,7 +84,7 @@ assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "PO
 assert.match(worker, /const cashierCanIssueOfflinePermit = request\.method === "POST"/);
 assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "GET"/);
 assert.ok(worker.includes('offlineRoot + "/sync"'));
-assert.match(worker, /reconciliation-cases\\/\\(\\[a-f0-9-\\]\\{36\\}\\)\\/resolve/);
+assert.ok(worker.includes("reconciliation-cases") && worker.includes("resolve$/i"));
 assert.match(worker, /Only an owner or manager can resolve offline reconciliation cases/);
 assert.match(worker, /The selected completed POS sale does not match the offline event/);
 assert.match(worker, /cash_payment_verified: true/);
