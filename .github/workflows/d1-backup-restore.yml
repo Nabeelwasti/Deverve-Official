@@ -1,6 +1,12 @@
 name: Encrypted D1 and R2 Media Backup and Restore Drill
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/d1-backup-restore.yml"
+      - "scripts/d1-backup-restore.mjs"
+      - "scripts/r2-media-backup.mjs"
   schedule:
     # 02:17 Pakistan Standard Time (UTC+5), every day. Avoid the top-of-hour Actions queue spike.
     - cron: "17 21 * * *"
