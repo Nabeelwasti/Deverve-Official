@@ -35,6 +35,9 @@ assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "PO
 assert.match(worker, /const cashierCanIssueOfflinePermit = request\.method === "POST"/);
 assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "GET"/);
 assert.ok(worker.includes('offlineRoot + "/sync"'));
+assert.match(worker, /open_cases: cases\.results/);
+assert.doesNotMatch(worker, /pos\.offline_case_rejected/);
+assert.doesNotMatch(worker, /path\.endsWith\("\/reject"\)/);
 assert.match(worker, /offlineRoot \+ "\/cases\/"/);
 assert.match(worker, /pos\.offline_case_rejected/);
 assert.match(worker, /LEFT JOIN pos_sales s ON s\.id=e\.canonical_sale_id/);
