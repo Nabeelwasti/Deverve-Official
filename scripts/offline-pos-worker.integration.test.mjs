@@ -564,6 +564,49 @@ function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change =
   return saleId;
 }
 
+test("real Worker rolls back every conflict-evidence D1 batch statement failure boundary", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const revoked = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/revoke", {
+    reason: "Exercise atomic conflict evidence persistence",
+  });
+  assert.equal(revoked.status, 200);
+  for (let failAt = 0; failAt < 4; failAt += 1) {
+    const sale = {
+      ...fixture.sale,
+      eventId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      createdAt: new Date(Date.now() + failAt + 1).toISOString(),
+    };
+    db.failNextBatchAt = failAt;
+    const response = await api("/api/admin/pos/offline/sync", {
+      device_id: fixture.deviceId,
+      permit_id: fixture.permit.id,
+      events: [{ event: sale, signature: await signSale(fixture.identity, sale) }],
+    });
+    assert.equal(response.status, 503, "conflict evidence failure boundary " + failAt + " must remain retryable");
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE event_id=?").get(sale.eventId).count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=?").get(sale.eventId).count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_sale_conflict' AND entity_id=?").get(sale.eventId).count, 0);
+  }
+  const finalSale = {
+    ...fixture.sale,
+    eventId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    createdAt: new Date(Date.now() + 10).toISOString(),
+  };
+  const recovered = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId,
+    permit_id: fixture.permit.id,
+    events: [{ event: finalSale, signature: await signSale(fixture.identity, finalSale) }],
+  });
+  assert.equal(recovered.status, 200);
+  assert.equal((await recovered.json()).results[0].outcome, "conflict");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE event_id=? AND outcome='conflict'").get(finalSale.eventId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(finalSale.eventId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_actions a JOIN pos_offline_reconciliation_cases c ON c.id=a.case_id WHERE c.event_id=? AND a.action_type='case_opened'").get(finalSale.eventId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_sale_conflict' AND entity_id=?").get(finalSale.eventId).count, 1);
+});
+
 test("real Worker resolves a conflict only against an exact completed sale and consumes its reserved allocation once", async () => {
   const fixture = await createReadyOfflinePermitFixture();
   const caseId = await openRevokedDeviceConflict(fixture);
