@@ -262,6 +262,7 @@ export type OfflineOutboxRecord = {
   attempts: number;
   nextAttemptAt: number;
   lastErrorCode: string | null;
+  claimedUntil?: number;
 };
 
 export type OfflineSyncReceipt = {
@@ -290,7 +291,7 @@ export async function listPendingOfflineSales(limit = 10): Promise<QueuedOffline
       const outboxRequest = transaction.objectStore("outbox").getAll();
       transaction.oncomplete = () => {
         const outbox = (outboxRequest.result as OfflineOutboxRecord[])
-          .filter((record) => record.status === "pending" || record.status === "syncing")
+          .filter((record) => record.status === "pending" && record.nextAttemptAt <= Date.now())
           .sort((a, b) => a.sequence - b.sequence)
           .slice(0, limit);
         const byId = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
@@ -331,7 +332,7 @@ export async function recordOfflineSyncFailure(eventId: string, errorCode: strin
           transaction.abort();
           return;
         }
-        store.put({ ...current, status: "pending", attempts: current.attempts + 1, nextAttemptAt: retryAt, lastErrorCode: errorCode });
+        store.put({ ...current, status: "pending", attempts: current.attempts + 1, nextAttemptAt: retryAt, lastErrorCode: errorCode, claimedUntil: undefined });
         transaction.objectStore("audit").add({ action: "offline_sync_retry_scheduled", eventId, errorCode, recordedAt: new Date().toISOString() });
       };
       request.onerror = () => transaction.abort();
@@ -390,7 +391,7 @@ export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promi
         }
         const status = receipt.outcome === "accepted" || receipt.outcome === "already_accepted" ? "synced" :
           receipt.outcome === "conflict" || receipt.outcome === "rejected" ? "needs_review" : "pending";
-        outbox.put({ ...queue, status, lastErrorCode: receipt.reasonCode ?? null });
+        outbox.put({ ...queue, status, lastErrorCode: receipt.reasonCode ?? null, claimedUntil: undefined });
         transaction.objectStore("syncReceipts").add(receipt);
         transaction.objectStore("audit").add({
           action: status === "synced" ? "offline_sale_acknowledged" : "offline_sale_needs_review",
@@ -410,6 +411,60 @@ export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promi
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error ?? new Error("Offline sale acknowledgement could not be committed."));
       transaction.onerror = () => reject(transaction.error ?? new Error("Offline sale acknowledgement could not be committed."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+
+/**
+ * Atomically leases the next sequential batch to one tab. A crashed tab's lease
+ * expires, allowing a later foreground session to retry the exact same events.
+ */
+export async function claimOfflineSalesForSync(limit = 10, now = Date.now(), leaseMs = 30_000): Promise<QueuedOfflineSale[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20 ||
+      !Number.isSafeInteger(now) || now < 0 ||
+      !Number.isSafeInteger(leaseMs) || leaseMs < 5_000 || leaseMs > 120_000) {
+    throw new Error("Offline sync lease parameters are invalid.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["sales", "outbox", "audit"], "readwrite");
+      const salesRequest = transaction.objectStore("sales").getAll();
+      const outboxStore = transaction.objectStore("outbox");
+      const outboxRequest = outboxStore.getAll();
+      let claimed: QueuedOfflineSale[] = [];
+      let prepared = false;
+      const prepare = () => {
+        if (prepared || salesRequest.readyState !== "done" || outboxRequest.readyState !== "done") return;
+        prepared = true;
+        const saleById = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
+        const eligible = (outboxRequest.result as OfflineOutboxRecord[])
+          .filter((record) =>
+            (record.status === "pending" && record.nextAttemptAt <= now) ||
+            (record.status === "syncing" && (record.claimedUntil ?? 0) <= now))
+          .sort((a, b) => a.sequence - b.sequence)
+          .slice(0, limit);
+        const audit = transaction.objectStore("audit");
+        for (const record of eligible) {
+          const sale = saleById.get(record.eventId);
+          if (!sale || sale.sequence !== record.sequence) {
+            transaction.abort();
+            return;
+          }
+          outboxStore.put({ ...record, status: "syncing", claimedUntil: now + leaseMs });
+          audit.add({ action: "offline_sale_sync_claimed", eventId: record.eventId, sequence: record.sequence, claimedAt: new Date(now).toISOString() });
+          claimed.push(sale);
+        }
+      };
+      salesRequest.onsuccess = prepare;
+      outboxRequest.onsuccess = prepare;
+      salesRequest.onerror = outboxRequest.onerror = () => transaction.abort();
+      transaction.oncomplete = () => resolve(claimed);
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline sales could not be leased for sync."));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline sales could not be leased for sync."));
     });
   } finally {
     database.close();
