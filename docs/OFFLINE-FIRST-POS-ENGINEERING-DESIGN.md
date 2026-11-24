@@ -1,6 +1,6 @@
 # De VERVE Offline-First POS — Engineering Design and Acceptance Plan
 
-**Status:** Partial implementation in draft PR; emergency checkout remains disabled and production acceptance is not complete.
+**Status:** Advanced engineering foundation in draft PR; emergency checkout remains deliberately disabled pending release gates.
 **Branch:** `feat/online-first-emergency-pos-completion`
 **Date:** 24 November 2026
 
@@ -17,13 +17,13 @@ Implemented on the draft branch, not deployed to production:
 
 Not yet implemented or verified:
 
-- Server-signed permit issuance and client-side permit verification against a separately provisioned public key.
-- Signed offline sale submission, full server-side reconciliation into POS sales/payments/inventory/ledger/receipt records, and idempotent replay handling.
-- Owner-facing UI for device enrollment, allocation, permits, sync status and conflict resolution.
-- Complete offline catalogue/shift snapshot provisioning and cache-completeness readiness gate.
-- Physical Android browser acceptance, production D1 backup/migration rehearsal, controlled preview and production rollout.
+- Offline checkout is not integrated into the live POS sell/cart flow. There is no path that creates a local sale from the current cart, prints a clearly marked provisional receipt, or gates checkout on a fully verified offline-ready state.
+- A complete cache-readiness handshake is not yet integrated with POS bootstrap and the live application asset manifest. The service worker has precache/check primitives, but the application does not yet prove all critical POS assets are cached before any offline checkout.
+- A complete owner reconciliation workflow is not implemented. Conflicts are intentionally kept open and visible; there is no safe manual sale/stock/cash reconciliation UI that links an audited canonical correction to the case.
+- Automated end-to-end/failure-injection coverage for real IndexedDB, Cloudflare outage, concurrent registers, interrupted sync, revocation and recovery is incomplete.
+- Physical Android browser acceptance, isolated production-like D1 backup/migration rehearsal, signing-key provisioning/rotation, controlled preview and production rollout remain release gates.
 
-**Safety:** No offline checkout is enabled. No production migration has been applied. Do not merge or deploy this branch as an offline-POS release until every outstanding item and release gate below is satisfied.  
+**Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the missing integrations, automated tests, key management, backup/migration rehearsal and physical-device acceptance are complete.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
 **Non-goal:** Replacing the existing POS, changing the accounting model, or making customer checkout work offline.
 
