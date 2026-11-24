@@ -2655,7 +2655,9 @@ async function processOfflineSaleEvent(
   if (!session || session.status !== "open" || session.register_id !== permit.register_id || session.opened_by_admin_id !== permit.cashier_admin_id) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "register_shift_closed_or_changed");
   if (!cashAccount) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cash_account_unavailable");
   if (Number(eventCount?.count ?? 0) >= Number(permit.max_events ?? 20)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_event_limit_reached");
-  if (Number(sequence) !== Number(lastSequence?.sequence ?? 0) + 1) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_sequence_gap");
+  const expectedSequence = Number(lastSequence?.sequence ?? 0) + 1;
+  if (Number(sequence) > expectedSequence) return { outcome: "retry", event_id: eventId, reason_code: "device_sequence_gap", expected_sequence: expectedSequence };
+  if (Number(sequence) < expectedSequence) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_sequence_replay_gap");
 
   if (!Array.isArray(sale.lines) || sale.lines.length < 1 || sale.lines.length > 30) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_lines");
   const allocations = Array.isArray(permitClaims.allocations) ? permitClaims.allocations as Array<Record<string, unknown>> : [];
@@ -2719,9 +2721,16 @@ async function processOfflineSaleEvent(
     env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome) VALUES (?,?,?,?,?,?,?,?,'pending')")
       .bind(eventId, deviceId, permitId, idempotencyKey, sequence, payloadHash, payloadJson, signature),
     env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,request_fingerprint,cashier_admin_id) " +
-      "SELECT ?,?,?,?,?,?,?,?, ?,0,?,'completed',?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='pending') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND opened_by_admin_id=?) AND EXISTS (SELECT 1 FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1) " +
+      "SELECT ?,?,?,?,?,?,?,?, ?,0,?,'completed',?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='pending') " +
+      "AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND opened_by_admin_id=? AND register_id=?) " +
+      "AND EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') " +
+      "AND EXISTS (SELECT 1 FROM pos_offline_permits WHERE id=? AND device_id=? AND status='active' AND expires_at>?) " +
+      "AND EXISTS (SELECT 1 FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL AND pc.granted_at=?) " +
+      "AND EXISTS (SELECT 1 FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1) " +
       resolved.map(() => "AND EXISTS (SELECT 1 FROM pos_offline_stock_allocations WHERE id=? AND device_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?)").join(" "))
-      .bind(saleId, receiptNumber, String(sale.sessionId), "Walk-in customer", "", null, 0, 0, subtotal, total, idempotencyKey, payloadHash, String(sale.cashierId), eventId, String(sale.sessionId), String(sale.cashierId), ...resolved.flatMap((item) => [item.allocationId, deviceId, item.quantity])),
+      .bind(saleId, receiptNumber, String(sale.sessionId), "Walk-in customer", "", null, 0, 0, subtotal, total, idempotencyKey, payloadHash, String(sale.cashierId),
+        eventId, String(sale.sessionId), String(sale.cashierId), String(permit.register_id), deviceId, permitId, deviceId, now, String(sale.cashierId), String(permit.cashier_grant_version),
+        ...resolved.flatMap((item) => [item.allocationId, deviceId, item.quantity])),
     env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
   ];
   for (const item of resolved) {
@@ -2729,8 +2738,8 @@ async function processOfflineSaleEvent(
       env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE " + saleExists)
         .bind(crypto.randomUUID(), saleId, item.productId, item.variantId, item.productName, item.sku, item.size, item.color, item.quantity, item.unitPrice, item.costPrice, item.lineTotal, saleId),
       env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
-      env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand>=? AND " + saleExists)
-        .bind(item.quantity, new Date().toISOString(), item.variantId, item.quantity, saleId),
+      env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand>=? AND COALESCE(sku,'')=? AND COALESCE(size,'')=? AND COALESCE(color,'')=? AND EXISTS (SELECT 1 FROM products p WHERE p.id=product_variants.product_id AND p.status='published' AND p.name=? AND p.retail_price_paisa=?) AND " + saleExists)
+        .bind(item.quantity, new Date().toISOString(), item.variantId, item.quantity, item.sku, item.size, item.color, item.productName, item.unitPrice, saleId),
       env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
       env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=? AND " + saleExists)
         .bind(item.quantity, new Date().toISOString(), item.allocationId, deviceId, item.variantId, item.quantity, saleId),
