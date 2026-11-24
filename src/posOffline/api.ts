@@ -29,7 +29,7 @@ type ApiPermit = {
 };
 type ApiSyncResult = {
   outcome: "accepted" | "conflict" | "rejected" | "retry";
-  event_id?: string;
+  event_id: string;
   canonical_sale_id?: string;
   receipt_number?: string;
   server_received_at?: string;
@@ -175,14 +175,15 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
     for (let index = 0; index < claimed.length; index += 1) {
       const sale = claimed[index];
       const result = results[index];
-      if (!result) {
-        await retry(sale, "sync_result_missing");
-        continue;
+      if (!result || result.event_id !== sale.eventId ||
+          typeof result.server_received_at !== "string" || !Number.isSafeInteger(Date.parse(result.server_received_at))) {
+        await retry(sale, !result ? "sync_result_missing" : "sync_result_identity_or_timestamp_invalid");
+        for (let rest = index + 1; rest < claimed.length; rest += 1) await retry(claimed[rest], "sync_batch_stopped");
+        break;
       }
-      const serverReceivedAt = typeof result.server_received_at === "string" && Number.isSafeInteger(Date.parse(result.server_received_at))
-        ? result.server_received_at
-        : new Date().toISOString();
-      if (result.outcome === "accepted" && typeof result.canonical_sale_id === "string" && typeof result.receipt_number === "string") {
+      const serverReceivedAt = result.server_received_at;
+      if (result.outcome === "accepted" && typeof result.canonical_sale_id === "string" && UUID.test(result.canonical_sale_id) &&
+          typeof result.receipt_number === "string" && result.receipt_number.length >= 6 && result.receipt_number.length <= 80) {
         await acknowledgeOfflineSale({
           eventId: sale.eventId,
           outcome: "accepted",
@@ -201,6 +202,8 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
         needsReview += 1;
       } else {
         await retry(sale, result.reason_code || "sync_retry_requested");
+        for (let rest = index + 1; rest < claimed.length; rest += 1) await retry(claimed[rest], "sync_batch_stopped");
+        break;
       }
       const acknowledgementCommitted = result.outcome === "accepted" &&
         typeof result.canonical_sale_id === "string" && result.canonical_sale_id.length > 0 &&
