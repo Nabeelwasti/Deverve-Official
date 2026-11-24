@@ -3031,6 +3031,31 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
     }
 
+    if (request.method === "POST" && path.startsWith(offlineRoot + "/cases/") && path.endsWith("/reject")) {
+      const caseId = path.slice((offlineRoot + "/cases/").length, -"/reject".length);
+      if (!isUuid(caseId)) return error("A valid reconciliation case ID is required", 400);
+      const body = await readJson(request, 2_000);
+      const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
+      if (reason.length < 3) return error("A clear rejection reason is required", 400);
+      const current = await env.DB.prepare("SELECT c.id,c.status,e.event_id,e.device_id,e.outcome FROM pos_offline_reconciliation_cases c JOIN pos_offline_events e ON e.event_id=c.event_id WHERE c.id=? LIMIT 1").bind(caseId).first<Record<string, unknown>>();
+      if (!current) return error("Offline reconciliation case not found", 404);
+      if (current.status === "resolved") return json({ resolved: true, already_resolved: true, case_id: caseId });
+      if (current.outcome !== "conflict") return error("Only a stored conflict can be rejected through this action", 409);
+      try {
+        const now = new Date().toISOString();
+        await env.DB.batch([
+          env.DB.prepare("UPDATE pos_offline_events SET outcome='rejected',reason_code=?,processed_at=? WHERE event_id=? AND outcome='conflict' AND EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='open')").bind(reason, now, current.event_id, caseId),
+          env.DB.prepare("UPDATE pos_offline_reconciliation_cases SET status='resolved',resolved_at=? WHERE id=? AND status='open' AND EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='rejected')").bind(now, caseId, current.event_id),
+          env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) SELECT ?,?,?, 'rejected',?,'{}' WHERE changes()=1").bind(crypto.randomUUID(), caseId, admin.admin_user_id, reason),
+          env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (case_id) SELECT NULL WHERE changes()<>1"),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_case_rejected','pos_offline_reconciliation_case',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='resolved')").bind(crypto.randomUUID(), admin.admin_user_id, caseId, JSON.stringify({ event_id: current.event_id, device_id: current.device_id, reason }), caseId),
+        ]);
+        const resolved = await env.DB.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").bind(caseId).first<{ status: string }>();
+        if (resolved?.status !== "resolved") return error("The reconciliation case could not be resolved atomically", 409);
+        return json({ resolved: true, case_id: caseId, event_id: current.event_id });
+      } catch { return error("The reconciliation case could not be resolved safely", 503); }
+    }
+
     const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits|permit))?$/i);
     if (deviceMatch) {
       const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
@@ -3102,7 +3127,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
           if (activePermit) return error("Revoke the device's active offline permit before releasing stock", 409);
           if (body?.owner_confirms_device_queue_reconciled !== true) return error("Explicitly confirm that the physical device's local queue has been reconciled before releasing stock", 400);
-          const unresolved = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE device_id=? AND outcome IN ('pending','conflict','rejected')").bind(deviceId).first<{ count: number }>();
+          "SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))").bind(deviceId).first<{ count: number }>();
           if (Number(unresolved?.count ?? 0) > 0) return error("Resolve every pending or conflicted offline sale before releasing this device's remaining stock", 409);
           const now = new Date().toISOString();
           const active = await env.DB.prepare("SELECT id,allocated_quantity,consumed_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=? AND status='active'").bind(deviceId).all<Record<string, number>>();
