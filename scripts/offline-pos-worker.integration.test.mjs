@@ -571,12 +571,18 @@ function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change =
       .run(cashierId, cashierId + "@integration.test", "test-only-not-used");
   }
   if (overrides.useDifferentShift) {
+    const otherRegisterId = randomUUID();
     const otherSessionId = randomUUID();
+    sqlite.prepare("INSERT INTO pos_registers (id,name,location_label,is_active) VALUES (?,?,?,1)")
+      .run(otherRegisterId, "Mismatch register", "Isolated reconciliation mismatch");
     sqlite.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status) VALUES (?,?,?,0,0,'open')")
-      .run(otherSessionId, registerId, ownerId);
+      .run(otherSessionId, otherRegisterId, ownerId);
     overrides = { ...overrides, sessionId: otherSessionId };
   }
   const effectiveSessionId = overrides.sessionId ?? sessionId;
+  // Keep enough fixture stock for deliberately mismatched quantities; this is
+  // a synthetic canonical sale and must not fail before the reconciliation guard.
+  sqlite.prepare("UPDATE product_variants SET stock_on_hand=20 WHERE id=?").run(variantId);
   sqlite.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=?").run(quantity, variantId);
   sqlite.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,'Walk-in customer','',?,0,?,'completed',?,?)")
     .run(saleId, "DV-RECON-" + saleId.slice(0, 8), effectiveSessionId, subtotal, total, randomUUID(), cashierId);
