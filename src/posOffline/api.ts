@@ -11,6 +11,8 @@ import {
   claimOfflineSalesForSync,
   readStoredOfflinePermit,
   readStoredOfflineSnapshot,
+  readStoredOfflineShift,
+  inspectOfflineStorage,
   recordOfflineSyncFailure,
   saveVerifiedOfflinePermit,
   setOfflineShellReadiness,
@@ -218,6 +220,34 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
   }
 }
 
+
+export async function restoreOfflineCashierSession(): Promise<{ id: string; email: string; role: string; can_use_pos: boolean }> {
+  const [health, permit, snapshot, shift, identity, shell] = await Promise.all([
+    inspectOfflineStorage(),
+    readStoredOfflinePermit(),
+    readStoredOfflineSnapshot(),
+    readStoredOfflineShift(),
+    getOrCreateOfflineDeviceIdentity(),
+    checkOfflineShellReady(),
+  ]);
+  const claims = permit?.claims;
+  if (!health.checkoutStorageReady || !permit || !snapshot || !shift || !shell.ready || !claims ||
+      identity.deviceId !== claims.device_id || claims.offline_checkout_enabled !== true ||
+      claims.cash_only !== true || claims.allow_refunds !== false || claims.allow_voids !== false ||
+      claims.allow_shift_close !== false || Date.parse(String(claims.expires_at ?? "")) <= Date.now() ||
+      shift.sessionId !== claims.session_id || shift.registerId !== claims.register_id ||
+      shift.cashierId !== claims.cashier_admin_id || shift.permitId !== permit.permitId ||
+      !await verifyOfflinePermitSignature(claims, permit.signatureBase64Url, permit.verificationPublicKeyJwk) ||
+      !await verifyOfflinePermitSnapshot(snapshot, String(claims.snapshot_hash ?? ""))) {
+    throw new Error("No valid signed offline cashier permit, persistent local storage, cached POS shell or matching open shift is available.");
+  }
+  return {
+    id: String(claims.cashier_admin_id),
+    email: "Offline cashier",
+    role: "viewer",
+    can_use_pos: true,
+  };
+}
 
 export async function getOfflinePOSStatus(): Promise<{ checkout_enabled: boolean; permit_signing_configured: boolean }> {
   return adminRequest<{ checkout_enabled: boolean; permit_signing_configured: boolean }>("/api/admin/pos/offline/status");
