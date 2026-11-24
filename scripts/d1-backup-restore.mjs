@@ -68,7 +68,7 @@ async function restoreDrill(sql,expected){
   const init=await api("POST",path,{action:"init",etag});if(!init.upload_url||!init.filename)throw new Error("D1 import did not provide its upload URL.");
   const uploaded=await fetch(init.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:sql,signal:AbortSignal.timeout(120000)});
   if(!uploaded.ok)throw new Error("Temporary D1 upload failed ("+uploaded.status+").");
-  let state=await api("POST",path,{action:"ingest",etag,filename:init.filename}),bookmark=state.at_bookmark;
+  let state=await api("POST",path,{action:"ingest",etag,filename:init.filename}),bookmark=state.at_bookmark||init.at_bookmark;
   for(let i=0;i<180&&state.status!=="complete";i++){if(state.status==="error")throw new Error("D1 restore failed: "+(state.error||"unknown"));if(!bookmark)throw new Error("D1 restore returned no polling bookmark.");await sleep(1000);state=await api("POST",path,{action:"poll",current_bookmark:bookmark});bookmark=state.at_bookmark||bookmark;}
   if(state.status!=="complete")throw new Error("D1 restore did not complete within three minutes.");
   const restored=await snapshot(id);
