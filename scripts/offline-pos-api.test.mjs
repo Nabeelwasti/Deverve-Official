@@ -31,7 +31,7 @@ assert.match(worker, /allow_voids: false/);
 assert.match(worker, /allow_shift_close: false/);
 assert.match(worker, /max_events: 20/);
 assert.match(worker, /Offline permit signing is not configured/);
-assert.match(worker, /\/api\/admin\/pos\/offline\/verification-key/);
+assert.ok(worker.includes("offlineRoot + \"/verification-key\""));
 assert.match(worker, /snapshotHash = await sha256Hex\(canonicalOfflineJson\(snapshot\)\)/);
 
 assert.match(worker, /pos\\.offline_permit_issued/);
