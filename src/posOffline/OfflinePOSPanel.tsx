@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminRequest } from "../adminApi";
 import { getOrCreateOfflineDeviceIdentity } from "./deviceCrypto";
 import { checkOfflineShellReady, enrollOfflineDevice, fetchAndStoreOfflinePermit, getOfflinePOSStatus, issueOfflinePermit, prepareOfflineShell, syncOfflineQueue } from "./api";
+import { listOfflineQueueForPermit, readStoredOfflinePermit, type OfflineQueueSummary } from "./storage";
 
 type Register = { id: string; name: string; location_label: string };
 type StockItem = { variant_id: string; product_name: string; sku: string | null; barcode: string | null; size: string; color: string; available_quantity: number };
@@ -41,6 +42,24 @@ export default function OfflinePOSPanel({
   const [shellReady, setShellReady] = useState(false);
   const [checkoutEnabled, setCheckoutEnabled] = useState(false);
   const [permitSigningConfigured, setPermitSigningConfigured] = useState(false);
+  const [localQueue, setLocalQueue] = useState<OfflineQueueSummary[]>([]);
+  const [queueError, setQueueError] = useState("");
+
+  const loadLocalQueue = useCallback(async () => {
+    try {
+      const permit = await readStoredOfflinePermit();
+      if (!permit) {
+        setLocalQueue([]);
+        setQueueError("");
+        return;
+      }
+      const entries = await listOfflineQueueForPermit(permit.permitId);
+      setLocalQueue(entries);
+      setQueueError("");
+    } catch (caught) {
+      setQueueError(caught instanceof Error ? caught.message : "The local offline queue could not be verified.");
+    }
+  }, []);
 
   const selectedVariant = items.find((item) => item.variant_id === variantId);
   const remainingForDevice = useMemo(
@@ -75,6 +94,7 @@ export default function OfflinePOSPanel({
       setError(true);
     });
     void loadDevices();
+    void loadLocalQueue();
     void checkOfflineShellReady().then((result) => setShellReady(result.ready)).catch(() => setShellReady(false));
     void getOfflinePOSStatus().then((result) => {
       setCheckoutEnabled(result.checkout_enabled);
@@ -83,7 +103,7 @@ export default function OfflinePOSPanel({
       setCheckoutEnabled(false);
       setPermitSigningConfigured(false);
     });
-  }, [canManageMoney, loadDevices]);
+  }, [canManageMoney, loadDevices, loadLocalQueue]);
 
   const runAction = async (action: () => Promise<string>) => {
     setBusy(true);
@@ -91,7 +111,7 @@ export default function OfflinePOSPanel({
     setError(false);
     try {
       setMessage(await action());
-      await loadDevices();
+      await Promise.all([loadDevices(), loadLocalQueue()]);
       onRefresh?.();
     } catch (caught) {
       setMessage(caught instanceof Error ? caught.message : "The offline POS action could not be completed.");
@@ -189,6 +209,26 @@ export default function OfflinePOSPanel({
             </div>
           </div>
         )}
+      </section>
+
+      <section className="pos-card" aria-label="Local offline sales queue">
+        <div className="admin-panel-heading">
+          <div><h3>Local sale queue & recovery</h3><p className="admin-muted">Durable sale evidence remains on this browser until every event receives a server acknowledgement or owner review.</p></div>
+          <button type="button" className="admin-secondary" disabled={busy} onClick={() => void loadLocalQueue()}>Refresh queue</button>
+        </div>
+        {queueError && <p className="admin-error" role="alert">{queueError}</p>}
+        {!queueError && localQueue.length === 0 && <p className="admin-muted">No offline sale events are stored for the active local permit.</p>}
+        {localQueue.length > 0 && <div className="pos-table-wrap"><table className="pos-table"><thead><tr><th>Sequence / event</th><th>Recorded</th><th>Items</th><th>Total</th><th>Sync status</th><th>Server receipt</th></tr></thead><tbody>
+          {localQueue.map(({sale,outbox,receipt}) => <tr key={sale.eventId}>
+            <td><strong>#{sale.sequence}</strong><small>{sale.eventId.slice(0,8)}…</small></td>
+            <td>{new Date(sale.createdAt).toLocaleString("en-PK")}</td>
+            <td>{sale.lines.reduce((sum,line)=>sum+line.quantity,0)} units<small>{sale.lines.map(line=>line.productName).join(", ").slice(0,100)}</small></td>
+            <td>{new Intl.NumberFormat("en-PK",{style:"currency",currency:"PKR"}).format(sale.totalPaisa/100)}</td>
+            <td><strong>{outbox.status==="synced"?"Synced":outbox.status==="needs_review"?"Owner review required":outbox.status==="syncing"?"Sync in progress":"Pending sync"}</strong>{receipt?.reasonCode&&<small>{receipt.reasonCode}</small>}</td>
+            <td>{receipt?.receiptNumber||"—"}{receipt?.serverReceivedAt&&<small>{new Date(receipt.serverReceivedAt).toLocaleString("en-PK")}</small>}</td>
+          </tr>)}
+        </tbody></table></div>}
+        <p className="admin-muted">Never clear browser data, uninstall the browser, or release this device’s reserved stock while any event is pending, syncing or awaiting owner review.</p>
       </section>
 
       {canManageMoney && (
