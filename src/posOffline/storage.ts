@@ -373,7 +373,9 @@ export async function recordOfflineSyncFailure(eventId: string, errorCode: strin
           transaction.abort();
           return;
         }
-        const attempts = Number.isSafeInteger(current.attempts) ? current.attempts + 1 : 1;\n        const backoffMs = Math.min(30 * 60_000, 30_000 * 2 ** Math.min(attempts, 6));\n        store.put({ ...current, status: "pending", attempts, nextAttemptAt: retryAt ?? Date.now() + backoffMs, lastErrorCode: errorCode, claimedUntil: undefined });
+        const attempts = Number.isSafeInteger(current.attempts) ? current.attempts + 1 : 1;
+        const backoffMs = Math.min(30 * 60_000, 30_000 * 2 ** Math.min(attempts, 6));
+        store.put({ ...current, status: "pending", attempts, nextAttemptAt: retryAt ?? Date.now() + backoffMs, lastErrorCode: errorCode, claimedUntil: undefined });
         transaction.objectStore("audit").add({ action: "offline_sync_retry_scheduled", eventId, errorCode, recordedAt: new Date().toISOString() });
       };
       request.onerror = () => transaction.abort();
