@@ -58,3 +58,9 @@ assert.match(source, /export async function claimOfflineSalesForSync/);
 assert.match(source, /claimedUntil/);
 assert.match(source, /status === "syncing".*claimedUntil/);
 assert.match(source, /nextAttemptAt <= now/);
+assert.match(source, /function selectSequentialSyncRecords/);
+assert.match(source, /record\.sequence !== expectedSequence/);
+assert.match(source, /record\.status === "synced"/);
+assert.match(source, /allowExpiredLease/);
+assert.match(source, /if \(!pendingDue && !expiredLease\) break/);
+
