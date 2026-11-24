@@ -6,7 +6,6 @@ const migration = readFileSync(new URL("../migrations/0046_pos_offline_enrollmen
 const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
 
 assert.match(worker, /const offlineRoot = "\/api\/admin\/pos\/offline"/);
-assert.match(worker, /signed offline sale sync/);
 assert.match(worker, /isCashier && request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
 assert.match(worker, /admin\.admin_user_id !== permit\.cashier_admin_id/);
 assert.match(worker, /authenticated_cashier_mismatch/);
@@ -30,6 +29,9 @@ assert.match(worker, /pos\.offline_stock_allocated/);
 assert.match(worker, /async function issueOfflinePermit/);
 assert.match(worker, /async function processOfflineSaleEvent/);
 assert.match(worker, /async function recordOfflineSaleConflict/);
+assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "POST" && path === "\/api\/admin\/pos\/offline\/sync"/);
+assert.match(worker, /const cashierCanIssueOfflinePermit = request\.method === "POST"/);
+assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "GET"/);
 assert.ok(worker.includes('offlineRoot + "/sync"'));
 assert.match(worker, /offlineRoot \/cases\//);
 assert.match(worker, /pos\.offline_case_rejected/);
