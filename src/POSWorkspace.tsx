@@ -3,6 +3,9 @@ import BarcodeScanner from "./BarcodeScanner";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
 import { adminRequest as request, AdminRequestError } from "./adminApi";
 import OfflinePOSPanel from "./posOffline/OfflinePOSPanel";
+import { checkOfflineShellReady } from "./posOffline/api";
+import { getOrCreateOfflineDeviceIdentity, verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "./posOffline/deviceCrypto";
+import { inspectOfflineStorage, queueOfflineSale, readStoredOfflinePermit, readStoredOfflineShift, readStoredOfflineSnapshot } from "./posOffline/storage";
 type Item={product_id:string;product_name:string;category:string;retail_price_paisa:number|null;variant_id:string;sku:string|null;barcode:string|null;size:string;color:string;stock_on_hand:number;reserved_quantity:number;reorder_level:number;available_quantity:number;cost_price_paisa?:number};
 type Account={id:string;name:string;kind:"cash"|"bank"|"wallet"|"gateway";masked_reference:string;opening_balance_paisa:number};
 type Session={id:string;register_id:string;opening_cash_paisa:number;expected_cash_paisa:number;status:"open"};
@@ -21,7 +24,7 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
  const [pendingSaleConflict,setPendingSaleConflict]=useState(false);
  const pendingSaleKeyRef=useRef(pendingSaleKey);
  const [accountId,setAccountId]=useState("cash-main"),[cashTendered,setCashTendered]=useState(""),[openingCash,setOpeningCash]=useState("0"),[countedCash,setCountedCash]=useState("");
- const [activeTab,setActiveTab]=useState<"sell"|"cashbook"|"expenses"|"reports"|"history"|"offline">("sell"),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[message,setMessage]=useState(""),[isError,setIsError]=useState(false),[receipt,setReceipt]=useState<SaleReceipt|null>(null);
+ const [activeTab,setActiveTab]=useState<"sell"|"cashbook"|"expenses"|"reports"|"history"|"offline">("sell"),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[message,setMessage]=useState(""),[isError,setIsError]=useState(false),[receipt,setReceipt]=useState<SaleReceipt|null>(null),[offlineQueuedReceipt,setOfflineQueuedReceipt]=useState<{eventId:string;sequence:number;totalPaisa:number;createdAt:string}|null>(null);
  const [period,setPeriod]=useState<"today"|"month"|"year">("today"),[summary,setSummary]=useState<Summary|null>(null),[expenses,setExpenses]=useState<Expense[]>([]),[sales,setSales]=useState<Sale[]>([]);
  const [voidTarget,setVoidTarget]=useState<Sale|null>(null),[voidReason,setVoidReason]=useState("");
  const [expenseCategory,setExpenseCategory]=useState("Shop supplies"),[expenseDescription,setExpenseDescription]=useState(""),[expenseAmount,setExpenseAmount]=useState(""),[expenseAccount,setExpenseAccount]=useState("cash-main"),[expenseDate,setExpenseDate]=useState(localDate()),[receiptFile,setReceiptFile]=useState<File|null>(null);
@@ -65,6 +68,50 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
   pendingSaleKeyRef.current="";setPendingSaleKey("");setPendingSaleConflict(false);setCart([]);setCustomerName("Walk-in customer");setCustomerPhone("");setCustomerEmail("");setWhatsappReceiptConsent(false);
   notify("Previous checkout key cleared. Review the sales history before recording another sale.");
  };
+ const completeOfflineSale=async(tendered:number)=>{
+  if(!cart.length||!session)throw new Error("An open register shift and at least one sale item are required.");
+  if(selectedAccount?.id!=="cash-main"||selectedAccount.kind!=="cash")throw new Error("Emergency offline sales are cash-only and must use the main cash account.");
+  if(customerName.trim()!=="Walk-in customer"||customerPhone.trim()||customerEmail.trim()||whatsappReceiptConsent)throw new Error("Offline checkout does not store customer contact details. Use a walk-in cash sale without email or WhatsApp delivery.");
+  if(pendingSaleKeyRef.current)throw new Error("A previous online checkout is still uncertain. Reconnect and reconcile it before starting another sale.");
+  const [health,permit,snapshot,shift,identity,shell]=await Promise.all([
+   inspectOfflineStorage(),readStoredOfflinePermit(),readStoredOfflineSnapshot(),readStoredOfflineShift(),
+   getOrCreateOfflineDeviceIdentity(),checkOfflineShellReady(),
+  ]);
+  if(!health.checkoutStorageReady)throw new Error("This browser does not have the persistent secure storage required for offline checkout. Keep using online POS.");
+  if(!shell.ready)throw new Error("The POS application shell is not completely cached. Prepare the offline app cache while online before selling offline.");
+  if(!permit||!snapshot||!shift)throw new Error("This browser has no verified offline permit, catalogue snapshot or cashier shift.");
+  const claims=permit.claims;
+  if(identity.deviceId!==claims.device_id||claims.offline_checkout_enabled!==true||claims.cash_only!==true||
+     claims.allow_refunds!==false||claims.allow_voids!==false||claims.allow_shift_close!==false||
+     claims.session_id!==session.id||claims.register_id!==session.register_id||
+     shift.sessionId!==session.id||shift.registerId!==session.register_id||shift.permitId!==permit.permitId||
+     Date.parse(String(claims.expires_at??""))<=Date.now())throw new Error("The local device, shift or signed offline permit is expired or does not match this checkout.");
+  if(!await verifyOfflinePermitSignature(claims,permit.signatureBase64Url,permit.verificationPublicKeyJwk)||
+     !await verifyOfflinePermitSnapshot(snapshot,String(claims.snapshot_hash??"")))throw new Error("The local permit or catalogue integrity check failed. No sale was recorded.");
+  const snapshotByVariant=new Map(snapshot.map(item=>[String(item.variantId),item]));
+  const lines=cart.map((line)=>{
+   const saved=snapshotByVariant.get(line.item.variant_id);
+   if(!saved||Number(saved.unitPricePaisa)!==Number(line.item.retail_price_paisa)||
+      String(saved.productName)!==line.item.product_name||String(saved.sku??"")!==String(line.item.sku??"")||
+      String(saved.size??"")!==line.item.size||String(saved.color??"")!==line.item.color)throw new Error("A cart item does not match the signed offline catalogue. Refresh and review the product before selling.");
+   const lineTotalPaisa=Number(saved.unitPricePaisa)*line.quantity;
+   if(!Number.isSafeInteger(lineTotalPaisa))throw new Error("The offline sale amount is invalid.");
+   return {variantId:String(saved.variantId),sku:String(saved.sku??""),productName:String(saved.productName),size:String(saved.size??""),color:String(saved.color??""),quantity:line.quantity,unitPricePaisa:Number(saved.unitPricePaisa),lineTotalPaisa};
+  });
+  const subtotalPaisa=lines.reduce((sum,line)=>sum+line.lineTotalPaisa,0);
+  if(!Number.isSafeInteger(subtotalPaisa)||subtotalPaisa!==total||tendered<subtotalPaisa)throw new Error("Offline cash total does not match the signed product prices.");
+  const createdAt=new Date().toISOString();
+  const queued=await queueOfflineSale({
+   eventId:crypto.randomUUID(),idempotencyKey:crypto.randomUUID(),deviceId:identity.deviceId,
+   permitId:permit.permitId,registerId:session.register_id,sessionId:session.id,
+   cashierId:String(claims.cashier_admin_id),snapshotVersion:String(claims.snapshot_version),
+   createdAt,currency:"PKR",lines,subtotalPaisa,totalPaisa:subtotalPaisa,
+   cashTenderedPaisa:tendered,changePaisa:tendered-subtotalPaisa,
+  });
+  setOfflineQueuedReceipt({eventId:queued.eventId,sequence:queued.sequence,totalPaisa:queued.totalPaisa,createdAt});
+  setReceipt(null);setCart([]);setCustomerName("Walk-in customer");setCustomerPhone("");setCustomerEmail("");setWhatsappReceiptConsent(false);
+  notify("Offline sale safely saved on this device as pending. It is not an official receipt until the server confirms synchronization.");
+ };
  const completeSale=async()=>{
   if(!cart.length||!session||!selectedAccount)return;
   if(customerEmail.trim()&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim())){notify("Enter a valid customer email address for the invoice copy.",true);return;}
@@ -72,6 +119,18 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
   const method=selectedAccount.kind==="cash"?"cash":selectedAccount.kind==="bank"?"bank_transfer":selectedAccount.kind==="wallet"?"mobile_wallet":"card";
   const tendered=method==="cash"?paisa(cashTendered):total;
   if(tendered<total){notify("Cash received is less than the sale total.",true);return;}
+  const queueEmergencySale=async()=>{
+   setBusy(true);
+   try{await completeOfflineSale(tendered);}catch(e){notify(e instanceof Error?e.message:"Offline sale could not be safely stored. No sale was recorded.",true);}finally{setBusy(false);}
+  };
+  if(!navigator.onLine){await queueEmergencySale();return;}
+  try{await request<{online:boolean}>("/api/admin/pos/health");}
+  catch(healthError){
+   if((healthError instanceof TypeError||(healthError instanceof AdminRequestError&&healthError.status>=500))&&method==="cash"&&selectedAccount?.id==="cash-main"){
+    await queueEmergencySale();return;
+   }
+   notify(healthError instanceof Error?healthError.message:"The POS service could not be reached. Keep this checkout open and retry.",true);return;
+  }
   if(!pendingSaleKeyRef.current){
    const generatedKey=crypto.randomUUID();
    try{localStorage.setItem("deverve-pos-pending-sale-key",generatedKey);}catch{notify("Your browser is blocking site storage. Allow local storage before recording a sale so an uncertain checkout can be safely retried.",true);return;}
