@@ -53,3 +53,8 @@ assert.match(source, /export async function recordOfflineSyncFailure/);
 assert.match(source, /export async function acknowledgeOfflineSale/);
 assert.match(source, /syncReceipts/);
 assert.match(source, /Offline sale acknowledgement could not be committed/);
+
+assert.match(source, /export async function claimOfflineSalesForSync/);
+assert.match(source, /claimedUntil/);
+assert.match(source, /status === "syncing".*claimedUntil/);
+assert.match(source, /nextAttemptAt <= now/);
