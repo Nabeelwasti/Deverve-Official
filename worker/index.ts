@@ -3060,6 +3060,103 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
     }
 
+
+    const reconciliationMatch = path.match(/^\\/api\\/admin\\/pos\\/offline\\/reconciliation-cases\\/([a-f0-9-]{36})\\/resolve$/i);
+    if (request.method === "POST" && reconciliationMatch) {
+      if (!canManageMoney) return error("Only an owner or manager can resolve offline reconciliation cases", 403);
+      if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+      const body = await readJson(request, 3_000);
+      const canonicalSaleId = typeof body?.canonical_sale_id === "string" ? body.canonical_sale_id : "";
+      const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 1_000) : "";
+      if (!isUuid(canonicalSaleId) || reason.length < 10) return error("Provide an existing POS sale ID and a reconciliation explanation of at least 10 characters", 400);
+      try {
+        const reconciliation = await env.DB.prepare(
+          "SELECT c.id AS case_id,c.status AS case_status,e.event_id,e.device_id,e.outcome,e.payload_json,e.permit_id " +
+          "FROM pos_offline_reconciliation_cases c JOIN pos_offline_events e ON e.event_id=c.event_id WHERE c.id=? LIMIT 1"
+        ).bind(reconciliationMatch[1]).first<Record<string, unknown>>();
+        if (!reconciliation) return error("Offline reconciliation case not found", 404);
+        if (reconciliation.case_status !== "open" || !["conflict", "rejected"].includes(String(reconciliation.outcome))) {
+          return error("This case is no longer open for manual reconciliation", 409);
+        }
+        const payload = JSON.parse(String(reconciliation.payload_json)) as Record<string, unknown>;
+        if (!Array.isArray(payload.lines) || payload.lines.length < 1 || payload.lines.length > 30 ||
+            !isUuid(payload.sessionId) || !isUuid(payload.cashierId) ||
+            !Number.isSafeInteger(payload.totalPaisa) || !Number.isSafeInteger(payload.subtotalPaisa) ||
+            payload.totalPaisa !== payload.subtotalPaisa) {
+          return error("The immutable offline event does not contain a valid sale snapshot", 409);
+        }
+        const sale = await env.DB.prepare(
+          "SELECT id,status,session_id,cashier_admin_id,subtotal_paisa,total_paisa FROM pos_sales WHERE id=? LIMIT 1"
+        ).bind(canonicalSaleId).first<Record<string, unknown>>();
+        if (!sale || sale.status !== "completed" || sale.session_id !== payload.sessionId ||
+            sale.cashier_admin_id !== payload.cashierId || Number(sale.subtotal_paisa) !== Number(payload.subtotalPaisa) ||
+            Number(sale.total_paisa) !== Number(payload.totalPaisa)) {
+          return error("The selected completed POS sale does not match the offline event's shift, cashier and totals", 409);
+        }
+        const [saleLines, payment, movementCount, allocations] = await Promise.all([
+          env.DB.prepare("SELECT variant_id,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY variant_id")
+            .bind(canonicalSaleId).all<Record<string, unknown>>(),
+          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM pos_payments WHERE sale_id=? AND payment_method='cash'")
+            .bind(canonicalSaleId).first<{ total: number }>(),
+          env.DB.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order' AND reference_id=? AND movement_type='sold'")
+            .bind(canonicalSaleId).first<{ count: number }>(),
+          env.DB.prepare("SELECT a.id,a.variant_id,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status FROM pos_offline_stock_allocations a WHERE a.device_id=? AND a.status='active'")
+            .bind(String(reconciliation.device_id)).all<Record<string, unknown>>(),
+        ]);
+        const expected = (payload.lines as Array<Record<string, unknown>>).map((line) => ({
+          variant_id: String(line.variantId), quantity: Number(line.quantity),
+          unit_price_paisa: Number(line.unitPricePaisa), line_total_paisa: Number(line.lineTotalPaisa),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const actual = (saleLines.results ?? []).map((line) => ({
+          variant_id: String(line.variant_id), quantity: Number(line.quantity),
+          unit_price_paisa: Number(line.unit_price_paisa), line_total_paisa: Number(line.line_total_paisa),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        if (JSON.stringify(actual) !== JSON.stringify(expected) || actual.length !== expected.length ||
+            Number(payment?.total ?? 0) !== Number(payload.totalPaisa) ||
+            Number(movementCount?.count ?? 0) !== expected.length) {
+          return error("The completed sale's item, cash-payment or inventory evidence does not exactly match this offline event", 409);
+        }
+        const allocationByVariant = new Map((allocations.results ?? []).map((row) => [String(row.variant_id), row]));
+        const consumption: Array<{ id: string; quantity: number; variantId: string }> = [];
+        for (const line of expected) {
+          const allocation = allocationByVariant.get(line.variant_id);
+          const remaining = allocation ? Number(allocation.allocated_quantity)-Number(allocation.consumed_quantity)-Number(allocation.released_quantity) : 0;
+          if (!allocation || allocation.status !== "active" || remaining < line.quantity) {
+            return error("The device's reserved stock ledger cannot cover this sale; keep the case open for manual investigation", 409);
+          }
+          consumption.push({ id: String(allocation.id), quantity: line.quantity, variantId: line.variant_id });
+        }
+        const now = new Date().toISOString();
+        const statements: D1PreparedStatement[] = consumption.map((line) =>
+          env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?")
+            .bind(line.quantity, now, line.id, String(reconciliation.device_id), line.variantId, line.quantity)
+        );
+        statements.push(
+          env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome IN ('conflict','rejected')")
+            .bind(canonicalSaleId, now, String(reconciliation.event_id)),
+          env.DB.prepare("UPDATE pos_offline_reconciliation_cases SET status='resolved',resolved_at=? WHERE id=? AND status='open'")
+            .bind(now, reconciliation.case_id),
+          env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) " +
+            "SELECT ?,?,?, 'accepted',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='resolved' AND resolved_at=?)")
+            .bind(crypto.randomUUID(), reconciliation.case_id, admin.admin_user_id, reason,
+              JSON.stringify({ canonical_sale_id: canonicalSaleId, matched_line_count: expected.length, cash_payment_verified: true, inventory_movement_count: Number(movementCount?.count ?? 0), offline_event_id: reconciliation.event_id }),
+              reconciliation.case_id, now),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_reconciliation_resolved','pos_offline_reconciliation_case',?,?)")
+            .bind(crypto.randomUUID(), admin.admin_user_id, reconciliation.case_id,
+              JSON.stringify({ canonical_sale_id: canonicalSaleId, offline_event_id: reconciliation.event_id, matched_line_count: expected.length, reason }))
+        );
+        const results = await env.DB.batch(statements);
+        if (results.slice(0, consumption.length).some((result) => (result.meta?.changes ?? 0) !== 1) ||
+            (results[consumption.length]?.meta?.changes ?? 0) !== 1 ||
+            (results[consumption.length + 1]?.meta?.changes ?? 0) !== 1) {
+          return error("Reconciliation changed concurrently; no resolution was confirmed. Refresh the case and retry.", 409);
+        }
+        return json({ resolved: true, case_id: reconciliation.case_id, event_id: reconciliation.event_id, canonical_sale_id: canonicalSaleId });
+      } catch {
+        return error("Offline reconciliation could not be completed safely. The case remains available for review.", 503);
+      }
+    }
+
     const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits|permit))?$/i);
     if (deviceMatch) {
       const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
