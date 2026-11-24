@@ -3231,6 +3231,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         if (!Array.isArray(body?.allocations) || body.allocations.length < 1 || body.allocations.length > 30) return error("Provide between 1 and 30 stock allocation lines", 400);
         const device = await env.DB.prepare("SELECT id,register_id,status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ id: string; register_id: string; status: string }>();
         if (!device || device.status !== "active") return error("An active enrolled device is required", 409);
+        try {
+          await env.DB.prepare("UPDATE pos_offline_permits SET status='expired' WHERE device_id=? AND status='active' AND expires_at<=?")
+            .bind(deviceId, new Date().toISOString()).run();
+        } catch {
+          return error("Expired offline permit state could not be refreshed. No stock allocation was changed.", 503);
+        }
         const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
         if (activePermit) return error("Revoke or expire the active offline permit before changing stock allocations", 409);
         const combined = new Map<string, number>();
