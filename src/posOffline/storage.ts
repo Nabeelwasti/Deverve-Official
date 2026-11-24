@@ -323,12 +323,18 @@ export async function listPendingOfflineSales(limit = 10): Promise<QueuedOffline
       const salesRequest = transaction.objectStore("sales").getAll();
       const outboxRequest = transaction.objectStore("outbox").getAll();
       transaction.oncomplete = () => {
-        const outbox = selectSequentialSyncRecords(
-          outboxRequest.result as OfflineOutboxRecord[],
-          Date.now(),
-          limit,
-          false,
-        );
+        let outbox: OfflineOutboxRecord[];
+        try {
+          outbox = selectSequentialSyncRecords(
+            outboxRequest.result as OfflineOutboxRecord[],
+            Date.now(),
+            limit,
+            false,
+          );
+        } catch (caught) {
+          reject(caught instanceof Error ? caught : new Error("Offline queue sequence integrity check failed."));
+          return;
+        }
         const byId = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
         const ordered: QueuedOfflineSale[] = [];
         for (const record of outbox) {
@@ -486,12 +492,19 @@ export async function claimOfflineSalesForSync(limit = 10, now = Date.now(), lea
         if (prepared || salesRequest.readyState !== "done" || outboxRequest.readyState !== "done") return;
         prepared = true;
         const saleById = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
-        const eligible = selectSequentialSyncRecords(
-          outboxRequest.result as OfflineOutboxRecord[],
-          now,
-          limit,
-          true,
-        );
+        let eligible: OfflineOutboxRecord[];
+        try {
+          eligible = selectSequentialSyncRecords(
+            outboxRequest.result as OfflineOutboxRecord[],
+            now,
+            limit,
+            true,
+          );
+        } catch (caught) {
+          reject(caught instanceof Error ? caught : new Error("Offline queue sequence integrity check failed."));
+          transaction.abort();
+          return;
+        }
         const audit = transaction.objectStore("audit");
         for (const record of eligible) {
           const sale = saleById.get(record.eventId);
