@@ -2552,7 +2552,7 @@ async function recordOfflineSaleConflict(
   signature: string,
   payloadHash: string,
   reasonCode: string,
-): Promise<{ outcome: "conflict"; event_id: string; reason_code: string }> {
+): Promise<{ outcome: "conflict"; event_id: string; reason_code: string; server_received_at: string }> {
   const eventId = String(event.eventId);
   const idempotencyKey = String(event.idempotencyKey);
   const sequence = Number(event.sequence);
