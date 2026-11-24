@@ -58,11 +58,11 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 
 The AES-256-GCM backup/restore script and scheduled workflow are in the repository. The schedule is daily at 02:00 Pakistan Standard Time (21:00 UTC). The workflow is **not operationally accepted** until the following are completed:
 
-- [ ] Configure GitHub Actions secret `CLOUDFLARE_API_TOKEN` with the narrowly scoped D1 export, R2 backup and isolated restore permissions required by the workflow.
+- [x] Owner confirmed on 24 November 2026 that GitHub Actions secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured.
 - [ ] Configure `CLOUDFLARE_ACCOUNT_ID`.
-- [ ] Generate `D1_BACKUP_ENCRYPTION_KEY` offline with `openssl rand -hex 32`; store it in an owner-controlled password manager independently of the R2 bucket and GitHub.
-- [ ] Confirm private bucket `deverve-db-backups` and workflow permissions.
-- [ ] Run a complete encrypted production export, SHA-256 integrity check, decrypt, isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup.
+- [ ] Confirm `D1_BACKUP_ENCRYPTION_KEY` is also stored in an owner-controlled password manager independently of GitHub and R2; GitHub secret configuration alone is not a recoverable key-custody plan.
+- [x] Confirm private bucket `deverve-db-backups` and workflow permissions; successful run `45330719916` attempt 7 verified access.
+- [x] Successful encrypted backup/restore drill: run `45330719916` attempt 7 on 24 November 2026. R2 read-back and SHA-256 checks passed; isolated restore matched 66 tables, 102 indexes, 10 triggers and all row counts; temporary D1 database deletion was confirmed.
 - [ ] Verify retention and a documented recovery-point/recovery-time objective.
 - [ ] Back up private R2 media separately. A D1 SQL export does not include media bytes.
 - [ ] Store an independent encrypted recovery copy outside the Cloudflare account and document named custodians.
