@@ -473,6 +473,21 @@ function sameSyncReceipt(left: OfflineSyncReceipt, right: OfflineSyncReceipt): b
 }
 
 /** Stores server acknowledgement atomically. Replayed acknowledgements are accepted only if identical. */
+export async function readOfflineSyncReceipt(eventId: string): Promise<OfflineSyncReceipt | null> {
+  assertEventId(eventId);
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["syncReceipts"], "readonly");
+      const request = transaction.objectStore("syncReceipts").get(eventId);
+      request.onsuccess = () => resolve((request.result as OfflineSyncReceipt | undefined) ?? null);
+      request.onerror = () => reject(request.error ?? new Error("Offline sync receipt could not be read."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promise<void> {
   assertEventId(receipt?.eventId);
   if (!receipt || !["accepted", "already_accepted", "conflict", "rejected"].includes(receipt.outcome) ||
