@@ -683,3 +683,21 @@ export async function readStoredOfflineShift(): Promise<Record<string, unknown> 
     database.close();
   }
 }
+
+
+export async function setOfflineShellReadiness(ready: boolean): Promise<void> {
+  const database = await openOfflinePosDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["meta", "audit"], "readwrite");
+      const verifiedAt = new Date().toISOString();
+      transaction.objectStore("meta").put({ id: "offline-shell-ready", value: ready, verifiedAt });
+      transaction.objectStore("audit").add({ action: ready ? "offline_shell_cache_verified" : "offline_shell_cache_not_ready", recordedAt: verifiedAt });
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline shell readiness could not be stored."));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline shell readiness could not be stored."));
+    });
+  } finally {
+    database.close();
+  }
+}
