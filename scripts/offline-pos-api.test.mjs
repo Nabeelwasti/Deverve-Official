@@ -89,7 +89,7 @@ assert.match(worker, /Only an owner or manager can resolve offline reconciliatio
 assert.match(worker, /The selected completed POS sale does not match the offline event/);
 assert.match(worker, /cash_payment_verified: true/);
 assert.match(worker, /inventory_movement_count/);
-assert.match(worker, /pos_offline_reconciliation_resolved/);
+assert.match(worker, /pos\\.offline_reconciliation_resolved/);
 assert.match(worker, /INSERT INTO pos_offline_reconciliation_actions/);
 assert.ok(worker.includes("pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+"));
 assert.match(worker, /INSERT INTO pos_offline_events \\(device_id\\) SELECT NULL WHERE changes\\(\\)<>1/);
@@ -167,3 +167,7 @@ assert.match(panel, /Local sale queue & recovery/);
 assert.match(panel, /Owner review required/);
 assert.match(panel, /Server receipt/);
 assert.match(panel, /Never clear browser data/);
+
+assert.match(worker, /financial_transactions WHERE reference_type=.pos_sale./);
+assert.match(worker, /JSON.stringify(actualMovements) !== JSON.stringify(expectedMovements)/);
+assert.match(worker, /payment?.tendered/);
