@@ -2431,6 +2431,179 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
   if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
+
+  // Emergency offline device administration is owner/manager-only. It is kept
+  // separate from the normal online checkout and never changes its permissions.
+  const offlineRoot = "/api/admin/pos/offline";
+  const isUuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9-]{36}$/i.test(value);
+  const readOfflinePublicKey = async (value: unknown): Promise<{ jwk: JsonWebKey; thumbprint: string } | null> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const jwk = value as JsonWebKey;
+    if (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.x !== "string" || typeof jwk.y !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(jwk.x) || !/^[A-Za-z0-9_-]{43}$/.test(jwk.y) ||
+        "d" in jwk || (jwk.key_ops && jwk.key_ops.some((op) => op !== "verify"))) return null;
+    const canonical = JSON.stringify({ crv: "P-256", kty: "EC", x: jwk.x, y: jwk.y });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+    return { jwk: { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, ext: true, key_ops: ["verify"] }, thumbprint: base64Url(new Uint8Array(digest)) };
+  };
+
+  if (path.startsWith(offlineRoot + "/")) {
+    if (!canManageMoney) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+
+    if (request.method === "GET" && path === offlineRoot + "/devices") {
+      try {
+        const devices = await env.DB.prepare(
+          "SELECT d.id,d.register_id,r.name AS register_name,d.device_label,d.public_key_thumbprint,d.status,d.created_at,d.last_seen_at,d.revoked_at," +
+          "(SELECT COUNT(*) FROM pos_offline_stock_allocations a WHERE a.device_id=d.id AND a.status='active') AS active_allocations," +
+          "(SELECT COALESCE(SUM(a.allocated_quantity-a.consumed_quantity-a.released_quantity),0) FROM pos_offline_stock_allocations a WHERE a.device_id=d.id AND a.status='active') AS remaining_allocated_units " +
+          "FROM pos_offline_devices d JOIN pos_registers r ON r.id=d.register_id ORDER BY d.created_at DESC LIMIT 100"
+        ).all<Record<string, unknown>>();
+        const allocations = await env.DB.prepare(
+          "SELECT a.id,a.device_id,a.register_id,a.variant_id,p.name AS product_name,v.sku,v.size,v.color,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status,a.created_at,a.updated_at " +
+          "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+          "WHERE a.status='active' ORDER BY p.name,v.size,v.color LIMIT 500"
+        ).all<Record<string, unknown>>();
+        const cases = await env.DB.prepare(
+          "SELECT c.id,c.event_id,c.reason_code,c.opened_at,e.device_id,e.device_sequence,e.outcome " +
+          "FROM pos_offline_reconciliation_cases c JOIN pos_offline_events e ON e.event_id=c.event_id " +
+          "WHERE c.status='open' ORDER BY c.opened_at LIMIT 100"
+        ).all<Record<string, unknown>>();
+        return json({ devices: devices.results ?? [], allocations: allocations.results ?? [], open_cases: cases.results ?? [] });
+      } catch { return error("Offline POS administration is unavailable. Apply and verify the offline POS migrations in a non-production database first.", 503); }
+    }
+
+    if (request.method === "POST" && path === offlineRoot + "/enrollment-challenges") {
+      const body = await readJson(request, 4_000);
+      if (!isUuid(body?.device_id) || !isUuid(body?.register_id)) return error("A valid device and register ID are required", 400);
+      const publicKey = await readOfflinePublicKey(body?.public_key_jwk);
+      if (!publicKey || body?.public_key_thumbprint !== publicKey.thumbprint) return error("The device public key or thumbprint is invalid", 400);
+      try {
+        const register = await env.DB.prepare("SELECT id FROM pos_registers WHERE id=? AND is_active=1").bind(body.register_id).first<{ id: string }>();
+        if (!register) return error("The selected register is inactive or unavailable", 404);
+        const existing = await env.DB.prepare("SELECT id FROM pos_offline_devices WHERE id=? OR public_key_thumbprint=? LIMIT 1").bind(body.device_id, publicKey.thumbprint).first<{ id: string }>();
+        if (existing) return error("This device identity or signing key is already enrolled. Revoke or recover the existing device instead.", 409);
+        const challengeId = crypto.randomUUID();
+        const challenge = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+        const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+        await env.DB.prepare(
+          "INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)"
+        ).bind(challengeId, body.device_id, body.register_id, publicKey.thumbprint, await sha256(challenge), expiresAt, admin.admin_user_id).run();
+        return json({ challenge_id: challengeId, challenge, expires_at: expiresAt });
+      } catch { return error("A one-time enrollment challenge could not be created", 503); }
+    }
+
+    if (request.method === "POST" && path === offlineRoot + "/devices/enroll") {
+      const body = await readJson(request, 6_000);
+      const deviceId = body?.device_id, registerId = body?.register_id;
+      const label = typeof body?.device_label === "string" ? body.device_label.trim().slice(0, 100) : "";
+      const challengeId = body?.challenge_id, challenge = body?.challenge, signature = body?.signature;
+      if (!isUuid(deviceId) || !isUuid(registerId) || !isUuid(challengeId) || label.length < 2 ||
+          typeof challenge !== "string" || challenge.length < 32 || challenge.length > 128 ||
+          typeof signature !== "string" || signature.length < 80 || signature.length > 128) {
+        return error("The device enrollment proof is incomplete or invalid", 400);
+      }
+      const publicKey = await readOfflinePublicKey(body?.public_key_jwk);
+      if (!publicKey || body?.public_key_thumbprint !== publicKey.thumbprint) return error("The device public key or thumbprint is invalid", 400);
+      try {
+        const challengeRow = await env.DB.prepare(
+          "SELECT id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,consumed_at FROM pos_offline_enrollment_challenges WHERE id=? LIMIT 1"
+        ).bind(challengeId).first<Record<string, unknown>>();
+        if (!challengeRow || challengeRow.consumed_at || String(challengeRow.device_id) !== deviceId ||
+            String(challengeRow.register_id) !== registerId || String(challengeRow.public_key_thumbprint) !== publicKey.thumbprint ||
+            String(challengeRow.expires_at) <= new Date().toISOString() || String(challengeRow.challenge_hash) !== await sha256(challenge)) {
+          return error("The enrollment challenge is expired, consumed or bound to a different device", 409);
+        }
+        const verifyKey = await crypto.subtle.importKey("jwk", publicKey.jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+        const signedMessage = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
+        const signatureBytes = fromBase64Url(signature);
+        if (signatureBytes.byteLength !== 64 || !await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifyKey, signatureBytes, signedMessage)) {
+          return error("The device did not prove possession of its private signing key", 403);
+        }
+        const now = new Date().toISOString();
+        const results = await env.DB.batch([
+          env.DB.prepare("UPDATE pos_offline_enrollment_challenges SET consumed_at=? WHERE id=? AND device_id=? AND register_id=? AND public_key_thumbprint=? AND challenge_hash=? AND consumed_at IS NULL AND expires_at>?")
+            .bind(now, challengeId, deviceId, registerId, publicKey.thumbprint, await sha256(challenge), now),
+          env.DB.prepare("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint,status) " +
+            "SELECT ?,?,?,?,? ,?,'active' WHERE changes()=1 AND EXISTS (SELECT 1 FROM pos_registers WHERE id=? AND is_active=1)")
+            .bind(deviceId, registerId, admin.admin_user_id, label, JSON.stringify(publicKey.jwk), publicKey.thumbprint, registerId),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_enrolled','pos_offline_device',?,? WHERE changes()=1")
+            .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ register_id: registerId, public_key_thumbprint: publicKey.thumbprint, device_label: label }))
+        ]);
+        if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) return error("Device enrollment was not committed. Check the register and existing device assignments.", 409);
+        return json({ enrolled: true, device: { id: deviceId, register_id: registerId, device_label: label, public_key_thumbprint: publicKey.thumbprint, status: "active" } }, 201);
+      } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
+    }
+
+    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations))?$/i);
+    if (deviceMatch) {
+      const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
+      if (request.method === "POST" && action === "revoke") {
+        const body = await readJson(request, 2_000);
+        const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
+        if (reason.length < 3) return error("A clear reason is required to revoke this device", 400);
+        try {
+          const now = new Date().toISOString();
+          const device = await env.DB.prepare("SELECT id,status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ id: string; status: string }>();
+          if (!device) return error("Offline POS device not found", 404);
+          if (device.status === "revoked") return json({ revoked: true, already_revoked: true });
+          const results = await env.DB.batch([
+            env.DB.prepare("UPDATE pos_offline_devices SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
+            env.DB.prepare("UPDATE pos_offline_permits SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE device_id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_revoked','pos_offline_device',?,? WHERE changes()>=0")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason }))
+          ]);
+          if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Device status changed before revocation could be completed", 409);
+          return json({ revoked: true, device_id: deviceId });
+        } catch { return error("Offline device could not be revoked", 503); }
+      }
+
+      if (request.method === "POST" && action === "allocations") {
+        const body = await readJson(request, 8_000);
+        if (!Array.isArray(body?.allocations) || body.allocations.length < 1 || body.allocations.length > 30) return error("Provide between 1 and 30 stock allocation lines", 400);
+        const device = await env.DB.prepare("SELECT id,register_id,status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ id: string; register_id: string; status: string }>();
+        if (!device || device.status !== "active") return error("An active enrolled device is required", 409);
+        const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
+        if (activePermit) return error("Revoke or expire the active offline permit before changing stock allocations", 409);
+        const combined = new Map<string, number>();
+        for (const line of body.allocations) {
+          if (!line || typeof line !== "object" || !isUuid(line.variant_id) || !Number.isSafeInteger(line.quantity) || Number(line.quantity) < 1 || Number(line.quantity) > 20) return error("Each allocation needs a valid variant and quantity between 1 and 20", 400);
+          combined.set(line.variant_id, (combined.get(line.variant_id) ?? 0) + Number(line.quantity));
+        }
+        if ([...combined.values()].some((quantity) => quantity > 20)) return error("Combined allocation per variant cannot exceed 20 units", 400);
+        try {
+          const statements = [...combined].flatMap(([variantId, quantity]) => [
+            env.DB.prepare("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), deviceId, device.register_id, variantId, quantity, admin.admin_user_id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_stock_allocated','pos_offline_stock_allocation',?,?)")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ variant_id: variantId, quantity }))
+          ]);
+          await env.DB.batch(statements);
+          return json({ allocated: true, device_id: deviceId, allocations: [...combined].map(([variant_id, quantity]) => ({ variant_id, quantity })) }, 201);
+        } catch { return error("Stock allocation failed. The database rolled back the allocation batch; refresh stock and try again.", 409); }
+      }
+
+      if (request.method === "POST" && action === "release-allocations") {
+        const body = await readJson(request, 2_000);
+        const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
+        if (reason.length < 3) return error("A reason is required to release unused stock", 400);
+        try {
+          const unresolved = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE device_id=? AND outcome IN ('pending','conflict','rejected')").bind(deviceId).first<{ count: number }>();
+          if (Number(unresolved?.count ?? 0) > 0) return error("Resolve every pending or conflicted offline sale before releasing this device's remaining stock", 409);
+          const now = new Date().toISOString();
+          const active = await env.DB.prepare("SELECT id,allocated_quantity,consumed_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=? AND status='active'").bind(deviceId).all<Record<string, number>>();
+          const statements = (active.results ?? []).flatMap((row) => [
+            env.DB.prepare("UPDATE pos_offline_stock_allocations SET released_quantity=released_quantity+(allocated_quantity-consumed_quantity-released_quantity),status='released',released_by_admin_id=?,released_at=?,updated_at=? WHERE id=? AND status='active'")
+              .bind(admin.admin_user_id, now, now, row.id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_stock_released','pos_offline_stock_allocation',?,?)")
+              .bind(crypto.randomUUID(), admin.admin_user_id, String(row.id), JSON.stringify({ reason, released_quantity: Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) }))
+          ]);
+          if (statements.length) await env.DB.batch(statements);
+          return json({ released: true, count: active.results?.length ?? 0 });
+        } catch { return error("Unused offline stock could not be released", 503); }
+      }
+    }
+  }
+
   if (request.method === "GET" && path === "/api/admin/pos/bootstrap") {
     try {
       const [accounts, registers, session, products] = await Promise.all([
