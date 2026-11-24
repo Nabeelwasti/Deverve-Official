@@ -194,3 +194,38 @@ export async function signOfflineEvent(payload: unknown): Promise<string> {
     database.close();
   }
 }
+
+/**
+ * Verifies the server-issued offline permit before it is stored or used.
+ * The public key must be pinned from the authenticated same-origin bootstrap;
+ * never accept a key supplied only inside an untrusted permit payload.
+ */
+export async function verifyOfflinePermitSignature(
+  claims: unknown,
+  signatureBase64Url: string,
+  pinnedPublicKeyJwk: JsonWebKey,
+): Promise<boolean> {
+  try {
+    if (!globalThis.isSecureContext || !globalThis.crypto?.subtle ||
+        typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        pinnedPublicKeyJwk.kty !== "EC" || pinnedPublicKeyJwk.crv !== "P-256" ||
+        typeof pinnedPublicKeyJwk.x !== "string" || typeof pinnedPublicKeyJwk.y !== "string" ||
+        "d" in pinnedPublicKeyJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: pinnedPublicKeyJwk.x, y: pinnedPublicKeyJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalize(claims));
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      Uint8Array.from(atob(signatureBase64Url.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - signatureBase64Url.length % 4) % 4)), (char) => char.charCodeAt(0)),
+      message,
+    );
+  } catch {
+    return false;
+  }
+}
