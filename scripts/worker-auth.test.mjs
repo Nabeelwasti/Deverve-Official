@@ -170,7 +170,7 @@ test("offline device enrollment proof verifies only the bound P-256 challenge si
   assert.equal(signature.length, 86);
   assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature), true);
   assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge + "x", signature), false);
-  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature.slice(0, -1) + (signature.endsWith("A") ? "B" : "A")), false);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, (signature.startsWith("A") ? "B" : "A") + signature.slice(1)), false);
   const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   assert.equal(await verifyOfflineEnrollmentProof(privateJwk, challenge, signature), false);
   assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, "invalid"), false);
