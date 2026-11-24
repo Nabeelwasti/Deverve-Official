@@ -281,3 +281,117 @@ test("real Worker issues a signed permit bound to the enrolled device, register,
   assert.equal(stored.status, "active");
   assert.equal(JSON.parse(stored.cost_snapshot_json)[0].costPricePaisa, 500);
 });
+
+
+function canonicalJson(value) {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("non-finite test value");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return "[" + value.map(canonicalJson).join(",") + "]";
+  if (typeof value === "object") {
+    const record = value;
+    return "{" + Object.keys(record).sort().map((key) => JSON.stringify(key) + ":" + canonicalJson(record[key])).join(",") + "}";
+  }
+  throw new Error("unsupported test value");
+}
+async function signSale(identity, sale) {
+  const signature = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" }, identity.pair.privateKey,
+    new TextEncoder().encode("deverve-offline-pos:event:v1\n" + canonicalJson(sale)),
+  );
+  return b64url(signature);
+}
+
+test("real Worker commits a signed cash sale atomically and returns the canonical receipt for exact duplicate replay", async () => {
+  const identity = await createIdentity(), deviceId = randomUUID(), sessionId = randomUUID();
+  const productId = randomUUID(), variantId = randomUUID();
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  const challenge = await challengeResponse.json();
+  const enrolled = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(enrolled.status, 201);
+
+  sqlite.prepare("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES (?,?)").run(ownerId, ownerId);
+  sqlite.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status) VALUES (?,?,?,0,0,'open')")
+    .run(sessionId, registerId, ownerId);
+  sqlite.prepare("INSERT INTO products (id,slug,name,description,category,audience,status,retail_price_paisa) VALUES (?,?,?,'','apparel','unisex','published',1250)")
+    .run(productId, "integration-sale-" + productId, "Integration Sale Shirt");
+  const sku = "SALE-" + variantId.slice(0, 8);
+  sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'M','Black',5,1,500)")
+    .run(variantId, productId, sku);
+  const allocation = await api("/api/admin/pos/offline/devices/" + deviceId + "/allocations", {
+    allocations: [{ variant_id: variantId, quantity: 2 }],
+  });
+  assert.equal(allocation.status, 201);
+
+  const signingPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", signingPair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", signingPair.publicKey);
+  env.POS_OFFLINE_PERMIT_PRIVATE_JWK = JSON.stringify(privateJwk);
+  env.POS_OFFLINE_PERMIT_PUBLIC_JWK = JSON.stringify(publicJwk);
+  env.OFFLINE_POS_CHECKOUT_ENABLED = "true";
+  const issued = await api("/api/admin/pos/offline/devices/" + deviceId + "/permits", {
+    cashier_admin_id: ownerId, session_id: sessionId, duration_hours: 2,
+  });
+  assert.equal(issued.status, 201);
+  const permit = (await issued.json()).permit;
+
+  const sale = {
+    eventId: randomUUID(), idempotencyKey: randomUUID(), deviceId, permitId: permit.id,
+    registerId, sessionId, cashierId: ownerId, snapshotVersion: permit.claims.snapshot_version,
+    createdAt: new Date().toISOString(), currency: "PKR",
+    lines: [{ variantId, sku, productName: "Integration Sale Shirt", size: "M", color: "Black", quantity: 1, unitPricePaisa: 1250, lineTotalPaisa: 1250 }],
+    subtotalPaisa: 1250, totalPaisa: 1250, cashTenderedPaisa: 1500, changePaisa: 250,
+    sequence: 1, status: "pending", payloadVersion: 1,
+  };
+  const signature = await signSale(identity, sale);
+  const syncPath = "/api/admin/pos/offline/sync";
+  const requestBody = { device_id: deviceId, permit_id: permit.id, events: [{ event: sale, signature }] };
+  const first = await api(syncPath, requestBody);
+  assert.equal(first.status, 200);
+  const firstResult = (await first.json()).results[0];
+  assert.equal(firstResult.outcome, "accepted");
+  assert.equal(firstResult.event_id, sale.eventId);
+  assert.match(firstResult.canonical_sale_id, /^[a-f0-9-]{36}$/i);
+  assert.ok(firstResult.receipt_number);
+
+  const countsAfterFirst = {
+    sales: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count,
+    items: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sale_items").get().count,
+    payments: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count,
+    ledger: sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count,
+    movements: sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order' AND reference_id=?").get(firstResult.canonical_sale_id).count,
+    events: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE event_id=? AND outcome='accepted'").get(sale.eventId).count,
+  };
+  assert.deepEqual(countsAfterFirst, { sales: 1, items: 1, payments: 1, ledger: 1, movements: 1, events: 1 });
+  assert.equal(sqlite.prepare("SELECT stock_on_hand FROM product_variants WHERE id=?").get(variantId).stock_on_hand, 4);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(variantId).reserved_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(deviceId).consumed_quantity, 1);
+
+  const duplicate = await api(syncPath, requestBody);
+  assert.equal(duplicate.status, 200);
+  const duplicateResult = (await duplicate.json()).results[0];
+  assert.equal(duplicateResult.outcome, "accepted");
+  assert.equal(duplicateResult.duplicate, true);
+  assert.equal(duplicateResult.canonical_sale_id, firstResult.canonical_sale_id);
+  assert.equal(duplicateResult.receipt_number, firstResult.receipt_number);
+  assert.deepEqual({
+    sales: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count,
+    items: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sale_items").get().count,
+    payments: sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count,
+    ledger: sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count,
+    movements: sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order' AND reference_id=?").get(firstResult.canonical_sale_id).count,
+  }, { sales: 1, items: 1, payments: 1, ledger: 1, movements: 1 });
+
+  const alteredReplay = { ...sale, cashTenderedPaisa: 1600, changePaisa: 350 };
+  const altered = await api(syncPath, { device_id: deviceId, permit_id: permit.id, events: [{ event: alteredReplay, signature: await signSale(identity, alteredReplay) }] });
+  assert.equal(altered.status, 200);
+  assert.equal((await altered.json()).results[0].outcome, "conflict");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_replay_conflict'").get().count, 1);
+});
