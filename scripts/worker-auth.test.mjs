@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 
 test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
@@ -72,6 +72,22 @@ test("AI support language signal distinguishes Urdu script, Roman Urdu and ordin
   assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
   assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
   assert.match(customerLanguageHint("Please check stock, aap have black?"), /No Urdu-specific signal is dominant/);
+});
+
+test("offline device enrollment proof verifies only the bound P-256 challenge signature", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const challenge = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, "0")).join("");
+  const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\\n" + challenge);
+  const signatureBytes = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message));
+  const signature = btoa(String.fromCharCode(...signatureBytes)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  assert.equal(signature.length, 86);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature), true);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge + "x", signature), false);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature.slice(0, -1) + (signature.endsWith("A") ? "B" : "A")), false);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  assert.equal(await verifyOfflineEnrollmentProof(privateJwk, challenge, signature), false);
+  assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, "invalid"), false);
 });
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
