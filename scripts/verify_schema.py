@@ -75,7 +75,7 @@ def expect_integrity_error(action, message):
     raise AssertionError(message)
 
 offline_permit_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
-assert {"pos_offline_permit_authorization_guard", "pos_offline_allocation_insert_guard_during_permit", "pos_offline_allocation_release_guard_during_permit", "pos_offline_permit_identity_immutable", "pos_offline_permit_no_delete"} <= offline_permit_triggers, "Signed permit authorization and snapshot guard triggers are missing"
+assert {"pos_offline_permit_authorization_guard", "pos_offline_allocation_insert_guard_during_permit", "pos_offline_allocation_release_guard_during_permit", "pos_offline_permit_identity_immutable", "pos_offline_permit_no_delete", "pos_offline_permit_snapshot_guard", "pos_offline_permit_snapshot_immutable"} <= offline_permit_triggers, "Signed permit authorization and snapshot guard triggers are missing"
 expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_permits SET claims_json='{}' WHERE id='offline-permit'"),
     "Signed offline permit claims must be immutable",
@@ -83,6 +83,10 @@ expect_integrity_error(
 expect_integrity_error(
     lambda: db.execute("DELETE FROM pos_offline_permits WHERE id='offline-permit'"),
     "Offline permit evidence must not be deletable",
+)
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_permits SET snapshot_json='[]' WHERE id='offline-permit'"),
+    "Offline permit catalogue snapshots must be immutable",
 )
 
 expect_integrity_error(
