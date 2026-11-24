@@ -2832,6 +2832,13 @@ async function issueOfflinePermit(
     if (!session || session.status !== "open" || session.register_id !== device.register_id || session.opened_by_admin_id !== cashierId) return error("The selected open shift must belong to this device's register and the selected cashier", 409);
     if (!cashier) return error("The selected cashier is inactive or their POS permission has been revoked", 403);
     if (activePermit) return error("This device already has an active offline permit", 409);
+    const unresolvedEvents = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id " +
+      "WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))"
+    ).bind(deviceId).first<{ count: number }>();
+    if (Number(unresolvedEvents?.count ?? 0) > 0) {
+      return error("This device still has offline sales awaiting sync or owner reconciliation. Do not replace its permit until every queued sale is accounted for.", 409);
+    }
 
     const allocationResult = await env.DB.prepare(
       "SELECT a.id AS allocation_id,a.variant_id,(a.allocated_quantity-a.consumed_quantity-a.released_quantity) AS allocated_quantity," +
