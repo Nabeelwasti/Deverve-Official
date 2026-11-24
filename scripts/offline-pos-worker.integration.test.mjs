@@ -1025,3 +1025,56 @@ test("real Worker refuses to release reserved stock while a revoked device still
   assert.equal(sqlite.prepare("SELECT status,allocated_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).status, "active");
   assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
 });
+
+
+test("real Worker fails closed when enrollment-challenge cleanup cannot be written, then retries cleanly", async () => {
+  const identity = await createIdentity();
+  const body = {
+    device_id: randomUUID(), register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  };
+  db.failNextRun = true;
+  const unavailable = await api("/api/admin/pos/offline/enrollment-challenges", body);
+  assert.equal(unavailable.status, 503);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges").get().count, 0);
+
+  const retried = await api("/api/admin/pos/offline/enrollment-challenges", body);
+  assert.equal(retried.status, 200);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges").get().count, 1);
+});
+
+test("real Worker creates no enrollment challenge when the standalone challenge insert fails", async () => {
+  const identity = await createIdentity();
+  const body = {
+    device_id: randomUUID(), register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  };
+  sqlite.exec("CREATE TRIGGER fail_offline_challenge_insert BEFORE INSERT ON pos_offline_enrollment_challenges BEGIN SELECT RAISE(ABORT, 'injected challenge insert failure'); END");
+  const unavailable = await api("/api/admin/pos/offline/enrollment-challenges", body);
+  assert.equal(unavailable.status, 503);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges").get().count, 0);
+  sqlite.exec("DROP TRIGGER fail_offline_challenge_insert");
+
+  const retried = await api("/api/admin/pos/offline/enrollment-challenges", body);
+  assert.equal(retried.status, 200);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges").get().count, 1);
+});
+
+test("real Worker atomically rolls back permit issuance when its audit insert fails and permits an exact retry", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  sqlite.prepare("UPDATE pos_offline_permits SET status='expired' WHERE id=?").run(fixture.permit.id);
+  const auditBefore = sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_permit_issued'").get().count;
+  db.failNextBatchAt = 1;
+  const body = { cashier_admin_id: ownerId, session_id: fixture.sale.sessionId, duration_hours: 2 };
+
+  const failed = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/permits", body);
+  assert.equal(failed.status, 503);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(fixture.deviceId).count, 1);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(fixture.permit.id).status, "expired");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_permit_issued'").get().count, auditBefore);
+
+  const retried = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/permits", body);
+  assert.equal(retried.status, 201);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(fixture.deviceId).count, 2);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_permit_issued'").get().count, auditBefore + 1);
+});
