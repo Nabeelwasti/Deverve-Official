@@ -27,15 +27,23 @@ class LocalD1Statement {
   }
 }
 class LocalD1 {
-  constructor(db) { this.db = db; }
+  constructor(db) { this.db = db; this.failNextBatchAt = null; }
   prepare(sql) { return new LocalD1Statement(this.db, sql); }
   batch(statements) {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const results = statements.map((statement) => statement.run());
+      const results = [];
+      for (let index = 0; index < statements.length; index += 1) {
+        if (this.failNextBatchAt === index) {
+          this.failNextBatchAt = null;
+          throw new Error("injected isolated D1 batch failure at statement " + index);
+        }
+        results.push(statements[index].run());
+      }
       this.db.exec("COMMIT");
       return results;
     } catch (error) {
+      this.failNextBatchAt = null;
       this.db.exec("ROLLBACK");
       throw error;
     }
@@ -394,4 +402,77 @@ test("real Worker commits a signed cash sale atomically and returns the canonica
   assert.equal((await altered.json()).results[0].outcome, "conflict");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 1);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_replay_conflict'").get().count, 1);
+});
+
+
+async function createReadyOfflinePermitFixture() {
+  const identity = await createIdentity(), deviceId = randomUUID(), sessionId = randomUUID();
+  const productId = randomUUID(), variantId = randomUUID(), sku = "ROLLBACK-" + variantId.slice(0, 8);
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  const challenge = await challengeResponse.json();
+  const enrolled = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(enrolled.status, 201);
+  sqlite.prepare("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES (?,?)").run(ownerId, ownerId);
+  sqlite.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status) VALUES (?,?,?,0,0,'open')")
+    .run(sessionId, registerId, ownerId);
+  sqlite.prepare("INSERT INTO products (id,slug,name,description,category,audience,status,retail_price_paisa) VALUES (?,?,?,'','apparel','unisex','published',1250)")
+    .run(productId, "rollback-product-" + productId, "Rollback Test Shirt");
+  sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'M','Black',5,1,500)")
+    .run(variantId, productId, sku);
+  const allocation = await api("/api/admin/pos/offline/devices/" + deviceId + "/allocations", {
+    allocations: [{ variant_id: variantId, quantity: 2 }],
+  });
+  assert.equal(allocation.status, 201);
+  const signingPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", signingPair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", signingPair.publicKey);
+  env.POS_OFFLINE_PERMIT_PRIVATE_JWK = JSON.stringify(privateJwk);
+  env.POS_OFFLINE_PERMIT_PUBLIC_JWK = JSON.stringify(publicJwk);
+  env.OFFLINE_POS_CHECKOUT_ENABLED = "true";
+  const issued = await api("/api/admin/pos/offline/devices/" + deviceId + "/permits", {
+    cashier_admin_id: ownerId, session_id: sessionId, duration_hours: 2,
+  });
+  assert.equal(issued.status, 201);
+  const permit = (await issued.json()).permit;
+  const sale = {
+    eventId: randomUUID(), idempotencyKey: randomUUID(), deviceId, permitId: permit.id,
+    registerId, sessionId, cashierId: ownerId, snapshotVersion: permit.claims.snapshot_version,
+    createdAt: new Date().toISOString(), currency: "PKR",
+    lines: [{ variantId, sku, productName: "Rollback Test Shirt", size: "M", color: "Black", quantity: 1, unitPricePaisa: 1250, lineTotalPaisa: 1250 }],
+    subtotalPaisa: 1250, totalPaisa: 1250, cashTenderedPaisa: 1500, changePaisa: 250,
+    sequence: 1, status: "pending", payloadVersion: 1,
+  };
+  return { identity, deviceId, variantId, permit, sale };
+}
+
+test("real Worker rolls back the entire signed sale batch after a late financial/audit write failure", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const signature = await signSale(fixture.identity, fixture.sale);
+  // The final accepted-event write is statement 17; failing immediately before it
+  // proves prior sale, item, stock, allocation, movement, payment, ledger and audit
+  // writes are all rolled back as one transaction.
+  db.failNextBatchAt = 17;
+  const response = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature }],
+  });
+  assert.equal(response.status, 200);
+  const result = (await response.json()).results[0];
+  assert.equal(result.outcome, "conflict");
+  assert.equal(result.reason_code, "sale_commit_guard_failed");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sale_items").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order'").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 5);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
+  const event = sqlite.prepare("SELECT outcome FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId);
+  assert.equal(event.outcome, "conflict");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(fixture.sale.eventId).count, 1);
 });
