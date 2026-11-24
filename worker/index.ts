@@ -2587,6 +2587,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
         if (reason.length < 3) return error("A reason is required to release unused stock", 400);
         try {
+          const deviceState = await env.DB.prepare("SELECT status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ status: string }>();
+          if (!deviceState) return error("Offline POS device not found", 404);
+          if (deviceState.status !== "revoked") return error("Revoke the device before releasing its remaining offline stock", 409);
+          const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
+          if (activePermit) return error("Revoke the device's active offline permit before releasing stock", 409);
+          if (body?.owner_confirms_device_queue_reconciled !== true) return error("Explicitly confirm that the physical device's local queue has been reconciled before releasing stock", 400);
           const unresolved = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE device_id=? AND outcome IN ('pending','conflict','rejected')").bind(deviceId).first<{ count: number }>();
           if (Number(unresolved?.count ?? 0) > 0) return error("Resolve every pending or conflicted offline sale before releasing this device's remaining stock", 409);
           const now = new Date().toISOString();
@@ -2594,7 +2600,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           const statements = (active.results ?? []).flatMap((row) => [
             env.DB.prepare("UPDATE pos_offline_stock_allocations SET released_quantity=released_quantity+(allocated_quantity-consumed_quantity-released_quantity),status='released',released_by_admin_id=?,released_at=?,updated_at=? WHERE id=? AND status='active'")
               .bind(admin.admin_user_id, now, now, row.id),
-            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_stock_released','pos_offline_stock_allocation',?,?)")
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_stock_released','pos_offline_stock_allocation',?,? WHERE changes()=1")
               .bind(crypto.randomUUID(), admin.admin_user_id, String(row.id), JSON.stringify({ reason, released_quantity: Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) }))
           ]);
           if (statements.length) await env.DB.batch(statements);
