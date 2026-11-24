@@ -2613,14 +2613,14 @@ async function processOfflineSaleEvent(
   if (!await verifyOfflinePermitSignatureServer(permitClaims, String(permit.signature_base64url), permitPublicKey)) return { outcome: "rejected", reason_code: "permit_signature_invalid" };
 
   const duplicate = await env.DB.prepare(
-    "SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code " +
-    "FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1"
+    "SELECT e.event_id,e.device_id,e.permit_id,e.idempotency_key,e.device_sequence,e.payload_hash,e.outcome,e.canonical_sale_id,e.reason_code,s.receipt_number " +
+    "FROM pos_offline_events e LEFT JOIN pos_sales s ON s.id=e.canonical_sale_id WHERE e.event_id=? OR e.idempotency_key=? OR (e.device_id=? AND e.device_sequence=?) LIMIT 1"
   ).bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
   if (duplicate) {
     if (duplicate.event_id === eventId && duplicate.device_id === deviceId && duplicate.permit_id === permitId &&
         duplicate.idempotency_key === idempotencyKey && Number(duplicate.device_sequence) === Number(sequence) &&
         duplicate.payload_hash === payloadHash) {
-      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, reason_code: duplicate.reason_code ?? null, duplicate: true };
+      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, receipt_number: duplicate.receipt_number ?? null, reason_code: duplicate.reason_code ?? null, server_received_at: new Date().toISOString(), duplicate: true };
     }
     try {
       await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
