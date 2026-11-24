@@ -2470,6 +2470,48 @@ export async function signOfflinePermitClaims(
   }
 }
 
+async function verifyOfflinePermitSignatureServer(
+  claims: unknown,
+  signatureBase64Url: string,
+  publicJwk: JsonWebKey,
+): Promise<boolean> {
+  try {
+    if (typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        typeof publicJwk.x !== "string" || typeof publicJwk.y !== "string" || "d" in publicJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicJwk.x, y: publicJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalOfflineJson(claims));
+    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
+  } catch { return false; }
+}
+
+async function verifyOfflineEventSignature(
+  payload: unknown,
+  signatureBase64Url: string,
+  publicJwk: JsonWebKey,
+): Promise<boolean> {
+  try {
+    if (typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        typeof publicJwk.x !== "string" || typeof publicJwk.y !== "string" || "d" in publicJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicJwk.x, y: publicJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:event:v1\\n" + canonicalOfflineJson(payload));
+    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
+  } catch { return false; }
+}
+
 export async function verifyOfflineEnrollmentProof(
   publicKeyJwk: JsonWebKey,
   challenge: string,
