@@ -3093,13 +3093,15 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
             Number(sale.total_paisa) !== Number(payload.totalPaisa)) {
           return error("The selected completed POS sale does not match the offline event's shift, cashier and totals", 409);
         }
-        const [saleLines, payment, movementCount, allocations] = await Promise.all([
+        const [saleLines, payment, movementRows, financialLedger, allocations] = await Promise.all([
           env.DB.prepare("SELECT variant_id,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY variant_id")
             .bind(canonicalSaleId).all<Record<string, unknown>>(),
-          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM pos_payments WHERE sale_id=? AND payment_method='cash'")
+          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total,COALESCE(SUM(tendered_paisa),0) AS tendered,COALESCE(SUM(change_paisa),0) AS change FROM pos_payments WHERE sale_id=? AND payment_method='cash'")
+            .bind(canonicalSaleId).first<{ total: number; tendered: number; change: number }>(),
+          env.DB.prepare("SELECT variant_id,quantity_delta FROM inventory_movements WHERE reference_type='order' AND reference_id=? AND movement_type='sold' ORDER BY variant_id")
+            .bind(canonicalSaleId).all<Record<string, unknown>>(),
+          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM financial_transactions WHERE reference_type='pos_sale' AND reference_id=? AND account_id='cash-main' AND direction='in' AND category='pos_sale'")
             .bind(canonicalSaleId).first<{ total: number }>(),
-          env.DB.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order' AND reference_id=? AND movement_type='sold'")
-            .bind(canonicalSaleId).first<{ count: number }>(),
           env.DB.prepare("SELECT a.id,a.variant_id,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status FROM pos_offline_stock_allocations a WHERE a.device_id=? AND a.status='active'")
             .bind(String(reconciliation.device_id)).all<Record<string, unknown>>(),
         ]);
@@ -3111,10 +3113,19 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           variant_id: String(line.variant_id), quantity: Number(line.quantity),
           unit_price_paisa: Number(line.unit_price_paisa), line_total_paisa: Number(line.line_total_paisa),
         })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const actualMovements = (movementRows.results ?? []).map((line) => ({
+          variant_id: String(line.variant_id), quantity: Number(line.quantity_delta),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const expectedMovements = expected.map((line) => ({
+          variant_id: line.variant_id, quantity: -line.quantity,
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
         if (JSON.stringify(actual) !== JSON.stringify(expected) || actual.length !== expected.length ||
+            JSON.stringify(actualMovements) !== JSON.stringify(expectedMovements) ||
             Number(payment?.total ?? 0) !== Number(payload.totalPaisa) ||
-            Number(movementCount?.count ?? 0) !== expected.length) {
-          return error("The completed sale's item, cash-payment or inventory evidence does not exactly match this offline event", 409);
+            Number(payment?.tendered ?? 0) !== Number(payload.cashTenderedPaisa) ||
+            Number(payment?.change ?? 0) !== Number(payload.changePaisa) ||
+            Number(financialLedger?.total ?? 0) !== Number(payload.totalPaisa)) {
+          return error("The completed sale's item, cash payment, financial ledger or inventory movement evidence does not exactly match this offline event", 409);
         }
         const allocationByVariant = new Map((allocations.results ?? []).map((row) => [String(row.variant_id), row]));
         const consumption: Array<{ id: string; quantity: number; variantId: string }> = [];
@@ -3142,7 +3153,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) " +
             "SELECT ?,?,?, 'accepted',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='resolved' AND resolved_at=?)")
             .bind(crypto.randomUUID(), reconciliation.case_id, admin.admin_user_id, reason,
-              JSON.stringify({ canonical_sale_id: canonicalSaleId, matched_line_count: expected.length, cash_payment_verified: true, inventory_movement_count: Number(movementCount?.count ?? 0), offline_event_id: reconciliation.event_id }),
+              JSON.stringify({ canonical_sale_id: canonicalSaleId, matched_line_count: expected.length, cash_payment_verified: true, inventory_movement_count: actualMovements.length, offline_event_id: reconciliation.event_id }),
               reconciliation.case_id, now),
           env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_reconciliation_resolved','pos_offline_reconciliation_case',?,?)")
             .bind(crypto.randomUUID(), admin.admin_user_id, reconciliation.case_id,
