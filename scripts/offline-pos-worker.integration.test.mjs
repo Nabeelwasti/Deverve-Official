@@ -657,3 +657,58 @@ test("real Worker processes a multi-event offline batch in strict sequence with 
   assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 0);
   assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 2);
 });
+
+
+test("real Worker rejects a permit signed by a different configured verification key", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const attacker = await createIdentity();
+  env.POS_OFFLINE_PERMIT_PUBLIC_JWK = JSON.stringify(attacker.publicJwk);
+  const response = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature: await signSale(fixture.identity, fixture.sale) }],
+  });
+  assert.equal(response.status, 200);
+  const result = (await response.json()).results[0];
+  assert.equal(result.outcome, "rejected");
+  assert.equal(result.reason_code, "permit_signature_invalid");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
+});
+
+test("real Worker blocks permit replacement while an unresolved signed sale conflict exists", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const alteredSale = {
+    ...fixture.sale,
+    lines: [{ ...fixture.sale.lines[0], unitPricePaisa: 1300, lineTotalPaisa: 1300 }],
+    subtotalPaisa: 1300,
+    totalPaisa: 1300,
+    cashTenderedPaisa: 1500,
+    changePaisa: 200,
+  };
+  const conflict = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: alteredSale, signature: await signSale(fixture.identity, alteredSale) }],
+  });
+  assert.equal(conflict.status, 200);
+  assert.equal((await conflict.json()).results[0].outcome, "conflict");
+  sqlite.prepare("UPDATE pos_offline_permits SET status='expired' WHERE id=?").run(fixture.permit.id);
+  const replacement = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/permits", {
+    cashier_admin_id: ownerId, session_id: fixture.sale.sessionId, duration_hours: 2,
+  });
+  assert.equal(replacement.status, 409);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(fixture.deviceId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(alteredSale.eventId).count, 1);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+});
+
+test("real Worker refuses to release reserved stock while a revoked device still has an unresolved offline conflict", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  await openRevokedDeviceConflict(fixture);
+  const response = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/release-allocations", {
+    reason: "Attempted release before queue reconciliation",
+    owner_confirms_device_queue_reconciled: true,
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status,allocated_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).status, "active");
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+});
