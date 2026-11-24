@@ -2,8 +2,8 @@ name: Encrypted D1 Backup and Restore Drill
 on:
   workflow_dispatch:
   schedule:
-    # 02:00 Pakistan Standard Time (UTC+5), every day.
-    - cron: "0 21 * * *"
+    # 02:17 Pakistan Standard Time (UTC+5), every day. Avoid the top-of-hour Actions queue spike.
+    - cron: "17 21 * * *"
 permissions:
   contents: read
 concurrency:
