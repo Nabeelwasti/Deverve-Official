@@ -1,8 +1,42 @@
 # De VERVE Offline-First POS — Engineering Design and Acceptance Plan
 
-**Status:** Design baseline; implementation and production acceptance are not complete.  
-**Branch:** `feat/offline-first-pos-design`  
-**Date:** 23 November 2026  
+**Status:** Advanced engineering foundation in draft PR; emergency checkout remains deliberately disabled pending release gates.
+**Branch:** `feat/online-first-emergency-pos-completion`
+**Date:** 24 November 2026
+
+## Implementation status — 24 November 2026
+
+Implemented on the draft branch; not merged or deployed:
+
+- Additive D1 foundations for device identity, signed permits, stock allocations, immutable event evidence, reconciliation cases/actions and single-use enrollment challenges (migrations `0045`–`0048`).
+- Owner/manager device enrollment using a five-minute, single-use challenge and P-256 proof-of-possession; server-side public-key fingerprint verification and bounded challenge attempts.
+- Owner/manager device listing/revocation, bounded stock allocation, guarded release and append-only audit evidence.
+- Offline allocations reserve the same `product_variants.reserved_quantity` counter used by online checkout.
+- Short-lived server-signed permits bind the enrolled device, register, cashier grant, open shift, catalogue snapshot and exact reserved allocations.
+- Client-side key integrity checks, challenge signing, permit/snapshot verification, persistent IndexedDB queue, sequential sync leases, retry backoff, durable sync receipts and provisional receipts clearly marked as not official server receipts.
+- Restricted live POS fallback: cash-only, walk-in, signed allocated stock only; no offline refunds, voids, shift close or customer contact data. Existing online checkout remains authoritative.
+- Service-worker precache/check primitives and explicit cache readiness; API/authentication/mutation requests remain network-only.
+- Signed event sync validates device, cashier, permit, payload, sequence, replay, allocation and price; canonical sale, items, payment, financial transaction, inventory movement and audit writes are committed transactionally.
+- Exact duplicate sync returns the original canonical sale; conflicting events remain immutable and visible to managers.
+- Manager reconciliation endpoint and UI now resolve a conflict only against an existing completed POS sale whose shift, cashier, totals, exact item/variant/price lines, cash tender/change, cash financial ledger and per-variant inventory movements match the immutable offline event. The workflow consumes the matching reserved allocation and records an append-only reconciliation action plus audit log. Mismatches and concurrent changes leave the case open; it does not create compensating sales or silently alter cash/physical stock.
+
+Automated validation currently available:
+
+- CI type-check and production build.
+- Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
+- Latest successful PR-head code CI run `45440698676` on code/documentation head `108400116e49acc34aae334f0355ab772ff0f6fb` passed all 20 workflow steps: type-check/build, production dependency audit, 147 Worker/auth tests (0 failures), schema checks, 16 remote D1 inventory checks, the complete migration chain `0001`–`0049` on isolated D1, the production-clone migration rehearsal described below, and 160 storefront browser tests. Two subsequent commits changed only owner handover and acceptance-matrix documentation; no application or test code changed after this successful run.
+- The encrypted backup workflow passed on run `45330719916` attempt 7. It exported production D1, AES-256-GCM encrypted the archive, verified R2 read-back and SHA-256, restored into an isolated D1 database, matched 66 tables, 102 indexes, 10 triggers and all row counts, then confirmed temporary-database deletion.
+- CI run `45421372915` also restored the verified backup into a temporary production clone, applied migrations `0045`–`0049`, confirmed existing row counts were unchanged and no new foreign-key violations appeared, verified all seven offline tables and 20 guard triggers, then deleted the clone. No production migration was applied.
+- Purchase-cost data is stored in immutable server-only `cost_snapshot_json`; it is excluded from cashier-facing permit claims and catalogue snapshots.
+
+Not yet verified / release blockers:
+
+- No full offline-POS end-to-end browser outage/failure-injection suite against the actual deployed build, and no physical Android acceptance.
+- The offline D1 migration chain and production-clone rehearsal passed; owner migration approval and the full offline-sale Worker/API lifecycle acceptance remain outstanding.
+- Signing-key generation, secure secret provisioning, rotation/revocation and recovery custody remain owner-controlled tasks.
+- Production asset-manifest/cold-reload cache acceptance, preview smoke test and supervised pilot remain outstanding.
+
+**Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the owner-controlled signing keypair and backup-key custody are secured, the Cloudflare token is narrowed, physical Android outage/reload/reconnect tests pass, and preview smoke plus supervised pilot approval are complete.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
 **Non-goal:** Replacing the existing POS, changing the accounting model, or making customer checkout work offline.
 
@@ -105,7 +139,7 @@ D1 `batch()` provides sequential transactional execution and rolls back the batc
 - **Stock allocation exhausted or invalid:** preserve cash evidence; create a conflict case. Do not decrement other stock or silently mark accepted.
 - **Cashier/device/permit revoked or shift closed online:** do not silently accept; preserve and route to owner review with the exact reason.
 - **Device lost/damaged:** owner revokes it online, records physical cash/receipt reconciliation and follows the documented recovery procedure. Never delete its server allocation while queue state is unknown.
-- **Manual resolution:** append-only record with actor, reason, original event hash, selected resolution, amount/stock effect and timestamps. No direct edits to the original event.
+- **Manual resolution:** the manager must supply an existing completed POS sale ID and an explanation. The server compares the immutable event with the canonical sale shift/cashier/totals, every item/variant/price, cash payment tender/change, financial ledger entry and exact per-variant inventory movements. Only an exact match can atomically consume the corresponding offline allocation, set the event to accepted, resolve the case, and append an action plus audit record. No sale is fabricated and no cash or physical-stock adjustment is invented by this workflow. Any mismatch or concurrency failure leaves the case open.
 
 ## 9. UI and cashier workflow
 
@@ -126,18 +160,62 @@ D1 `batch()` provides sequential transactional execution and rolls back the batc
 - Version the shell and IndexedDB schema. Upgrade without deleting pending events. Block activation of an incompatible worker until pending data is migrated safely or the user has reconciled it.
 - Test update while offline, interrupted upgrade, old tab/new worker, and rollback.
 
-## 11. Proposed schema additions (migration review required)
+## 11. Implemented branch schema (not applied to production)
 
-Names are provisional; inspect the live D1 schema and current POS route before writing SQL:
-- `pos_offline_devices`: device ID, public key, register ID, owner enrollment, status, created/revoked timestamps, last seen.
-- `pos_offline_permits`: permit ID, device, cashier, grant version, session, snapshot version, signed claims, issued/expiry, revocation and policy version.
-- `pos_offline_stock_allocations`: device/permit/variant, allocated, consumed, released, status and audit timestamps; unique active allocation scope.
-- `pos_offline_events`: device/event ID, idempotency key, payload hash, sequence, canonical sale ID, outcome, reason code, server received/processed times; unique device/event and idempotency constraints.
-- `pos_offline_reconciliation`: immutable review cases and append-only resolution records.
+The current PR #51 branch implements migrations `0045`–`0049` after reviewing the existing online POS, stock reservation, cashier grant, ledger, audit and receipt-outbox schema. The additions are additive and are not applied to production.
 
-Do not add a migration until current `pos_sales`, `pos_sale_items`, `pos_payments`, `pos_sessions`, `inventory_movements`, `financial_transactions`, `audit_logs`, cashier grant and receipt-outbox constraints have been read from the actual production schema and local test schema. No production migration is authorized by this design document.
+The five migrations create seven offline POS tables:
+- `pos_offline_devices`
+- `pos_offline_enrollment_challenges`
+- `pos_offline_permits`
+- `pos_offline_stock_allocations`
+- `pos_offline_events`
+- `pos_offline_reconciliation_cases`
+- `pos_offline_reconciliation_actions`
 
-## 12. Test plan — required before enabling
+They add immutable device/permit/event evidence, single-use challenge guards, device-bound signed permits, stock reservation/consumption/release guards, private server-side cost snapshots, append-only reconciliation actions and audit evidence. The current CI migration chain verifies all seven tables, 20 guard triggers and zero foreign-key violations. The same migration chain has been rehearsed against an isolated restore of production data; existing row counts remained unchanged and the temporary database was deleted.
+
+**Production status:** migrations `0045`–`0049` have not been applied to production. No deployment or merge of PR #51 has occurred. Do not apply these migrations until owner approval, backup verification, physical-device acceptance and controlled release gates are complete.
+
+## 12. Test plan — status as of 25 November 2026
+
+### Verified automated coverage
+
+Full CI run [45486036670](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45486036670) passed all workflow steps on code head `687e5a9273ff135046c58c147f2658fcfdb868bd`. The real Worker integration suite reports 33 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`. It covers the complete reconciliation mismatch matrix and retry-safe standalone replay-audit failure handling. Full CI also passed the direct Cloudflare D1 independent-request sequence-race probe, production-backup-clone rehearsal and 160 storefront browser tests.
+
+Verified scenarios:
+- [x] Challenge binding, forged proof rejection without challenge consumption, one-time enrollment/replay rejection, expiry, thumbprint mismatch and unknown register.
+- [x] Device revocation, idempotent repeat revocation and audit evidence.
+- [x] Fail-closed permit issuance while offline checkout is disabled; valid P-256 signed permit binding to device/register/cashier/open shift/exact reserved stock.
+- [x] Server-only purchase-cost snapshot; device-facing catalogue snapshot does not expose cost.
+- [x] Signed cash sale, one canonical receipt, sale/items/payment/financial ledger/inventory movement/audit writes and stock/reservation counters.
+- [x] Exact duplicate retry returns the original sale/receipt; altered same-identity replay becomes a conflict.
+- [x] Concurrent exact-duplicate sync requests create one canonical sale and consume stock once.
+- [x] Concurrent distinct signed event IDs contending for the same device sequence yield exactly one accepted sale and one conflict; only one event row and one set of sale/payment/ledger/inventory writes commit.
+- [x] Ordered multi-event batch settlement for sequences 1 and 2 with balanced cash/ledger/stock.
+- [x] Invalid device signature, permit verification-key mismatch, sequence gap and revoked-device conflict.
+- [x] Failure injection at all 19 statements of the signed-sale D1 batch proves each failure rolls back the staged sale, item, stock, allocation, inventory, payment, ledger and audit writes.
+- [x] Failure injection at all four conflict-evidence batch statements proves event, reconciliation case/action and audit evidence either commit together or remain retryable.
+- [x] Failure injection at all nine reconciliation batch statements proves stock consumption, event outcome, case status, accepted action and audit record roll back together.
+- [x] Exact completed-sale reconciliation, one-time allocation consumption, repeated-resolution rejection and cash-tender mismatch rejection.
+- [x] Concurrent reconciliation attempts produce one successful resolution and one conflict; only one accepted action and one allocation consumption commit.
+- [x] Permit replacement and stock release remain blocked while unresolved offline conflicts exist.
+- [x] Isolated D1 migrations, restored-production-clone rehearsal and storefront browser suite pass in the same CI workflow.
+
+### Still required before enabling
+
+- [x] Direct Cloudflare D1 independent-request sequence contention probe passed in isolated CI D1: two distinct event IDs competed for the same `(device_id, device_sequence)` key; exactly one insert succeeded and one conflicted, leaving one row. The temporary database was deleted and cleanup verified.
+- [ ] Run the complete Worker request handler on a temporary Cloudflare Worker bound to isolated D1 and verify sync plus concurrent reconciliation/rollback behavior under actual D1 semantics. The direct SQL uniqueness probe and local SQLite Worker suite do not replace this end-to-end runtime test.
+- [x] Reconciliation mismatch tests reject wrong cashier, shift, totals, variant, quantity, unit price, cash tender/change, cash-ledger amount and inventory-movement quantity; every rejection leaves the case open and the offline allocation unconsumed.
+- [x] Standalone replay-conflict audit insertion failure returns a retryable outcome; a subsequent retry records the audit evidence without creating a second sale.
+- [ ] Review remaining non-batched write paths (challenge creation/cleanup and permit-expiry housekeeping) for failure/cleanup behavior and add tests where a partial side effect is possible.
+- [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
+- [ ] Complete production-build cache manifest audit and real cold-cache/cold-reload acceptance.
+- [ ] Complete the physical Android pilot, airplane-mode sale, app reload/restart, reconnect/sync, scanner, printer, storage-denial and recovery acceptance.
+- [ ] Owner approves device custody, offline stock allocations, maximum permit duration, cash-only restrictions and the manual conflict procedure.
+- [ ] Owner securely provisions the separate P-256 permit-signing keypair and independent recovery custody.
+- [ ] Controlled preview deployment, smoke tests, production migration approval, controlled deployment and one-device staged enablement.
+
 
 ### Unit and database tests
 - IndexedDB transaction atomicity: sale and outbox both commit or neither commits.

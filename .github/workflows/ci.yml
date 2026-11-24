@@ -59,12 +59,16 @@ jobs:
         run: node --check workers/site-translation/index.js
       - name: Test Worker authentication and translation behavior
         run: npm run test:worker
+      - name: Exercise offline POS lifecycle through the real Worker and isolated SQLite D1 adapter
+        run: npm run test:offline:worker
       - name: Validate D1 schema and constraints
         run: python scripts/verify_schema.py
       - name: Validate isolated remote D1 integration suite syntax
         run: node --check scripts/d1-inventory.integration.test.mjs
       - name: Validate encrypted D1 backup script syntax
         run: node --check scripts/d1-backup-restore.mjs
+      - name: Validate isolated offline POS D1 migration suite syntax
+        run: node --check scripts/offline-pos-d1.integration.test.mjs
       - name: Run isolated remote D1 integration suite when credentials are configured
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -76,6 +80,28 @@ jobs:
           else
             echo "Skipping remote D1 integration: Cloudflare test credentials are not configured."
           fi
+      - name: Run isolated offline POS D1 migration suite when credentials are configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            npm run test:offline:d1
+          else
+            echo "Skipping offline POS D1 migration suite: Cloudflare test credentials are not configured."
+          fi
+      - name: Rehearse offline POS migrations on an isolated production backup clone
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: "355da876-17c4-4762-a59d-bb85f2e4551b"
+          D1_DATABASE_NAME: "deverve-production"
+          D1_BACKUP_R2_BUCKET: "deverve-db-backups"
+          D1_BACKUP_ENCRYPTION_KEY: ${{ secrets.D1_BACKUP_ENCRYPTION_KEY }}
+          D1_BACKUP_KEY_ID: "deverve-d1-key-v1"
+          OFFLINE_POS_MIGRATION_CHECK: "true"
+        run: node scripts/d1-backup-restore.mjs
       - name: Install Chromium headless shell for browser tests
         timeout-minutes: 8
         run: npx playwright install chromium --only-shell

@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import BarcodeScanner from "./BarcodeScanner";
 import BrandLogo from "./BrandLogo";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
-import { adminRequest as api } from "./adminApi";
+import { adminRequest as api, AdminRequestError } from "./adminApi";
+import { restoreOfflineCashierSession } from "./posOffline/api";
 import "./admin.css";
 import ContentStudio from "./ContentStudio";
 import NotificationCenter from "./NotificationCenter";
@@ -403,10 +404,36 @@ export default function Admin() {
     let active = true;
     api<{ admin: AdminUser }>("/api/admin/me")
       .then((result) => { if (active) setAdmin(result.admin); })
-      .catch(() => { if (active) setAdmin(null); })
+      .catch(async (error) => {
+        if (!active) return;
+        const serviceUnavailable = !navigator.onLine || error instanceof TypeError || (error instanceof AdminRequestError && error.status >= 500);
+        if (serviceUnavailable) {
+          try {
+            const offlineAdmin = await restoreOfflineCashierSession();
+            if (active) {
+              setAdmin(offlineAdmin);
+              return;
+            }
+          } catch {
+            // A failed local permit/cache verification must never grant POS access.
+          }
+        }
+        if (active) setAdmin(null);
+      })
       .finally(() => { if (active) setChecking(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!admin?.can_use_pos || admin.role !== "viewer") return;
+    const refreshAuthenticatedSession = () => {
+      void api<{ admin: AdminUser }>("/api/admin/me").then((result) => setAdmin(result.admin)).catch(() => {
+        // Keep the short-lived local POS permit context until the server is reachable.
+      });
+    };
+    window.addEventListener("online", refreshAuthenticatedSession);
+    return () => window.removeEventListener("online", refreshAuthenticatedSession);
+  }, [admin?.id, admin?.role, admin?.can_use_pos]);
 
   useEffect(() => {
     if (admin) {
@@ -1339,7 +1366,7 @@ export default function Admin() {
         </section>
         )}
         {["owner", "manager", "orders", "catalogue"].includes(admin.role) && activeAdminScreen === "inventory" && <section id="inventory" className="admin-panel"><InventoryWorkspace canManageMoney={["owner","manager"].includes(admin.role)} onManageProduct={(productId) => { const product = products.find((item) => item.id === productId); navigateAdminScreen("products"); if (product) startEdit(product); }} /></section>}
-        {(["owner", "manager", "orders"].includes(admin.role) || admin.can_use_pos) && activeAdminScreen === "pos" && <section id="pos" className="admin-panel"><POSWorkspace canManageMoney={["owner", "manager"].includes(admin.role)} canUseAI={["owner","manager","catalogue"].includes(admin.role)} /></section>}
+        {(["owner", "manager", "orders"].includes(admin.role) || admin.can_use_pos) && activeAdminScreen === "pos" && <section id="pos" className="admin-panel"><POSWorkspace canManageMoney={["owner", "manager"].includes(admin.role)} canUseAI={["owner","manager","catalogue"].includes(admin.role)} canUseOffline={["owner","manager"].includes(admin.role) || admin.can_use_pos} /></section>}
         {["owner","manager"].includes(admin.role) && <section id="product-reviews" className="admin-panel admin-product-reviews-panel"><div className="admin-panel-heading"><div><h2>Product reviews & comments</h2><p className="admin-muted">New customer reviews are published immediately. This workspace is only for legacy pending entries or exceptional moderation.</p></div><button type="button" className="admin-secondary" onClick={()=>void loadProductReviews()}>Refresh queue</button></div>{productReviews.length===0?<div className="admin-empty"><strong>No pending moderation items</strong><p>New customer feedback is already visible on the public product page as soon as it is submitted.</p></div>:<div className="admin-review-queue">{productReviews.map(review=><article className="admin-review-row" key={review.id}><div className="admin-review-meta"><strong>{review.product_name}</strong><span>{review.order_number?"Order "+review.order_number:"Customer comment"} · {new Date(review.created_at).toLocaleString()}</span><span>{review.customer_name} · {review.customer_email}</span><b>{"★".repeat(review.rating)}{"☆".repeat(5-review.rating)}</b></div>{review.title&&<h3>{review.title}</h3>}<p>{review.body}</p><div className="admin-row-actions"><a href={"/product/"+encodeURIComponent(review.product_slug)} target="_blank" rel="noreferrer">View product ↗</a><button type="button" className="admin-primary" onClick={()=>void moderateProductReview(review,"approved").catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Review could not be approved."))}>Approve & publish</button><button type="button" className="admin-danger" onClick={()=>void moderateProductReview(review,"rejected").catch((error:unknown)=>setMessage(error instanceof Error?error.message:"Review could not be rejected."))}>Reject</button></div></article>)}</div>}</section>}
         <section id="products" className="admin-panel">
           {canEditProducts && <ProductCsvImport role={admin.role} onImported={() => void loadProducts()} />}
