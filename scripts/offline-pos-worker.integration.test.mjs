@@ -22,12 +22,16 @@ class LocalD1Statement {
   first() { return this.db.prepare(this.sql).get(...this.values) ?? null; }
   all() { return { success: true, results: this.db.prepare(this.sql).all(...this.values) }; }
   run() {
+    if (this.db.failNextRun) {
+      this.db.failNextRun = false;
+      throw new Error("injected isolated D1 standalone-write failure");
+    }
     const result = this.db.prepare(this.sql).run(...this.values);
     return { success: true, meta: { changes: Number(result.changes), last_row_id: Number(result.lastInsertRowid ?? 0) } };
   }
 }
 class LocalD1 {
-  constructor(db) { this.db = db; this.failNextBatchAt = null; }
+  constructor(db) { this.db = db; this.failNextBatchAt = null; this.failNextRun = false; }
   prepare(sql) { return new LocalD1Statement(this.db, sql); }
   batch(statements) {
     this.db.exec("BEGIN IMMEDIATE");
@@ -404,6 +408,43 @@ test("real Worker commits a signed cash sale atomically and returns the canonica
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_replay_conflict'").get().count, 1);
 });
 
+
+test("real Worker retries a replay conflict when its standalone audit write fails, then records it on retry", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const first = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature: await signSale(fixture.identity, fixture.sale) }],
+  });
+  assert.equal(first.status, 200);
+  assert.equal((await first.json()).results[0].outcome, "accepted");
+
+  const competingSale = {
+    ...fixture.sale,
+    eventId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    createdAt: new Date(Date.now() + 1).toISOString(),
+  };
+  const body = {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: competingSale, signature: await signSale(fixture.identity, competingSale) }],
+  };
+  db.failNextRun = true;
+  const unavailable = await api("/api/admin/pos/offline/sync", body);
+  assert.equal(unavailable.status, 200);
+  const retryResult = (await unavailable.json()).results[0];
+  assert.equal(retryResult.outcome, "retry");
+  assert.equal(retryResult.reason_code, "replay_conflict_audit_unavailable");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_replay_conflict'").get().count, 0);
+
+  const retried = await api("/api/admin/pos/offline/sync", body);
+  assert.equal(retried.status, 200);
+  const conflictResult = (await retried.json()).results[0];
+  assert.equal(conflictResult.outcome, "conflict");
+  assert.equal(conflictResult.reason_code, "replay_or_sequence_collision");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_replay_conflict'").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events").get().count, 1);
+});
 
 async function createReadyOfflinePermitFixture() {
   const identity = await createIdentity(), deviceId = randomUUID(), sessionId = randomUUID();
