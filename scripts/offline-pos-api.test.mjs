@@ -31,6 +31,9 @@ assert.match(worker, /allow_voids: false/);
 assert.match(worker, /allow_shift_close: false/);
 assert.match(worker, /max_events: 20/);
 assert.match(worker, /Offline permit signing is not configured/);
+assert.match(worker, /\/api\/admin\/pos\/offline\/verification-key/);
+assert.match(worker, /snapshotHash = await sha256Hex\(canonicalOfflineJson\(snapshot\)\)/);
+
 assert.match(worker, /pos\\.offline_permit_issued/);
 
 assert.match(worker, /Stock allocation failed\. The database rolled back the allocation batch/);
@@ -56,6 +59,8 @@ assert.match(crypto, /deverve-offline-pos:enroll:v1\\n/);
 assert.match(crypto, /validateStoredIdentity\(identity\)/);
 
 assert.match(crypto, /export async function verifyOfflinePermitSignature/);
+assert.match(crypto, /export async function verifyOfflinePermitSnapshot/);
+
 assert.match(crypto, /deverve-offline-pos:permit:v1\\n/);
 
 console.log("Offline POS server enrollment, revocation and allocation guardrails passed.");
