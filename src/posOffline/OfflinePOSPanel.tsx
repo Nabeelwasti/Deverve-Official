@@ -16,12 +16,14 @@ export default function OfflinePOSPanel({
   items,
   session,
   onRefresh,
+  onSyncComplete,
 }: {
   canManageMoney: boolean;
   registers: Register[];
   items: StockItem[];
   session: Shift;
   onRefresh?: () => void;
+  onSyncComplete?: () => Promise<void>;
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -136,6 +138,7 @@ export default function OfflinePOSPanel({
     if (!deviceId) throw new Error("This browser has no enrolled device identity.");
     if (!navigator.onLine) throw new Error("Reconnect to the internet before syncing. Your local sales remain stored.");
     const result = await syncOfflineQueue(deviceId);
+    await onSyncComplete?.();
     return `Sync finished: ${result.accepted} accepted, ${result.needsReview} needing review, ${result.retrying} queued for retry.`;
   });
 
