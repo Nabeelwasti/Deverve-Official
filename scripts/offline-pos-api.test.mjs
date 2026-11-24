@@ -32,7 +32,7 @@ assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "PO
 assert.match(worker, /const cashierCanIssueOfflinePermit = request\.method === "POST"/);
 assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "GET"/);
 assert.ok(worker.includes('offlineRoot + "/sync"'));
-assert.match(worker, /offlineRoot \/cases\//);
+assert.match(worker, /offlineRoot \+ "\/cases\/"/);
 assert.match(worker, /pos\.offline_case_rejected/);
 assert.match(worker, /UPDATE pos_offline_events SET outcome='rejected'/);
 assert.match(worker, /pos_offline_reconciliation_cases WHERE id=\? AND status='open'/);
