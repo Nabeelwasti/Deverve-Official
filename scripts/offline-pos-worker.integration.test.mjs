@@ -46,7 +46,7 @@ let sqlite, db, env, cookie;
 beforeEach(async () => {
   sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
-  const migrations = readdirSync(join(root, "migrations")).filter((name) => /^\\d{4}_.+\\.sql$/.test(name)).sort();
+  const migrations = readdirSync(join(root, "migrations")).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
   assert.equal(migrations.length, 49, "expected the complete numbered migration chain");
   for (const name of migrations) sqlite.exec(readFileSync(join(root, "migrations", name), "utf8"));
   db = new LocalD1(sqlite);
