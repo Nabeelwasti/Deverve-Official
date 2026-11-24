@@ -64,3 +64,10 @@ assert.match(source, /record\.status === "synced"/);
 assert.match(source, /allowExpiredLease/);
 assert.match(source, /if \(!pendingDue && !expiredLease\) break/);
 
+
+const api = readFileSync(new URL("../src/posOffline/api.ts", import.meta.url), "utf8");
+assert.match(source, /export async function saveVerifiedOfflinePermit/);
+assert.match(source, /database\.transaction\(\["permit", "catalogue", "shift", "meta", "audit", "sales", "outbox"\], "readwrite"\)/);
+assert.match(source, /sale\.permitId !== record\.permitId/);
+assert.match(source, /entry\.status === "synced"/);
+assert.match(api, /offline sales awaiting sync or owner reconciliation/);
