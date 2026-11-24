@@ -35,7 +35,8 @@ export default function OfflinePOSPanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState(false);\n  const [shellReady, setShellReady] = useState(false);
+  const [error, setError] = useState(false);
+  const [shellReady, setShellReady] = useState(false);
 
   const selectedVariant = items.find((item) => item.variant_id === variantId);
   const remainingForDevice = useMemo(
