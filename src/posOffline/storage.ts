@@ -368,6 +368,26 @@ function selectSequentialSyncRecords(
 }
 
 /** Returns pending events in strict device sequence order. It never mutates or removes sale evidence. */
+export async function listOfflineSalesForPermit(permitId: string): Promise<QueuedOfflineSale[]> {
+  if (typeof permitId !== "string" || permitId.length < 8 || permitId.length > 160) {
+    throw new Error("Offline permit reference is invalid.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["sales"], "readonly");
+      const request = transaction.objectStore("sales").getAll();
+      request.onsuccess = () => {
+        const records = request.result as QueuedOfflineSale[];
+        resolve(records.filter((sale) => sale.permitId === permitId).sort((a, b) => a.sequence - b.sequence));
+      };
+      request.onerror = () => reject(request.error ?? new Error("Offline permit sales could not be read."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function listPendingOfflineSales(limit = 10): Promise<QueuedOfflineSale[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error("Offline sync batch size must be between 1 and 20.");
   const database = await openOfflinePosDatabase();
