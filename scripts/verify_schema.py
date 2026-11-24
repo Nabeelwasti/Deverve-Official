@@ -20,7 +20,7 @@ required_tables = {
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
     "pos_offline_devices", "pos_offline_permits", "pos_offline_stock_allocations", "pos_offline_events",
-    "pos_offline_reconciliation_cases", "pos_offline_reconciliation_actions",
+    "pos_offline_reconciliation_cases", "pos_offline_reconciliation_actions", "pos_offline_enrollment_challenges",
     "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions",
 }
 actual_tables = {
@@ -39,6 +39,14 @@ db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_
 db.execute("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,status) VALUES (?,?,?,0,'open')", ("offline-session","main-register","offline-owner"))
 public_jwk = '{"kty":"EC","crv":"P-256","x":"abc","y":"def"}'
 db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device","main-register","offline-owner","Pilot Android POS",public_jwk,"a"*43))
+db.execute("INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)", ("offline-challenge","offline-device-2","main-register","z"*43,"c"*43,"2026-11-25T00:00:00.000Z","offline-owner"))
+db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T01:00:00.000Z' WHERE id='offline-challenge'")
+expect_challenge_update_rejected = False
+try:
+    db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T02:00:00.000Z' WHERE id='offline-challenge'")
+except sqlite3.IntegrityError:
+    expect_challenge_update_rejected = True
+assert expect_challenge_update_rejected, "Enrollment challenges must be single-use and immutable after consumption"
 db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner","snapshot-1","b"*64,"{}","c"*44,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
 db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-allocation","offline-device","main-register","offline-variant",2,"offline-owner"))
 
