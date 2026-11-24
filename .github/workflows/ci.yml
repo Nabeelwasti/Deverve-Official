@@ -1,48 +1,64 @@
 name: Build and type-check
+
+# Keep main-branch release checks serial; cancel superseded pull-request runs so the latest revision is always tested.
+concurrency:
+  group: deverve-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+
 permissions:
   contents: read
-concurrency:
-  group: deverve-ci-${{ github.ref }}
-  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: 24
           cache: npm
       - name: Install locked dependencies
         run: npm ci
       - name: Capture dependency audit report
-        run: npm audit --json > npm-audit-report.json || true
+        run: |
+          npm audit --json > npm-audit.json || true
+          node -e 'const report = JSON.parse(require("node:fs").readFileSync("npm-audit.json", "utf8")); const counts = report.metadata?.vulnerabilities || {}; console.log("Full dependency audit:", JSON.stringify(counts)); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(name + ": " + item.severity + ", direct=" + item.isDirect + ", fixAvailable=" + JSON.stringify(item.fixAvailable));'
       - name: Upload resolved dependency audit artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dependency-audit-report
-          path: npm-audit-report.json
+          name: dependency-audit-${{ github.run_number }}
+          path: |
+            package-lock.json
+            npm-audit.json
+          if-no-files-found: error
           retention-days: 7
       - name: Type-check and build
         run: npm run check
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: Verify Pages security headers are included in build output
-        run: node scripts/verify-pages-security-headers.mjs
+        run: |
+          test -s dist/_headers
+          grep -q "Content-Security-Policy: default-src 'self'" dist/_headers
+          grep -q "script-src 'self' https://challenges.cloudflare.com" dist/_headers
+          grep -q "frame-src 'self' https://challenges.cloudflare.com" dist/_headers
+          grep -q "connect-src 'self' https://challenges.cloudflare.com" dist/_headers
+          grep -q "Permissions-Policy: camera=(self), microphone=(self), geolocation=()" dist/_headers
+          expected_permissions="$(sed -n '/^[[:space:]]*Permissions-Policy:/s/^[[:space:]]*//p' public/_headers | head -n 1)"
+          grep -Fq "\"$expected_permissions\"" .github/workflows/production-smoke.yml
       - name: Validate private translation Worker JavaScript syntax
-        run: node --check cloudflare/translation-worker.js
+        run: node --check workers/site-translation/index.js
       - name: Test Worker authentication and translation behavior
-        run: node --test scripts/worker-auth.test.mjs
+        run: npm run test:worker
       - name: Exercise offline POS lifecycle through the real Worker and isolated SQLite D1 adapter
         run: npm run test:offline:worker
       - name: Validate D1 schema and constraints
