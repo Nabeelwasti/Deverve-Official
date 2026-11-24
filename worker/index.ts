@@ -2725,7 +2725,7 @@ async function processOfflineSaleEvent(
   }
 
   const saleId = crypto.randomUUID();
-  const receiptNumber = "DV-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-OFF-" + crypto.randomUUID().slice(0,6).toUpperCase();
+  const receiptNumber = "DV-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-OFF-" + crypto.randomUUID().replaceAll("-","").slice(0,10).toUpperCase();
   const saleExists = "EXISTS (SELECT 1 FROM pos_sales WHERE id=?)";
   const statements: D1PreparedStatement[] = [
     env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome) VALUES (?,?,?,?,?,?,?,?,'pending')")
