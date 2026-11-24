@@ -1086,22 +1086,27 @@ test("real Worker expires stale permits before stock allocation changes and fail
   const nextVariantId = randomUUID();
   sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'L','Black',5,1,500)")
     .run(nextVariantId, productId, "EXPIRY-" + nextVariantId.slice(0, 8));
-  const expiredPermitId = randomUUID();
-  const expiredIssuedAt = new Date(Date.now() - 120_000).toISOString();
-  const expiredAt = new Date(Date.now() - 60_000).toISOString();
-  sqlite.prepare("UPDATE pos_offline_permits SET status='consumed' WHERE id=?").run(fixture.permit.id);
-  sqlite.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) SELECT ?,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,?,?,'active' FROM pos_offline_permits WHERE id=?")
-    .run(expiredPermitId, expiredIssuedAt, expiredAt, fixture.permit.id);
   const body = { allocations: [{ variant_id: nextVariantId, quantity: 1 }] };
+  const OriginalDate = globalThis.Date;
+  const simulatedNow = OriginalDate.now() + 3 * 60 * 60 * 1000;
+  const withExpiredClock = async (operation) => {
+    class FutureDate extends OriginalDate {
+      constructor(...args) { super(...(args.length ? args : [simulatedNow])); }
+      static now() { return simulatedNow; }
+    }
+    globalThis.Date = FutureDate;
+    try { return await operation(); }
+    finally { globalThis.Date = OriginalDate; }
+  };
 
   db.failNextRun = true;
-  const failed = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body);
+  const failed = await withExpiredClock(() => api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body));
   assert.equal(failed.status, 503);
-  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(expiredPermitId).status, "active");
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(fixture.permit.id).status, "active");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).count, 1);
 
-  const retried = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body);
+  const retried = await withExpiredClock(() => api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body));
   assert.equal(retried.status, 201);
-  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(expiredPermitId).status, "expired");
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(fixture.permit.id).status, "expired");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).count, 2);
 });
