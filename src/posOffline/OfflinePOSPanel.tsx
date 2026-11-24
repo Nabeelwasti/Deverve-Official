@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminRequest } from "../adminApi";
 import { getOrCreateOfflineDeviceIdentity } from "./deviceCrypto";
-import { enrollOfflineDevice, fetchAndStoreOfflinePermit, issueOfflinePermit, syncOfflineQueue } from "./api";
+import { checkOfflineShellReady, enrollOfflineDevice, fetchAndStoreOfflinePermit, issueOfflinePermit, prepareOfflineShell, syncOfflineQueue } from "./api";
 
 type Register = { id: string; name: string; location_label: string };
 type StockItem = { variant_id: string; product_name: string; sku: string | null; barcode: string | null; size: string; color: string; available_quantity: number };
@@ -35,7 +35,7 @@ export default function OfflinePOSPanel({
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
-  const [error, setError] = useState(false);
+  const [error, setError] = useState(false);\n  const [shellReady, setShellReady] = useState(false);
 
   const selectedVariant = items.find((item) => item.variant_id === variantId);
   const remainingForDevice = useMemo(
@@ -70,6 +70,7 @@ export default function OfflinePOSPanel({
       setError(true);
     });
     void loadDevices();
+    void checkOfflineShellReady().then((result) => setShellReady(result.ready)).catch(() => setShellReady(false));
   }, [canManageMoney, loadDevices]);
 
   const runAction = async (action: () => Promise<string>) => {
@@ -114,6 +115,12 @@ export default function OfflinePOSPanel({
     return "Signed permit and catalogue snapshot verified and stored on this device. Emergency checkout remains disabled until final acceptance tests are passed.";
   });
 
+  const prepareCache = () => runAction(async () => {
+    const result = await prepareOfflineShell();
+    setShellReady(result.ready);
+    return `Offline app cache verified: ${result.cached.length} same-origin assets are stored by the service worker.`;
+  });
+
   const sync = () => runAction(async () => {
     if (!deviceId) throw new Error("This browser has no enrolled device identity.");
     if (!navigator.onLine) throw new Error("Reconnect to the internet before syncing. Your local sales remain stored.");
@@ -136,6 +143,10 @@ export default function OfflinePOSPanel({
           <span className="admin-muted">Offline checkout: disabled</span>
         </div>
         <p className="admin-muted">This area enrolls devices, reserves stock, verifies short-lived cash-only permits and syncs signed queued sales. It does not enable checkout while any release gate remains open.</p>
+        <div className="admin-form-actions">
+          <span className={shellReady ? "admin-success" : "admin-muted"}>{shellReady ? "POS shell cache verified" : "POS shell cache not yet verified"}</span>
+          <button type="button" className="admin-secondary" disabled={busy} onClick={() => void prepareCache()}>Prepare offline app cache</button>
+        </div>
         {message && <p className={error ? "admin-error" : "admin-success"} role="status">{message}</p>}
         {!canManageMoney && (
           <div className="pos-form">
