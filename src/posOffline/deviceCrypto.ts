@@ -229,3 +229,15 @@ export async function verifyOfflinePermitSignature(
     return false;
   }
 }
+
+/** Verifies the catalogue snapshot bytes bound by the signed offline permit. */
+export async function verifyOfflinePermitSnapshot(snapshot: unknown, expectedSha256Hex: string): Promise<boolean> {
+  try {
+    if (!globalThis.isSecureContext || !globalThis.crypto?.subtle || !/^[a-f0-9]{64}$/.test(expectedSha256Hex)) return false;
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalize(snapshot)));
+    const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return actual === expectedSha256Hex;
+  } catch {
+    return false;
+  }
+}
