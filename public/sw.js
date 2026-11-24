@@ -6,9 +6,7 @@ const MAX_RUNTIME_ENTRIES = 160;
 async function trimRuntimeCache(cache) {
   const keys = await cache.keys();
   const excess = keys.length - MAX_RUNTIME_ENTRIES;
-  if (excess > 0) {
-    await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
-  }
+  if (excess > 0) await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
 }
 
 async function cacheSuccessfulResponse(cache, request, response) {
@@ -42,8 +40,8 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Never intercept writes, cross-origin requests, APIs, authentication,
-  // manifests, or browser-managed navigation outside this application.
+  // Keep all APIs and mutations network-only. This prevents stale authenticated
+  // data or a cached API response from being mistaken for a committed sale.
   if (
     request.method !== "GET" ||
     url.origin !== self.location.origin ||
@@ -51,15 +49,18 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/manifest.webmanifest"
   ) return;
 
+  const cacheUpdate = async () => {
+    const cache = await caches.open(CACHE_NAME);
+    const response = await fetch(request);
+    await cacheSuccessfulResponse(cache, request.mode === "navigate" ? "/" : request, response);
+  };
+
   if (request.mode === "navigate") {
+    event.waitUntil(cacheUpdate().catch(() => undefined));
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
       try {
-        const response = await fetch(request);
-        if (response.ok) {
-          event.waitUntil(cacheSuccessfulResponse(cache, "/", response));
-        }
-        return response;
+        return await fetch(request);
       } catch {
         return (await cache.match(request)) || (await cache.match("/")) || Response.error();
       }
@@ -68,17 +69,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (["script", "style", "image", "font"].includes(request.destination)) {
+    event.waitUntil(cacheUpdate().catch(() => undefined));
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(request);
-      if (cached) {
-        event.waitUntil(fetch(request).then((response) => cacheSuccessfulResponse(cache, request, response)).catch(() => undefined));
-        return cached;
-      }
+      if (cached) return cached;
       try {
-        const response = await fetch(request);
-        if (response.ok) event.waitUntil(cacheSuccessfulResponse(cache, request, response));
-        return response;
+        return await fetch(request);
       } catch {
         return Response.error();
       }
