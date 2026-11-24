@@ -49,15 +49,15 @@ function stable(value){if(Array.isArray(value))return "["+value.map(stable).join
 const sha=data=>createHash("sha256").update(data).digest("hex");
 function encrypt(sql){const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",encryptionKey,iv),ciphertext=Buffer.concat([cipher.update(sql),cipher.final()]);return Buffer.concat([Buffer.from("DVDBKUP1","ascii"),iv,cipher.getAuthTag(),ciphertext]);}
 function decrypt(archive){if(archive.subarray(0,8).toString("ascii")!=="DVDBKUP1"||archive.length<36)throw new Error("Invalid encrypted backup header.");const decipher=createDecipheriv("aes-256-gcm",encryptionKey,archive.subarray(8,20));decipher.setAuthTag(archive.subarray(20,36));return Buffer.concat([decipher.update(archive.subarray(36)),decipher.final()]);}
-async function exportSql(){
+async function exportSql(dumpOptions={}){
  const path="/accounts/"+accountId+"/d1/database/"+databaseId+"/export";
- let state=await api("POST",path,{output_format:"polling",dump_options:{compatibility:"d1"}}),bookmark=state.at_bookmark;
+ let state=await api("POST",path,{output_format:"polling",dump_options:{compatibility:"d1",...dumpOptions}}),bookmark=state.at_bookmark;
  for(let i=0;i<180&&state.status!=="complete";i++){if(state.status==="error")throw new Error("D1 export failed: "+(state.error||"unknown"));await sleep(1000);state=await api("POST",path,{output_format:"polling",current_bookmark:bookmark});bookmark=state.at_bookmark||bookmark;}
  if(state.status!=="complete"||!state.result?.signed_url||!bookmark)throw new Error("D1 export did not complete within three minutes.");
  const response=await fetch(state.result.signed_url,{cache:"no-store",signal:AbortSignal.timeout(120000)});
  if(!response.ok)throw new Error("D1 export download failed ("+response.status+").");
  const sql=Buffer.from(await response.arrayBuffer());
- if(sql.length<1024||!/CREATE TABLE/i.test(sql.toString("utf8",0,Math.min(sql.length,2000000))))throw new Error("D1 export is empty or missing its SQL schema.");
+ const sample=sql.toString("utf8",0,Math.min(sql.length,2000000));if(sql.length<32||(dumpOptions.no_schema?!/INSERT INTO/i.test(sample):!/CREATE TABLE/i.test(sample)))throw new Error("D1 export is empty or missing the requested SQL content.");
  return {sql,bookmark};
 }
 async function restoreDrill(sql,expected){
@@ -82,7 +82,7 @@ async function restoreDrill(sql,expected){
  }finally{if(id){try{await api("DELETE","/accounts/"+accountId+"/d1/database/"+id);}catch(error){console.error("ERROR: temporary D1 restore database cleanup failed:",name,error instanceof Error?error.message:"unknown error");throw new Error("Restore drill cannot pass because its temporary D1 database was not confirmed deleted.");}}}
 }
 async function main(){
- const before=await snapshot(databaseId),{sql,bookmark}=await exportSql(),after=await snapshot(databaseId);
+ const before=await snapshot(databaseId);\n const schemaExport=await exportSql({no_data:true});\n const dataExport=await exportSql({no_schema:true});\n const sql=Buffer.concat([schemaExport.sql,Buffer.from("\\n","utf8"),dataExport.sql]);\n const bookmark=dataExport.bookmark,after=await snapshot(databaseId);
  if(stable(before.tables)!==stable(after.tables)||stable(before.schemaObjects)!==stable(after.schemaObjects)||stable(before.schemaDefinitions)!==stable(after.schemaDefinitions))throw new Error("Production D1 schema changed during export.");
  const stableRows=stable(before.rowCounts)===stable(after.rowCounts);
  const stamp=new Date().toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,"");
