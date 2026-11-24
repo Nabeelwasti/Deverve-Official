@@ -181,7 +181,7 @@ They add immutable device/permit/event evidence, single-use challenge guards, de
 
 ### Verified automated coverage
 
-Full CI run [45468938449](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45468938449) passed all workflow steps on PR code head `d3d06958e22d657a404b01e1fff4da837f8c2bea`. The real Worker integration suite reports 20 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
+Full CI run [45471852338](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45471852338) passed all workflow steps on PR code head `89aa87e2a1511344fef370ba2d96b5d859546201`. The real Worker integration suite reports 23 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
 
 Verified scenarios:
 - [x] Challenge binding, forged proof rejection without challenge consumption, one-time enrollment/replay rejection, expiry, thumbprint mismatch and unknown register.
@@ -194,16 +194,18 @@ Verified scenarios:
 - [x] Concurrent distinct signed event IDs contending for the same device sequence yield exactly one accepted sale and one conflict; only one event row and one set of sale/payment/ledger/inventory writes commit.
 - [x] Ordered multi-event batch settlement for sequences 1 and 2 with balanced cash/ledger/stock.
 - [x] Invalid device signature, permit verification-key mismatch, sequence gap and revoked-device conflict.
-- [x] Late D1 batch failure rolls back the staged sale, item, stock, allocation, inventory, payment, ledger and audit writes together.
+- [x] Failure injection at all 19 statements of the signed-sale D1 batch proves each failure rolls back the staged sale, item, stock, allocation, inventory, payment, ledger and audit writes.
+- [x] Failure injection at all four conflict-evidence batch statements proves event, reconciliation case/action and audit evidence either commit together or remain retryable.
+- [x] Failure injection at all nine reconciliation batch statements proves stock consumption, event outcome, case status, accepted action and audit record roll back together.
 - [x] Exact completed-sale reconciliation, one-time allocation consumption, repeated-resolution rejection and cash-tender mismatch rejection.
+- [x] Concurrent reconciliation attempts produce one successful resolution and one conflict; only one accepted action and one allocation consumption commit.
 - [x] Permit replacement and stock release remain blocked while unresolved offline conflicts exist.
 - [x] Isolated D1 migrations, restored-production-clone rehearsal and storefront browser suite pass in the same CI workflow.
 
 ### Still required before enabling
 
-- [ ] Repeat distinct-event sequence contention using independent Cloudflare D1 request/connection paths and record the exact conflict/retry outcome under D1's production transaction semantics.
-- [ ] Test concurrent reconciliation requests against the same case/allocation and prove only one resolution/consumption commits.
-- [ ] Expand deterministic failure injection to every individual D1 write boundary, including event insert, sale, each item, stock, allocation, inventory movement, payment, financial ledger, audit, event outcome and reconciliation case/action writes.
+- [ ] Repeat distinct-event sequence contention through independent Cloudflare D1 request/connection paths and record the exact outcome under D1's production transaction semantics; current concurrency coverage uses the isolated SQLite adapter.
+- [ ] Extend failure injection beyond the three covered atomic batches to any remaining standalone writes and the complete mismatch matrix (wrong cashier/grant, closed shift, wrong register/device, price/catalogue drift, inactive variant, allocation overdraw, tender/change, cash ledger and inventory movement mismatch).
 - [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
 - [ ] Complete production-build cache manifest audit and real cold-cache/cold-reload acceptance.
 - [ ] Complete the physical Android pilot, airplane-mode sale, app reload/restart, reconnect/sync, scanner, printer, storage-denial and recovery acceptance.
