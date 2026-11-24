@@ -38,7 +38,7 @@ assert.match(worker, /pos\.offline_sale_conflict/);
 assert.match(worker, /pos_payments/);
 assert.match(worker, /financial_transactions/);
 assert.match(worker, /inventory_movements/);
-assert.match(worker, /INSERT INTO pos_offline_events \\(device_id\\) SELECT NULL WHERE changes\\(\\)<>1/);
+assert.match(worker, /INSERT INTO pos_offline_events \(device_id\) SELECT NULL WHERE changes\(\)<>1/);
 
 assert.match(worker, /POS_OFFLINE_PERMIT_PRIVATE_JWK/);
 assert.match(worker, /POS_OFFLINE_PERMIT_PUBLIC_JWK/);
