@@ -2580,7 +2580,7 @@ async function issueOfflinePermit(
         .bind(crypto.randomUUID(), admin.admin_user_id, permitId, JSON.stringify({ device_id: deviceId, register_id: device.register_id, cashier_admin_id: cashierId, expires_at: expiresAt, max_events: 20, cash_only: true })),
     ]);
     if ((results[0]?.meta?.changes ?? 0) !== 1) return error("The offline permit was not committed because device, shift or cashier authorization changed", 409);
-    return json({ permit: { id: permitId, claims, signature_base64url: signature, verification_public_key_jwk: publicJwk, snapshot } }, 201);
+    return json({ permit: { id: permitId, claims, signature_base64url: signature, snapshot } }, 201);
   } catch (caught) {
     if (caught instanceof Error && caught.message === "offline_snapshot_invalid") return error("One or more allocated products are inactive or have an invalid price. Correct the catalogue before issuing a permit.", 409);
     return error("Offline permit could not be issued safely", 503);
@@ -2615,6 +2615,16 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
 
   if (path.startsWith(offlineRoot + "/")) {
     if (!canManageMoney) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+
+    if (request.method === "GET" && path === offlineRoot + "/verification-key") {
+      if (!env.POS_OFFLINE_PERMIT_PUBLIC_JWK) return error("Offline permit verification key is not configured", 503);
+      try {
+        const publicJwk = JSON.parse(env.POS_OFFLINE_PERMIT_PUBLIC_JWK) as JsonWebKey;
+        if (publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" || typeof publicJwk.x !== "string" ||
+            typeof publicJwk.y !== "string" || "d" in publicJwk) return error("Offline permit verification key configuration is invalid", 503);
+        return json({ algorithm: "ECDSA-P256-SHA256", public_key_jwk: publicJwk });
+      } catch { return error("Offline permit verification key configuration is invalid", 503); }
+    }
 
     if (request.method === "GET" && path === offlineRoot + "/devices") {
       try {
