@@ -100,6 +100,11 @@ async function main() {
   const key = deriveMediaKey(keyHex);
   const objects = await listObjects();
   if (objects.length === 0) throw new Error("Refusing to publish an empty R2 media backup.");
+  const fingerprint = (items) => JSON.stringify(items.map((item) => ({
+    key: item.key, size: item.size, etag: item.etag || null, last_modified: item.last_modified || null,
+    http_metadata: item.http_metadata || {}, custom_metadata: item.custom_metadata || {}
+  })));
+  const sourceFingerprint = fingerprint(objects);
   const totalBytes = objects.reduce((sum, object) => sum + Number(object.size || 0), 0);
   if (totalBytes > MAX_TOTAL_BYTES) throw new Error("R2 media inventory exceeds the configured 512 MiB safety limit.");
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
@@ -146,6 +151,11 @@ async function main() {
       verified: true
     });
     console.log("Verified encrypted media object", index + 1, "of", objects.length);
+  }
+
+  const finalInventory = await listObjects();
+  if (fingerprint(finalInventory) !== sourceFingerprint) {
+    throw new Error("R2 media inventory changed during backup; the snapshot is inconsistent and must be retried.");
   }
 
   const manifest = {
