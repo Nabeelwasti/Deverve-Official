@@ -3132,7 +3132,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
           if (activePermit) return error("Revoke the device's active offline permit before releasing stock", 409);
           if (body?.owner_confirms_device_queue_reconciled !== true) return error("Explicitly confirm that the physical device's local queue has been reconciled before releasing stock", 400);
-          "SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))").bind(deviceId).first<{ count: number }>();
+          const unresolved = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))").bind(deviceId).first<{ count: number }>();
           if (Number(unresolved?.count ?? 0) > 0) return error("Resolve every pending or conflicted offline sale before releasing this device's remaining stock", 409);
           const now = new Date().toISOString();
           const active = await env.DB.prepare("SELECT id,allocated_quantity,consumed_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=? AND status='active'").bind(deviceId).all<Record<string, number>>();
