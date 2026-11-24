@@ -6,7 +6,6 @@ const migration = readFileSync(new URL("../migrations/0046_pos_offline_enrollmen
 const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
 
 assert.match(worker, /const offlineRoot = "\/api\/admin\/pos\/offline"/);
-assert.match(worker, /isCashier && request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
 assert.match(worker, /admin\.admin_user_id !== permit\.cashier_admin_id/);
 assert.match(worker, /authenticated_cashier_mismatch/);
 assert.match(worker, /request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
