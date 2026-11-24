@@ -65,6 +65,8 @@ jobs:
         run: node --check scripts/d1-inventory.integration.test.mjs
       - name: Validate encrypted D1 backup script syntax
         run: node --check scripts/d1-backup-restore.mjs
+      - name: Validate isolated offline POS D1 migration suite syntax
+        run: node --check scripts/offline-pos-d1.integration.test.mjs
       - name: Run isolated remote D1 integration suite when credentials are configured
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -75,6 +77,17 @@ jobs:
             npm run test:d1:integration
           else
             echo "Skipping remote D1 integration: Cloudflare test credentials are not configured."
+          fi
+      - name: Run isolated offline POS D1 migration suite when credentials are configured
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
+            npm run test:offline:d1
+          else
+            echo "Skipping offline POS D1 migration suite: Cloudflare test credentials are not configured."
           fi
       - name: Install Chromium headless shell for browser tests
         timeout-minutes: 8
