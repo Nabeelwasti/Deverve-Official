@@ -20,7 +20,7 @@ required_tables = {
     "payment_attempts", "payment_webhook_events", "notification_outbox", "notification_attempts",
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
     "pos_offline_devices", "pos_offline_permits", "pos_offline_stock_allocations", "pos_offline_events",
-    "pos_offline_reconciliation_cases", "pos_offline_reconciliation_actions",
+    "pos_offline_reconciliation_cases", "pos_offline_reconciliation_actions", "pos_offline_enrollment_challenges",
     "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions",
 }
 actual_tables = {
@@ -35,12 +35,37 @@ assert not missing, f"Missing tables: {sorted(missing)}"
 db.execute("SAVEPOINT offline_pos_schema_probe")
 db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES (?,?,?,'owner')", ("offline-owner","offline-owner@example.test","hash"))
 db.execute("INSERT INTO products (id,slug,name,category,audience,status,retail_price_paisa) VALUES (?,?,?,?,?,'published',?)", ("offline-product","offline-pos-product","Offline POS product","test","unisex",10000))
-db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active) VALUES (?,?,?,?,?,?,?,1)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0))
+db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,cost_price_paisa,is_active) VALUES (?,?,?,?,?,?,?,?,1)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0,4000))
 db.execute("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,status) VALUES (?,?,?,0,'open')", ("offline-session","main-register","offline-owner"))
 public_jwk = '{"kty":"EC","crv":"P-256","x":"abc","y":"def"}'
 db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device","main-register","offline-owner","Pilot Android POS",public_jwk,"a"*43))
-db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner","snapshot-1","b"*64,"{}","c"*44,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
+db.execute("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES (?,?)", ("offline-owner","offline-owner"))
+cashier_grant_version = db.execute("SELECT granted_at FROM admin_pos_cashiers WHERE admin_user_id='offline-owner'").fetchone()[0]
+db.execute("INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)", ("offline-challenge","22222222-2222-4222-8222-222222222222","main-register","z"*43,"c"*43,"2026-11-25T00:00:00.000Z","offline-owner"))
+db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T01:00:00.000Z' WHERE id='offline-challenge'")
+expect_challenge_update_rejected = False
+try:
+    db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T02:00:00.000Z' WHERE id='offline-challenge'")
+except sqlite3.IntegrityError:
+    expect_challenge_update_rejected = True
+assert expect_challenge_update_rejected, "Enrollment challenges must be single-use and immutable after consumption"
 db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-allocation","offline-device","main-register","offline-variant",2,"offline-owner"))
+permit_snapshot = [{
+    "allocationId": "offline-allocation", "variantId": "offline-variant", "productId": "offline-product",
+    "productName": "Offline POS product", "sku": "OFFLINE-1", "barcode": "", "size": "M", "color": "Black",
+    "allocatedQuantity": 2, "unitPricePaisa": 10000, "costPricePaisa": 4000,
+}]
+permit_snapshot_json = __import__("json").dumps(permit_snapshot, sort_keys=True, separators=(",", ":"))
+permit_snapshot_hash = __import__("hashlib").sha256(permit_snapshot_json.encode()).hexdigest()
+permit_claims = __import__("json").dumps({
+    "version": 1, "permit_id": "offline-permit", "device_id": "offline-device", "register_id": "main-register",
+    "session_id": "offline-session", "cashier_admin_id": "offline-owner", "cashier_grant_version": cashier_grant_version,
+    "snapshot_version": "snapshot-1", "snapshot_hash": permit_snapshot_hash, "issued_at": "2026-11-24T00:00:00.000Z",
+    "expires_at": "2026-11-24T04:00:00.000Z", "max_events": 20, "offline_checkout_enabled": True, "cash_only": True, "allow_refunds": False,
+    "allow_voids": False, "allow_shift_close": False,
+    "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000, "cost_price_paisa": 4000}],
+})
+db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-1",permit_snapshot_hash,permit_claims,permit_snapshot_json,"c"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
 
 def expect_integrity_error(action, message):
     try:
@@ -49,12 +74,35 @@ def expect_integrity_error(action, message):
         return
     raise AssertionError(message)
 
+offline_permit_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
+assert {"pos_offline_permit_authorization_guard", "pos_offline_allocation_insert_guard_during_permit", "pos_offline_allocation_release_guard_during_permit", "pos_offline_permit_identity_immutable", "pos_offline_permit_no_delete", "pos_offline_permit_snapshot_guard", "pos_offline_permit_snapshot_immutable"} <= offline_permit_triggers, "Signed permit authorization and snapshot guard triggers are missing"
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_permits SET claims_json='{}' WHERE id='offline-permit'"),
+    "Signed offline permit claims must be immutable",
+)
+expect_integrity_error(
+    lambda: db.execute("DELETE FROM pos_offline_permits WHERE id='offline-permit'"),
+    "Offline permit evidence must not be deletable",
+)
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_permits SET snapshot_json='[]' WHERE id='offline-permit'"),
+    "Offline permit catalogue snapshots must be immutable",
+)
+
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_enrollment_challenges SET public_key_thumbprint=? WHERE id='offline-challenge'", ("y"*43,)),
+    "Enrollment challenge bindings must be immutable",
+)
+
 expect_integrity_error(
     lambda: db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device-2","main-register","offline-owner","Second device",public_jwk,"d"*43)),
     "A register must not have two active emergency POS devices",
 )
+permit_claims_two = __import__("json").loads(permit_claims)
+permit_claims_two["permit_id"] = "offline-permit-2"
+permit_claims_two["snapshot_version"] = "snapshot-2"
 expect_integrity_error(
-    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner","snapshot-2","e"*64,"{}","f"*44,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
+    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-2",permit_snapshot_hash,__import__("json").dumps(permit_claims_two),permit_snapshot_json,"f"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
     "A device must not have two active offline permits",
 )
 expect_integrity_error(
@@ -81,6 +129,33 @@ expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_reconciliation_actions SET reason='edited' WHERE id='offline-action'"),
     "Offline reconciliation actions must be append-only",
 )
+
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_stock_allocations SET released_quantity=1,status='released',released_at='2026-11-24T01:00:00.000Z' WHERE id='offline-allocation'"),
+    "An active permit must prevent stock allocation release",
+)
+db.execute("UPDATE pos_offline_permits SET status='expired' WHERE id='offline-permit'")
+
+# Offline allocations must reserve the same inventory counter used by online checkout.
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 2), f"Offline allocation did not reserve two units: {reserved}"
+db.execute("INSERT INTO pos_registers (id,name,location_label) VALUES ('offline-register-2','Second register','Test')")
+db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device-2","offline-register-2","offline-owner","Second pilot device",public_jwk,"d"*43))
+expect_integrity_error(
+    lambda: db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-over-allocation","offline-device-2","offline-register-2","offline-variant",9,"offline-owner")),
+    "Offline allocation must not reserve more than currently available stock across registers",
+)
+db.execute("UPDATE pos_offline_stock_allocations SET consumed_quantity=1 WHERE id='offline-allocation'")
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 1), f"Consumed offline allocation did not release its reservation: {reserved}"
+db.execute("UPDATE pos_offline_stock_allocations SET released_quantity=1,status='released',released_at='2026-11-24T01:00:00.000Z' WHERE id='offline-allocation'")
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 0), f"Released offline allocation left reserved stock behind: {reserved}"
+expect_integrity_error(
+    lambda: db.execute("DELETE FROM pos_offline_stock_allocations WHERE id='offline-allocation'"),
+    "Offline allocation evidence must be append-only",
+)
+
 db.execute("ROLLBACK TO offline_pos_schema_probe")
 db.execute("RELEASE offline_pos_schema_probe")
 

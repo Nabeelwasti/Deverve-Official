@@ -1,8 +1,41 @@
 # De VERVE Offline-First POS — Engineering Design and Acceptance Plan
 
-**Status:** Design baseline; implementation and production acceptance are not complete.  
-**Branch:** `feat/offline-first-pos-design`  
-**Date:** 23 November 2026  
+**Status:** Advanced engineering foundation in draft PR; emergency checkout remains deliberately disabled pending release gates.
+**Branch:** `feat/online-first-emergency-pos-completion`
+**Date:** 24 November 2026
+
+## Implementation status — 24 November 2026
+
+Implemented on the draft branch; not merged or deployed:
+
+- Additive D1 foundations for device identity, signed permits, stock allocations, immutable event evidence, reconciliation cases/actions and single-use enrollment challenges (migrations `0045`–`0048`).
+- Owner/manager device enrollment using a five-minute, single-use challenge and P-256 proof-of-possession; server-side public-key fingerprint verification and bounded challenge attempts.
+- Owner/manager device listing/revocation, bounded stock allocation, guarded release and append-only audit evidence.
+- Offline allocations reserve the same `product_variants.reserved_quantity` counter used by online checkout.
+- Short-lived server-signed permits bind the enrolled device, register, cashier grant, open shift, catalogue snapshot and exact reserved allocations.
+- Client-side key integrity checks, challenge signing, permit/snapshot verification, persistent IndexedDB queue, sequential sync leases, retry backoff, durable sync receipts and provisional receipts clearly marked as not official server receipts.
+- Restricted live POS fallback: cash-only, walk-in, signed allocated stock only; no offline refunds, voids, shift close or customer contact data. Existing online checkout remains authoritative.
+- Service-worker precache/check primitives and explicit cache readiness; API/authentication/mutation requests remain network-only.
+- Signed event sync validates device, cashier, permit, payload, sequence, replay, allocation and price; canonical sale, items, payment, financial transaction, inventory movement and audit writes are committed transactionally.
+- Exact duplicate sync returns the original canonical sale; conflicting events remain immutable and visible to managers.
+- Manager reconciliation endpoint and UI now resolve a conflict only against an existing completed POS sale whose shift, cashier, totals, exact item/variant/price lines, cash tender/change, cash financial ledger and per-variant inventory movements match the immutable offline event. The workflow consumes the matching reserved allocation and records an append-only reconciliation action plus audit log. Mismatches and concurrent changes leave the case open; it does not create compensating sales or silently alter cash/physical stock.
+
+Automated validation currently available:
+
+- CI type-check and production build.
+- Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
+- Latest recorded CI run `45376677652` passed all executed steps, including the storefront browser suite.
+- CI run `45393119187` executed the existing remote D1 inventory integration suite: 16 checks passed and its isolated test database was deleted. The same run passed 160 desktop/mobile storefront browser tests. This suite does not exercise the new offline-POS migrations `0045`–`0048`; a dedicated offline migration/API integration suite remains outstanding.
+- The encrypted backup workflow passed on run `45330719916` attempt 7. It exported production D1, AES-256-GCM encrypted the archive, verified R2 read-back and SHA-256, restored into an isolated D1 database, matched 66 tables, 102 indexes, 10 triggers and all row counts, then confirmed temporary-database deletion. Independent off-account backup, key custody and retention/RPO/RTO remain owner tasks.
+
+Not yet verified / release blockers:
+
+- No dedicated full offline-POS browser outage/failure-injection suite against the actual production build and no physical Android acceptance.
+- No dedicated isolated remote D1 integration suite for offline migrations `0045`–`0048` and the full offline-sale lifecycle, or production-like migration rehearsal/approval.
+- Signing-key generation, secure secret provisioning, rotation/revocation and recovery custody remain owner-controlled tasks.
+- Production asset-manifest/cold-reload cache acceptance, preview smoke test and supervised pilot remain outstanding.
+
+**Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the missing integrations, automated tests, key management, backup/migration rehearsal and physical-device acceptance are complete.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
 **Non-goal:** Replacing the existing POS, changing the accounting model, or making customer checkout work offline.
 
@@ -105,7 +138,7 @@ D1 `batch()` provides sequential transactional execution and rolls back the batc
 - **Stock allocation exhausted or invalid:** preserve cash evidence; create a conflict case. Do not decrement other stock or silently mark accepted.
 - **Cashier/device/permit revoked or shift closed online:** do not silently accept; preserve and route to owner review with the exact reason.
 - **Device lost/damaged:** owner revokes it online, records physical cash/receipt reconciliation and follows the documented recovery procedure. Never delete its server allocation while queue state is unknown.
-- **Manual resolution:** append-only record with actor, reason, original event hash, selected resolution, amount/stock effect and timestamps. No direct edits to the original event.
+- **Manual resolution:** the manager must supply an existing completed POS sale ID and an explanation. The server compares the immutable event with the canonical sale shift/cashier/totals, every item/variant/price, cash payment tender/change, financial ledger entry and exact per-variant inventory movements. Only an exact match can atomically consume the corresponding offline allocation, set the event to accepted, resolve the case, and append an action plus audit record. No sale is fabricated and no cash or physical-stock adjustment is invented by this workflow. Any mismatch or concurrency failure leaves the case open.
 
 ## 9. UI and cashier workflow
 

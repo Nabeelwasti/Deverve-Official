@@ -35,10 +35,10 @@
 
 The repository workflow .github/workflows/d1-backup-restore.yml is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). It is not operationally active until all required GitHub Actions secrets are configured and a full run succeeds:
 
-- CLOUDFLARE_API_TOKEN: D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list); this permits the export, temporary restore-database lifecycle and encrypted-object read-back without broad account-wide R2 administration.
-- CLOUDFLARE_ACCOUNT_ID.
-- D1_BACKUP_ENCRYPTION_KEY: 32 random bytes encoded as 64 hex characters. Generate offline with openssl rand -hex 32; store in an owner-controlled password manager, never in the repository or backup bucket.
-- Confirm private bucket deverve-db-backups exists and token permissions are sufficient.
+- Owner confirmed on 24 November 2026 that `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured as GitHub Actions secrets. This confirms configuration only, not a successful backup or restore.
+- The currently configured token was created with account-wide D1 Edit and Workers R2 Storage Edit. This is broader than intended. Replace it with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list) before production acceptance.
+- Confirm the 32-byte encryption key is independently stored in an owner-controlled password manager, not only in GitHub Actions.
+- Confirm private bucket `deverve-db-backups` exists and token permissions are sufficient.
 
 Required evidence: encrypted production snapshot, SHA-256 integrity check, successful decrypt and restore into an isolated non-production D1 database, row-count/schema comparison, confirmed deletion of the isolated database, retention verification and a documented recovery exercise. The restore script now exits unsuccessfully if temporary database deletion cannot be confirmed (PR #33). A green syntax check is not a backup. A successful upload is not a restore test.
 
