@@ -199,7 +199,10 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
       } else {
         await retry(sale, result.reason_code || "sync_retry_requested");
       }
-      if (result.outcome !== "accepted") {
+      const acknowledgementCommitted = result.outcome === "accepted" &&
+        typeof result.canonical_sale_id === "string" && result.canonical_sale_id.length > 0 &&
+        typeof result.receipt_number === "string" && result.receipt_number.length > 0;
+      if (!acknowledgementCommitted) {
         for (let rest = index + 1; rest < claimed.length; rest += 1) await retry(claimed[rest], "sync_batch_stopped");
         break;
       }
