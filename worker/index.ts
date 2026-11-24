@@ -2482,6 +2482,10 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
         if (!register) return error("The selected register is inactive or unavailable", 404);
         const existing = await env.DB.prepare("SELECT id FROM pos_offline_devices WHERE id=? OR public_key_thumbprint=? LIMIT 1").bind(body.device_id, publicKey.thumbprint).first<{ id: string }>();
         if (existing) return error("This device identity or signing key is already enrolled. Revoke or recover the existing device instead.", 409);
+        const recentChallenges = await env.DB.prepare(
+          "SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges WHERE created_by_admin_id=? AND created_at>?"
+        ).bind(admin.admin_user_id, new Date(Date.now() - 5 * 60_000).toISOString()).first<{ count: number }>();
+        if (Number(recentChallenges?.count ?? 0) >= 10) return error("Too many pending enrollment attempts. Wait five minutes and try again.", 429);
         const challengeId = crypto.randomUUID();
         const challenge = base64Url(crypto.getRandomValues(new Uint8Array(32)));
         const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
@@ -2499,7 +2503,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       const challengeId = body?.challenge_id, challenge = body?.challenge, signature = body?.signature;
       if (!isUuid(deviceId) || !isUuid(registerId) || !isUuid(challengeId) || label.length < 2 ||
           typeof challenge !== "string" || challenge.length < 32 || challenge.length > 128 ||
-          typeof signature !== "string" || signature.length < 80 || signature.length > 128) {
+          typeof signature !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signature)) {
         return error("The device enrollment proof is incomplete or invalid", 400);
       }
       const publicKey = await readOfflinePublicKey(body?.public_key_jwk);
@@ -2549,8 +2553,8 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           const results = await env.DB.batch([
             env.DB.prepare("UPDATE pos_offline_devices SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
             env.DB.prepare("UPDATE pos_offline_permits SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE device_id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
-            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_revoked','pos_offline_device',?,? WHERE changes()>=0")
-              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason }))
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_revoked','pos_offline_device',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='revoked' AND revoked_by_admin_id=?)")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason }), deviceId, admin.admin_user_id)
           ]);
           if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Device status changed before revocation could be completed", 409);
           return json({ revoked: true, device_id: deviceId });
