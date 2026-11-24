@@ -84,6 +84,17 @@ assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "PO
 assert.match(worker, /const cashierCanIssueOfflinePermit = request\.method === "POST"/);
 assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "GET"/);
 assert.ok(worker.includes('offlineRoot + "/sync"'));
+assert.match(worker, /reconciliation-cases\\/\\(\\[a-f0-9-\\]\\{36\\}\\)\\/resolve/);
+assert.match(worker, /Only an owner or manager can resolve offline reconciliation cases/);
+assert.match(worker, /The selected completed POS sale does not match the offline event/);
+assert.match(worker, /cash_payment_verified: true/);
+assert.match(worker, /inventory_movement_count/);
+assert.match(worker, /pos_offline_reconciliation_resolved/);
+assert.match(worker, /INSERT INTO pos_offline_reconciliation_actions/);
+assert.match(worker, /pos_offline_stock_allocations SET consumed_quantity=consumed_quantity\\+/);
+assert.match(worker, /INSERT INTO pos_offline_events \\(device_id\\) SELECT NULL WHERE changes\\(\\)<>1/);
+assert.match(panel, /Verify completed sale & resolve/);
+assert.match(panel, /canonical_sale_id: canonicalSaleId\\.trim\\(\\)/);
 assert.match(worker, /open_cases: cases\.results/);
 assert.doesNotMatch(worker, /pos\.offline_case_rejected/);
 assert.doesNotMatch(worker, /path\.endsWith\("\/reject"\)/);
