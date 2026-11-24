@@ -147,6 +147,34 @@ export async function getOrCreateOfflineDeviceIdentity(): Promise<OfflineDeviceI
  * of the browser-held key; it does not make browser storage hardware-backed or
  * protect the key from same-origin script compromise.
  */
+/**
+ * Signs a one-time server challenge to prove possession of this browser's
+ * non-extractable device private key during online enrollment.
+ */
+export async function signOfflineEnrollmentChallenge(challenge: string): Promise<string> {
+  if (!globalThis.isSecureContext || !globalThis.crypto?.subtle) {
+    throw new Error("HTTPS and Web Crypto are required to enrol an offline POS device.");
+  }
+  if (typeof challenge !== "string" || challenge.length < 32 || challenge.length > 256) {
+    throw new Error("The server enrollment challenge is invalid.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    const identity = await readIdentity(database);
+    if (!identity?.privateKey) throw new Error("Create the local device identity before requesting enrollment.");
+    await validateStoredIdentity(identity);
+    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\\n" + challenge);
+    const signature = await crypto.subtle.sign(
+      { name: "ECDSA", hash: "SHA-256" },
+      identity.privateKey,
+      message,
+    );
+    return toBase64Url(new Uint8Array(signature));
+  } finally {
+    database.close();
+  }
+}
+
 export async function signOfflineEvent(payload: unknown): Promise<string> {
   if (!globalThis.isSecureContext || !globalThis.crypto?.subtle) {
     throw new Error("HTTPS and Web Crypto are required to sign an offline sale.");
