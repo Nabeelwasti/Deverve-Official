@@ -2543,6 +2543,230 @@ export async function verifyOfflineEnrollmentProof(
   }
 }
 
+async function recordOfflineSaleConflict(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  permitId: string,
+  event: Record<string, unknown>,
+  signature: string,
+  payloadHash: string,
+  reasonCode: string,
+): Promise<{ outcome: "conflict"; event_id: string; reason_code: string }> {
+  const eventId = String(event.eventId);
+  const idempotencyKey = String(event.idempotencyKey);
+  const sequence = Number(event.sequence);
+  const payloadJson = canonicalOfflineJson(event);
+  const caseId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome,reason_code,processed_at) VALUES (?,?,?,?,?,?,?,?, 'conflict',?,?)")
+      .bind(eventId, deviceId, permitId, idempotencyKey, sequence, payloadHash, payloadJson, signature, reasonCode, new Date().toISOString()),
+    env.DB.prepare("INSERT INTO pos_offline_reconciliation_cases (id,event_id,reason_code) SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='conflict')")
+      .bind(caseId, eventId, reasonCode, eventId),
+    env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) SELECT ?,?,?,'case_opened',?,'{}' WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=?)")
+      .bind(crypto.randomUUID(), caseId, admin.admin_user_id, "Offline sale requires owner review: " + reasonCode, caseId),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_sale_conflict','pos_offline_event',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='conflict')")
+      .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, sequence, reason_code: reasonCode }), eventId),
+  ]);
+  return { outcome: "conflict", event_id: eventId, reason_code: reasonCode };
+}
+
+async function processOfflineSaleEvent(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  permitId: string,
+  submitted: unknown,
+): Promise<Record<string, unknown>> {
+  if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) return { outcome: "rejected", reason_code: "invalid_envelope" };
+  const envelope = submitted as Record<string, unknown>;
+  const event = envelope.event;
+  const signature = envelope.signature;
+  if (!event || typeof event !== "object" || Array.isArray(event) || typeof signature !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signature)) {
+    return { outcome: "rejected", reason_code: "invalid_envelope" };
+  }
+  const sale = event as Record<string, unknown>;
+  let payloadJson: string;
+  try { payloadJson = canonicalOfflineJson(sale); } catch { return { outcome: "rejected", reason_code: "invalid_payload" }; }
+  if (new TextEncoder().encode(payloadJson).byteLength > 65_536) return { outcome: "rejected", reason_code: "payload_too_large" };
+  const eventId = sale.eventId, idempotencyKey = sale.idempotencyKey, sequence = sale.sequence;
+  if (typeof eventId !== "string" || !/^[a-f0-9-]{36}$/i.test(eventId) ||
+      typeof idempotencyKey !== "string" || !/^[a-f0-9-]{36}$/i.test(idempotencyKey) ||
+      !Number.isSafeInteger(sequence) || Number(sequence) < 1) return { outcome: "rejected", reason_code: "invalid_identity_or_sequence" };
+  const payloadHash = await sha256Hex(payloadJson);
+
+  const duplicate = await env.DB.prepare(
+    "SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code " +
+    "FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1"
+  ).bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
+  if (duplicate) {
+    if (duplicate.event_id === eventId && duplicate.device_id === deviceId && duplicate.permit_id === permitId &&
+        duplicate.idempotency_key === idempotencyKey && Number(duplicate.device_sequence) === Number(sequence) &&
+        duplicate.payload_hash === payloadHash) {
+      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, reason_code: duplicate.reason_code ?? null, duplicate: true };
+    }
+    return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
+  }
+
+  const [device, permit] = await Promise.all([
+    env.DB.prepare("SELECT id,register_id,status,public_key_jwk_json FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<Record<string, unknown>>(),
+    env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
+  ]);
+  if (!device || !permit) return { outcome: "rejected", reason_code: "device_or_permit_not_found" };
+  let devicePublicKey: JsonWebKey, permitClaims: Record<string, unknown>, permitPublicKey: JsonWebKey;
+  try {
+    devicePublicKey = JSON.parse(String(device.public_key_jwk_json)) as JsonWebKey;
+    permitClaims = JSON.parse(String(permit.claims_json)) as Record<string, unknown>;
+    permitPublicKey = JSON.parse(String(env.POS_OFFLINE_PERMIT_PUBLIC_JWK ?? "")) as JsonWebKey;
+  } catch { return { outcome: "rejected", reason_code: "verification_key_unavailable" }; }
+  if (!await verifyOfflineEventSignature(sale, signature, devicePublicKey)) return { outcome: "rejected", reason_code: "device_signature_invalid" };
+  if (!await verifyOfflinePermitSignatureServer(permitClaims, String(permit.signature_base64url), permitPublicKey)) return { outcome: "rejected", reason_code: "permit_signature_invalid" };
+
+  const allowedKeys = ["eventId","idempotencyKey","deviceId","permitId","registerId","sessionId","cashierId","snapshotVersion","createdAt","currency","lines","subtotalPaisa","totalPaisa","cashTenderedPaisa","changePaisa","sequence","status","payloadVersion"];
+  if (Object.keys(sale).some((key) => !allowedKeys.includes(key)) || Object.keys(sale).length !== allowedKeys.length ||
+      sale.deviceId !== deviceId || sale.permitId !== permitId || sale.registerId !== permit.register_id ||
+      sale.sessionId !== permit.session_id || sale.cashierId !== permit.cashier_admin_id ||
+      sale.snapshotVersion !== permit.snapshot_version || sale.currency !== "PKR" ||
+      sale.status !== "pending" || sale.payloadVersion !== 1 ||
+      typeof sale.createdAt !== "string" || !Number.isSafeInteger(Date.parse(sale.createdAt))) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "event_schema_or_binding_mismatch");
+  }
+
+  const now = new Date().toISOString();
+  if (device.status !== "active") return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_revoked");
+  if (permit.status !== "active" || String(permit.expires_at) <= now) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_expired_or_revoked");
+  if (permitClaims.permit_id !== permitId || permitClaims.device_id !== deviceId ||
+      permitClaims.register_id !== permit.register_id || permitClaims.session_id !== permit.session_id ||
+      permitClaims.cashier_admin_id !== permit.cashier_admin_id || permitClaims.cashier_grant_version !== permit.cashier_grant_version ||
+      permitClaims.snapshot_version !== permit.snapshot_version || permitClaims.snapshot_hash !== permit.snapshot_hash ||
+      permitClaims.expires_at !== permit.expires_at || permitClaims.cash_only !== true ||
+      permitClaims.allow_refunds !== false || permitClaims.allow_voids !== false || permitClaims.allow_shift_close !== false) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_claims_mismatch");
+  }
+
+  const [cashier, session, eventCount, lastSequence, cashAccount] = await Promise.all([
+    env.DB.prepare("SELECT u.id,pc.granted_at FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL LIMIT 1")
+      .bind(permit.cashier_admin_id).first<{ id: string; granted_at: string }>(),
+    env.DB.prepare("SELECT id,status,register_id,opened_by_admin_id FROM pos_sessions WHERE id=? LIMIT 1").bind(permit.session_id).first<Record<string, unknown>>(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE permit_id=?").bind(permitId).first<{ count: number }>(),
+    env.DB.prepare("SELECT COALESCE(MAX(device_sequence),0) AS sequence FROM pos_offline_events WHERE device_id=?").bind(deviceId).first<{ sequence: number }>(),
+    env.DB.prepare("SELECT id FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1 LIMIT 1").first<{ id: string }>(),
+  ]);
+  if (!cashier || cashier.granted_at !== permit.cashier_grant_version) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cashier_grant_revoked_or_changed");
+  if (!session || session.status !== "open" || session.register_id !== permit.register_id || session.opened_by_admin_id !== permit.cashier_admin_id) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "register_shift_closed_or_changed");
+  if (!cashAccount) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cash_account_unavailable");
+  if (Number(eventCount?.count ?? 0) >= Number(permit.max_events ?? 20)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_event_limit_reached");
+  if (Number(sequence) !== Number(lastSequence?.sequence ?? 0) + 1) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_sequence_gap");
+
+  if (!Array.isArray(sale.lines) || sale.lines.length < 1 || sale.lines.length > 30) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_lines");
+  const allocations = Array.isArray(permitClaims.allocations) ? permitClaims.allocations as Array<Record<string, unknown>> : [];
+  const allocationByVariant = new Map(allocations.map((item) => [String(item.variant_id), item]));
+  const combined = new Set<string>();
+  const resolved: Array<{ allocationId: string; productId: string; productName: string; variantId: string; sku: string; size: string; color: string; quantity: number; unitPrice: number; costPrice: number; lineTotal: number }> = [];
+  let subtotal = 0;
+  for (const rawLine of sale.lines) {
+    if (!rawLine || typeof rawLine !== "object" || Array.isArray(rawLine)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_line");
+    const line = rawLine as Record<string, unknown>;
+    const allowedLineKeys = ["variantId","sku","productName","size","color","quantity","unitPricePaisa","lineTotalPaisa"];
+    if (Object.keys(line).some((key) => !allowedLineKeys.includes(key)) || Object.keys(line).length !== allowedLineKeys.length ||
+        typeof line.variantId !== "string" || !/^[a-f0-9-]{36}$/i.test(line.variantId) ||
+        typeof line.sku !== "string" || typeof line.productName !== "string" || typeof line.size !== "string" || typeof line.color !== "string" ||
+        !Number.isSafeInteger(line.quantity) || Number(line.quantity) < 1 || Number(line.quantity) > 30 ||
+        !Number.isSafeInteger(line.unitPricePaisa) || Number(line.unitPricePaisa) <= 0 ||
+        !Number.isSafeInteger(line.lineTotalPaisa) || Number(line.lineTotalPaisa) <= 0) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_line");
+    }
+    if (combined.has(line.variantId)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "duplicate_variant_line");
+    combined.add(line.variantId);
+    const allocation = allocationByVariant.get(line.variantId);
+    if (!allocation || Number(line.quantity) > Number(allocation.quantity) || Number(line.unitPricePaisa) !== Number(allocation.unit_price_paisa) ||
+        Number(line.quantity) * Number(line.unitPricePaisa) !== Number(line.lineTotalPaisa)) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_allocation_or_price_mismatch");
+    }
+    const row = await env.DB.prepare(
+      "SELECT p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa," +
+      "v.id AS variant_id,v.sku,v.size,v.color,v.is_active,v.stock_on_hand,v.cost_price_paisa," +
+      "a.id AS allocation_id,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status AS allocation_status " +
+      "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+      "WHERE a.id=? AND a.device_id=? AND a.variant_id=? LIMIT 1"
+    ).bind(allocation.allocation_id, deviceId, line.variantId).first<Record<string, unknown>>();
+    if (!row || row.allocation_status !== "active" || row.product_status !== "published" || Number(row.is_active) !== 1 ||
+        Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) < Number(line.quantity) ||
+        Number(row.stock_on_hand) < Number(line.quantity) || Number(row.retail_price_paisa) !== Number(line.unitPricePaisa) ||
+        String(row.product_name) !== line.productName || String(row.sku ?? "") !== line.sku ||
+        String(row.size ?? "") !== line.size || String(row.color ?? "") !== line.color) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "catalogue_stock_or_allocation_changed");
+    }
+    const lineTotal = Number(line.quantity) * Number(line.unitPricePaisa);
+    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_amount_overflow");
+    subtotal += lineTotal;
+    resolved.push({
+      allocationId: String(row.allocation_id), productId: String(row.product_id), productName: String(row.product_name),
+      variantId: String(row.variant_id), sku: String(row.sku ?? ""), size: String(row.size ?? ""), color: String(row.color ?? ""),
+      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: Number(row.cost_price_paisa ?? 0), lineTotal,
+    });
+  }
+  const total = Number(sale.totalPaisa), tendered = Number(sale.cashTenderedPaisa), change = Number(sale.changePaisa);
+  if (![sale.subtotalPaisa, sale.totalPaisa, sale.cashTenderedPaisa, sale.changePaisa].every(Number.isSafeInteger) ||
+      subtotal !== Number(sale.subtotalPaisa) || total !== subtotal || tendered < total || tendered - total !== change ||
+      [total, tendered, change].some((value) => value < 0)) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cash_or_total_mismatch");
+  }
+
+  const saleId = crypto.randomUUID();
+  const receiptNumber = "DV-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-OFF-" + crypto.randomUUID().slice(0,6).toUpperCase();
+  const saleExists = "EXISTS (SELECT 1 FROM pos_sales WHERE id=?)";
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome) VALUES (?,?,?,?,?,?,?,?,'pending')")
+      .bind(eventId, deviceId, permitId, idempotencyKey, sequence, payloadHash, payloadJson, signature),
+    env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,request_fingerprint,cashier_admin_id) " +
+      "SELECT ?,?,?,?,?,?,?,?, ?,0,?,'completed',?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='pending') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND opened_by_admin_id=?) AND EXISTS (SELECT 1 FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1) " +
+      resolved.map(() => "AND EXISTS (SELECT 1 FROM pos_offline_stock_allocations WHERE id=? AND device_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?)").join(" "))
+      .bind(saleId, receiptNumber, String(sale.sessionId), "Walk-in customer", "", null, 0, 0, subtotal, total, idempotencyKey, payloadHash, String(sale.cashierId), eventId, String(sale.sessionId), String(sale.cashierId), ...resolved.flatMap((item) => [item.allocationId, deviceId, item.quantity])),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+  ];
+  for (const item of resolved) {
+    statements.push(
+      env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE " + saleExists)
+        .bind(crypto.randomUUID(), saleId, item.productId, item.variantId, item.productName, item.sku, item.size, item.color, item.quantity, item.unitPrice, item.costPrice, item.lineTotal, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand>=? AND " + saleExists)
+        .bind(item.quantity, new Date().toISOString(), item.variantId, item.quantity, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=? AND " + saleExists)
+        .bind(item.quantity, new Date().toISOString(), item.allocationId, deviceId, item.variantId, item.quantity, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) SELECT ?,?,'sold',?,'order',?,?,? WHERE " + saleExists)
+        .bind(crypto.randomUUID(), item.variantId, -item.quantity, saleId, "Offline POS receipt " + receiptNumber, String(sale.cashierId), saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    );
+  }
+  statements.push(
+    env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) SELECT ?,?,'cash-main','cash',?,?,?,'offline cash' WHERE " + saleExists)
+      .bind(crypto.randomUUID(), saleId, total, tendered, change, saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) SELECT ?,'cash-main','in',?,'pos_sale','pos_sale',?,?,?,? WHERE " + saleExists)
+      .bind(crypto.randomUUID(), total, saleId, String(sale.sessionId), "Offline POS " + receiptNumber, String(sale.cashierId), saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.sale_completed','pos_sale',?,? WHERE " + saleExists)
+      .bind(crypto.randomUUID(), String(sale.cashierId), saleId, JSON.stringify({ receipt_number: receiptNumber, total_paisa: total, offline_event_id: eventId, device_id: deviceId }), saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome='pending'")
+      .bind(saleId, new Date().toISOString(), eventId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+  );
+  try {
+    const results = await env.DB.batch(statements);
+    if ((results[1]?.meta?.changes ?? 0) !== 1) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed");
+    return { outcome: "accepted", event_id: eventId, canonical_sale_id: saleId, receipt_number: receiptNumber, server_received_at: new Date().toISOString() };
+  } catch {
+    const committed = await env.DB.prepare("SELECT outcome,canonical_sale_id,reason_code FROM pos_offline_events WHERE event_id=?").bind(eventId).first<Record<string, unknown>>();
+    if (committed) return { outcome: committed.outcome, event_id: eventId, canonical_sale_id: committed.canonical_sale_id ?? null, reason_code: committed.reason_code ?? null, duplicate: true };
+    try { return await recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed"); }
+    catch { return { outcome: "retry", event_id: eventId, reason_code: "temporary_reconciliation_failure" }; }
+  }
+}
+
 async function issueOfflinePermit(
   env: Env,
   admin: SessionRow,
