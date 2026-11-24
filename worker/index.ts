@@ -2887,7 +2887,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
+  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/offline/verification-key"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)) || (request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
 
   // Emergency offline device administration is owner/manager-only. It is kept
@@ -2908,7 +2908,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (path.startsWith(offlineRoot + "/")) {
     // Cashiers may submit only signed events for their own permit. All device,
     // allocation, permit and reconciliation administration remains owner/manager-only.
-    if (!canManageMoney && !(isCashier && request.method === "POST" && path === offlineRoot + "/sync")) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+    if (!canManageMoney && !(isCashier && ((request.method === "POST" && (path === offlineRoot + "/sync" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) || (request.method === "GET" && path === offlineRoot + "/verification-key")))) return error("Only an owner or manager can administer emergency offline POS devices", 403);
 
     if (request.method === "GET" && path === offlineRoot + "/verification-key") {
       if (!env.POS_OFFLINE_PERMIT_PUBLIC_JWK) return error("Offline permit verification key is not configured", 503);
@@ -3028,9 +3028,18 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
     }
 
-    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits))?$/i);
+    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits|permit))?$/i);
     if (deviceMatch) {
       const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
+      if (request.method === "GET" && action === "permit") {
+        try {
+          const permit = await env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,claims_json,signature_base64url,snapshot_json,issued_at,expires_at,status FROM pos_offline_permits WHERE device_id=? AND status='active' AND expires_at>? ORDER BY issued_at DESC LIMIT 1")
+            .bind(deviceId, new Date().toISOString()).first<Record<string, unknown>>();
+          if (!permit) return error("No active offline permit is available for this device", 404);
+          if (isCashier && admin.admin_user_id !== permit.cashier_admin_id) return error("Cashiers can retrieve only their own device permit", 403);
+          return json({ permit: { id: permit.id, claims: JSON.parse(String(permit.claims_json)), signature_base64url: permit.signature_base64url, snapshot: JSON.parse(String(permit.snapshot_json)), issued_at: permit.issued_at, expires_at: permit.expires_at } });
+        } catch { return error("The active offline permit could not be loaded", 503); }
+      }
       if (request.method === "POST" && action === "permits") {
         return issueOfflinePermit(env, admin, deviceId, await readJson(request, 4_000));
       }
