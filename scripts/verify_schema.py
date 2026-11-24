@@ -35,7 +35,7 @@ assert not missing, f"Missing tables: {sorted(missing)}"
 db.execute("SAVEPOINT offline_pos_schema_probe")
 db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES (?,?,?,'owner')", ("offline-owner","offline-owner@example.test","hash"))
 db.execute("INSERT INTO products (id,slug,name,category,audience,status,retail_price_paisa) VALUES (?,?,?,?,?,'published',?)", ("offline-product","offline-pos-product","Offline POS product","test","unisex",10000))
-db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active) VALUES (?,?,?,?,?,?,?,1)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0))
+db.execute("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,cost_price_paisa,is_active) VALUES (?,?,?,?,?,?,?,?,1)", ("offline-variant","offline-product","OFFLINE-1","M","Black",10,0,4000))
 db.execute("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,status) VALUES (?,?,?,0,'open')", ("offline-session","main-register","offline-owner"))
 public_jwk = '{"kty":"EC","crv":"P-256","x":"abc","y":"def"}'
 db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device","main-register","offline-owner","Pilot Android POS",public_jwk,"a"*43))
@@ -53,7 +53,7 @@ db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,
 permit_snapshot = [{
     "allocationId": "offline-allocation", "variantId": "offline-variant", "productId": "offline-product",
     "productName": "Offline POS product", "sku": "OFFLINE-1", "barcode": "", "size": "M", "color": "Black",
-    "allocatedQuantity": 2, "unitPricePaisa": 10000,
+    "allocatedQuantity": 2, "unitPricePaisa": 10000, "costPricePaisa": 4000,
 }]
 permit_snapshot_json = __import__("json").dumps(permit_snapshot, sort_keys=True, separators=(",", ":"))
 permit_snapshot_hash = __import__("hashlib").sha256(permit_snapshot_json.encode()).hexdigest()
@@ -63,7 +63,7 @@ permit_claims = __import__("json").dumps({
     "snapshot_version": "snapshot-1", "snapshot_hash": permit_snapshot_hash, "issued_at": "2026-11-24T00:00:00.000Z",
     "expires_at": "2026-11-24T04:00:00.000Z", "max_events": 20, "offline_checkout_enabled": True, "cash_only": True, "allow_refunds": False,
     "allow_voids": False, "allow_shift_close": False,
-    "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000}],
+    "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000, "cost_price_paisa": 4000}],
 })
 db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-1",permit_snapshot_hash,permit_claims,permit_snapshot_json,"c"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
 
