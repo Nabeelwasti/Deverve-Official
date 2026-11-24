@@ -2636,7 +2636,11 @@ async function processOfflineSaleEvent(
     try {
       await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
         .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, reason_code: "replay_or_sequence_collision", existing_event_id: duplicate.event_id, existing_payload_hash: duplicate.payload_hash, received_payload_hash: payloadHash })).run();
-    } catch {}
+    } catch {
+      // Do not report a fully handled replay conflict when its audit evidence
+      // could not be persisted. A retry can safely re-evaluate the same event.
+      return { outcome: "retry", event_id: eventId, reason_code: "replay_conflict_audit_unavailable" };
+    }
     return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
   }
   const allowedKeys = ["eventId","idempotencyKey","deviceId","permitId","registerId","sessionId","cashierId","snapshotVersion","createdAt","currency","lines","subtotalPaisa","totalPaisa","cashTenderedPaisa","changePaisa","sequence","status","payloadVersion"];
