@@ -74,6 +74,14 @@ assert.match(permitMigration, /pos_offline_permit_authorization_guard/);
 assert.match(permitMigration, /pos_offline_allocation_insert_guard_during_permit/);
 assert.match(permitMigration, /pos_offline_allocation_release_guard_during_permit/);
 assert.match(permitMigration, /pos_offline_permit_identity_immutable/);
+const snapshotMigration = readFileSync(new URL("../migrations/0048_pos_offline_permit_snapshot.sql", import.meta.url), "utf8");
+assert.match(snapshotMigration, /pos_offline_permit_snapshot_guard/);
+assert.match(snapshotMigration, /pos_offline_permit_snapshot_immutable/);
+assert.ok(snapshotMigration.includes("json_each(NEW.snapshot_json)"));
+assert.match(worker, /snapshot_json/);
+assert.match(worker, /action === "permit"/);
+assert.match(worker, /Cashiers may issue an offline permit only for their own active shift/);
+
 assert.ok(permitMigration.includes("json_each(json_extract(NEW.claims_json, '$.allocations'))"));
 
 
