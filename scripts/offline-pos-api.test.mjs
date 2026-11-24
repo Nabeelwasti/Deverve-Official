@@ -84,6 +84,8 @@ assert.match(migration, /OLD\.consumed_at IS NOT NULL/);
 assert.match(migration, /NEW\.consumed_at IS NULL/);
 const permitMigration = readFileSync(new URL("../migrations/0047_pos_offline_permit_guards.sql", import.meta.url), "utf8");
 assert.match(permitMigration, /pos_offline_permit_authorization_guard/);
+assert.match(permitMigration, /offline permit cannot be renewed while prior sales are unresolved/);
+assert.match(permitMigration, /e\.outcome IN \(\x27conflict\x27,\x27rejected\x27\)/);
 assert.match(permitMigration, /pos_offline_allocation_insert_guard_during_permit/);
 assert.match(permitMigration, /pos_offline_allocation_release_guard_during_permit/);
 assert.match(permitMigration, /pos_offline_permit_identity_immutable/);
