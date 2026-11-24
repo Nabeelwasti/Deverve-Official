@@ -2806,6 +2806,9 @@ async function issueOfflinePermit(
       !Number.isSafeInteger(durationHours) || Number(durationHours) < 1 || Number(durationHours) > 8) {
     return error("Choose a valid cashier, open shift and permit duration of 1 to 8 hours", 400);
   }
+  if (admin.role === "viewer" && admin.admin_user_id !== cashierId) {
+    return error("Cashiers may issue an offline permit only for their own active shift", 403);
+  }
   if (!env.POS_OFFLINE_PERMIT_PRIVATE_JWK || !env.POS_OFFLINE_PERMIT_PUBLIC_JWK) {
     return error("Offline permit signing is not configured. No permit was issued and offline checkout remains disabled.", 503);
   }
@@ -2865,9 +2868,9 @@ async function issueOfflinePermit(
     const signature = await signOfflinePermitClaims(claims, env.POS_OFFLINE_PERMIT_PRIVATE_JWK, env.POS_OFFLINE_PERMIT_PUBLIC_JWK);
     if (!signature) return error("Offline permit signing failed because the configured keypair is invalid. No permit was issued.", 503);
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
-        "SELECT ?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
-        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
+      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
+        "SELECT ?,?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
+        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, canonicalOfflineJson(snapshot), signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
       env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_permit_issued','pos_offline_permit',?,? WHERE changes()=1")
         .bind(crypto.randomUUID(), admin.admin_user_id, permitId, JSON.stringify({ device_id: deviceId, register_id: device.register_id, cashier_admin_id: cashierId, expires_at: expiresAt, max_events: 20, cash_only: true })),
     ]);
@@ -2887,7 +2890,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/offline/verification-key"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)) || (request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
+  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/offline/verification-key"].includes(path)) || (request.method === "GET" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)) || (request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
 
   // Emergency offline device administration is owner/manager-only. It is kept
@@ -2908,7 +2911,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (path.startsWith(offlineRoot + "/")) {
     // Cashiers may submit only signed events for their own permit. All device,
     // allocation, permit and reconciliation administration remains owner/manager-only.
-    if (!canManageMoney && !(isCashier && ((request.method === "POST" && (path === offlineRoot + "/sync" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) || (request.method === "GET" && path === offlineRoot + "/verification-key")))) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+    if (!canManageMoney && !(isCashier && ((request.method === "POST" && (path === offlineRoot + "/sync" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) || (request.method === "GET" && (path === offlineRoot + "/verification-key" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path)))))) return error("Only an owner or manager can administer emergency offline POS devices", 403);
 
     if (request.method === "GET" && path === offlineRoot + "/verification-key") {
       if (!env.POS_OFFLINE_PERMIT_PUBLIC_JWK) return error("Offline permit verification key is not configured", 503);
