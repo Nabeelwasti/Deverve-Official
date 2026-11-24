@@ -59,7 +59,7 @@ jobs:
         run: node --check workers/site-translation/index.js
       - name: Test Worker authentication and translation behavior
         run: npm run test:worker
-      - name: Exercise offline POS enrollment through the real Worker and isolated SQLite D1 adapter
+      - name: Exercise offline POS lifecycle through the real Worker and isolated SQLite D1 adapter
         run: npm run test:offline:worker
       - name: Validate D1 schema and constraints
         run: python scripts/verify_schema.py
