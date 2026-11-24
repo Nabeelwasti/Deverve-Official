@@ -2423,6 +2423,11 @@ interface AdminInventoryMovementRow {
   created_at: string;
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function canonicalOfflineJson(value: unknown): string {
   if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
   if (typeof value === "number") {
@@ -2552,7 +2557,7 @@ async function issueOfflinePermit(
       };
     });
     const snapshotVersion = crypto.randomUUID();
-    const snapshotHash = await fingerprintPosSaleRequest(snapshot);
+    const snapshotHash = await sha256Hex(canonicalOfflineJson(snapshot));
     const issuedAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + Number(durationHours) * 60 * 60_000).toISOString();
     const permitId = crypto.randomUUID();
