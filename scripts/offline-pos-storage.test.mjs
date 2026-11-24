@@ -76,3 +76,7 @@ assert.match(source, /export async function listOfflineSalesForPermit/);
 assert.match(source, /Offline permit cannot replace a permit with unresolved queued sales/);
 
 assert.match(source, /export async function readOfflineSyncReceipt/);
+
+assert.match(source, /export async function listOfflineQueueForPermit/);
+assert.match(source, /transaction\.objectStore\("syncReceipts"\)\.getAll\(\)/);
+assert.match(source, /Local offline sale evidence is incomplete/);
