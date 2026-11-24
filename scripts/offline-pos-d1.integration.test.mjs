@@ -51,13 +51,13 @@ try {
   const migrations = (await readdir(migrationDirectory))
     .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/i.test(name))
     .sort((a, b) => Number(a.slice(0, 4)) - Number(b.slice(0, 4)));
-  check(migrations.length >= 48, "all numbered schema migrations are present");
+  check(migrations.length >= 49, "all numbered schema migrations are present");
   check(migrations.includes("0045_pos_offline_emergency_foundation.sql")
     && migrations.includes("0046_pos_offline_enrollment_challenges.sql")
     && migrations.includes("0047_pos_offline_permit_guards.sql")
     && migrations.includes("0048_pos_offline_permit_snapshot.sql")
     && migrations.includes("0049_pos_offline_private_cost_snapshot.sql"),
-  "offline-POS migrations 0045–0048 are included in the isolated migration chain");
+  "offline-POS migrations 0045–0049 are included in the isolated migration chain");
 
   for (const filename of migrations) {
     const sql = await readFile(new URL(filename, migrationDirectory), "utf8");
