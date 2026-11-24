@@ -25,6 +25,8 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  POS_OFFLINE_PERMIT_PRIVATE_JWK?: string;
+  POS_OFFLINE_PERMIT_PUBLIC_JWK?: string;
   SAFEPAY_ENV?: string;
   SAFEPAY_MERCHANT_API_KEY?: string;
   SAFEPAY_SECRET_KEY?: string;
@@ -2419,6 +2421,48 @@ interface AdminInventoryMovementRow {
   reference_id: string | null;
   note: string;
   created_at: string;
+}
+
+function canonicalOfflineJson(value: unknown): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Offline permit contains a non-finite number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return "[" + value.map(canonicalOfflineJson).join(",") + "]";
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return "{" + Object.keys(record).sort().map((key) => JSON.stringify(key) + ":" + canonicalOfflineJson(record[key])).join(",") + "}";
+  }
+  throw new Error("Offline permit contains an unsupported value");
+}
+
+export async function signOfflinePermitClaims(
+  claims: unknown,
+  privateJwkJson: string,
+  publicJwkJson: string,
+): Promise<string | null> {
+  try {
+    const privateJwk = JSON.parse(privateJwkJson) as JsonWebKey;
+    const publicJwk = JSON.parse(publicJwkJson) as JsonWebKey;
+    if (privateJwk.kty !== "EC" || privateJwk.crv !== "P-256" ||
+        typeof privateJwk.d !== "string" || typeof privateJwk.x !== "string" || typeof privateJwk.y !== "string" ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        privateJwk.x !== publicJwk.x || privateJwk.y !== publicJwk.y ||
+        "d" in publicJwk) return null;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      privateJwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalOfflineJson(claims));
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, message);
+    return base64Url(new Uint8Array(signature));
+  } catch {
+    return null;
+  }
 }
 
 export async function verifyOfflineEnrollmentProof(
