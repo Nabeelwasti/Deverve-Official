@@ -14,7 +14,7 @@ type Sale={id:string;receipt_number:string;customer_name:string;customer_phone:s
 const money=(value:number)=>"Rs. "+(value/100).toLocaleString("en-PK",{maximumFractionDigits:2});
 const paisa=(value:string)=>Number.isFinite(Number(value))&&Number(value)>=0?Math.round(Number(value)*100):0;
 const localDate=()=>new Date(Date.now()+5*3600000).toISOString().slice(0,10);
-export default function POSWorkspace({canManageMoney,canUseAI=false}:{canManageMoney:boolean;canUseAI?:boolean}){
+export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOffline=false}:{canManageMoney:boolean;canUseAI?:boolean;canUseOffline?:boolean}){
  const [items,setItems]=useState<Item[]>([]),[accounts,setAccounts]=useState<Account[]>([]),[registers,setRegisters]=useState<Array<{id:string;name:string;location_label:string}>>([]),[session,setSession]=useState<Session|null>(null);
  const [cart,setCart]=useState<SaleLine[]>([]),[search,setSearch]=useState(""),[barcode,setBarcode]=useState(""),[cameraOpen,setCameraOpen]=useState(false),[unknownCode,setUnknownCode]=useState(""),[customerName,setCustomerName]=useState("Walk-in customer"),[customerPhone,setCustomerPhone]=useState(""),[customerEmail,setCustomerEmail]=useState(""),[whatsappReceiptConsent,setWhatsappReceiptConsent]=useState(false);
  const [pendingSaleKey,setPendingSaleKey]=useState(()=>{try{const saved=localStorage.getItem("deverve-pos-pending-sale-key");return saved&&/^[a-f0-9-]{36}$/i.test(saved)?saved:"";}catch{return "";}});
