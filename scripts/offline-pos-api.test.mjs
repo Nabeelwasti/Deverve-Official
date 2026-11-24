@@ -21,7 +21,7 @@ assert.match(worker, /INSERT INTO pos_offline_devices[\s\S]*?WHERE changes\(\)=1
 assert.match(worker, /pos\.offline_device_enrolled/);
 assert.match(worker, /pos\.offline_device_revoked/);
 assert.match(worker, /pos\.offline_stock_allocated/);
-assert.match(worker, /stock allocation failed\. The database rolled back the allocation batch/);
+assert.match(worker, /Stock allocation failed\. The database rolled back the allocation batch/);
 assert.match(worker, /owner_confirms_device_queue_reconciled !== true/);
 assert.match(worker, /deviceState\.status !== "revoked"/);
 assert.match(worker, /Resolve every pending or conflicted offline sale/);
