@@ -62,7 +62,9 @@ self.addEventListener("message", (event) => {
   if (!data || !["PRECACHE_POS_ASSETS", "CHECK_POS_ASSETS"].includes(data.type)) return;
   const port = event.ports && event.ports[0];
   const work = (async () => {
-    const requested = Array.isArray(data.urls) ? data.urls.slice(0, 120) : [];
+    const requestedInput = Array.isArray(data.urls) ? data.urls : [];
+    const overLimit = requestedInput.length > 120;
+    const requested = requestedInput.slice(0, 120);
     const safeUrls = Array.from(new Set([...SHELL, ...requested].map((candidate) => isSafePosAsset(candidate)?.href).filter(Boolean)));
     const cache = await caches.open(CACHE_NAME);
     const cached = [];
@@ -88,7 +90,8 @@ self.addEventListener("message", (event) => {
       }
     }
     await trimRuntimeCache(cache);
-    return { ready: missing.length === 0 && failed.length === 0, cached, missing, failed, cacheName: CACHE_NAME };
+    const failures = overLimit ? [...failed, "asset_limit_exceeded"] : failed;
+    return { ready: !overLimit && missing.length === 0 && failures.length === 0, cached, missing, failed: failures, cacheName: CACHE_NAME };
   })();
   event.waitUntil(work.then((result) => {
     try { port?.postMessage(result); } catch {}
