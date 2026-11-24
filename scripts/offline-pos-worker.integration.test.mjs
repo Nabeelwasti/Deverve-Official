@@ -17,13 +17,13 @@ const b64url = (bytes) => Buffer.from(bytes).toString("base64url");
 const sha256 = (value) => createHash("sha256").update(value).digest("base64url");
 
 class LocalD1Statement {
-  constructor(db, sql) { this.db = db; this.sql = sql; this.values = []; }
+  constructor(db, sql, adapter) { this.db = db; this.sql = sql; this.values = []; this.adapter = adapter; }
   bind(...values) { this.values = values; return this; }
   first() { return this.db.prepare(this.sql).get(...this.values) ?? null; }
   all() { return { success: true, results: this.db.prepare(this.sql).all(...this.values) }; }
   run() {
-    if (this.db.failNextRun) {
-      this.db.failNextRun = false;
+    if (this.adapter?.failNextRun) {
+      this.adapter.failNextRun = false;
       throw new Error("injected isolated D1 standalone-write failure");
     }
     const result = this.db.prepare(this.sql).run(...this.values);
@@ -32,7 +32,7 @@ class LocalD1Statement {
 }
 class LocalD1 {
   constructor(db) { this.db = db; this.failNextBatchAt = null; this.failNextRun = false; }
-  prepare(sql) { return new LocalD1Statement(this.db, sql); }
+  prepare(sql) { return new LocalD1Statement(this.db, sql, this); }
   batch(statements) {
     this.db.exec("BEGIN IMMEDIATE");
     try {
