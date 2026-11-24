@@ -625,6 +625,39 @@ test("real Worker handles concurrent exact duplicate sync requests with one cano
 });
 
 
+test("real Worker rejects a concurrent distinct event that races for an already-consumed device sequence", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const competingSale = {
+    ...fixture.sale,
+    eventId: randomUUID(),
+    idempotencyKey: randomUUID(),
+    createdAt: new Date(Date.now() + 1).toISOString(),
+  };
+  const [firstResponse, competingResponse] = await Promise.all([
+    api("/api/admin/pos/offline/sync", {
+      device_id: fixture.deviceId, permit_id: fixture.permit.id,
+      events: [{ event: fixture.sale, signature: await signSale(fixture.identity, fixture.sale) }],
+    }),
+    api("/api/admin/pos/offline/sync", {
+      device_id: fixture.deviceId, permit_id: fixture.permit.id,
+      events: [{ event: competingSale, signature: await signSale(fixture.identity, competingSale) }],
+    }),
+  ]);
+  assert.equal(firstResponse.status, 200);
+  assert.equal(competingResponse.status, 200);
+  const results = [(await firstResponse.json()).results[0], (await competingResponse.json()).results[0]];
+  assert.equal(results.filter((result) => result.outcome === "accepted").length, 1);
+  assert.equal(results.filter((result) => result.outcome === "conflict").length, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE device_id=? AND device_sequence=1").get(fixture.deviceId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order'").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT stock_on_hand FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 4);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+});
+
 test("real Worker processes a multi-event offline batch in strict sequence with balanced stock and cash ledgers", async () => {
   const fixture = await createReadyOfflinePermitFixture();
   const secondSale = {
