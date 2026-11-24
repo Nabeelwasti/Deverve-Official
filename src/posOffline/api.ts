@@ -101,10 +101,21 @@ export async function fetchAndStoreOfflinePermit(deviceId: string): Promise<Stor
   }
   const permit = permitResponse.permit;
   if (!permit?.claims || permit.claims.device_id !== deviceId || permit.claims.permit_id !== permit.id ||
+      permit.claims.version !== 1 || permit.claims.max_events !== 20 ||
       permit.claims.cash_only !== true || permit.claims.allow_refunds !== false ||
       permit.claims.allow_voids !== false || permit.claims.allow_shift_close !== false ||
-      !Array.isArray(permit.snapshot) || permit.snapshot.length < 1 || permit.snapshot.length > 30) {
+      !Array.isArray(permit.claims.allocations) || !Array.isArray(permit.snapshot) ||
+      permit.snapshot.length < 1 || permit.snapshot.length > 30 ||
+      permit.claims.allocations.length !== permit.snapshot.length) {
     throw new Error("The server returned an invalid or overly permissive offline permit.");
+  }
+  const claimByAllocation = new Map(permit.claims.allocations.map((item: Record<string, unknown>) => [String(item.allocation_id), item]));
+  for (const item of permit.snapshot) {
+    const claim = claimByAllocation.get(String(item.allocationId));
+    if (!claim || claim.variant_id !== item.variantId || Number(claim.quantity) !== Number(item.allocatedQuantity) ||
+        Number(claim.unit_price_paisa) !== Number(item.unitPricePaisa)) {
+      throw new Error("The offline catalogue does not match the signed stock allocation claims.");
+    }
   }
   if (!await verifyOfflinePermitSignature(permit.claims, permit.signature_base64url, keyResponse.public_key_jwk)) {
     throw new Error("The offline permit signature is invalid. It was not stored.");
@@ -147,9 +158,7 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
 
   let accepted = 0, needsReview = 0, retrying = 0;
   const retry = async (sale: QueuedOfflineSale, reason: string) => {
-    const attempts = Math.min(8, 1 + (await Promise.resolve(0)));
-    const delay = Math.min(30 * 60_000, 30_000 * 2 ** attempts);
-    await recordOfflineSyncFailure(sale.eventId, /^[a-z0-9_]{2,64}$/i.test(reason) ? reason : "sync_temporary_failure", Date.now() + delay);
+    await recordOfflineSyncFailure(sale.eventId, /^[a-z0-9_]{2,64}$/i.test(reason) ? reason : "sync_temporary_failure");
     retrying += 1;
   };
 
