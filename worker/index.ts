@@ -2595,19 +2595,6 @@ async function processOfflineSaleEvent(
       !Number.isSafeInteger(sequence) || Number(sequence) < 1) return { outcome: "rejected", reason_code: "invalid_identity_or_sequence" };
   const payloadHash = await sha256Hex(payloadJson);
 
-  const duplicate = await env.DB.prepare(
-    "SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code " +
-    "FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1"
-  ).bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
-  if (duplicate) {
-    if (duplicate.event_id === eventId && duplicate.device_id === deviceId && duplicate.permit_id === permitId &&
-        duplicate.idempotency_key === idempotencyKey && Number(duplicate.device_sequence) === Number(sequence) &&
-        duplicate.payload_hash === payloadHash) {
-      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, reason_code: duplicate.reason_code ?? null, duplicate: true };
-    }
-    return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
-  }
-
   const [device, permit] = await Promise.all([
     env.DB.prepare("SELECT id,register_id,status,public_key_jwk_json FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<Record<string, unknown>>(),
     env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
@@ -2622,6 +2609,18 @@ async function processOfflineSaleEvent(
   if (!await verifyOfflineEventSignature(sale, signature, devicePublicKey)) return { outcome: "rejected", reason_code: "device_signature_invalid" };
   if (!await verifyOfflinePermitSignatureServer(permitClaims, String(permit.signature_base64url), permitPublicKey)) return { outcome: "rejected", reason_code: "permit_signature_invalid" };
 
+  const duplicate = await env.DB.prepare(
+    "SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code " +
+    "FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1"
+  ).bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
+  if (duplicate) {
+    if (duplicate.event_id === eventId && duplicate.device_id === deviceId && duplicate.permit_id === permitId &&
+        duplicate.idempotency_key === idempotencyKey && Number(duplicate.device_sequence) === Number(sequence) &&
+        duplicate.payload_hash === payloadHash) {
+      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, reason_code: duplicate.reason_code ?? null, duplicate: true };
+    }
+    return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
+  }
   const allowedKeys = ["eventId","idempotencyKey","deviceId","permitId","registerId","sessionId","cashierId","snapshotVersion","createdAt","currency","lines","subtotalPaisa","totalPaisa","cashTenderedPaisa","changePaisa","sequence","status","payloadVersion"];
   if (Object.keys(sale).some((key) => !allowedKeys.includes(key)) || Object.keys(sale).length !== allowedKeys.length ||
       sale.deviceId !== deviceId || sale.permitId !== permitId || sale.registerId !== permit.register_id ||
