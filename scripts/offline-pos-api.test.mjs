@@ -168,5 +168,5 @@ assert.match(panel, /Never clear browser data/);
 
 assert.match(worker, /financial_transactions WHERE reference_type=.pos_sale./);
 assert.match(worker, /JSON.stringify(actualMovements) !== JSON.stringify(expectedMovements)/);
-assert.match(worker, /payment?.tendered/);
+assert.ok(worker.includes("payment?.tendered"));
 assert.ok(worker.includes("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"));
