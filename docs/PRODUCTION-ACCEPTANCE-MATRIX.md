@@ -27,7 +27,7 @@
 | Turnstile | The live verifier health endpoint returned `status=ok`, `secret_configured=true` and the expected `deverve-official.pages.dev` hostname on 23 November 2026 | Verifier configuration/health confirmed; invalid-token Siteverify negative test and end-to-end public form acceptance remain outstanding |
 | Email / WhatsApp | Outbox and retry logic exist | Provider credentials, consent and delivery acceptance outstanding |
 | PWA | Manifest and service worker cache the shell and static assets | Installable shell; not an offline-first POS |
-| Encrypted D1 backup | AES-256-GCM export and isolated restore script plus GitHub Actions workflow exist. PR #33 makes temporary recovery-database deletion failure fatal, preventing a false successful restore result. | Not accepted until required secrets, an actual encrypted export, isolated restore, confirmed cleanup and retention verification pass |
+| Encrypted D1 backup | AES-256-GCM export/restore workflow exists. The owner-configured secrets pass prerequisite validation; an encrypted production archive has been uploaded to private R2 and its stored bytes/SHA-256 read-back verified. Restore attempts have not yet passed. | Encrypted upload verified; restore, schema/row comparison, cleanup, independent key custody and retention remain unaccepted |
 
 ## Release blockers and owner-controlled prerequisites
 
@@ -35,10 +35,10 @@
 
 The repository workflow .github/workflows/d1-backup-restore.yml is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). It is not operationally active until all required GitHub Actions secrets are configured and a full run succeeds:
 
-- CLOUDFLARE_API_TOKEN: D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list); this permits the export, temporary restore-database lifecycle and encrypted-object read-back without broad account-wide R2 administration.
-- CLOUDFLARE_ACCOUNT_ID.
-- D1_BACKUP_ENCRYPTION_KEY: 32 random bytes encoded as 64 hex characters. Generate offline with openssl rand -hex 32; store in an owner-controlled password manager, never in the repository or backup bucket.
-- Confirm private bucket deverve-db-backups exists and token permissions are sufficient.
+- Owner confirmed on 24 November 2026 that `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured as GitHub Actions secrets. This confirms configuration only, not a successful backup or restore.
+- The currently configured token was created with account-wide D1 Edit and Workers R2 Storage Edit. This is broader than intended. Replace it with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list) before production acceptance.
+- Confirm the 32-byte encryption key is independently stored in an owner-controlled password manager, not only in GitHub Actions.
+- Confirm private bucket `deverve-db-backups` exists and token permissions are sufficient.
 
 Required evidence: encrypted production snapshot, SHA-256 integrity check, successful decrypt and restore into an isolated non-production D1 database, row-count/schema comparison, confirmed deletion of the isolated database, retention verification and a documented recovery exercise. The restore script now exits unsuccessfully if temporary database deletion cannot be confirmed (PR #33). A green syntax check is not a backup. A successful upload is not a restore test.
 
@@ -131,6 +131,6 @@ Read-only Cloudflare API and production D1 checks were performed during continua
 - The open register session belongs to the existing main register and has been open since 18 November 2026. Owner must verify the physical drawer and shift records before any close/reconciliation action.
 - The current production D1 has no migration-history table. Schema acceptance must therefore compare actual table/index/trigger definitions with repository migrations and recorded deployment evidence; do not assume a local migration ledger exists.
 - PR #40 documentation CI run `45156253162` completed successfully. This validates the repository CI job for the documentation-only change; it does not validate offline POS implementation, production Worker behavior or physical hardware.
-- The backup workflow exists at `.github/workflows/d1-backup-restore.yml`, with required GitHub Actions secrets and a scheduled run. A successful encrypted export plus isolated restore must still be confirmed from the workflow's actual run evidence before backup protection is called operational. The dedicated APAC R2 bucket `deverve-db-backups` exists but read-only listing of both `d1/encrypted/` and `manifests/` returned no objects during this check; therefore there is no verified encrypted D1 backup artifact in that bucket at this time.
+- The backup workflow exists at `.github/workflows/d1-backup-restore.yml`, with required GitHub Actions secrets and a daily schedule. A current encrypted archive exists under `d1/encrypted/` and its R2 read-back checksum is verified. The corresponding manifest records a failed isolated restore; therefore backup protection is not operationally accepted until a full restore, schema/row comparison and temporary-database cleanup pass. Keep failed encrypted artifacts for audit and retention review.
 
 **Operational hold:** do not close the existing open POS session, clear queued outbox records, grant cashier access, alter stock allocations, create an offline permit, run a production migration, or enable automatic deployments as part of this design-only work. These actions require owner verification and the relevant acceptance procedure.
