@@ -169,6 +169,18 @@ export default function OfflinePOSPanel({
     return "Device revoked. Its remaining stock stays reserved until the local queue is reconciled and an owner releases it.";
   });
 
+  const resolveCase = (item: ReconciliationCase) => runAction(async () => {
+    const canonicalSaleId = window.prompt("Enter the existing completed POS sale ID that exactly matches this offline event:");
+    if (!canonicalSaleId || !/^[a-f0-9-]{36}$/i.test(canonicalSaleId.trim())) throw new Error("A valid existing POS sale ID is required. No ledger changes were made.");
+    const reason = window.prompt("Explain how the completed sale, cash payment and stock movement were physically verified (minimum 10 characters):");
+    if (!reason || reason.trim().length < 10) throw new Error("A detailed reconciliation explanation is required. The case remains open.");
+    await adminRequest(`/api/admin/pos/offline/reconciliation-cases/${item.id}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ canonical_sale_id: canonicalSaleId.trim(), reason: reason.trim() }),
+    });
+    return "Case resolved against a matching completed POS sale. Cash and inventory evidence were verified, and the reserved allocation was reconciled.";
+  });
+
   const releaseAllocations = (id: string) => runAction(async () => {
     const confirmed = window.confirm("Only continue after you have physically checked this device or recovered its local queue, synchronized every valid offline sale, and manually reconciled any cash/stock discrepancy. Confirm that no unsynced local sale remains?");
     if (!confirmed) throw new Error("Queue reconciliation was not confirmed. Reserved stock remains locked.");
@@ -285,8 +297,8 @@ export default function OfflinePOSPanel({
           <section className="pos-card">
             <div className="admin-panel-heading"><div><h3>Offline sales needing review</h3><p className="admin-muted">Conflicts remain open until an owner completes and records the corresponding manual sale, stock and cash reconciliation. They are never silently discarded.</p></div><span className="admin-muted">{openCases.length} open</span></div>
             {openCases.length ? (
-              <div className="pos-table-wrap"><table className="pos-table"><thead><tr><th>Event</th><th>Device</th><th>Sequence</th><th>Reason</th><th>Received</th><th>Status</th></tr></thead><tbody>
-                {openCases.map((item) => <tr key={item.id}><td><strong>{item.event_id}</strong><small>Case {item.id}</small></td><td>{devices.find((device) => device.id === item.device_id)?.device_label || item.device_id}</td><td>{item.device_sequence}</td><td>{item.reason_code.replace(/_/g, " ")}</td><td>{new Date(item.opened_at).toLocaleString("en-PK")}</td><td><strong>Manual review required</strong></td></tr>)}
+              <div className="pos-table-wrap"><table className="pos-table"><thead><tr><th>Event</th><th>Device</th><th>Sequence</th><th>Reason</th><th>Received</th><th>Status / action</th></tr></thead><tbody>
+                {openCases.map((item) => <tr key={item.id}><td><strong>{item.event_id}</strong><small>Case {item.id}</small></td><td>{devices.find((device) => device.id === item.device_id)?.device_label || item.device_id}</td><td>{item.device_sequence}</td><td>{item.reason_code.replace(/_/g, " ")}</td><td>{new Date(item.opened_at).toLocaleString("en-PK")}</td><td><strong>Manual review required</strong><button type="button" className="admin-secondary" disabled={busy || !canManageMoney} onClick={() => void resolveCase(item)}>Verify completed sale & resolve</button></td></tr>)}
               </tbody></table></div>
             ) : <p className="admin-muted">No offline sale conflicts are waiting for review.</p>}
           </section>
