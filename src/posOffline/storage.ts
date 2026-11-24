@@ -356,9 +356,9 @@ export async function listPendingOfflineSales(limit = 10): Promise<QueuedOffline
 }
 
 /** Records a retryable failure without changing the immutable sale payload or its idempotency key. */
-export async function recordOfflineSyncFailure(eventId: string, errorCode: string, retryAt = Date.now() + 30_000): Promise<void> {
+export async function recordOfflineSyncFailure(eventId: string, errorCode: string, retryAt?: number): Promise<void> {
   assertEventId(eventId);
-  if (!/^[a-z0-9_]{2,64}$/i.test(errorCode) || !Number.isSafeInteger(retryAt) || retryAt < 0) {
+  if (!/^[a-z0-9_]{2,64}$/i.test(errorCode) || (retryAt !== undefined && (!Number.isSafeInteger(retryAt) || retryAt < 0))) {
     throw new Error("Offline retry metadata is invalid.");
   }
   const database = await openOfflinePosDatabase();
@@ -373,7 +373,7 @@ export async function recordOfflineSyncFailure(eventId: string, errorCode: strin
           transaction.abort();
           return;
         }
-        store.put({ ...current, status: "pending", attempts: current.attempts + 1, nextAttemptAt: retryAt, lastErrorCode: errorCode, claimedUntil: undefined });
+        const attempts = Number.isSafeInteger(current.attempts) ? current.attempts + 1 : 1;\n        const backoffMs = Math.min(30 * 60_000, 30_000 * 2 ** Math.min(attempts, 6));\n        store.put({ ...current, status: "pending", attempts, nextAttemptAt: retryAt ?? Date.now() + backoffMs, lastErrorCode: errorCode, claimedUntil: undefined });
         transaction.objectStore("audit").add({ action: "offline_sync_retry_scheduled", eventId, errorCode, recordedAt: new Date().toISOString() });
       };
       request.onerror = () => transaction.abort();
