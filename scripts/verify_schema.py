@@ -85,9 +85,11 @@ expect_integrity_error(
 # Offline allocations must reserve the same inventory counter used by online checkout.
 reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
 assert reserved == (10, 2), f"Offline allocation did not reserve two units: {reserved}"
+db.execute("INSERT INTO pos_registers (id,name,location_label) VALUES ('offline-register-2','Second register','Test')")
+db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device-2","offline-register-2","offline-owner","Second pilot device",public_jwk,"d"*43))
 expect_integrity_error(
-    lambda: db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-over-allocation","offline-device","main-register","offline-variant",9,"offline-owner")),
-    "Offline allocation must not reserve more than currently available stock",
+    lambda: db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-over-allocation","offline-device-2","offline-register-2","offline-variant",9,"offline-owner")),
+    "Offline allocation must not reserve more than currently available stock across registers",
 )
 db.execute("UPDATE pos_offline_stock_allocations SET consumed_quantity=1 WHERE id='offline-allocation'")
 reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
