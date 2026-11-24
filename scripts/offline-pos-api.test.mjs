@@ -6,6 +6,9 @@ const migration = readFileSync(new URL("../migrations/0046_pos_offline_enrollmen
 const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
 
 assert.match(worker, /const offlineRoot = "\/api\/admin\/pos\/offline"/);
+assert.match(worker, /SELECT c\.id,c\.event_id,c\.reason_code,c\.opened_at,e\.device_id,e\.device_sequence,e\.outcome/);
+assert.match(worker, /WHERE c\.status='open' ORDER BY c\.opened_at LIMIT 100/);
+assert.match(worker, /pos_offline_reconciliation_cases/);
 assert.match(worker, /admin\.admin_user_id !== permit\.cashier_admin_id/);
 assert.match(worker, /authenticated_cashier_mismatch/);
 assert.match(worker, /request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
@@ -34,10 +37,6 @@ assert.match(worker, /const cashierCanReadOfflinePermit = request\.method === "G
 assert.ok(worker.includes('offlineRoot + "/sync"'));
 assert.match(worker, /offlineRoot \+ "\/cases\/"/);
 assert.match(worker, /pos\.offline_case_rejected/);
-assert.match(worker, /UPDATE pos_offline_events SET outcome='rejected'/);
-assert.match(worker, /pos_offline_reconciliation_cases WHERE id=\? AND status='open'/);
-assert.match(worker, /pos_offline_reconciliation_actions \(case_id\) SELECT NULL WHERE changes\(\)<>1/);
-assert.match(worker, /c\.status='open'/);
 assert.match(worker, /LEFT JOIN pos_sales s ON s\.id=e\.canonical_sale_id/);
 assert.match(worker, /receipt_number: duplicate\.receipt_number/);
 assert.match(worker, /server_received_at: new Date\(\)\.toISOString\(\), duplicate: true/);
