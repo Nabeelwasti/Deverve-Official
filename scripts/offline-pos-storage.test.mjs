@@ -72,3 +72,5 @@ assert.match(source, /sale\.permitId !== record\.permitId/);
 assert.match(source, /entry\.status === "synced"/);
 
 assert.match(source, /export async function listOfflineSalesForPermit/);
+
+assert.match(source, /Offline permit cannot replace a permit with unresolved queued sales/);
