@@ -34,7 +34,7 @@ assert.ok(worker.includes('offlineRoot + "/sync"'));
 assert.match(worker, /verifyOfflineEventSignature\(sale, signature, devicePublicKey\)/);
 assert.match(worker, /verifyOfflinePermitSignatureServer\(permitClaims/);
 assert.match(worker, /device_sequence_gap/);
-assert.match(worker, /pos_offline_sale_conflict/);
+assert.match(worker, /pos\.offline_sale_conflict/);
 assert.match(worker, /pos_payments/);
 assert.match(worker, /financial_transactions/);
 assert.match(worker, /inventory_movements/);
