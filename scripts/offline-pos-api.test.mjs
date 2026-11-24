@@ -36,6 +36,8 @@ assert.match(worker, /pos\.offline_device_enrolled/);
 assert.match(worker, /pos\.offline_device_revoked/);
 assert.match(worker, /pos\.offline_stock_allocated/);
 assert.match(worker, /async function issueOfflinePermit/);
+assert.match(worker, /offline sales awaiting sync or owner reconciliation/);
+assert.match(worker, /unresolvedEvents\?\.count/);
 assert.match(worker, /async function processOfflineSaleEvent/);
 assert.match(worker, /async function recordOfflineSaleConflict/);
 assert.match(worker, /const cashierCanSyncOfflineSales = request\.method === "POST" && path === "\/api\/admin\/pos\/offline\/sync"/);
