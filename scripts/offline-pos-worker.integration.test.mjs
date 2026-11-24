@@ -1078,3 +1078,26 @@ test("real Worker atomically rolls back permit issuance when its audit insert fa
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(fixture.deviceId).count, 2);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_permit_issued'").get().count, auditBefore + 1);
 });
+
+
+test("real Worker expires stale permits before stock allocation changes and fails closed if expiry cleanup fails", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const productId = sqlite.prepare("SELECT product_id FROM product_variants WHERE id=?").get(fixture.variantId).product_id;
+  const nextVariantId = randomUUID();
+  sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'L','Black',5,1,500)")
+    .run(nextVariantId, productId, "EXPIRY-" + nextVariantId.slice(0, 8));
+  sqlite.prepare("UPDATE pos_offline_permits SET expires_at=? WHERE id=?")
+    .run(new Date(Date.now() - 60_000).toISOString(), fixture.permit.id);
+  const body = { allocations: [{ variant_id: nextVariantId, quantity: 1 }] };
+
+  db.failNextRun = true;
+  const failed = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body);
+  assert.equal(failed.status, 503);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(fixture.permit.id).status, "active");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).count, 1);
+
+  const retried = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/allocations", body);
+  assert.equal(retried.status, 201);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_permits WHERE id=?").get(fixture.permit.id).status, "expired");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).count, 2);
+});
