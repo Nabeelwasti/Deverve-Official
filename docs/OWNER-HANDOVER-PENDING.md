@@ -53,7 +53,7 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 - [ ] Test camera permission grant/deny, rear camera, autofocus, low light, glare, QR, Code 128 and retail barcodes. Test USB/Bluetooth scanner and manual SKU entry.
 - [ ] Test actual thermal printer model, paper width, receipt alignment, Bluetooth/USB pairing and repeated prints. Test cash drawer if used.
 - [ ] Test Android touch targets, page reload, slow network and recovery on the actual phone.
-- [x] Offline-POS migration chain and production-clone rehearsal passed in CI run `45421372915`; existing production-clone row counts remained unchanged, no new foreign-key violations appeared, all required tables/triggers were present, and the temporary clone was deleted.
+- [x] Offline-POS migration chain and production-clone rehearsal passed in CI run `45423402930`; existing production-clone row counts remained unchanged, no new foreign-key violations appeared, all required tables/triggers were present, and the temporary clone was deleted.
 - [ ] Generate and securely custody the separate P-256 permit-signing keypair. Set Worker secret `POS_OFFLINE_PERMIT_PRIVATE_JWK` and public variable `POS_OFFLINE_PERMIT_PUBLIC_JWK`; never paste the private key into chat or Git. Keep `OFFLINE_POS_CHECKOUT_ENABLED` false until owner approval and all physical tests pass.
 - [ ] **Offline-first POS is not enabled or accepted.** Test airplane-mode cash sale, app reload/termination, reconnect/sync, exact duplicate replay, same-key/different-payload conflict, permit expiry/revocation, storage denial and real scanner/printer behavior on the actual Android device. Use online POS only until this is complete.
 
