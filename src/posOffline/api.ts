@@ -308,7 +308,9 @@ function collectCurrentPosAssets(): string[] {
       // Ignore browser extensions, data URLs and malformed resource entries.
     }
   }
-  return Array.from(urls).slice(0, 120);
+  const collected = Array.from(urls);
+  if (collected.length > 120) throw new Error("The POS has more than 120 same-origin assets. Offline readiness is refused rather than silently omitting required files.");
+  return collected;
 }
 
 /** Cache the currently loaded POS application shell and all observed same-origin static dependencies. */
