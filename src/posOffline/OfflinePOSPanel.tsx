@@ -36,7 +36,9 @@ export default function OfflinePOSPanel({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
-  const [shellReady, setShellReady] = useState(false);\n  const [checkoutEnabled, setCheckoutEnabled] = useState(false);\n  const [permitSigningConfigured, setPermitSigningConfigured] = useState(false);
+  const [shellReady, setShellReady] = useState(false);
+  const [checkoutEnabled, setCheckoutEnabled] = useState(false);
+  const [permitSigningConfigured, setPermitSigningConfigured] = useState(false);
 
   const selectedVariant = items.find((item) => item.variant_id === variantId);
   const remainingForDevice = useMemo(
