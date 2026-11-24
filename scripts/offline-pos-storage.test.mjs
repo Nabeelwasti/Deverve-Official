@@ -46,3 +46,10 @@ assert.match(crypto, /validateStoredIdentity/);
 assert.match(crypto, /extractable !== false/);
 assert.match(crypto, /privateAlgorithm\.namedCurve !== "P-256"/);
 assert.match(crypto, /calculatedThumbprint !== identity\.publicKeyThumbprint/);
+
+assert.match(source, /export async function listPendingOfflineSales/);
+assert.match(source, /sort\(\(a, b\) => a.sequence - b.sequence\)/);
+assert.match(source, /export async function recordOfflineSyncFailure/);
+assert.match(source, /export async function acknowledgeOfflineSale/);
+assert.match(source, /syncReceipts/);
+assert.match(source, /Offline sale acknowledgement could not be committed/);
