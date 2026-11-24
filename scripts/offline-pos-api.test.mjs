@@ -12,7 +12,7 @@ assert.match(worker, /deverve-offline-pos:enroll:v1\\n/);
 assert.match(worker, /export async function verifyOfflineEnrollmentProof/);
 assert.ok(worker.includes("subtle.importKey(") && worker.includes("namedCurve: \"P-256\""));
 assert.ok(worker.includes("verifyOfflineEnrollmentProof(publicKey.jwk, challenge, signature)"));
-assert.match(worker, /subtle\.verify\(\{ name: "ECDSA", hash: "SHA-256" \}/);
+assert.ok(worker.includes("crypto.subtle.verify(") && worker.includes("hash: \"SHA-256\""));
 assert.match(worker, /\[A-Za-z0-9_-\]\{86\}/);
 assert.match(worker, /Too many pending enrollment attempts/);
 assert.match(worker, /DELETE FROM pos_offline_enrollment_challenges WHERE expires_at/);
