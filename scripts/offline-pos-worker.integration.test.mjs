@@ -156,19 +156,15 @@ test("real Worker rejects mismatched key thumbprints and unknown registers", asy
 
 test("real Worker rejects an expired enrollment challenge without creating a device", async () => {
   const identity = await createIdentity(), deviceId = randomUUID();
-  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
-    device_id: deviceId, register_id: registerId,
-    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
-  });
-  assert.equal(challengeResponse.status, 200);
-  const challenge = await challengeResponse.json();
-  sqlite.prepare("UPDATE pos_offline_enrollment_challenges SET expires_at=? WHERE id=?")
-    .run(new Date(Date.now() - 60_000).toISOString(), challenge.challenge_id);
+  const challengeId = randomUUID(), challenge = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  sqlite.prepare("INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id,created_at) VALUES (?,?,?,?,?,?,?,?)")
+    .run(challengeId, deviceId, registerId, identity.thumbprint, sha256(challenge),
+      "2000-01-02T00:00:00.000Z", ownerId, "2000-01-01T00:00:00.000Z");
   const expired = await api("/api/admin/pos/offline/devices/enroll",
-    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+    await enrollPayload(identity, challenge, challengeId, deviceId));
   assert.equal(expired.status, 409);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_devices WHERE id=?").get(deviceId).count, 0);
-  assert.equal(sqlite.prepare("SELECT consumed_at FROM pos_offline_enrollment_challenges WHERE id=?").get(challenge.challenge_id).consumed_at, null);
+  assert.equal(sqlite.prepare("SELECT consumed_at FROM pos_offline_enrollment_challenges WHERE id=?").get(challengeId).consumed_at, null);
 });
 
 test("real Worker revokes an enrolled device, records the actor and audit evidence, and makes repeat revocation idempotent", async () => {
