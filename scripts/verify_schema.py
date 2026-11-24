@@ -61,7 +61,7 @@ permit_claims = __import__("json").dumps({
     "version": 1, "permit_id": "offline-permit", "device_id": "offline-device", "register_id": "main-register",
     "session_id": "offline-session", "cashier_admin_id": "offline-owner", "cashier_grant_version": cashier_grant_version,
     "snapshot_version": "snapshot-1", "snapshot_hash": permit_snapshot_hash, "issued_at": "2026-11-24T00:00:00.000Z",
-    "expires_at": "2026-11-24T04:00:00.000Z", "max_events": 20, "cash_only": True, "allow_refunds": False,
+    "expires_at": "2026-11-24T04:00:00.000Z", "max_events": 20, "offline_checkout_enabled": True, "cash_only": True, "allow_refunds": False,
     "allow_voids": False, "allow_shift_close": False,
     "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000}],
 })
