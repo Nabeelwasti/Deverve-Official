@@ -2457,7 +2457,7 @@ export async function signOfflinePermitClaims(
       false,
       ["sign"],
     );
-    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalOfflineJson(claims));
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonicalOfflineJson(claims));
     const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, message);
     return base64Url(new Uint8Array(signature));
   } catch {
