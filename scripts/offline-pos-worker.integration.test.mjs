@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { afterEach, beforeEach } from "node:test";
-import { handleRequest } from "../.test-dist/worker/index.js";
+import { handleRequest, verifyOfflinePermitSignatureServer } from "../.test-dist/worker/index.js";
 
 if (!globalThis.crypto) Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 
@@ -216,4 +216,68 @@ test("real Worker fails closed and issues no permit while offline checkout is di
   assert.equal(response.status, 503);
   assert.match((await response.json()).error, /not enabled/i);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(deviceId).count, 0);
+});
+
+
+test("real Worker issues a signed permit bound to the enrolled device, register, cashier, open shift and exact reserved stock", async () => {
+  const identity = await createIdentity(), deviceId = randomUUID(), sessionId = randomUUID();
+  const productId = randomUUID(), variantId = randomUUID();
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  const challenge = await challengeResponse.json();
+  const enrolled = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(enrolled.status, 201);
+
+  sqlite.prepare("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES (?,?)").run(ownerId, ownerId);
+  sqlite.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status) VALUES (?,?,?,0,0,'open')")
+    .run(sessionId, registerId, ownerId);
+  sqlite.prepare("INSERT INTO products (id,slug,name,description,category,audience,status,retail_price_paisa) VALUES (?,?,?,'','apparel','unisex','published',1250)")
+    .run(productId, "integration-shirt-" + productId, "Integration Shirt");
+  sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'M','Black',5,1,500)")
+    .run(variantId, productId, "INT-" + variantId.slice(0, 8));
+
+  const allocation = await api("/api/admin/pos/offline/devices/" + deviceId + "/allocations", {
+    allocations: [{ variant_id: variantId, quantity: 2 }],
+  });
+  assert.equal(allocation.status, 201);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(variantId).reserved_quantity, 2);
+
+  const signingPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", signingPair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", signingPair.publicKey);
+  env.POS_OFFLINE_PERMIT_PRIVATE_JWK = JSON.stringify(privateJwk);
+  env.POS_OFFLINE_PERMIT_PUBLIC_JWK = JSON.stringify(publicJwk);
+  env.OFFLINE_POS_CHECKOUT_ENABLED = "true";
+
+  const issued = await api("/api/admin/pos/offline/devices/" + deviceId + "/permits", {
+    cashier_admin_id: ownerId, session_id: sessionId, duration_hours: 2,
+  });
+  assert.equal(issued.status, 201);
+  const payload = await issued.json();
+  const permit = payload.permit;
+  assert.equal(permit.claims.device_id, deviceId);
+  assert.equal(permit.claims.register_id, registerId);
+  assert.equal(permit.claims.session_id, sessionId);
+  assert.equal(permit.claims.cashier_admin_id, ownerId);
+  assert.equal(permit.claims.cash_only, true);
+  assert.equal(permit.claims.allow_refunds, false);
+  assert.equal(permit.claims.allow_voids, false);
+  assert.equal(permit.claims.allow_shift_close, false);
+  assert.equal(permit.claims.allocations.length, 1);
+  assert.deepEqual(permit.claims.allocations[0], {
+    allocation_id: sqlite.prepare("SELECT id FROM pos_offline_stock_allocations WHERE device_id=?").get(deviceId).id,
+    variant_id: variantId, quantity: 2, unit_price_paisa: 1250,
+  });
+  assert.equal(permit.snapshot.length, 1);
+  assert.equal(permit.snapshot[0].variantId, variantId);
+  assert.equal(permit.snapshot[0].allocatedQuantity, 2);
+  assert.equal(Object.hasOwn(permit.snapshot[0], "costPricePaisa"), false);
+  assert.equal(JSON.stringify(permit).includes("costPricePaisa"), false);
+  assert.equal(await verifyOfflinePermitSignatureServer(permit.claims, permit.signature_base64url, publicJwk), true);
+  const stored = sqlite.prepare("SELECT status,cost_snapshot_json FROM pos_offline_permits WHERE id=?").get(permit.id);
+  assert.equal(stored.status, "active");
+  assert.equal(JSON.parse(stored.cost_snapshot_json)[0].costPricePaisa, 500);
 });
