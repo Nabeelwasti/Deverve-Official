@@ -10,5 +10,5 @@
     "outDir": ".test-dist",
     "noEmit": false
   },
-  "include": ["worker/index.ts", "workers/safepay-consumer/index.ts"]
+  "include": ["worker/index.ts", "workers/safepay-consumer/index.ts", "src/posOffline/deviceCrypto.ts"]
 }

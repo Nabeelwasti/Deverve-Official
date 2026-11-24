@@ -25,6 +25,9 @@ export interface Env {
   DB: D1Database;
   MEDIA: R2Bucket;
   ADMIN_BOOTSTRAP_TOKEN?: string;
+  POS_OFFLINE_PERMIT_PRIVATE_JWK?: string;
+  POS_OFFLINE_PERMIT_PUBLIC_JWK?: string;
+  OFFLINE_POS_CHECKOUT_ENABLED?: string;
   SAFEPAY_ENV?: string;
   SAFEPAY_MERCHANT_API_KEY?: string;
   SAFEPAY_SECRET_KEY?: string;
@@ -2421,6 +2424,497 @@ interface AdminInventoryMovementRow {
   created_at: string;
 }
 
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function canonicalOfflineJson(value: unknown): string {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return JSON.stringify(value);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) throw new Error("Offline permit contains a non-finite number");
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return "[" + value.map(canonicalOfflineJson).join(",") + "]";
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return "{" + Object.keys(record).sort().map((key) => JSON.stringify(key) + ":" + canonicalOfflineJson(record[key])).join(",") + "}";
+  }
+  throw new Error("Offline permit contains an unsupported value");
+}
+
+export async function signOfflinePermitClaims(
+  claims: unknown,
+  privateJwkJson: string,
+  publicJwkJson: string,
+): Promise<string | null> {
+  try {
+    const privateJwk = JSON.parse(privateJwkJson) as JsonWebKey;
+    const publicJwk = JSON.parse(publicJwkJson) as JsonWebKey;
+    if (privateJwk.kty !== "EC" || privateJwk.crv !== "P-256" ||
+        typeof privateJwk.d !== "string" || typeof privateJwk.x !== "string" || typeof privateJwk.y !== "string" ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        privateJwk.x !== publicJwk.x || privateJwk.y !== publicJwk.y ||
+        "d" in publicJwk) return null;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      privateJwk,
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["sign"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonicalOfflineJson(claims));
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, key, message);
+    return base64Url(new Uint8Array(signature));
+  } catch {
+    return null;
+  }
+}
+
+export async function verifyOfflinePermitSignatureServer(
+  claims: unknown,
+  signatureBase64Url: string,
+  publicJwk: JsonWebKey,
+): Promise<boolean> {
+  try {
+    if (typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        typeof publicJwk.x !== "string" || typeof publicJwk.y !== "string" || "d" in publicJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicJwk.x, y: publicJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonicalOfflineJson(claims));
+    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
+  } catch { return false; }
+}
+
+export async function verifyOfflineEventSignature(
+  payload: unknown,
+  signatureBase64Url: string,
+  publicJwk: JsonWebKey,
+): Promise<boolean> {
+  try {
+    if (typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" ||
+        typeof publicJwk.x !== "string" || typeof publicJwk.y !== "string" || "d" in publicJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicJwk.x, y: publicJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:event:v1\n" + canonicalOfflineJson(payload));
+    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
+  } catch { return false; }
+}
+
+export async function verifyOfflineEnrollmentProof(
+  publicKeyJwk: JsonWebKey,
+  challenge: string,
+  signatureBase64Url: string,
+): Promise<boolean> {
+  try {
+    if (typeof challenge !== "string" || challenge.length < 32 || challenge.length > 128 ||
+        typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicKeyJwk.kty !== "EC" || publicKeyJwk.crv !== "P-256" ||
+        typeof publicKeyJwk.x !== "string" || typeof publicKeyJwk.y !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(publicKeyJwk.x) || !/^[A-Za-z0-9_-]{43}$/.test(publicKeyJwk.y) ||
+        "d" in publicKeyJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicKeyJwk.x, y: publicKeyJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      fromBase64Url(signatureBase64Url),
+      message,
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function recordOfflineSaleConflict(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  permitId: string,
+  event: Record<string, unknown>,
+  signature: string,
+  payloadHash: string,
+  reasonCode: string,
+): Promise<{ outcome: "conflict"; event_id: string; reason_code: string; server_received_at: string }> {
+  const eventId = String(event.eventId);
+  const idempotencyKey = String(event.idempotencyKey);
+  const sequence = Number(event.sequence);
+  const payloadJson = canonicalOfflineJson(event);
+  const caseId = crypto.randomUUID();
+  await env.DB.batch([
+    env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome,reason_code,processed_at) VALUES (?,?,?,?,?,?,?,?, 'conflict',?,?)")
+      .bind(eventId, deviceId, permitId, idempotencyKey, sequence, payloadHash, payloadJson, signature, reasonCode, new Date().toISOString()),
+    env.DB.prepare("INSERT INTO pos_offline_reconciliation_cases (id,event_id,reason_code) SELECT ?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='conflict')")
+      .bind(caseId, eventId, reasonCode, eventId),
+    env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) SELECT ?,?,?,'case_opened',?,'{}' WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=?)")
+      .bind(crypto.randomUUID(), caseId, admin.admin_user_id, "Offline sale requires owner review: " + reasonCode, caseId),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_sale_conflict','pos_offline_event',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='conflict')")
+      .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, sequence, reason_code: reasonCode }), eventId),
+  ]);
+  return { outcome: "conflict", event_id: eventId, reason_code: reasonCode, server_received_at: new Date().toISOString() };
+}
+
+async function processOfflineSaleEvent(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  permitId: string,
+  submitted: unknown,
+): Promise<Record<string, unknown>> {
+  if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) return { outcome: "rejected", reason_code: "invalid_envelope" };
+  const envelope = submitted as Record<string, unknown>;
+  const event = envelope.event;
+  const signature = envelope.signature;
+  if (!event || typeof event !== "object" || Array.isArray(event) || typeof signature !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signature)) {
+    return { outcome: "rejected", reason_code: "invalid_envelope" };
+  }
+  const sale = event as Record<string, unknown>;
+  let payloadJson: string;
+  try { payloadJson = canonicalOfflineJson(sale); } catch { return { outcome: "rejected", reason_code: "invalid_payload" }; }
+  if (new TextEncoder().encode(payloadJson).byteLength > 65_536) return { outcome: "rejected", reason_code: "payload_too_large" };
+  const eventId = sale.eventId, idempotencyKey = sale.idempotencyKey, sequence = sale.sequence;
+  if (typeof eventId !== "string" || !/^[a-f0-9-]{36}$/i.test(eventId) ||
+      typeof idempotencyKey !== "string" || !/^[a-f0-9-]{36}$/i.test(idempotencyKey) ||
+      !Number.isSafeInteger(sequence) || Number(sequence) < 1) return { outcome: "rejected", reason_code: "invalid_identity_or_sequence" };
+  const payloadHash = await sha256Hex(payloadJson);
+
+  const [device, permit] = await Promise.all([
+    env.DB.prepare("SELECT id,register_id,status,public_key_jwk_json FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<Record<string, unknown>>(),
+    env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,cost_snapshot_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
+  ]);
+  if (!device || !permit) return { outcome: "rejected", reason_code: "device_or_permit_not_found" };
+  // The authenticated cashier session must be the exact cashier bound to the
+  // signed permit; a different cashier or manager cannot submit its queue.
+  if (admin.admin_user_id !== permit.cashier_admin_id) return { outcome: "rejected", reason_code: "authenticated_cashier_mismatch" };
+  let devicePublicKey: JsonWebKey, permitClaims: Record<string, unknown>, permitPublicKey: JsonWebKey;
+  let costSnapshot: Array<{ allocationId: string; variantId: string; costPricePaisa: number }>;
+  try {
+    devicePublicKey = JSON.parse(String(device.public_key_jwk_json)) as JsonWebKey;
+    permitClaims = JSON.parse(String(permit.claims_json)) as Record<string, unknown>;
+    permitPublicKey = JSON.parse(String(env.POS_OFFLINE_PERMIT_PUBLIC_JWK ?? "")) as JsonWebKey;
+    const parsedCostSnapshot = JSON.parse(String(permit.cost_snapshot_json));
+    if (!Array.isArray(parsedCostSnapshot) || parsedCostSnapshot.length < 1 || parsedCostSnapshot.length > 30 ||
+        parsedCostSnapshot.some((item) => !item || typeof item !== "object" ||
+          typeof item.allocationId !== "string" || !/^[a-f0-9-]{36}$/i.test(item.allocationId) ||
+          typeof item.variantId !== "string" || !/^[a-f0-9-]{36}$/i.test(item.variantId) ||
+          !Number.isSafeInteger(item.costPricePaisa) || item.costPricePaisa < 0)) {
+      return { outcome: "rejected", reason_code: "permit_cost_snapshot_invalid" };
+    }
+    costSnapshot = parsedCostSnapshot as typeof costSnapshot;
+  } catch { return { outcome: "rejected", reason_code: "verification_key_unavailable" }; }
+  if (!await verifyOfflineEventSignature(sale, signature, devicePublicKey)) return { outcome: "rejected", reason_code: "device_signature_invalid" };
+  if (!await verifyOfflinePermitSignatureServer(permitClaims, String(permit.signature_base64url), permitPublicKey)) return { outcome: "rejected", reason_code: "permit_signature_invalid" };
+
+  const duplicate = await env.DB.prepare(
+    "SELECT e.event_id,e.device_id,e.permit_id,e.idempotency_key,e.device_sequence,e.payload_hash,e.outcome,e.canonical_sale_id,e.reason_code,s.receipt_number " +
+    "FROM pos_offline_events e LEFT JOIN pos_sales s ON s.id=e.canonical_sale_id WHERE e.event_id=? OR e.idempotency_key=? OR (e.device_id=? AND e.device_sequence=?) LIMIT 1"
+  ).bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
+  if (duplicate) {
+    if (duplicate.event_id === eventId && duplicate.device_id === deviceId && duplicate.permit_id === permitId &&
+        duplicate.idempotency_key === idempotencyKey && Number(duplicate.device_sequence) === Number(sequence) &&
+        duplicate.payload_hash === payloadHash) {
+      return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, receipt_number: duplicate.receipt_number ?? null, reason_code: duplicate.reason_code ?? null, server_received_at: new Date().toISOString(), duplicate: true };
+    }
+    try {
+      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, reason_code: "replay_or_sequence_collision", existing_event_id: duplicate.event_id, existing_payload_hash: duplicate.payload_hash, received_payload_hash: payloadHash })).run();
+    } catch {}
+    return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
+  }
+  const allowedKeys = ["eventId","idempotencyKey","deviceId","permitId","registerId","sessionId","cashierId","snapshotVersion","createdAt","currency","lines","subtotalPaisa","totalPaisa","cashTenderedPaisa","changePaisa","sequence","status","payloadVersion"];
+  if (Object.keys(sale).some((key) => !allowedKeys.includes(key)) || Object.keys(sale).length !== allowedKeys.length ||
+      sale.deviceId !== deviceId || sale.permitId !== permitId || sale.registerId !== permit.register_id ||
+      sale.sessionId !== permit.session_id || sale.cashierId !== permit.cashier_admin_id ||
+      sale.snapshotVersion !== permit.snapshot_version || sale.currency !== "PKR" ||
+      sale.status !== "pending" || sale.payloadVersion !== 1 ||
+      typeof sale.createdAt !== "string" || !Number.isSafeInteger(Date.parse(sale.createdAt))) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "event_schema_or_binding_mismatch");
+  }
+
+  const now = new Date().toISOString();
+  if (device.status !== "active") return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_revoked");
+  if (permit.status !== "active" || String(permit.expires_at) <= now) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_expired_or_revoked");
+  if (permitClaims.permit_id !== permitId || permitClaims.device_id !== deviceId ||
+      permitClaims.register_id !== permit.register_id || permitClaims.session_id !== permit.session_id ||
+      permitClaims.cashier_admin_id !== permit.cashier_admin_id || permitClaims.cashier_grant_version !== permit.cashier_grant_version ||
+      permitClaims.snapshot_version !== permit.snapshot_version || permitClaims.snapshot_hash !== permit.snapshot_hash ||
+      permitClaims.expires_at !== permit.expires_at || permitClaims.offline_checkout_enabled !== true || permitClaims.cash_only !== true ||
+      permitClaims.allow_refunds !== false || permitClaims.allow_voids !== false || permitClaims.allow_shift_close !== false) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_claims_mismatch");
+  }
+
+  const [cashier, session, eventCount, lastSequence, cashAccount] = await Promise.all([
+    env.DB.prepare("SELECT u.id,pc.granted_at FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL LIMIT 1")
+      .bind(permit.cashier_admin_id).first<{ id: string; granted_at: string }>(),
+    env.DB.prepare("SELECT id,status,register_id,opened_by_admin_id FROM pos_sessions WHERE id=? LIMIT 1").bind(permit.session_id).first<Record<string, unknown>>(),
+    env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE permit_id=?").bind(permitId).first<{ count: number }>(),
+    env.DB.prepare("SELECT COALESCE(MAX(device_sequence),0) AS sequence FROM pos_offline_events WHERE device_id=?").bind(deviceId).first<{ sequence: number }>(),
+    env.DB.prepare("SELECT id FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1 LIMIT 1").first<{ id: string }>(),
+  ]);
+  if (!cashier || cashier.granted_at !== permit.cashier_grant_version) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cashier_grant_revoked_or_changed");
+  if (!session || session.status !== "open" || session.register_id !== permit.register_id || session.opened_by_admin_id !== permit.cashier_admin_id) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "register_shift_closed_or_changed");
+  if (!cashAccount) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cash_account_unavailable");
+  if (Number(eventCount?.count ?? 0) >= Number(permit.max_events ?? 20)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_event_limit_reached");
+  const expectedSequence = Number(lastSequence?.sequence ?? 0) + 1;
+  if (Number(sequence) > expectedSequence) return { outcome: "retry", event_id: eventId, reason_code: "device_sequence_gap", expected_sequence: expectedSequence };
+  if (Number(sequence) < expectedSequence) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "device_sequence_replay_gap");
+
+  if (!Array.isArray(sale.lines) || sale.lines.length < 1 || sale.lines.length > 30) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_lines");
+  const allocations = Array.isArray(permitClaims.allocations) ? permitClaims.allocations as Array<Record<string, unknown>> : [];
+  const allocationByVariant = new Map(allocations.map((item) => [String(item.variant_id), item]));
+  const costSnapshotByAllocation = new Map(costSnapshot.map((item) => [item.allocationId, item]));
+  if (costSnapshotByAllocation.size !== allocations.length) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_cost_snapshot_mismatch");
+  const combined = new Set<string>();
+  const resolved: Array<{ allocationId: string; productId: string; productName: string; variantId: string; sku: string; size: string; color: string; quantity: number; unitPrice: number; costPrice: number; lineTotal: number }> = [];
+  let subtotal = 0;
+  for (const rawLine of sale.lines) {
+    if (!rawLine || typeof rawLine !== "object" || Array.isArray(rawLine)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_line");
+    const line = rawLine as Record<string, unknown>;
+    const allowedLineKeys = ["variantId","sku","productName","size","color","quantity","unitPricePaisa","lineTotalPaisa"];
+    if (Object.keys(line).some((key) => !allowedLineKeys.includes(key)) || Object.keys(line).length !== allowedLineKeys.length ||
+        typeof line.variantId !== "string" || !/^[a-f0-9-]{36}$/i.test(line.variantId) ||
+        typeof line.sku !== "string" || typeof line.productName !== "string" || typeof line.size !== "string" || typeof line.color !== "string" ||
+        !Number.isSafeInteger(line.quantity) || Number(line.quantity) < 1 || Number(line.quantity) > 30 ||
+        !Number.isSafeInteger(line.unitPricePaisa) || Number(line.unitPricePaisa) <= 0 ||
+        !Number.isSafeInteger(line.lineTotalPaisa) || Number(line.lineTotalPaisa) <= 0) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_line");
+    }
+    if (combined.has(line.variantId)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "duplicate_variant_line");
+    combined.add(line.variantId);
+    const allocation = allocationByVariant.get(line.variantId);
+    const costEntry = allocation ? costSnapshotByAllocation.get(String(allocation.allocation_id)) : undefined;
+    const allocatedCost = costEntry && costEntry.variantId === line.variantId ? costEntry.costPricePaisa : Number.NaN;
+    if (!allocation || !Number.isSafeInteger(allocatedCost) || allocatedCost < 0 ||
+        Number(line.quantity) > Number(allocation.quantity) || Number(line.unitPricePaisa) !== Number(allocation.unit_price_paisa) ||
+        Number(line.quantity) * Number(line.unitPricePaisa) !== Number(line.lineTotalPaisa)) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_allocation_or_price_mismatch");
+    }
+    const row = await env.DB.prepare(
+      "SELECT p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa," +
+      "v.id AS variant_id,v.sku,v.size,v.color,v.is_active,v.stock_on_hand,v.cost_price_paisa," +
+      "a.id AS allocation_id,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status AS allocation_status " +
+      "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+      "WHERE a.id=? AND a.device_id=? AND a.variant_id=? LIMIT 1"
+    ).bind(allocation.allocation_id, deviceId, line.variantId).first<Record<string, unknown>>();
+    if (!row || row.allocation_status !== "active" || row.product_status !== "published" || Number(row.is_active) !== 1 ||
+        Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) < Number(line.quantity) ||
+        Number(row.stock_on_hand) < Number(line.quantity) || Number(row.retail_price_paisa) !== Number(line.unitPricePaisa) ||
+        String(row.product_name) !== line.productName || String(row.sku ?? "") !== line.sku ||
+        String(row.size ?? "") !== line.size || String(row.color ?? "") !== line.color) {
+      return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "catalogue_stock_or_allocation_changed");
+    }
+    const lineTotal = Number(line.quantity) * Number(line.unitPricePaisa);
+    if (!Number.isSafeInteger(lineTotal) || !Number.isSafeInteger(subtotal + lineTotal)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_amount_overflow");
+    subtotal += lineTotal;
+    resolved.push({
+      allocationId: String(row.allocation_id), productId: String(row.product_id), productName: String(row.product_name),
+      variantId: String(row.variant_id), sku: String(row.sku ?? ""), size: String(row.size ?? ""), color: String(row.color ?? ""),
+      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: allocatedCost, lineTotal,
+    });
+  }
+  const total = Number(sale.totalPaisa), tendered = Number(sale.cashTenderedPaisa), change = Number(sale.changePaisa);
+  if (![sale.subtotalPaisa, sale.totalPaisa, sale.cashTenderedPaisa, sale.changePaisa].every(Number.isSafeInteger) ||
+      subtotal !== Number(sale.subtotalPaisa) || total !== subtotal || tendered < total || tendered - total !== change ||
+      [total, tendered, change].some((value) => value < 0)) {
+    return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "cash_or_total_mismatch");
+  }
+
+  const saleId = crypto.randomUUID();
+  const receiptNumber = "DV-" + new Date().toISOString().slice(0,10).replaceAll("-","") + "-OFF-" + crypto.randomUUID().replaceAll("-","").slice(0,10).toUpperCase();
+  const saleExists = "EXISTS (SELECT 1 FROM pos_sales WHERE id=?)";
+  const statements: D1PreparedStatement[] = [
+    env.DB.prepare("INSERT INTO pos_offline_events (event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,payload_json,device_signature_base64url,outcome) VALUES (?,?,?,?,?,?,?,?,'pending')")
+      .bind(eventId, deviceId, permitId, idempotencyKey, sequence, payloadHash, payloadJson, signature),
+    env.DB.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,request_fingerprint,cashier_admin_id) " +
+      "SELECT ?,?,?,?,?,?,?,?, ?,0,?,'completed',?,?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='pending') " +
+      "AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND opened_by_admin_id=? AND register_id=?) " +
+      "AND EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') " +
+      "AND EXISTS (SELECT 1 FROM pos_offline_permits WHERE id=? AND device_id=? AND status='active' AND expires_at>?) " +
+      "AND EXISTS (SELECT 1 FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL AND pc.granted_at=?) " +
+      "AND EXISTS (SELECT 1 FROM financial_accounts WHERE id='cash-main' AND kind='cash' AND is_active=1) " +
+      resolved.map(() => "AND EXISTS (SELECT 1 FROM pos_offline_stock_allocations WHERE id=? AND device_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?)").join(" "))
+      .bind(saleId, receiptNumber, String(sale.sessionId), "Walk-in customer", "", null, 0, 0, subtotal, total, idempotencyKey, payloadHash, String(sale.cashierId),
+        eventId, String(sale.sessionId), String(sale.cashierId), String(permit.register_id), deviceId, permitId, deviceId, now, String(sale.cashierId), String(permit.cashier_grant_version),
+        ...resolved.flatMap((item) => [item.allocationId, deviceId, item.quantity])),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+  ];
+  for (const item of resolved) {
+    statements.push(
+      env.DB.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE " + saleExists)
+        .bind(crypto.randomUUID(), saleId, item.productId, item.variantId, item.productName, item.sku, item.size, item.color, item.quantity, item.unitPrice, item.costPrice, item.lineTotal, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-?,updated_at=? WHERE id=? AND is_active=1 AND stock_on_hand>=? AND COALESCE(sku,'')=? AND COALESCE(size,'')=? AND COALESCE(color,'')=? AND EXISTS (SELECT 1 FROM products p WHERE p.id=product_variants.product_id AND p.status='published' AND p.name=? AND p.retail_price_paisa=?) AND " + saleExists)
+        .bind(item.quantity, new Date().toISOString(), item.variantId, item.quantity, item.sku, item.size, item.color, item.productName, item.unitPrice, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=? AND " + saleExists)
+        .bind(item.quantity, new Date().toISOString(), item.allocationId, deviceId, item.variantId, item.quantity, saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+      env.DB.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) SELECT ?,?,'sold',?,'order',?,?,? WHERE " + saleExists)
+        .bind(crypto.randomUUID(), item.variantId, -item.quantity, saleId, "Offline POS receipt " + receiptNumber, String(sale.cashierId), saleId),
+      env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    );
+  }
+  statements.push(
+    env.DB.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) SELECT ?,?,'cash-main','cash',?,?,?,'offline cash' WHERE " + saleExists)
+      .bind(crypto.randomUUID(), saleId, total, tendered, change, saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) SELECT ?,'cash-main','in',?,'pos_sale','pos_sale',?,?,?,? WHERE " + saleExists)
+      .bind(crypto.randomUUID(), total, saleId, String(sale.sessionId), "Offline POS " + receiptNumber, String(sale.cashierId), saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.sale_completed','pos_sale',?,? WHERE " + saleExists)
+      .bind(crypto.randomUUID(), String(sale.cashierId), saleId, JSON.stringify({ receipt_number: receiptNumber, total_paisa: total, offline_event_id: eventId, device_id: deviceId }), saleId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+    env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome='pending'")
+      .bind(saleId, new Date().toISOString(), eventId),
+    env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+  );
+  try {
+    const results = await env.DB.batch(statements);
+    if ((results[1]?.meta?.changes ?? 0) !== 1) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed");
+    return { outcome: "accepted", event_id: eventId, canonical_sale_id: saleId, receipt_number: receiptNumber, server_received_at: new Date().toISOString() };
+  } catch {
+    const committed = await env.DB.prepare("SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1")
+      .bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
+    if (committed && committed.event_id === eventId && committed.device_id === deviceId && committed.permit_id === permitId &&
+        committed.idempotency_key === idempotencyKey && Number(committed.device_sequence) === Number(sequence) && committed.payload_hash === payloadHash) {
+      return { outcome: committed.outcome, event_id: eventId, canonical_sale_id: committed.canonical_sale_id ?? null, reason_code: committed.reason_code ?? null, duplicate: true };
+    }
+    if (committed) {
+      try {
+        await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, reason_code: "concurrent_idempotency_replay", existing_event_id: committed.event_id, existing_payload_hash: committed.payload_hash, received_payload_hash: payloadHash })).run();
+      } catch {}
+      return { outcome: "conflict", event_id: eventId, reason_code: "concurrent_idempotency_replay" };
+    }
+    try { return await recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed"); }
+    catch { return { outcome: "retry", event_id: eventId, reason_code: "temporary_reconciliation_failure" }; }
+  }
+}
+
+async function issueOfflinePermit(
+  env: Env,
+  admin: SessionRow,
+  deviceId: string,
+  body: Record<string, unknown> | null,
+): Promise<Response> {
+  const cashierId = admin.role === "viewer" ? admin.admin_user_id : body?.cashier_admin_id, sessionId = body?.session_id;
+  const durationHours = body?.duration_hours === undefined ? 4 : body.duration_hours;
+  if (typeof cashierId !== "string" || !/^[a-f0-9-]{36}$/i.test(cashierId) ||
+      typeof sessionId !== "string" || !/^[a-f0-9-]{36}$/i.test(sessionId) ||
+      !Number.isSafeInteger(durationHours) || Number(durationHours) < 1 || Number(durationHours) > 8) {
+    return error("Choose a valid cashier, open shift and permit duration of 1 to 8 hours", 400);
+  }
+  if (admin.role === "viewer" && admin.admin_user_id !== cashierId) {
+    return error("Cashiers may issue an offline permit only for their own active shift", 403);
+  }
+  if (env.OFFLINE_POS_CHECKOUT_ENABLED !== "true") {
+    return error("Emergency offline checkout is not enabled for this deployment. No permit was issued.", 503);
+  }
+  if (!env.POS_OFFLINE_PERMIT_PRIVATE_JWK || !env.POS_OFFLINE_PERMIT_PUBLIC_JWK) {
+    return error("Offline permit signing is not configured. No permit was issued and offline checkout remains disabled.", 503);
+  }
+  try {
+    const publicJwk = JSON.parse(env.POS_OFFLINE_PERMIT_PUBLIC_JWK) as JsonWebKey;
+    if (publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" || typeof publicJwk.x !== "string" ||
+        typeof publicJwk.y !== "string" || "d" in publicJwk) return error("Offline permit verification key configuration is invalid", 503);
+    await env.DB.prepare("UPDATE pos_offline_permits SET status='expired' WHERE device_id=? AND status='active' AND expires_at<=?")
+      .bind(deviceId, new Date().toISOString()).run();
+    const [device, session, cashier, activePermit] = await Promise.all([
+      env.DB.prepare("SELECT id,register_id,status FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<{ id: string; register_id: string; status: string }>(),
+      env.DB.prepare("SELECT id,register_id,opened_by_admin_id,status FROM pos_sessions WHERE id=? LIMIT 1").bind(sessionId).first<{ id: string; register_id: string; opened_by_admin_id: string; status: string }>(),
+      env.DB.prepare("SELECT u.id,pc.granted_at FROM admin_users u JOIN admin_pos_cashiers pc ON pc.admin_user_id=u.id WHERE u.id=? AND u.is_active=1 AND pc.revoked_at IS NULL LIMIT 1").bind(cashierId).first<{ id: string; granted_at: string }>(),
+      env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>(),
+    ]);
+    if (!device || device.status !== "active") return error("An active enrolled offline device is required", 409);
+    if (!session || session.status !== "open" || session.register_id !== device.register_id || session.opened_by_admin_id !== cashierId) return error("The selected open shift must belong to this device's register and the selected cashier", 409);
+    if (!cashier) return error("The selected cashier is inactive or their POS permission has been revoked", 403);
+    if (activePermit) return error("This device already has an active offline permit", 409);
+    const unresolvedEvents = await env.DB.prepare(
+      "SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id " +
+      "WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))"
+    ).bind(deviceId).first<{ count: number }>();
+    if (Number(unresolvedEvents?.count ?? 0) > 0) {
+      return error("This device still has offline sales awaiting sync or owner reconciliation. Do not replace its permit until every queued sale is accounted for.", 409);
+    }
+
+    const allocationResult = await env.DB.prepare(
+      "SELECT a.id AS allocation_id,a.variant_id,(a.allocated_quantity-a.consumed_quantity-a.released_quantity) AS allocated_quantity," +
+      "p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa," +
+      "v.sku,v.barcode,v.size,v.color,v.is_active,v.cost_price_paisa " +
+      "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+      "WHERE a.device_id=? AND a.status='active' AND a.allocated_quantity>a.consumed_quantity+a.released_quantity ORDER BY a.variant_id LIMIT 31"
+    ).bind(deviceId).all<Record<string, unknown>>();
+    const allocationRows = allocationResult.results ?? [];
+    if (!allocationRows.length || allocationRows.length > 30) return error("Allocate between 1 and 30 stock variants before issuing an offline permit", 409);
+    const snapshot = allocationRows.map((row) => {
+      const quantity = Number(row.allocated_quantity), price = Number(row.retail_price_paisa);
+      const costPrice = row.cost_price_paisa === null || row.cost_price_paisa === undefined ? null : Number(row.cost_price_paisa);
+      if (row.product_status !== "published" || Number(row.is_active) !== 1 || !Number.isSafeInteger(quantity) || quantity < 1 ||
+          !Number.isSafeInteger(price) || price <= 0 || (costPrice !== null && (!Number.isSafeInteger(costPrice) || costPrice < 0))) {
+        throw new Error("offline_snapshot_invalid");
+      }
+      return {
+        allocationId: String(row.allocation_id), variantId: String(row.variant_id), productId: String(row.product_id),
+        productName: String(row.product_name).slice(0, 160), sku: typeof row.sku === "string" ? row.sku.slice(0, 100) : "",
+        barcode: typeof row.barcode === "string" ? row.barcode.slice(0, 100) : "",
+        size: typeof row.size === "string" ? row.size.slice(0, 50) : "",
+        color: typeof row.color === "string" ? row.color.slice(0, 80) : "",
+        allocatedQuantity: quantity, unitPricePaisa: price,
+      };
+    });
+    const costSnapshot = allocationRows.map((row) => ({
+      allocationId: String(row.allocation_id), variantId: String(row.variant_id),
+      costPricePaisa: Number(row.cost_price_paisa ?? 0),
+    }));
+    const snapshotVersion = crypto.randomUUID();
+    const snapshotHash = await sha256Hex(canonicalOfflineJson(snapshot));
+    const issuedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + Number(durationHours) * 60 * 60_000).toISOString();
+    const permitId = crypto.randomUUID();
+    const claims = {
+      version: 1, permit_id: permitId, device_id: deviceId, register_id: device.register_id,
+      session_id: sessionId, cashier_admin_id: cashierId, cashier_grant_version: cashier.granted_at,
+      snapshot_version: snapshotVersion, snapshot_hash: snapshotHash, issued_at: issuedAt, expires_at: expiresAt,
+      max_events: 20, offline_checkout_enabled: true, cash_only: true, allow_refunds: false, allow_voids: false, allow_shift_close: false,
+      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa })),
+    };
+    const claimsJson = canonicalOfflineJson(claims);
+    if (new TextEncoder().encode(claimsJson).byteLength > 16_384) return error("The offline permit snapshot is too large", 413);
+    const signature = await signOfflinePermitClaims(claims, env.POS_OFFLINE_PERMIT_PRIVATE_JWK, env.POS_OFFLINE_PERMIT_PUBLIC_JWK);
+    if (!signature) return error("Offline permit signing failed because the configured keypair is invalid. No permit was issued.", 503);
+    const results = await env.DB.batch([
+      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
+        "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
+        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, canonicalOfflineJson(snapshot), canonicalOfflineJson(costSnapshot), signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
+      env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_permit_issued','pos_offline_permit',?,? WHERE changes()=1")
+        .bind(crypto.randomUUID(), admin.admin_user_id, permitId, JSON.stringify({ device_id: deviceId, register_id: device.register_id, cashier_admin_id: cashierId, expires_at: expiresAt, max_events: 20, cash_only: true })),
+    ]);
+    if ((results[0]?.meta?.changes ?? 0) !== 1) return error("The offline permit was not committed because device, shift or cashier authorization changed", 409);
+    return json({ permit: { id: permitId, claims, signature_base64url: signature, snapshot } }, 201);
+  } catch (caught) {
+    if (caught instanceof Error && caught.message === "offline_snapshot_invalid") return error("One or more allocated products are inactive or have an invalid price. Correct the catalogue before issuing a permit.", 409);
+    return error("Offline permit could not be issued safely", 503);
+  }
+}
+
 async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/pos/")) return null;
@@ -2429,8 +2923,375 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
+  const cashierCanUseStandardPos = (request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/health"].includes(path)) ||
+    (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path));
+  const cashierCanReadOfflinePermit = request.method === "GET" && (path === "/api/admin/pos/offline/status" || path === "/api/admin/pos/offline/verification-key" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path));
+  const cashierCanIssueOfflinePermit = request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path);
+  const cashierCanSyncOfflineSales = request.method === "POST" && path === "/api/admin/pos/offline/sync";
+  if (isCashier && !(cashierCanUseStandardPos || cashierCanReadOfflinePermit || cashierCanIssueOfflinePermit || cashierCanSyncOfflineSales)) return error("Cashier access is limited to register sales, own shift operations and signed offline POS actions", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
+
+  // Emergency offline device administration is owner/manager-only. It is kept
+  // separate from the normal online checkout and never changes its permissions.
+  const offlineRoot = "/api/admin/pos/offline";
+  const isUuid = (value: unknown): value is string => typeof value === "string" && /^[a-f0-9-]{36}$/i.test(value);
+  const readOfflinePublicKey = async (value: unknown): Promise<{ jwk: JsonWebKey; thumbprint: string } | null> => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const jwk = value as JsonWebKey;
+    if (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.x !== "string" || typeof jwk.y !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(jwk.x) || !/^[A-Za-z0-9_-]{43}$/.test(jwk.y) ||
+        "d" in jwk || (jwk.key_ops && jwk.key_ops.some((op) => op !== "verify"))) return null;
+    const canonical = JSON.stringify({ crv: "P-256", kty: "EC", x: jwk.x, y: jwk.y });
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+    return { jwk: { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, ext: true, key_ops: ["verify"] }, thumbprint: base64Url(new Uint8Array(digest)) };
+  };
+
+  if (path.startsWith(offlineRoot + "/")) {
+    // Cashiers may submit only signed events for their own permit. All device,
+    // allocation, permit and reconciliation administration remains owner/manager-only.
+    if (!canManageMoney && !(isCashier && ((request.method === "POST" && (path === offlineRoot + "/sync" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) || (request.method === "GET" && (path === offlineRoot + "/status" || path === offlineRoot + "/verification-key" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path)))))) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+
+    if (request.method === "GET" && path === offlineRoot + "/status") {
+      return json({
+        checkout_enabled: env.OFFLINE_POS_CHECKOUT_ENABLED === "true",
+        permit_signing_configured: Boolean(env.POS_OFFLINE_PERMIT_PRIVATE_JWK && env.POS_OFFLINE_PERMIT_PUBLIC_JWK),
+      });
+    }
+
+    if (request.method === "GET" && path === offlineRoot + "/verification-key") {
+      if (!env.POS_OFFLINE_PERMIT_PUBLIC_JWK) return error("Offline permit verification key is not configured", 503);
+      try {
+        const publicJwk = JSON.parse(env.POS_OFFLINE_PERMIT_PUBLIC_JWK) as JsonWebKey;
+        if (publicJwk.kty !== "EC" || publicJwk.crv !== "P-256" || typeof publicJwk.x !== "string" ||
+            typeof publicJwk.y !== "string" || "d" in publicJwk) return error("Offline permit verification key configuration is invalid", 503);
+        return json({ algorithm: "ECDSA-P256-SHA256", public_key_jwk: publicJwk });
+      } catch { return error("Offline permit verification key configuration is invalid", 503); }
+    }
+
+    if (request.method === "POST" && path === offlineRoot + "/sync") {
+      const body = await readJson(request, 256_000);
+      if (!isUuid(body?.device_id) || !isUuid(body?.permit_id) ||
+          !Array.isArray(body?.events) || body.events.length < 1 || body.events.length > 10) {
+        return error("A valid enrolled device, permit and batch of 1 to 10 signed sale events are required", 400);
+      }
+      const results: Record<string, unknown>[] = [];
+      try {
+        for (const submitted of body.events) {
+          const result = await processOfflineSaleEvent(env, admin, body.device_id, body.permit_id, submitted);
+          results.push(result);
+          if (!["accepted"].includes(String(result.outcome))) break;
+        }
+        const complete = results.length === body.events.length && results.every((result) => result.outcome === "accepted");
+        return json({ complete, results });
+      } catch {
+        return error("Offline sale reconciliation is temporarily unavailable. Keep every local sale and retry the exact same events.", 503);
+      }
+    }
+
+    if (request.method === "GET" && path === offlineRoot + "/devices") {
+      try {
+        const devices = await env.DB.prepare(
+          "SELECT d.id,d.register_id,r.name AS register_name,d.device_label,d.public_key_thumbprint,d.status,d.created_at,d.last_seen_at,d.revoked_at," +
+          "(SELECT COUNT(*) FROM pos_offline_stock_allocations a WHERE a.device_id=d.id AND a.status='active') AS active_allocations," +
+          "(SELECT COALESCE(SUM(a.allocated_quantity-a.consumed_quantity-a.released_quantity),0) FROM pos_offline_stock_allocations a WHERE a.device_id=d.id AND a.status='active') AS remaining_allocated_units " +
+          "FROM pos_offline_devices d JOIN pos_registers r ON r.id=d.register_id ORDER BY d.created_at DESC LIMIT 100"
+        ).all<Record<string, unknown>>();
+        const allocations = await env.DB.prepare(
+          "SELECT a.id,a.device_id,a.register_id,a.variant_id,p.name AS product_name,v.sku,v.size,v.color,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status,a.created_at,a.updated_at " +
+          "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
+          "WHERE a.status='active' ORDER BY p.name,v.size,v.color LIMIT 500"
+        ).all<Record<string, unknown>>();
+        const cases = await env.DB.prepare(
+          "SELECT c.id,c.event_id,c.reason_code,c.opened_at,e.device_id,e.device_sequence,e.outcome " +
+          "FROM pos_offline_reconciliation_cases c JOIN pos_offline_events e ON e.event_id=c.event_id " +
+          "WHERE c.status='open' ORDER BY c.opened_at LIMIT 100"
+        ).all<Record<string, unknown>>();
+        return json({ devices: devices.results ?? [], allocations: allocations.results ?? [], open_cases: cases.results ?? [] });
+      } catch { return error("Offline POS administration is unavailable. Apply and verify the offline POS migrations in a non-production database first.", 503); }
+    }
+
+    if (request.method === "POST" && path === offlineRoot + "/enrollment-challenges") {
+      const body = await readJson(request, 4_000);
+      if (!isUuid(body?.device_id) || !isUuid(body?.register_id)) return error("A valid device and register ID are required", 400);
+      const publicKey = await readOfflinePublicKey(body?.public_key_jwk);
+      if (!publicKey || body?.public_key_thumbprint !== publicKey.thumbprint) return error("The device public key or thumbprint is invalid", 400);
+      try {
+        const register = await env.DB.prepare("SELECT id FROM pos_registers WHERE id=? AND is_active=1").bind(body.register_id).first<{ id: string }>();
+        if (!register) return error("The selected register is inactive or unavailable", 404);
+        const existing = await env.DB.prepare("SELECT id FROM pos_offline_devices WHERE id=? OR public_key_thumbprint=? LIMIT 1").bind(body.device_id, publicKey.thumbprint).first<{ id: string }>();
+        if (existing) return error("This device identity or signing key is already enrolled. Revoke or recover the existing device instead.", 409);
+        const cleanupBefore = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+        await env.DB.prepare("DELETE FROM pos_offline_enrollment_challenges WHERE expires_at<? OR (consumed_at IS NOT NULL AND consumed_at<?)")
+          .bind(cleanupBefore, cleanupBefore).run();
+        const recentChallenges = await env.DB.prepare(
+          "SELECT COUNT(*) AS count FROM pos_offline_enrollment_challenges WHERE created_by_admin_id=? AND created_at>?"
+        ).bind(admin.admin_user_id, new Date(Date.now() - 5 * 60_000).toISOString()).first<{ count: number }>();
+        if (Number(recentChallenges?.count ?? 0) >= 10) return error("Too many pending enrollment attempts. Wait five minutes and try again.", 429);
+        const challengeId = crypto.randomUUID();
+        const challenge = base64Url(crypto.getRandomValues(new Uint8Array(32)));
+        const expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
+        await env.DB.prepare(
+          "INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)"
+        ).bind(challengeId, body.device_id, body.register_id, publicKey.thumbprint, await sha256(challenge), expiresAt, admin.admin_user_id).run();
+        return json({ challenge_id: challengeId, challenge, expires_at: expiresAt });
+      } catch { return error("A one-time enrollment challenge could not be created", 503); }
+    }
+
+    if (request.method === "POST" && path === offlineRoot + "/devices/enroll") {
+      const body = await readJson(request, 6_000);
+      const deviceId = body?.device_id, registerId = body?.register_id;
+      const label = typeof body?.device_label === "string" ? body.device_label.trim().slice(0, 100) : "";
+      const challengeId = body?.challenge_id, challenge = body?.challenge, signature = body?.signature;
+      if (!isUuid(deviceId) || !isUuid(registerId) || !isUuid(challengeId) || label.length < 2 ||
+          typeof challenge !== "string" || challenge.length < 32 || challenge.length > 128 ||
+          typeof signature !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signature)) {
+        return error("The device enrollment proof is incomplete or invalid", 400);
+      }
+      const publicKey = await readOfflinePublicKey(body?.public_key_jwk);
+      if (!publicKey || body?.public_key_thumbprint !== publicKey.thumbprint) return error("The device public key or thumbprint is invalid", 400);
+      try {
+        const challengeRow = await env.DB.prepare(
+          "SELECT id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,consumed_at FROM pos_offline_enrollment_challenges WHERE id=? LIMIT 1"
+        ).bind(challengeId).first<Record<string, unknown>>();
+        if (!challengeRow || challengeRow.consumed_at || String(challengeRow.device_id) !== deviceId ||
+            String(challengeRow.register_id) !== registerId || String(challengeRow.public_key_thumbprint) !== publicKey.thumbprint ||
+            String(challengeRow.expires_at) <= new Date().toISOString() || String(challengeRow.challenge_hash) !== await sha256(challenge)) {
+          return error("The enrollment challenge is expired, consumed or bound to a different device", 409);
+        }
+        if (!await verifyOfflineEnrollmentProof(publicKey.jwk, challenge, signature)) {
+          return error("The device did not prove possession of its private signing key", 403);
+        }
+        const now = new Date().toISOString();
+        const results = await env.DB.batch([
+          env.DB.prepare("UPDATE pos_offline_enrollment_challenges SET consumed_at=? WHERE id=? AND device_id=? AND register_id=? AND public_key_thumbprint=? AND challenge_hash=? AND consumed_at IS NULL AND expires_at>?")
+            .bind(now, challengeId, deviceId, registerId, publicKey.thumbprint, await sha256(challenge), now),
+          env.DB.prepare("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint,status) " +
+            "SELECT ?,?,?,?,? ,?,'active' WHERE changes()=1 AND EXISTS (SELECT 1 FROM pos_registers WHERE id=? AND is_active=1)")
+            .bind(deviceId, registerId, admin.admin_user_id, label, JSON.stringify(publicKey.jwk), publicKey.thumbprint, registerId),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_enrolled','pos_offline_device',?,? WHERE changes()=1")
+            .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ register_id: registerId, public_key_thumbprint: publicKey.thumbprint, device_label: label }))
+        ]);
+        if ((results[0]?.meta?.changes ?? 0) !== 1 || (results[1]?.meta?.changes ?? 0) !== 1) return error("Device enrollment was not committed. Check the register and existing device assignments.", 409);
+        return json({ enrolled: true, device: { id: deviceId, register_id: registerId, device_label: label, public_key_thumbprint: publicKey.thumbprint, status: "active" } }, 201);
+      } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
+    }
+
+
+    const reconciliationMatch = path.match(/^\/api\/admin\/pos\/offline\/reconciliation-cases\/([a-f0-9-]{36})\/resolve$/i);
+    if (request.method === "POST" && reconciliationMatch) {
+      if (!canManageMoney) return error("Only an owner or manager can resolve offline reconciliation cases", 403);
+      if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+      const body = await readJson(request, 3_000);
+      const canonicalSaleId = typeof body?.canonical_sale_id === "string" ? body.canonical_sale_id : "";
+      const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 1_000) : "";
+      if (!isUuid(canonicalSaleId) || reason.length < 10) return error("Provide an existing POS sale ID and a reconciliation explanation of at least 10 characters", 400);
+      try {
+        const reconciliation = await env.DB.prepare(
+          "SELECT c.id AS case_id,c.status AS case_status,e.event_id,e.device_id,e.outcome,e.payload_json,e.permit_id " +
+          "FROM pos_offline_reconciliation_cases c JOIN pos_offline_events e ON e.event_id=c.event_id WHERE c.id=? LIMIT 1"
+        ).bind(reconciliationMatch[1]).first<Record<string, unknown>>();
+        if (!reconciliation) return error("Offline reconciliation case not found", 404);
+        if (reconciliation.case_status !== "open" || !["conflict", "rejected"].includes(String(reconciliation.outcome))) {
+          return error("This case is no longer open for manual reconciliation", 409);
+        }
+        const payload = JSON.parse(String(reconciliation.payload_json)) as Record<string, unknown>;
+        if (!Array.isArray(payload.lines) || payload.lines.length < 1 || payload.lines.length > 30 ||
+            !isUuid(payload.sessionId) || !isUuid(payload.cashierId) ||
+            !Number.isSafeInteger(payload.totalPaisa) || !Number.isSafeInteger(payload.subtotalPaisa) ||
+            payload.totalPaisa !== payload.subtotalPaisa) {
+          return error("The immutable offline event does not contain a valid sale snapshot", 409);
+        }
+        const sale = await env.DB.prepare(
+          "SELECT id,status,session_id,cashier_admin_id,subtotal_paisa,total_paisa FROM pos_sales WHERE id=? LIMIT 1"
+        ).bind(canonicalSaleId).first<Record<string, unknown>>();
+        if (!sale || sale.status !== "completed" || sale.session_id !== payload.sessionId ||
+            sale.cashier_admin_id !== payload.cashierId || Number(sale.subtotal_paisa) !== Number(payload.subtotalPaisa) ||
+            Number(sale.total_paisa) !== Number(payload.totalPaisa)) {
+          return error("The selected completed POS sale does not match the offline event's shift, cashier and totals", 409);
+        }
+        const [saleLines, payment, movementRows, financialLedger, allocations] = await Promise.all([
+          env.DB.prepare("SELECT variant_id,quantity,unit_price_paisa,line_total_paisa FROM pos_sale_items WHERE sale_id=? ORDER BY variant_id")
+            .bind(canonicalSaleId).all<Record<string, unknown>>(),
+          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total,COALESCE(SUM(tendered_paisa),0) AS tendered,COALESCE(SUM(change_paisa),0) AS change FROM pos_payments WHERE sale_id=? AND payment_method='cash'")
+            .bind(canonicalSaleId).first<{ total: number; tendered: number; change: number }>(),
+          env.DB.prepare("SELECT variant_id,quantity_delta FROM inventory_movements WHERE reference_type='order' AND reference_id=? AND movement_type='sold' ORDER BY variant_id")
+            .bind(canonicalSaleId).all<Record<string, unknown>>(),
+          env.DB.prepare("SELECT COALESCE(SUM(amount_paisa),0) AS total FROM financial_transactions WHERE reference_type='pos_sale' AND reference_id=? AND account_id='cash-main' AND direction='in' AND category='pos_sale'")
+            .bind(canonicalSaleId).first<{ total: number }>(),
+          env.DB.prepare("SELECT a.id,a.variant_id,a.allocated_quantity,a.consumed_quantity,a.released_quantity,a.status FROM pos_offline_stock_allocations a WHERE a.device_id=? AND a.status='active'")
+            .bind(String(reconciliation.device_id)).all<Record<string, unknown>>(),
+        ]);
+        const expected = (payload.lines as Array<Record<string, unknown>>).map((line) => ({
+          variant_id: String(line.variantId), quantity: Number(line.quantity),
+          unit_price_paisa: Number(line.unitPricePaisa), line_total_paisa: Number(line.lineTotalPaisa),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const actual = (saleLines.results ?? []).map((line) => ({
+          variant_id: String(line.variant_id), quantity: Number(line.quantity),
+          unit_price_paisa: Number(line.unit_price_paisa), line_total_paisa: Number(line.line_total_paisa),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const actualMovements = (movementRows.results ?? []).map((line) => ({
+          variant_id: String(line.variant_id), quantity: Number(line.quantity_delta),
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        const expectedMovements = expected.map((line) => ({
+          variant_id: line.variant_id, quantity: -line.quantity,
+        })).sort((a,b) => a.variant_id.localeCompare(b.variant_id));
+        if (JSON.stringify(actual) !== JSON.stringify(expected) || actual.length !== expected.length ||
+            JSON.stringify(actualMovements) !== JSON.stringify(expectedMovements) ||
+            Number(payment?.total ?? 0) !== Number(payload.totalPaisa) ||
+            Number(payment?.tendered ?? 0) !== Number(payload.cashTenderedPaisa) ||
+            Number(payment?.change ?? 0) !== Number(payload.changePaisa) ||
+            Number(financialLedger?.total ?? 0) !== Number(payload.totalPaisa)) {
+          return error("The completed sale's item, cash payment, financial ledger or inventory movement evidence does not exactly match this offline event", 409);
+        }
+        const allocationByVariant = new Map((allocations.results ?? []).map((row) => [String(row.variant_id), row]));
+        const consumption: Array<{ id: string; quantity: number; variantId: string }> = [];
+        for (const line of expected) {
+          const allocation = allocationByVariant.get(line.variant_id);
+          const remaining = allocation ? Number(allocation.allocated_quantity)-Number(allocation.consumed_quantity)-Number(allocation.released_quantity) : 0;
+          if (!allocation || allocation.status !== "active" || remaining < line.quantity) {
+            return error("The device's reserved stock ledger cannot cover this sale; keep the case open for manual investigation", 409);
+          }
+          consumption.push({ id: String(allocation.id), quantity: line.quantity, variantId: line.variant_id });
+        }
+        const now = new Date().toISOString();
+        const statements: D1PreparedStatement[] = consumption.flatMap((line) => [
+          env.DB.prepare("UPDATE pos_offline_stock_allocations SET consumed_quantity=consumed_quantity+?,updated_at=? WHERE id=? AND device_id=? AND variant_id=? AND status='active' AND allocated_quantity-consumed_quantity-released_quantity>=?")
+            .bind(line.quantity, now, line.id, String(reconciliation.device_id), line.variantId, line.quantity),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+        ]);
+        statements.push(
+          env.DB.prepare("UPDATE pos_offline_events SET outcome='accepted',canonical_sale_id=?,processed_at=? WHERE event_id=? AND outcome IN ('conflict','rejected') AND EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='open')")
+            .bind(canonicalSaleId, now, String(reconciliation.event_id), reconciliation.case_id),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+          env.DB.prepare("UPDATE pos_offline_reconciliation_cases SET status='resolved',resolved_at=? WHERE id=? AND status='open' AND EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='accepted' AND canonical_sale_id=?)")
+            .bind(now, reconciliation.case_id, String(reconciliation.event_id), canonicalSaleId),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
+          env.DB.prepare("INSERT INTO pos_offline_reconciliation_actions (id,case_id,actor_admin_id,action_type,reason,resolution_json) " +
+            "SELECT ?,?,?, 'accepted',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_reconciliation_cases WHERE id=? AND status='resolved' AND resolved_at=?)")
+            .bind(crypto.randomUUID(), reconciliation.case_id, admin.admin_user_id, reason,
+              JSON.stringify({ canonical_sale_id: canonicalSaleId, matched_line_count: expected.length, cash_payment_verified: true, inventory_movement_count: actualMovements.length, offline_event_id: reconciliation.event_id }),
+              reconciliation.case_id, now),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_reconciliation_resolved','pos_offline_reconciliation_case',?,?)")
+            .bind(crypto.randomUUID(), admin.admin_user_id, reconciliation.case_id,
+              JSON.stringify({ canonical_sale_id: canonicalSaleId, offline_event_id: reconciliation.event_id, matched_line_count: expected.length, reason }))
+        );
+        try {
+          await env.DB.batch(statements);
+        } catch {
+          return error("Reconciliation changed concurrently or a stock reservation could not be reconciled. The transaction was rolled back; refresh the case and retry.", 409);
+        }
+        return json({ resolved: true, case_id: reconciliation.case_id, event_id: reconciliation.event_id, canonical_sale_id: canonicalSaleId });
+      } catch {
+        return error("Offline reconciliation could not be completed safely. The case remains available for review.", 503);
+      }
+    }
+
+    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits|permit))?$/i);
+    if (deviceMatch) {
+      const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
+      if (request.method === "GET" && action === "permit") {
+        try {
+          const permit = await env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,claims_json,signature_base64url,snapshot_json,issued_at,expires_at,status FROM pos_offline_permits WHERE device_id=? AND status='active' AND expires_at>? ORDER BY issued_at DESC LIMIT 1")
+            .bind(deviceId, new Date().toISOString()).first<Record<string, unknown>>();
+          if (!permit) return error("No active offline permit is available for this device", 404);
+          if (isCashier && admin.admin_user_id !== permit.cashier_admin_id) return error("Cashiers can retrieve only their own device permit", 403);
+          return json({ permit: { id: permit.id, claims: JSON.parse(String(permit.claims_json)), signature_base64url: permit.signature_base64url, snapshot: JSON.parse(String(permit.snapshot_json)), issued_at: permit.issued_at, expires_at: permit.expires_at } });
+        } catch { return error("The active offline permit could not be loaded", 503); }
+      }
+      if (request.method === "POST" && action === "permits") {
+        return issueOfflinePermit(env, admin, deviceId, await readJson(request, 4_000));
+      }
+      if (request.method === "POST" && action === "revoke") {
+        const body = await readJson(request, 2_000);
+        const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
+        if (reason.length < 3) return error("A clear reason is required to revoke this device", 400);
+        try {
+          const now = new Date().toISOString();
+          const device = await env.DB.prepare("SELECT id,status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ id: string; status: string }>();
+          if (!device) return error("Offline POS device not found", 404);
+          if (device.status === "revoked") return json({ revoked: true, already_revoked: true });
+          const results = await env.DB.batch([
+            env.DB.prepare("UPDATE pos_offline_devices SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
+            env.DB.prepare("UPDATE pos_offline_permits SET status='revoked',revoked_at=?,revoked_by_admin_id=? WHERE device_id=? AND status='active'").bind(now, admin.admin_user_id, deviceId),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_revoked','pos_offline_device',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='revoked' AND revoked_by_admin_id=?)")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason }), deviceId, admin.admin_user_id)
+          ]);
+          if ((results[0]?.meta?.changes ?? 0) !== 1) return error("Device status changed before revocation could be completed", 409);
+          return json({ revoked: true, device_id: deviceId });
+        } catch { return error("Offline device could not be revoked", 503); }
+      }
+
+      if (request.method === "POST" && action === "allocations") {
+        const body = await readJson(request, 8_000);
+        if (!Array.isArray(body?.allocations) || body.allocations.length < 1 || body.allocations.length > 30) return error("Provide between 1 and 30 stock allocation lines", 400);
+        const device = await env.DB.prepare("SELECT id,register_id,status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ id: string; register_id: string; status: string }>();
+        if (!device || device.status !== "active") return error("An active enrolled device is required", 409);
+        const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
+        if (activePermit) return error("Revoke or expire the active offline permit before changing stock allocations", 409);
+        const combined = new Map<string, number>();
+        for (const line of body.allocations) {
+          if (!line || typeof line !== "object" || !isUuid(line.variant_id) || !Number.isSafeInteger(line.quantity) || Number(line.quantity) < 1 || Number(line.quantity) > 20) return error("Each allocation needs a valid variant and quantity between 1 and 20", 400);
+          combined.set(line.variant_id, (combined.get(line.variant_id) ?? 0) + Number(line.quantity));
+        }
+        if ([...combined.values()].some((quantity) => quantity > 20)) return error("Combined allocation per variant cannot exceed 20 units", 400);
+        try {
+          const statements = [...combined].flatMap(([variantId, quantity]) => [
+            env.DB.prepare("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)")
+              .bind(crypto.randomUUID(), deviceId, device.register_id, variantId, quantity, admin.admin_user_id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_stock_allocated','pos_offline_stock_allocation',?,?)")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ variant_id: variantId, quantity }))
+          ]);
+          await env.DB.batch(statements);
+          return json({ allocated: true, device_id: deviceId, allocations: [...combined].map(([variant_id, quantity]) => ({ variant_id, quantity })) }, 201);
+        } catch { return error("Stock allocation failed. The database rolled back the allocation batch; refresh stock and try again.", 409); }
+      }
+
+      if (request.method === "POST" && action === "release-allocations") {
+        const body = await readJson(request, 2_000);
+        const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
+        if (reason.length < 3) return error("A reason is required to release unused stock", 400);
+        try {
+          const deviceState = await env.DB.prepare("SELECT status FROM pos_offline_devices WHERE id=?").bind(deviceId).first<{ status: string }>();
+          if (!deviceState) return error("Offline POS device not found", 404);
+          if (deviceState.status !== "revoked") return error("Revoke the device before releasing its remaining offline stock", 409);
+          const activePermit = await env.DB.prepare("SELECT id FROM pos_offline_permits WHERE device_id=? AND status='active' LIMIT 1").bind(deviceId).first<{ id: string }>();
+          if (activePermit) return error("Revoke the device's active offline permit before releasing stock", 409);
+          if (body?.owner_confirms_device_queue_reconciled !== true) return error("Explicitly confirm that the physical device's local queue has been reconciled before releasing stock", 400);
+          const unresolved = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_events e LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id WHERE e.device_id=? AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))").bind(deviceId).first<{ count: number }>();
+          if (Number(unresolved?.count ?? 0) > 0) return error("Resolve every pending or conflicted offline sale before releasing this device's remaining stock", 409);
+          const now = new Date().toISOString();
+          const active = await env.DB.prepare("SELECT id,allocated_quantity,consumed_quantity,released_quantity FROM pos_offline_stock_allocations WHERE device_id=? AND status='active'").bind(deviceId).all<Record<string, number>>();
+          const statements = (active.results ?? []).flatMap((row) => [
+            env.DB.prepare("UPDATE pos_offline_stock_allocations SET released_quantity=released_quantity+(allocated_quantity-consumed_quantity-released_quantity),status='released',released_by_admin_id=?,released_at=?,updated_at=? WHERE id=? AND status='active'")
+              .bind(admin.admin_user_id, now, now, row.id),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_stock_released','pos_offline_stock_allocation',?,? WHERE changes()=1")
+              .bind(crypto.randomUUID(), admin.admin_user_id, String(row.id), JSON.stringify({ reason, released_quantity: Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) }))
+          ]);
+          statements.push(
+            env.DB.prepare("UPDATE pos_offline_permits SET status='consumed' WHERE device_id=? AND status IN ('expired','revoked') AND NOT EXISTS (SELECT 1 FROM pos_offline_stock_allocations WHERE device_id=? AND status='active')")
+              .bind(deviceId, deviceId),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_queue_reconciled','pos_offline_device',?,? WHERE NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status<>'consumed')")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason, owner_confirmed_queue_reconciled: true, released_allocations: active.results?.length ?? 0 }), deviceId)
+          );
+          await env.DB.batch(statements);
+          const remainingPermits = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=? AND status<>'consumed'").bind(deviceId).first<{ count: number }>();
+          if (Number(remainingPermits?.count ?? 0) > 0) return error("The device still has an unreconciled permit or active allocation", 409);
+          return json({ released: true, count: active.results?.length ?? 0, permits_reconciled: true });
+        } catch { return error("Unused offline stock could not be released", 503); }
+      }
+    }
+  }
+
+  if (request.method === "GET" && path === "/api/admin/pos/health") {
+    try {
+      const result = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
+      if (Number(result?.ok) !== 1) throw new Error("POS health probe failed");
+      return json({ online: true, server_time: new Date().toISOString() });
+    } catch {
+      return error("The POS service or database is temporarily unavailable", 503);
+    }
+  }
+
   if (request.method === "GET" && path === "/api/admin/pos/bootstrap") {
     try {
       const [accounts, registers, session, products] = await Promise.all([
@@ -2584,6 +3445,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     try {
       const session = await env.DB.prepare("SELECT id,opening_cash_paisa FROM pos_sessions WHERE id=? AND status='open' AND (? = 0 OR opened_by_admin_id = ?)").bind(sessionId,isCashier ? 1 : 0,admin.admin_user_id).first<{id:string;opening_cash_paisa:number}>();
       if (!session) return error("Open POS session not found",404);
+      const unresolvedOfflinePermits = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM pos_offline_permits WHERE session_id=? AND status<>'consumed'"
+      ).bind(sessionId).first<{ count: number }>();
+      if (Number(unresolvedOfflinePermits?.count ?? 0) > 0) {
+        return error("This shift has an offline device permit. Reconnect or physically recover the device, sync or manually reconcile every queued sale, revoke the device if needed, and have an owner confirm queue reconciliation and release unused stock before closing the shift.", 409);
+      }
       const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(sessionId).first<{net:number}>();
       const expected = Number(session.opening_cash_paisa)+Number(movement?.net??0);
       const variance = Number(counted)-expected;
