@@ -119,12 +119,35 @@ try {
   check(foreignKeyErrors.length === 0,
     "the complete empty-database migration chain has no foreign-key violations");
 
+  // Each query below is a separate Cloudflare D1 API request/connection. This
+  // validates the real D1 unique-sequence arbiter under concurrent writers;
+  // the real Worker/SQLite suite separately validates the full HTTP lifecycle.
+  await api("POST", queryPath(databaseId), {
+    sql: "CREATE TABLE pos_offline_d1_race_probe (event_id TEXT PRIMARY KEY, device_id TEXT NOT NULL, device_sequence INTEGER NOT NULL, UNIQUE(device_id, device_sequence))",
+  });
+  const competingWrites = await Promise.allSettled([
+    api("POST", queryPath(databaseId), {
+      sql: "INSERT INTO pos_offline_d1_race_probe(event_id,device_id,device_sequence) VALUES ('event-a','device-a',1)",
+    }),
+    api("POST", queryPath(databaseId), {
+      sql: "INSERT INTO pos_offline_d1_race_probe(event_id,device_id,device_sequence) VALUES ('event-b','device-a',1)",
+    }),
+  ]);
+  check(competingWrites.filter((result) => result.status === "fulfilled").length === 1
+    && competingWrites.filter((result) => result.status === "rejected").length === 1,
+  "independent concurrent D1 requests contending for one device sequence commit exactly one event");
+  const raceRows = await rows(databaseId, "SELECT event_id,device_id,device_sequence FROM pos_offline_d1_race_probe");
+  check(raceRows.length === 1 && raceRows[0].device_id === "device-a"
+    && Number(raceRows[0].device_sequence) === 1,
+  "the independent-connection D1 sequence race leaves one canonical row and no duplicate sequence");
+
   console.log(JSON.stringify({
     status: "passed",
     migrations: migrations.length,
     offline_tables: expectedTables.length,
     offline_guard_triggers: expectedTriggers.length,
     foreign_key_violations: foreignKeyErrors.length,
+    independent_connection_sequence_race: "one_winner_one_conflict",
     checks_passed: passed,
   }));
 } finally {
