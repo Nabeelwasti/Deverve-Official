@@ -198,3 +198,22 @@ test("real Worker revokes an enrolled device, records the actor and audit eviden
   assert.equal((await repeated.json()).already_revoked, true);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_device_revoked' AND entity_id=?").get(deviceId).count, 1);
 });
+
+
+test("real Worker fails closed and issues no permit while offline checkout is disabled", async () => {
+  const identity = await createIdentity(), deviceId = randomUUID();
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  const challenge = await challengeResponse.json();
+  const enrolled = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(enrolled.status, 201);
+  const response = await api("/api/admin/pos/offline/devices/" + deviceId + "/permits", {
+    cashier_admin_id: ownerId, session_id: randomUUID(), duration_hours: 4,
+  });
+  assert.equal(response.status, 503);
+  assert.match((await response.json()).error, /not enabled/i);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=?").get(deviceId).count, 0);
+});
