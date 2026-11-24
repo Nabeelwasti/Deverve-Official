@@ -213,3 +213,77 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
     throw new Error("Offline sales remain safely stored and will be retried.");
   }
 }
+
+
+export type OfflineShellCheck = {
+  ready: boolean;
+  cached: string[];
+  missing: string[];
+  failed: string[];
+  cacheName: string;
+};
+
+async function requestOfflineShellWorker(type: "PRECACHE_POS_ASSETS" | "CHECK_POS_ASSETS", urls: string[]): Promise<OfflineShellCheck> {
+  if (!globalThis.isSecureContext || !("serviceWorker" in navigator)) {
+    throw new Error("A secure HTTPS browser with service-worker support is required for emergency offline caching.");
+  }
+  const registration = await navigator.serviceWorker.register("/sw.js");
+  await navigator.serviceWorker.ready;
+  const worker = navigator.serviceWorker.controller ?? registration.active;
+  if (!worker) throw new Error("The De VERVE service worker is not active yet. Reload the POS page and try again.");
+  return await new Promise<OfflineShellCheck>((resolve, reject) => {
+    const channel = new MessageChannel();
+    const timeout = window.setTimeout(() => {
+      channel.port1.close();
+      reject(new Error("The service worker did not confirm the POS cache operation."));
+    }, 20_000);
+    channel.port1.onmessage = (event: MessageEvent<OfflineShellCheck>) => {
+      window.clearTimeout(timeout);
+      channel.port1.close();
+      if (!event.data || typeof event.data.ready !== "boolean") {
+        reject(new Error("The service worker returned an invalid cache status."));
+        return;
+      }
+      resolve(event.data);
+    };
+    try {
+      worker.postMessage({ type, urls }, [channel.port2]);
+    } catch (caught) {
+      window.clearTimeout(timeout);
+      channel.port1.close();
+      reject(caught instanceof Error ? caught : new Error("Could not communicate with the service worker."));
+    }
+  });
+}
+
+function collectCurrentPosAssets(): string[] {
+  const origin = window.location.origin;
+  const urls = new Set<string>(["/", "/brand/de-verve-mark.svg"]);
+  for (const entry of performance.getEntriesByType("resource")) {
+    if (!(entry instanceof PerformanceResourceTiming)) continue;
+    try {
+      const url = new URL(entry.name, origin);
+      if (url.origin !== origin || url.pathname.startsWith("/api/")) continue;
+      if (/\.(?:js|mjs|css|woff2?|ttf|otf|svg|png|jpe?g|webp|avif)$/i.test(url.pathname)) urls.add(url.href);
+    } catch {
+      // Ignore browser extensions, data URLs and malformed resource entries.
+    }
+  }
+  return Array.from(urls).slice(0, 120);
+}
+
+/** Cache the currently loaded POS application shell and all observed same-origin static dependencies. */
+export async function prepareOfflineShell(): Promise<OfflineShellCheck> {
+  const urls = collectCurrentPosAssets();
+  const result = await requestOfflineShellWorker("PRECACHE_POS_ASSETS", urls);
+  if (!result.ready) {
+    const failures = [...(result.failed ?? []), ...(result.missing ?? [])];
+    throw new Error(`Emergency offline cache is incomplete (${failures.length} assets could not be verified). Keep using online POS and retry after all assets load.`);
+  }
+  return result;
+}
+
+/** Re-checks actual service-worker cache contents; a previous visit alone is not proof of offline readiness. */
+export async function checkOfflineShellReady(): Promise<OfflineShellCheck> {
+  return requestOfflineShellWorker("CHECK_POS_ASSETS", collectCurrentPosAssets());
+}
