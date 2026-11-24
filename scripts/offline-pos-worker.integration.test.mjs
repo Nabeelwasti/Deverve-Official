@@ -520,3 +520,76 @@ test("real Worker preserves a signed sale as a review conflict when its enrolled
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(fixture.sale.eventId).count, 1);
 });
+
+
+async function openRevokedDeviceConflict(fixture) {
+  const revoked = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/revoke", {
+    reason: "Revoke device to force a controlled reconciliation case",
+  });
+  assert.equal(revoked.status, 200);
+  const response = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature: await signSale(fixture.identity, fixture.sale) }],
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).results[0].outcome, "conflict");
+  return sqlite.prepare("SELECT id FROM pos_offline_reconciliation_cases WHERE event_id=?").get(fixture.sale.eventId).id;
+}
+
+function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change = 250) {
+  const saleId = randomUUID();
+  const product = sqlite.prepare("SELECT product_id FROM product_variants WHERE id=?").get(fixture.variantId);
+  const variant = sqlite.prepare("SELECT sku,size,color FROM product_variants WHERE id=?").get(fixture.variantId);
+  sqlite.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-1 WHERE id=?").run(fixture.variantId);
+  sqlite.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,'Walk-in customer','',1250,0,1250,'completed',?,?)")
+    .run(saleId, "DV-RECON-" + saleId.slice(0, 8), fixture.sale.sessionId, randomUUID(), ownerId);
+  sqlite.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?, ?,1,1250,500,1250)")
+    .run(randomUUID(), saleId, product.product_id, fixture.variantId, "Rollback Test Shirt", variant.sku, variant.size, variant.color);
+  sqlite.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,'cash-main','cash',1250,?,?, 'reconciliation fixture')")
+    .run(randomUUID(), saleId, tendered, change);
+  sqlite.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',1250,'pos_sale','pos_sale',?,?,?,?)")
+    .run(randomUUID(), saleId, fixture.sale.sessionId, "Reconciliation fixture", ownerId);
+  sqlite.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'sold',-1,'order',?,?,?)")
+    .run(randomUUID(), fixture.variantId, saleId, "Completed POS sale reconciliation fixture", ownerId);
+  return saleId;
+}
+
+test("real Worker resolves a conflict only against an exact completed sale and consumes its reserved allocation once", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture);
+  const resolved = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId,
+    reason: "Verified the completed POS receipt, cash drawer and stock movement",
+  });
+  assert.equal(resolved.status, 200);
+  assert.equal((await resolved.json()).resolved, true);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "resolved");
+  const event = sqlite.prepare("SELECT outcome,canonical_sale_id FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId);
+  assert.equal(event.outcome, "accepted");
+  assert.equal(event.canonical_sale_id, canonicalSaleId);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 4);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 1);
+  const repeated = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId,
+    reason: "Repeated resolution must not consume the allocation twice",
+  });
+  assert.equal(repeated.status, 409);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+});
+
+test("real Worker leaves reconciliation open when the completed sale cash tender does not match the immutable offline event", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1499, 249);
+  const rejected = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId,
+    reason: "Attempt reconciliation with intentionally incorrect cash tender evidence",
+  });
+  assert.equal(rejected.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+  assert.equal(sqlite.prepare("SELECT outcome,canonical_sale_id FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId).outcome, "conflict");
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+});
