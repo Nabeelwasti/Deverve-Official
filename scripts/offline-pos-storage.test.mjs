@@ -71,3 +71,5 @@ assert.match(source, /database\.transaction\(\["permit", "catalogue", "shift", "
 assert.match(source, /sale\.permitId !== record\.permitId/);
 assert.match(source, /entry\.status === "synced"/);
 assert.match(api, /offline sales awaiting sync or owner reconciliation/);
+
+assert.match(source, /export async function listOfflineSalesForPermit/);
