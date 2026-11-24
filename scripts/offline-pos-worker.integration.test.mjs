@@ -1090,7 +1090,7 @@ test("real Worker expires stale permits before stock allocation changes and fail
   const expiredIssuedAt = new Date(Date.now() - 120_000).toISOString();
   const expiredAt = new Date(Date.now() - 60_000).toISOString();
   sqlite.prepare("UPDATE pos_offline_permits SET status='consumed' WHERE id=?").run(fixture.permit.id);
-  sqlite.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) SELECT ?,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,policy_version,max_events,?,?,'active' FROM pos_offline_permits WHERE id=?")
+  sqlite.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) SELECT ?,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,?,?,'active' FROM pos_offline_permits WHERE id=?")
     .run(expiredPermitId, expiredIssuedAt, expiredAt, fixture.permit.id);
   const body = { allocations: [{ variant_id: nextVariantId, quantity: 1 }] };
 
