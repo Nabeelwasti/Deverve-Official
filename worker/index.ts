@@ -2900,6 +2900,26 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       } catch { return error("Offline permit verification key configuration is invalid", 503); }
     }
 
+    if (request.method === "POST" && path === offlineRoot + "/sync") {
+      const body = await readJson(request, 256_000);
+      if (!isUuid(body?.device_id) || !isUuid(body?.permit_id) ||
+          !Array.isArray(body?.events) || body.events.length < 1 || body.events.length > 10) {
+        return error("A valid enrolled device, permit and batch of 1 to 10 signed sale events are required", 400);
+      }
+      const results: Record<string, unknown>[] = [];
+      try {
+        for (const submitted of body.events) {
+          const result = await processOfflineSaleEvent(env, admin, body.device_id, body.permit_id, submitted);
+          results.push(result);
+          if (!["accepted"].includes(String(result.outcome))) break;
+        }
+        const complete = results.length === body.events.length && results.every((result) => result.outcome === "accepted");
+        return json({ complete, results });
+      } catch {
+        return error("Offline sale reconciliation is temporarily unavailable. Keep every local sale and retry the exact same events.", 503);
+      }
+    }
+
     if (request.method === "GET" && path === offlineRoot + "/devices") {
       try {
         const devices = await env.DB.prepare(
