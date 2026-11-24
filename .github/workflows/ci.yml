@@ -89,6 +89,17 @@ jobs:
           else
             echo "Skipping offline POS D1 migration suite: Cloudflare test credentials are not configured."
           fi
+      - name: Rehearse offline POS migrations on an isolated production backup clone
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: "355da876-17c4-4762-a59d-bb85f2e4551b"
+          D1_DATABASE_NAME: "deverve-production"
+          D1_BACKUP_R2_BUCKET: "deverve-db-backups"
+          D1_BACKUP_ENCRYPTION_KEY: ${{ secrets.D1_BACKUP_ENCRYPTION_KEY }}
+          D1_BACKUP_KEY_ID: "deverve-d1-key-v1"
+          OFFLINE_POS_MIGRATION_CHECK: "true"
+        run: node scripts/d1-backup-restore.mjs
       - name: Install Chromium headless shell for browser tests
         timeout-minutes: 8
         run: npx playwright install chromium --only-shell
