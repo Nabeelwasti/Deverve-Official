@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { adminRequest } from "../adminApi";
 import { getOrCreateOfflineDeviceIdentity } from "./deviceCrypto";
-import { checkOfflineShellReady, enrollOfflineDevice, fetchAndStoreOfflinePermit, issueOfflinePermit, prepareOfflineShell, syncOfflineQueue } from "./api";
+import { checkOfflineShellReady, enrollOfflineDevice, fetchAndStoreOfflinePermit, getOfflinePOSStatus, issueOfflinePermit, prepareOfflineShell, syncOfflineQueue } from "./api";
 
 type Register = { id: string; name: string; location_label: string };
 type StockItem = { variant_id: string; product_name: string; sku: string | null; barcode: string | null; size: string; color: string; available_quantity: number };
@@ -36,7 +36,7 @@ export default function OfflinePOSPanel({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState(false);
-  const [shellReady, setShellReady] = useState(false);
+  const [shellReady, setShellReady] = useState(false);\n  const [checkoutEnabled, setCheckoutEnabled] = useState(false);\n  const [permitSigningConfigured, setPermitSigningConfigured] = useState(false);
 
   const selectedVariant = items.find((item) => item.variant_id === variantId);
   const remainingForDevice = useMemo(
@@ -72,6 +72,13 @@ export default function OfflinePOSPanel({
     });
     void loadDevices();
     void checkOfflineShellReady().then((result) => setShellReady(result.ready)).catch(() => setShellReady(false));
+    void getOfflinePOSStatus().then((result) => {
+      setCheckoutEnabled(result.checkout_enabled);
+      setPermitSigningConfigured(result.permit_signing_configured);
+    }).catch(() => {
+      setCheckoutEnabled(false);
+      setPermitSigningConfigured(false);
+    });
   }, [canManageMoney, loadDevices]);
 
   const runAction = async (action: () => Promise<string>) => {
@@ -109,6 +116,7 @@ export default function OfflinePOSPanel({
   });
 
   const issuePermit = () => runAction(async () => {
+    if (!checkoutEnabled || !permitSigningConfigured) throw new Error("Emergency offline checkout is disabled or permit signing is not configured on this deployment.");
     if (!session || session.status !== "open") throw new Error("Open your own POS shift online before issuing an offline permit.");
     if (!deviceId) throw new Error("This browser has not been enrolled as an offline POS device.");
     await issueOfflinePermit(deviceId, session.id, undefined, Number(durationHours));
@@ -144,6 +152,7 @@ export default function OfflinePOSPanel({
           <span className="admin-muted">Offline checkout: disabled</span>
         </div>
         <p className="admin-muted">This area enrolls devices, reserves stock, verifies short-lived cash-only permits and syncs signed queued sales. It does not enable checkout while any release gate remains open.</p>
+        <p className="admin-muted">Deployment gate: <strong>{checkoutEnabled ? "Enabled" : "Disabled"}</strong> · Permit signing: <strong>{permitSigningConfigured ? "Configured" : "Not configured"}</strong></p>
         <div className="admin-form-actions">
           <span className={shellReady ? "admin-success" : "admin-muted"}>{shellReady ? "POS shell cache verified" : "POS shell cache not yet verified"}</span>
           <button type="button" className="admin-secondary" disabled={busy} onClick={() => void prepareCache()}>Prepare offline app cache</button>
@@ -158,7 +167,7 @@ export default function OfflinePOSPanel({
               </select>
             </label>
             <div className="admin-form-actions">
-              <button type="button" className="admin-primary" disabled={busy || !session} onClick={() => void issuePermit()}>Issue & verify my permit</button>
+              <button type="button" className="admin-primary" disabled={busy || !session || !checkoutEnabled || !permitSigningConfigured} onClick={() => void issuePermit()}>Issue & verify my permit</button>
               <button type="button" className="admin-secondary" disabled={busy} onClick={() => void sync()}>Sync queued sales</button>
             </div>
           </div>
