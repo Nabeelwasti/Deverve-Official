@@ -20,6 +20,8 @@ assert.match(panel, /Confirm queue reconciled & release stock/);
 assert.match(panel, /owner_confirms_device_queue_reconciled: true/);
 assert.match(client, /const acknowledgementCommitted = result\.outcome === "accepted"/);
 assert.match(client, /if \(!acknowledgementCommitted\)/);
+assert.match(client, /collected\.length > 120/);
+assert.match(client, /Offline permit cannot replace a permit with unresolved queued sales/);
 assert.match(pos, /completeOfflineSale/);
 assert.match(pos, /offlineRemainingByVariant/);
 assert.match(pos, /maxCartQuantity/);
