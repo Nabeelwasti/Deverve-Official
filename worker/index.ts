@@ -2619,6 +2619,10 @@ async function processOfflineSaleEvent(
         duplicate.payload_hash === payloadHash) {
       return { outcome: duplicate.outcome, event_id: eventId, canonical_sale_id: duplicate.canonical_sale_id ?? null, reason_code: duplicate.reason_code ?? null, duplicate: true };
     }
+    try {
+      await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
+        .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, reason_code: "replay_or_sequence_collision", existing_event_id: duplicate.event_id, existing_payload_hash: duplicate.payload_hash, received_payload_hash: payloadHash })).run();
+    } catch {}
     return { outcome: "conflict", event_id: eventId, reason_code: "replay_or_sequence_collision" };
   }
   const allowedKeys = ["eventId","idempotencyKey","deviceId","permitId","registerId","sessionId","cashierId","snapshotVersion","createdAt","currency","lines","subtotalPaisa","totalPaisa","cashTenderedPaisa","changePaisa","sequence","status","payloadVersion"];
@@ -2768,8 +2772,19 @@ async function processOfflineSaleEvent(
     if ((results[1]?.meta?.changes ?? 0) !== 1) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed");
     return { outcome: "accepted", event_id: eventId, canonical_sale_id: saleId, receipt_number: receiptNumber, server_received_at: new Date().toISOString() };
   } catch {
-    const committed = await env.DB.prepare("SELECT outcome,canonical_sale_id,reason_code FROM pos_offline_events WHERE event_id=?").bind(eventId).first<Record<string, unknown>>();
-    if (committed) return { outcome: committed.outcome, event_id: eventId, canonical_sale_id: committed.canonical_sale_id ?? null, reason_code: committed.reason_code ?? null, duplicate: true };
+    const committed = await env.DB.prepare("SELECT event_id,device_id,permit_id,idempotency_key,device_sequence,payload_hash,outcome,canonical_sale_id,reason_code FROM pos_offline_events WHERE event_id=? OR idempotency_key=? OR (device_id=? AND device_sequence=?) LIMIT 1")
+      .bind(eventId, idempotencyKey, deviceId, sequence).first<Record<string, unknown>>();
+    if (committed && committed.event_id === eventId && committed.device_id === deviceId && committed.permit_id === permitId &&
+        committed.idempotency_key === idempotencyKey && Number(committed.device_sequence) === Number(sequence) && committed.payload_hash === payloadHash) {
+      return { outcome: committed.outcome, event_id: eventId, canonical_sale_id: committed.canonical_sale_id ?? null, reason_code: committed.reason_code ?? null, duplicate: true };
+    }
+    if (committed) {
+      try {
+        await env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_replay_conflict','pos_offline_event',?,?)")
+          .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, reason_code: "concurrent_idempotency_replay", existing_event_id: committed.event_id, existing_payload_hash: committed.payload_hash, received_payload_hash: payloadHash })).run();
+      } catch {}
+      return { outcome: "conflict", event_id: eventId, reason_code: "concurrent_idempotency_replay" };
+    }
     try { return await recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "sale_commit_guard_failed"); }
     catch { return { outcome: "retry", event_id: eventId, reason_code: "temporary_reconciliation_failure" }; }
   }
