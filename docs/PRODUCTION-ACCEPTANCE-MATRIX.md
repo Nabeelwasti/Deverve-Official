@@ -36,7 +36,7 @@
 The repository workflow .github/workflows/d1-backup-restore.yml is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). It is not operationally active until all required GitHub Actions secrets are configured and a full run succeeds:
 
 - Owner confirmed on 24 November 2026 that `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured as GitHub Actions secrets. This confirms configuration only, not a successful backup or restore.
-- The currently configured token was created with account-wide D1 Edit and Workers R2 Storage Edit. This is broader than the intended least-privilege scope; reduce it to the required D1 permissions and R2 object permissions scoped only to `deverve-db-backups` before production acceptance.
+- The currently configured token was created with account-wide D1 Edit and Workers R2 Storage Edit. This is broader than intended. Replace it with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list) before production acceptance.
 - Confirm the 32-byte encryption key is independently stored in an owner-controlled password manager, not only in GitHub Actions.
 - Confirm private bucket `deverve-db-backups` exists and token permissions are sufficient.
 
