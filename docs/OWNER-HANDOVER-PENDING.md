@@ -58,9 +58,9 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 
 The AES-256-GCM backup/restore script and scheduled workflow are in the repository. The schedule is daily at 02:00 Pakistan Standard Time (21:00 UTC). The workflow is **not operationally accepted** until the following are completed:
 
-- [ ] Configure GitHub Actions secret `CLOUDFLARE_API_TOKEN` with the narrowly scoped D1 export, R2 backup and isolated restore permissions required by the workflow.
-- [ ] Configure `CLOUDFLARE_ACCOUNT_ID`.
-- [ ] Generate `D1_BACKUP_ENCRYPTION_KEY` offline with `openssl rand -hex 32`; store it in an owner-controlled password manager independently of the R2 bucket and GitHub.
+- [x] Owner confirmed on 24 November 2026 that GitHub Actions secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured.
+- [ ] Review and reduce the current Cloudflare token scope before production acceptance: the owner selected account-wide D1 Edit and Workers R2 Storage Edit, which is broader than the intended least-privilege D1 plus bucket-item scope for `deverve-db-backups`.
+- [ ] Confirm the encryption key is also stored in an owner-controlled password manager independently of GitHub and the R2 bucket; GitHub secret configuration alone is not a recoverable key-custody plan.
 - [ ] Confirm private bucket `deverve-db-backups` and workflow permissions.
 - [ ] Run a complete encrypted production export, SHA-256 integrity check, decrypt, isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup.
 - [ ] Verify retention and a documented recovery-point/recovery-time objective.
