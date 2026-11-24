@@ -2486,7 +2486,7 @@ async function verifyOfflinePermitSignatureServer(
       false,
       ["verify"],
     );
-    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalOfflineJson(claims));
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonicalOfflineJson(claims));
     return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
   } catch { return false; }
 }
@@ -2507,7 +2507,7 @@ async function verifyOfflineEventSignature(
       false,
       ["verify"],
     );
-    const message = new TextEncoder().encode("deverve-offline-pos:event:v1\\n" + canonicalOfflineJson(payload));
+    const message = new TextEncoder().encode("deverve-offline-pos:event:v1\n" + canonicalOfflineJson(payload));
     return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key, fromBase64Url(signatureBase64Url), message);
   } catch { return false; }
 }
