@@ -2901,7 +2901,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  const cashierCanUseStandardPos = (request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) ||
+  const cashierCanUseStandardPos = (request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/health"].includes(path)) ||
     (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path));
   const cashierCanReadOfflinePermit = request.method === "GET" && (path === "/api/admin/pos/offline/status" || path === "/api/admin/pos/offline/verification-key" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path));
   const cashierCanIssueOfflinePermit = request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path);
@@ -3139,6 +3139,16 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
           return json({ released: true, count: active.results?.length ?? 0 });
         } catch { return error("Unused offline stock could not be released", 503); }
       }
+    }
+  }
+
+  if (request.method === "GET" && path === "/api/admin/pos/health") {
+    try {
+      const result = await env.DB.prepare("SELECT 1 AS ok").first<{ ok: number }>();
+      if (Number(result?.ok) !== 1) throw new Error("POS health probe failed");
+      return json({ online: true, server_time: new Date().toISOString() });
+    } catch {
+      return error("The POS service or database is temporarily unavailable", 503);
     }
   }
 
