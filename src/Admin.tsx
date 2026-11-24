@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import BarcodeScanner from "./BarcodeScanner";
 import BrandLogo from "./BrandLogo";
 import { exportOfficeDocument, exportOfficeImage, exportOfficeSpreadsheet } from "./officeExport";
-import { adminRequest as api } from "./adminApi";
+import { adminRequest as api, AdminRequestError } from "./adminApi";
+import { restoreOfflineCashierSession } from "./posOffline/api";
 import "./admin.css";
 import ContentStudio from "./ContentStudio";
 import NotificationCenter from "./NotificationCenter";
@@ -403,10 +404,36 @@ export default function Admin() {
     let active = true;
     api<{ admin: AdminUser }>("/api/admin/me")
       .then((result) => { if (active) setAdmin(result.admin); })
-      .catch(() => { if (active) setAdmin(null); })
+      .catch(async (error) => {
+        if (!active) return;
+        const serviceUnavailable = !navigator.onLine || error instanceof TypeError || (error instanceof AdminRequestError && error.status >= 500);
+        if (serviceUnavailable) {
+          try {
+            const offlineAdmin = await restoreOfflineCashierSession();
+            if (active) {
+              setAdmin(offlineAdmin);
+              return;
+            }
+          } catch {
+            // A failed local permit/cache verification must never grant POS access.
+          }
+        }
+        if (active) setAdmin(null);
+      })
       .finally(() => { if (active) setChecking(false); });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!admin?.can_use_pos || admin.role !== "viewer") return;
+    const refreshAuthenticatedSession = () => {
+      void api<{ admin: AdminUser }>("/api/admin/me").then((result) => setAdmin(result.admin)).catch(() => {
+        // Keep the short-lived local POS permit context until the server is reachable.
+      });
+    };
+    window.addEventListener("online", refreshAuthenticatedSession);
+    return () => window.removeEventListener("online", refreshAuthenticatedSession);
+  }, [admin?.id, admin?.role, admin?.can_use_pos]);
 
   useEffect(() => {
     if (admin) {
