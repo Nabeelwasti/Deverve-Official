@@ -6,22 +6,33 @@
 
 ## Implementation status — 24 November 2026
 
-Implemented on the draft branch, not deployed to production:
+Implemented on the draft branch; not merged or deployed:
 
-- Additive schema foundations for device identity, signed-permit records, stock allocations, immutable event evidence, reconciliation cases/actions, and one-time enrollment challenges (`0045`, `0046`).
-- Device enrollment API uses a five-minute, single-use challenge and a P-256 ECDSA proof-of-possession. Public-key fingerprints are recomputed server-side; challenge attempts are bounded and expired challenges are pruned.
-- Owner/manager-only device listing, revocation, bounded per-variant stock allocation, and guarded stock release endpoints.
-- Offline allocations reserve the same `product_variants.reserved_quantity` counter used by existing online checkout. Allocation triggers reject overselling and preserve immutable allocation evidence.
-- Client-side enrollment challenge signing and local device-key integrity checks.
-- Sequential IndexedDB outbox leasing prevents later events from overtaking an earlier delayed, leased, or review-blocked event.
+- Additive D1 foundations for device identity, signed permits, stock allocations, immutable event evidence, reconciliation cases/actions and single-use enrollment challenges (migrations `0045`–`0048`).
+- Owner/manager device enrollment using a five-minute, single-use challenge and P-256 proof-of-possession; server-side public-key fingerprint verification and bounded challenge attempts.
+- Owner/manager device listing/revocation, bounded stock allocation, guarded release and append-only audit evidence.
+- Offline allocations reserve the same `product_variants.reserved_quantity` counter used by online checkout.
+- Short-lived server-signed permits bind the enrolled device, register, cashier grant, open shift, catalogue snapshot and exact reserved allocations.
+- Client-side key integrity checks, challenge signing, permit/snapshot verification, persistent IndexedDB queue, sequential sync leases, retry backoff, durable sync receipts and provisional receipts clearly marked as not official server receipts.
+- Restricted live POS fallback: cash-only, walk-in, signed allocated stock only; no offline refunds, voids, shift close or customer contact data. Existing online checkout remains authoritative.
+- Service-worker precache/check primitives and explicit cache readiness; API/authentication/mutation requests remain network-only.
+- Signed event sync validates device, cashier, permit, payload, sequence, replay, allocation and price; canonical sale, items, payment, financial transaction, inventory movement and audit writes are committed transactionally.
+- Exact duplicate sync returns the original canonical sale; conflicting events remain immutable and visible to managers.
+- Manager reconciliation endpoint and UI now resolve a conflict only against an existing completed POS sale whose shift, cashier, totals, exact item/variant/price lines, cash tender/change, cash financial ledger and per-variant inventory movements match the immutable offline event. The workflow consumes the matching reserved allocation and records an append-only reconciliation action plus audit log. Mismatches and concurrent changes leave the case open; it does not create compensating sales or silently alter cash/physical stock.
 
-Not yet implemented or verified:
+Automated validation currently available:
 
-- Offline checkout is not integrated into the live POS sell/cart flow. There is no path that creates a local sale from the current cart, prints a clearly marked provisional receipt, or gates checkout on a fully verified offline-ready state.
-- A complete cache-readiness handshake is not yet integrated with POS bootstrap and the live application asset manifest. The service worker has precache/check primitives, but the application does not yet prove all critical POS assets are cached before any offline checkout.
-- A complete owner reconciliation workflow is not implemented. Conflicts are intentionally kept open and visible; there is no safe manual sale/stock/cash reconciliation UI that links an audited canonical correction to the case.
-- Automated end-to-end/failure-injection coverage for real IndexedDB, Cloudflare outage, concurrent registers, interrupted sync, revocation and recovery is incomplete.
-- Physical Android browser acceptance, isolated production-like D1 backup/migration rehearsal, signing-key provisioning/rotation, controlled preview and production rollout remain release gates.
+- CI type-check and production build.
+- Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
+- Latest recorded CI run `45376677652` passed all executed steps, including the storefront browser suite.
+- The isolated remote D1 integration step was skipped because `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are not configured in GitHub Actions. A successful workflow status is not evidence that this remote integration test ran.
+
+Not yet verified / release blockers:
+
+- No dedicated full offline-POS browser outage/failure-injection suite against the actual production build and no physical Android acceptance.
+- No isolated remote D1 migration/concurrency/rollback integration run, production-like backup/restore rehearsal or migration approval.
+- Signing-key generation, secure secret provisioning, rotation/revocation and recovery custody remain owner-controlled tasks.
+- Production asset-manifest/cold-reload cache acceptance, preview smoke test and supervised pilot remain outstanding.
 
 **Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the missing integrations, automated tests, key management, backup/migration rehearsal and physical-device acceptance are complete.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
@@ -126,7 +137,7 @@ D1 `batch()` provides sequential transactional execution and rolls back the batc
 - **Stock allocation exhausted or invalid:** preserve cash evidence; create a conflict case. Do not decrement other stock or silently mark accepted.
 - **Cashier/device/permit revoked or shift closed online:** do not silently accept; preserve and route to owner review with the exact reason.
 - **Device lost/damaged:** owner revokes it online, records physical cash/receipt reconciliation and follows the documented recovery procedure. Never delete its server allocation while queue state is unknown.
-- **Manual resolution:** append-only record with actor, reason, original event hash, selected resolution, amount/stock effect and timestamps. No direct edits to the original event.
+- **Manual resolution:** the manager must supply an existing completed POS sale ID and an explanation. The server compares the immutable event with the canonical sale shift/cashier/totals, every item/variant/price, cash payment tender/change, financial ledger entry and exact per-variant inventory movements. Only an exact match can atomically consume the corresponding offline allocation, set the event to accepted, resolve the case, and append an action plus audit record. No sale is fabricated and no cash or physical-stock adjustment is invented by this workflow. Any mismatch or concurrency failure leaves the case open.
 
 ## 9. UI and cashier workflow
 
