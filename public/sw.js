@@ -1,5 +1,5 @@
-const CACHE_NAME = "de-verve-shell-v5";
-const SHELL = ["/", "/icons/icon-192.svg", "/icons/icon-512.svg", "/icons/icon-maskable.svg", "/brand/de-verve-mark.svg"];
+const CACHE_NAME = "de-verve-shell-v7";
+const SHELL = ["/", "/brand/de-verve-mark.svg"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting()));

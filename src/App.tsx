@@ -4,6 +4,7 @@ import InstallPrompt from "./InstallPrompt";
 import AIChatWidget from "./AIChatWidget";
 import BrandHead from "./BrandHead";
 import BrandLogo from "./BrandLogo";
+import BrandLoader from "./BrandLoader";
 import SocialLinks from "./SocialLinks";
 import Policies from "./Policies";
 const Admin = lazy(() => import("./Admin"));
@@ -512,11 +513,9 @@ function Storefront() {
     root.style.setProperty("--dv-site-button-radius",siteDesign.button_style==="pill"?"999px":siteDesign.button_style==="square"?"4px":"12px");
     root.style.setProperty("--dv-site-shadow",siteDesign.card_shadow==="flat"?"none":siteDesign.card_shadow==="bold"?"0 14px 38px rgba(12,37,64,.16)":"0 8px 24px rgba(12,37,64,.06)");
     for(const [key,id] of Object.entries(siteDesign.section_images))root.style.setProperty("--dv-section-"+key+"-image",id?"url('/media/"+id+"')":"none");
-    const logoFrame=siteDesign.image_settings?.brand_logo;
-    const logoX=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.x)?logoFrame.x:50));
-    const logoY=Math.max(0,Math.min(100,Number.isFinite(logoFrame?.y)?logoFrame.y:50));
-    root.style.setProperty("--dv-brand-logo-fit",logoFrame?.fit==="contain"?"contain":"cover");
-    root.style.setProperty("--dv-brand-logo-position",logoX+"% "+logoY+"%");
+    // Brand marks are always centered and fully visible in their circular frames.
+    root.style.setProperty("--dv-brand-logo-fit","contain");
+    root.style.setProperty("--dv-brand-logo-position","50% 50%");
     for(const [key,setting] of Object.entries(siteDesign.image_settings||{})){
       if(key==="brand_logo")continue;
       const x=Math.max(0,Math.min(100,Number.isFinite(setting?.x)?setting.x:50));
@@ -723,7 +722,7 @@ function Storefront() {
         <div className="header-actions">
           <form className="site-search" role="search" onSubmit={event=>{event.preventDefault();const first=siteSearchResults[0];if(first)window.location.href=first.href;else if(siteSearch.trim())setSiteSearchOpen(true);}}>
             <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg>
-            <input type="search" value={siteSearch} onChange={event=>{setSiteSearch(event.target.value);setSiteSearchOpen(true);}} onFocus={()=>setSiteSearchOpen(true)} onBlur={()=>window.setTimeout(()=>setSiteSearchOpen(false),160)} placeholder="Search the website" aria-label="Search products, categories, vehicles and pages" aria-expanded={siteSearchOpen&&!!siteSearch.trim()} aria-controls="site-search-results" />
+            <input type="search" value={siteSearch} onChange={event=>{setSiteSearch(event.target.value);setSiteSearchOpen(true);}} onFocus={()=>setSiteSearchOpen(true)} onBlur={()=>window.setTimeout(()=>setSiteSearchOpen(false),160)} placeholder="Explore DeVerve" aria-label="Search products, categories, vehicles and pages" aria-expanded={siteSearchOpen&&!!siteSearch.trim()} aria-controls="site-search-results" />
             {siteSearch&&<button type="button" className="site-search-clear" aria-label="Clear search" onMouseDown={event=>event.preventDefault()} onClick={()=>{setSiteSearch("");setSiteSearchOpen(false);}}>×</button>}
             {siteSearchOpen&&siteSearch.trim()&&<div className="site-search-results" id="site-search-results" role="listbox" aria-label="Search results">
               {siteSearchResults.length?siteSearchResults.map((item,index)=><a key={item.href+"-"+index} role="option" href={item.href}><strong>{item.label}</strong><small>{item.detail}</small></a>):<p>No matches found. Try another word or contact our team.</p>}
@@ -959,7 +958,6 @@ function Storefront() {
 
         <section className="wholesale-section" id="wholesale">
           <div className={"wholesale-art"+(siteDesign.section_images.wholesale?" has-owner-art":"")}>
-            <div className="wholesale-art-mark">DV<span>.</span></div>
             <span className="wholesale-caption">YOUR STORE. YOUR STYLE.<br />YOUR BUSINESS PARTNER.</span>
           </div>
           <div className="wholesale-copy">
@@ -1096,20 +1094,13 @@ function Storefront() {
   );
 }
 
-function BrandLoadingScreen(){
-  return <main className="brand-loading-screen" role="status" aria-live="polite" aria-label="Loading De VERVE">
-    <div className="brand-loader-orbit brand-loader-orbit-one"/><div className="brand-loader-orbit brand-loader-orbit-two"/>
-    <BrandLogo className="brand-loader-logo"/>
-    <div className="brand-loader-wordmark">DE VERVE</div><div className="brand-loader-caption">ELEVATE YOUR EVERYDAY</div><div className="brand-loader-track"><i/></div>
-  </main>
-}
-
 function HomePageRoute() {
   const requestedScreen=new URLSearchParams(window.location.search).get("screen");
   const [hasCmsHome,setHasCmsHome]=useState<boolean|null>(null);
   useEffect(()=>{let active=true;void fetch("/api/pages/home",{headers:{accept:"application/json"}}).then(response=>{if(active)setHasCmsHome(response.ok);}).catch(()=>{if(active)setHasCmsHome(false);});return()=>{active=false;};},[]);
   if(requestedScreen&&["fashion","wholesale","mobility","contact","favourites","policies"].includes(requestedScreen))return <Storefront/>;
-  if(hasCmsHome===null)return <BrandLoadingScreen/>;
+  // Do not flash the legacy storefront while deciding which published homepage to show.
+  if(hasCmsHome===null)return <BrandLoader/>;
   return hasCmsHome?<PublicPage homeMode/>:<Storefront/>;
 }
 
@@ -1121,6 +1112,6 @@ export default function App() {
   }, []);
   const path=window.location.pathname;
   const isAdmin=path.startsWith("/admin");
-  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoadingScreen/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
+  return <><BrandHead /><FormDraftPersistence />{!isAdmin&&<AIChatWidget />}<Suspense fallback={<BrandLoader/>}>{path.startsWith("/product/") ? <ProductPage /> : path.startsWith("/pages/") ? <PublicPage /> : path.startsWith("/account") ? <CustomerAccount /> : isAdmin ? <Admin /> : path.startsWith("/wholesale/quote/") ? <WholesaleQuote /> : path === "/delivery-confirmation" ? <DeliveryFeeApproval /> : path === "/" || path === "/index.html" ? <HomePageRoute /> : <NotFound />}</Suspense></>;
 }
 
