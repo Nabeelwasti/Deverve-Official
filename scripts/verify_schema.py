@@ -81,6 +81,25 @@ expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_reconciliation_actions SET reason='edited' WHERE id='offline-action'"),
     "Offline reconciliation actions must be append-only",
 )
+
+# Offline allocations must reserve the same inventory counter used by online checkout.
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 2), f"Offline allocation did not reserve two units: {reserved}"
+expect_integrity_error(
+    lambda: db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-over-allocation","offline-device","main-register","offline-variant",9,"offline-owner")),
+    "Offline allocation must not reserve more than currently available stock",
+)
+db.execute("UPDATE pos_offline_stock_allocations SET consumed_quantity=1 WHERE id='offline-allocation'")
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 1), f"Consumed offline allocation did not release its reservation: {reserved}"
+db.execute("UPDATE pos_offline_stock_allocations SET released_quantity=1,status='released',released_at='2026-11-24T01:00:00.000Z' WHERE id='offline-allocation'")
+reserved = db.execute("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id='offline-variant'").fetchone()
+assert reserved == (10, 0), f"Released offline allocation left reserved stock behind: {reserved}"
+expect_integrity_error(
+    lambda: db.execute("DELETE FROM pos_offline_stock_allocations WHERE id='offline-allocation'"),
+    "Offline allocation evidence must be append-only",
+)
+
 db.execute("ROLLBACK TO offline_pos_schema_probe")
 db.execute("RELEASE offline_pos_schema_probe")
 
