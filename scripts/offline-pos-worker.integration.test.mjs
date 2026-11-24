@@ -476,3 +476,47 @@ test("real Worker rolls back the entire signed sale batch after a late financial
   assert.equal(event.outcome, "conflict");
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(fixture.sale.eventId).count, 1);
 });
+
+
+test("real Worker rejects invalid device signatures and defers sequence gaps without consuming sequence state", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const attacker = await createIdentity();
+  const forgedSale = { ...fixture.sale, eventId: randomUUID(), idempotencyKey: randomUUID() };
+  const forged = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: forgedSale, signature: await signSale(attacker, forgedSale) }],
+  });
+  assert.equal(forged.status, 200);
+  assert.equal((await forged.json()).results[0].reason_code, "device_signature_invalid");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events").get().count, 0);
+
+  const gapSale = { ...fixture.sale, eventId: randomUUID(), idempotencyKey: randomUUID(), sequence: 2 };
+  const gap = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: gapSale, signature: await signSale(fixture.identity, gapSale) }],
+  });
+  assert.equal(gap.status, 200);
+  const gapResult = (await gap.json()).results[0];
+  assert.equal(gapResult.outcome, "retry");
+  assert.equal(gapResult.reason_code, "device_sequence_gap");
+  assert.equal(gapResult.expected_sequence, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events").get().count, 0);
+});
+
+test("real Worker preserves a signed sale as a review conflict when its enrolled device is revoked", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const revoked = await api("/api/admin/pos/offline/devices/" + fixture.deviceId + "/revoke", {
+    reason: "Device revoked before reconnecting its queued sale",
+  });
+  assert.equal(revoked.status, 200);
+  const response = await api("/api/admin/pos/offline/sync", {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature: await signSale(fixture.identity, fixture.sale) }],
+  });
+  assert.equal(response.status, 200);
+  const result = (await response.json()).results[0];
+  assert.equal(result.outcome, "conflict");
+  assert.equal(result.reason_code, "device_revoked");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(fixture.sale.eventId).count, 1);
+});
