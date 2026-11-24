@@ -546,21 +546,48 @@ async function openRevokedDeviceConflict(fixture) {
   return sqlite.prepare("SELECT id FROM pos_offline_reconciliation_cases WHERE event_id=?").get(fixture.sale.eventId).id;
 }
 
-function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change = 250) {
+function insertCanonicalSaleForReconciliation(fixture, tendered = 1500, change = 250, overrides = {}) {
   const saleId = randomUUID();
-  const product = sqlite.prepare("SELECT product_id FROM product_variants WHERE id=?").get(fixture.variantId);
-  const variant = sqlite.prepare("SELECT sku,size,color FROM product_variants WHERE id=?").get(fixture.variantId);
-  sqlite.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-1 WHERE id=?").run(fixture.variantId);
-  sqlite.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,'Walk-in customer','',1250,0,1250,'completed',?,?)")
-    .run(saleId, "DV-RECON-" + saleId.slice(0, 8), fixture.sale.sessionId, randomUUID(), ownerId);
-  sqlite.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?, ?,1,1250,500,1250)")
-    .run(randomUUID(), saleId, product.product_id, fixture.variantId, "Rollback Test Shirt", variant.sku, variant.size, variant.color);
-  sqlite.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,'cash-main','cash',1250,?,?, 'reconciliation fixture')")
-    .run(randomUUID(), saleId, tendered, change);
-  sqlite.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',1250,'pos_sale','pos_sale',?,?,?,?)")
-    .run(randomUUID(), saleId, fixture.sale.sessionId, "Reconciliation fixture", ownerId);
-  sqlite.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'sold',-1,'order',?,?,?)")
-    .run(randomUUID(), fixture.variantId, saleId, "Completed POS sale reconciliation fixture", ownerId);
+  let variantId = overrides.variantId ?? fixture.variantId;
+  if (overrides.useDifferentVariant) {
+    const productId = randomUUID();
+    variantId = randomUUID();
+    sqlite.prepare("INSERT INTO products (id,slug,name,description,category,audience,status,retail_price_paisa) VALUES (?,?,?,'','apparel','unisex','published',1250)")
+      .run(productId, "reconciliation-mismatch-" + productId, "Mismatch Variant");
+    sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,is_active,cost_price_paisa) VALUES (?,?,?,'L','Blue',5,1,500)")
+      .run(variantId, productId, "MISMATCH-" + variantId.slice(0, 8));
+  }
+  const variant = sqlite.prepare("SELECT product_id,sku,size,color FROM product_variants WHERE id=?").get(variantId);
+  const quantity = overrides.quantity ?? 1;
+  const unitPrice = overrides.unitPricePaisa ?? 1250;
+  const lineTotal = overrides.lineTotalPaisa ?? quantity * unitPrice;
+  const subtotal = overrides.subtotalPaisa ?? 1250;
+  const total = overrides.totalPaisa ?? 1250;
+  const sessionId = overrides.sessionId ?? fixture.sale.sessionId;
+  let cashierId = overrides.cashierAdminId ?? ownerId;
+  if (overrides.useDifferentCashier) {
+    cashierId = randomUUID();
+    sqlite.prepare("INSERT INTO admin_users (id,email,password_hash,role) VALUES (?,?,?,'owner')")
+      .run(cashierId, cashierId + "@integration.test", "test-only-not-used");
+  }
+  if (overrides.useDifferentShift) {
+    const otherSessionId = randomUUID();
+    sqlite.prepare("INSERT INTO pos_sessions (id,register_id,opened_by_admin_id,opening_cash_paisa,expected_cash_paisa,status) VALUES (?,?,?,0,0,'open')")
+      .run(otherSessionId, registerId, ownerId);
+    overrides = { ...overrides, sessionId: otherSessionId };
+  }
+  const effectiveSessionId = overrides.sessionId ?? sessionId;
+  sqlite.prepare("UPDATE product_variants SET stock_on_hand=stock_on_hand-? WHERE id=?").run(quantity, variantId);
+  sqlite.prepare("INSERT INTO pos_sales (id,receipt_number,session_id,customer_name,customer_phone,subtotal_paisa,discount_paisa,total_paisa,status,idempotency_key,cashier_admin_id) VALUES (?,?,?,'Walk-in customer','',?,0,?,'completed',?,?)")
+    .run(saleId, "DV-RECON-" + saleId.slice(0, 8), effectiveSessionId, subtotal, total, randomUUID(), cashierId);
+  sqlite.prepare("INSERT INTO pos_sale_items (id,sale_id,product_id,variant_id,product_name_snapshot,sku_snapshot,size_snapshot,color_snapshot,quantity,unit_price_paisa,unit_cost_paisa,line_total_paisa) VALUES (?,?,?,?,?,?,?,?,?,?,500,?)")
+    .run(randomUUID(), saleId, variant.product_id, variantId, "Rollback Test Shirt", variant.sku, variant.size, variant.color, quantity, unitPrice, lineTotal);
+  sqlite.prepare("INSERT INTO pos_payments (id,sale_id,account_id,payment_method,amount_paisa,tendered_paisa,change_paisa,reference) VALUES (?,?,'cash-main','cash',?,?,?, 'reconciliation fixture')")
+    .run(randomUUID(), saleId, total, tendered, change);
+  sqlite.prepare("INSERT INTO financial_transactions (id,account_id,direction,amount_paisa,category,reference_type,reference_id,register_session_id,note,actor_admin_id) VALUES (?,'cash-main','in',?,'pos_sale','pos_sale',?,?,?,?)")
+    .run(randomUUID(), overrides.financialAmountPaisa ?? total, saleId, effectiveSessionId, "Reconciliation fixture", cashierId);
+  sqlite.prepare("INSERT INTO inventory_movements (id,variant_id,movement_type,quantity_delta,reference_type,reference_id,note,actor_admin_id) VALUES (?,?,'sold',?,'order',?,?,?)")
+    .run(randomUUID(), overrides.movementVariantId ?? variantId, overrides.movementQuantityDelta ?? -quantity, saleId, "Completed POS sale reconciliation fixture", cashierId);
   return saleId;
 }
 
@@ -683,6 +710,106 @@ test("real Worker rolls back every reconciliation D1 statement failure boundary"
   assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "resolved");
   assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_actions WHERE case_id=? AND action_type='accepted'").get(caseId).count, 1);
+});
+
+test("real Worker rejects reconciliation when the completed sale cashier does not match the offline event", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { useDifferentCashier: true });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched cashier identity is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
+});
+
+test("real Worker rejects reconciliation when the completed sale shift does not match the offline event", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { useDifferentShift: true });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched register shift is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when completed sale totals do not match the offline event", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { subtotalPaisa: 1249, totalPaisa: 1249 });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched sale totals are rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when completed sale line variant does not match", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { useDifferentVariant: true });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched sale variant is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when completed sale line quantity does not match", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 2500, 1250, { quantity: 2, lineTotalPaisa: 2500 });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched sale quantity is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when completed sale line price does not match", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 300, { unitPricePaisa: 1200, lineTotalPaisa: 1200 });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched sale unit price is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when cash change does not match the offline event", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 249);
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched cash change is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when cash financial ledger amount does not match", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { financialAmountPaisa: 1249 });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched cash ledger amount is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+});
+
+test("real Worker rejects reconciliation when inventory movement quantity does not match", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture, 1500, 250, { movementQuantityDelta: -2 });
+  const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId, reason: "Verify mismatched inventory movement is rejected",
+  });
+  assert.equal(response.status, 409);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
 });
 
 test("real Worker leaves reconciliation open when the completed sale cash tender does not match the immutable offline event", async () => {
