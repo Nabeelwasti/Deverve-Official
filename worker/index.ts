@@ -2421,6 +2421,37 @@ interface AdminInventoryMovementRow {
   created_at: string;
 }
 
+export async function verifyOfflineEnrollmentProof(
+  publicKeyJwk: JsonWebKey,
+  challenge: string,
+  signatureBase64Url: string,
+): Promise<boolean> {
+  try {
+    if (typeof challenge !== "string" || challenge.length < 32 || challenge.length > 128 ||
+        typeof signatureBase64Url !== "string" || !/^[A-Za-z0-9_-]{86}$/.test(signatureBase64Url) ||
+        publicKeyJwk.kty !== "EC" || publicKeyJwk.crv !== "P-256" ||
+        typeof publicKeyJwk.x !== "string" || typeof publicKeyJwk.y !== "string" ||
+        !/^[A-Za-z0-9_-]{43}$/.test(publicKeyJwk.x) || !/^[A-Za-z0-9_-]{43}$/.test(publicKeyJwk.y) ||
+        "d" in publicKeyJwk) return false;
+    const key = await crypto.subtle.importKey(
+      "jwk",
+      { kty: "EC", crv: "P-256", x: publicKeyJwk.x, y: publicKeyJwk.y, ext: true, key_ops: ["verify"] },
+      { name: "ECDSA", namedCurve: "P-256" },
+      false,
+      ["verify"],
+    );
+    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\\n" + challenge);
+    return await crypto.subtle.verify(
+      { name: "ECDSA", hash: "SHA-256" },
+      key,
+      fromBase64Url(signatureBase64Url),
+      message,
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const path = url.pathname;
   if (!path.startsWith("/api/admin/pos/")) return null;
@@ -2520,10 +2551,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
             String(challengeRow.expires_at) <= new Date().toISOString() || String(challengeRow.challenge_hash) !== await sha256(challenge)) {
           return error("The enrollment challenge is expired, consumed or bound to a different device", 409);
         }
-        const verifyKey = await crypto.subtle.importKey("jwk", publicKey.jwk, { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
-        const signedMessage = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
-        const signatureBytes = fromBase64Url(signature);
-        if (signatureBytes.byteLength !== 64 || !await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, verifyKey, signatureBytes, signedMessage)) {
+        if (!await verifyOfflineEnrollmentProof(publicKey.jwk, challenge, signature)) {
           return error("The device did not prove possession of its private signing key", 403);
         }
         const now = new Date().toISOString();
