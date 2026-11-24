@@ -611,6 +611,37 @@ test("real Worker serializes concurrent reconciliation attempts and consumes one
   assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 1);
 });
 
+test("real Worker rolls back every reconciliation D1 statement failure boundary", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture);
+  // One-line reconciliation has nine D1 statements: allocation/guard,
+  // event/guard, case/guard, accepted-action/guard and audit evidence.
+  for (let failAt = 0; failAt < 9; failAt += 1) {
+    db.failNextBatchAt = failAt;
+    const response = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+      canonical_sale_id: canonicalSaleId,
+      reason: "Failure-injection boundary " + failAt + " must roll back atomically",
+    });
+    assert.equal(response.status, 409, "reconciliation failure boundary " + failAt + " must fail closed");
+    assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "open");
+    assert.equal(sqlite.prepare("SELECT outcome,canonical_sale_id FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId).outcome, "conflict");
+    assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
+    assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_actions WHERE case_id=? AND action_type='accepted'").get(caseId).count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_reconciliation_resolved' AND entity_id=?").get(caseId).count, 0);
+  }
+  const recovered = await api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", {
+    canonical_sale_id: canonicalSaleId,
+    reason: "Resolve after every rollback boundary has been verified",
+  });
+  assert.equal(recovered.status, 200);
+  assert.equal((await recovered.json()).resolved, true);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "resolved");
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_actions WHERE case_id=? AND action_type='accepted'").get(caseId).count, 1);
+});
+
 test("real Worker leaves reconciliation open when the completed sale cash tender does not match the immutable offline event", async () => {
   const fixture = await createReadyOfflinePermitFixture();
   const caseId = await openRevokedDeviceConflict(fixture);
