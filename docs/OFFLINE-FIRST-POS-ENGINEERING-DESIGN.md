@@ -181,7 +181,7 @@ They add immutable device/permit/event evidence, single-use challenge guards, de
 
 ### Verified automated coverage
 
-Full CI run [45471852338](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45471852338) passed all workflow steps on PR code head `89aa87e2a1511344fef370ba2d96b5d859546201`. The real Worker integration suite reports 23 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
+Full CI run [45486036670](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45486036670) passed all workflow steps on code head `687e5a9273ff135046c58c147f2658fcfdb868bd`. The real Worker integration suite reports 33 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`. It covers the complete reconciliation mismatch matrix and retry-safe standalone replay-audit failure handling. Full CI also passed the direct Cloudflare D1 independent-request sequence-race probe, production-backup-clone rehearsal and 160 storefront browser tests.
 
 Verified scenarios:
 - [x] Challenge binding, forged proof rejection without challenge consumption, one-time enrollment/replay rejection, expiry, thumbprint mismatch and unknown register.
@@ -206,7 +206,9 @@ Verified scenarios:
 
 - [x] Direct Cloudflare D1 independent-request sequence contention probe passed in isolated CI D1: two distinct event IDs competed for the same `(device_id, device_sequence)` key; exactly one insert succeeded and one conflicted, leaving one row. The temporary database was deleted and cleanup verified.
 - [ ] Run the complete Worker request handler on a temporary Cloudflare Worker bound to isolated D1 and verify sync plus concurrent reconciliation/rollback behavior under actual D1 semantics. The direct SQL uniqueness probe and local SQLite Worker suite do not replace this end-to-end runtime test.
-- [ ] Extend failure injection beyond the three covered atomic batches to any remaining standalone writes and the complete mismatch matrix (wrong cashier/grant, closed shift, wrong register/device, price/catalogue drift, inactive variant, allocation overdraw, tender/change, cash ledger and inventory movement mismatch).
+- [x] Reconciliation mismatch tests reject wrong cashier, shift, totals, variant, quantity, unit price, cash tender/change, cash-ledger amount and inventory-movement quantity; every rejection leaves the case open and the offline allocation unconsumed.
+- [x] Standalone replay-conflict audit insertion failure returns a retryable outcome; a subsequent retry records the audit evidence without creating a second sale.
+- [ ] Review remaining non-batched write paths (challenge creation/cleanup and permit-expiry housekeeping) for failure/cleanup behavior and add tests where a partial side effect is possible.
 - [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
 - [ ] Complete production-build cache manifest audit and real cold-cache/cold-reload acceptance.
 - [ ] Complete the physical Android pilot, airplane-mode sale, app reload/restart, reconnect/sync, scanner, printer, storage-denial and recovery acceptance.
