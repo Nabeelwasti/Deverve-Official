@@ -26,20 +26,20 @@ BEGIN
     THEN RAISE(ABORT, 'offline permit duration exceeds policy') END;
 
   SELECT CASE WHEN json_extract(NEW.claims_json, '$.permit_id') <> NEW.id
-    OR json_extract(NEW.claims_json, '$.device_id') <> NEW.device_id
-    OR json_extract(NEW.claims_json, '$.register_id') <> NEW.register_id
-    OR json_extract(NEW.claims_json, '$.session_id') <> NEW.session_id
-    OR json_extract(NEW.claims_json, '$.cashier_admin_id') <> NEW.cashier_admin_id
-    OR json_extract(NEW.claims_json, '$.cashier_grant_version') <> NEW.cashier_grant_version
-    OR json_extract(NEW.claims_json, '$.snapshot_version') <> NEW.snapshot_version
-    OR json_extract(NEW.claims_json, '$.snapshot_hash') <> NEW.snapshot_hash
-    OR json_extract(NEW.claims_json, '$.issued_at') <> NEW.issued_at
-    OR json_extract(NEW.claims_json, '$.expires_at') <> NEW.expires_at
-    OR json_extract(NEW.claims_json, '$.max_events') <> NEW.max_events
-    OR json_extract(NEW.claims_json, '$.cash_only') <> 1
-    OR json_extract(NEW.claims_json, '$.allow_refunds') <> 0
-    OR json_extract(NEW.claims_json, '$.allow_voids') <> 0
-    OR json_extract(NEW.claims_json, '$.allow_shift_close') <> 0
+    OR json_extract(NEW.claims_json, '$.device_id') IS NOT NEW.device_id
+    OR json_extract(NEW.claims_json, '$.register_id') IS NOT NEW.register_id
+    OR json_extract(NEW.claims_json, '$.session_id') IS NOT NEW.session_id
+    OR json_extract(NEW.claims_json, '$.cashier_admin_id') IS NOT NEW.cashier_admin_id
+    OR json_extract(NEW.claims_json, '$.cashier_grant_version') IS NOT NEW.cashier_grant_version
+    OR json_extract(NEW.claims_json, '$.snapshot_version') IS NOT NEW.snapshot_version
+    OR json_extract(NEW.claims_json, '$.snapshot_hash') IS NOT NEW.snapshot_hash
+    OR json_extract(NEW.claims_json, '$.issued_at') IS NOT NEW.issued_at
+    OR json_extract(NEW.claims_json, '$.expires_at') IS NOT NEW.expires_at
+    OR json_extract(NEW.claims_json, '$.max_events') IS NOT NEW.max_events
+    OR json_extract(NEW.claims_json, '$.cash_only') IS NOT 1
+    OR json_extract(NEW.claims_json, '$.allow_refunds') IS NOT 0
+    OR json_extract(NEW.claims_json, '$.allow_voids') IS NOT 0
+    OR json_extract(NEW.claims_json, '$.allow_shift_close') IS NOT 0
     THEN RAISE(ABORT, 'offline permit claims do not match the authorized database record') END;
 
   SELECT CASE WHEN json_valid(NEW.claims_json)=0
