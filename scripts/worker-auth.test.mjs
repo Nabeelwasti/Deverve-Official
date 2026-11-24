@@ -6,7 +6,7 @@ test("website enquiries can be submitted without a blocked Turnstile widget and 
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 import { verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "../.test-dist/src/posOffline/deviceCrypto.js";
 
@@ -135,6 +135,29 @@ test("offline permits are signed by the configured matching P-256 keypair", asyn
   const otherPair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const otherPublic = await crypto.subtle.exportKey("jwk", otherPair.publicKey);
   assert.equal(await signOfflinePermitClaims(claims, JSON.stringify(privateJwk), JSON.stringify(otherPublic)), null);
+});
+
+test("server verifies offline permit and event signatures against exact canonical payloads", async () => {
+  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+  const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+  const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+  const canonical = (value) => {
+    if (value === null || typeof value !== "object") return JSON.stringify(value);
+    if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+    return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+  };
+  const sign = async (context, payload) => {
+    const bytes = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, new TextEncoder().encode(context + canonical(payload)));
+    return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  };
+  const permitClaims = { permit_id: "permit-1", device_id: "device-1", cash_only: true, allocations: [] };
+  const permitSignature = await sign("deverve-offline-pos:permit:v1\n", permitClaims);
+  assert.equal(await verifyOfflinePermitSignatureServer(permitClaims, permitSignature, publicJwk), true);
+  assert.equal(await verifyOfflinePermitSignatureServer({ ...permitClaims, cash_only: false }, permitSignature, publicJwk), false);
+  const event = { eventId: "event-1", sequence: 1, totalPaisa: 1000, status: "pending" };
+  const eventSignature = await sign("deverve-offline-pos:event:v1\n", event);
+  assert.equal(await verifyOfflineEventSignature(event, eventSignature, publicJwk), true);
+  assert.equal(await verifyOfflineEventSignature({ ...event, totalPaisa: 1001 }, eventSignature, publicJwk), false);
 });
 
 test("offline device enrollment proof verifies only the bound P-256 challenge signature", async () => {
