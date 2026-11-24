@@ -204,7 +204,8 @@ Verified scenarios:
 
 ### Still required before enabling
 
-- [ ] Repeat distinct-event sequence contention through independent Cloudflare D1 request/connection paths and record the exact outcome under D1's production transaction semantics; current concurrency coverage uses the isolated SQLite adapter.
+- [x] Direct Cloudflare D1 independent-request sequence contention probe passed in isolated CI D1: two distinct event IDs competed for the same `(device_id, device_sequence)` key; exactly one insert succeeded and one conflicted, leaving one row. The temporary database was deleted and cleanup verified.
+- [ ] Run the complete Worker request handler on a temporary Cloudflare Worker bound to isolated D1 and verify sync plus concurrent reconciliation/rollback behavior under actual D1 semantics. The direct SQL uniqueness probe and local SQLite Worker suite do not replace this end-to-end runtime test.
 - [ ] Extend failure injection beyond the three covered atomic batches to any remaining standalone writes and the complete mismatch matrix (wrong cashier/grant, closed shift, wrong register/device, price/catalogue drift, inactive variant, allocation overdraw, tender/change, cash ledger and inventory movement mismatch).
 - [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
 - [ ] Complete production-build cache manifest audit and real cold-cache/cold-reload acceptance.
