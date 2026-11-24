@@ -114,7 +114,7 @@ test("real Worker rejects a forged proof and leaves the challenge available for 
     public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
   });
   const challenge = await challengeResponse.json();
-  const forged = await enrollPayload(attacker, challenge.challenge, challenge.challenge_id, deviceId);
+  const forged = await enrollPayload(attacker, challenge.challenge, challenge.challenge_id, deviceId, identity);
   const rejected = await api("/api/admin/pos/offline/devices/enroll", forged);
   assert.equal(rejected.status, 403);
   assert.equal(sqlite.prepare("SELECT consumed_at FROM pos_offline_enrollment_challenges WHERE id=?").get(challenge.challenge_id).consumed_at, null);
