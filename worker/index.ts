@@ -2440,7 +2440,7 @@ export async function verifyOfflineEnrollmentProof(
       false,
       ["verify"],
     );
-    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\\n" + challenge);
+    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
     return await crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       key,
