@@ -34,8 +34,12 @@ async function snapshot(id){
  const rows=await queryRows(id,"SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV' ORDER BY name");
  const tables=rows.map(row=>row.name).filter(name=>typeof name==="string");
  if(tables.length<10)throw new Error("D1 schema snapshot is unexpectedly small.");
- const union=tables.map(name=>{const literal=name.replace(/'/g,"''"),identifier=name.replace(/"/g,'""');return "SELECT '"+literal+"' AS table_name, COUNT(*) AS row_count FROM \""+identifier+"\"";}).join(" UNION ALL ")+" ORDER BY table_name";
- const counts=await queryRows(id,union);
+ const countQueries=tables.map(name=>{const literal=name.replace(/'/g,"''"),identifier=name.replace(/"/g,'""');return {sql:"SELECT '"+literal+"' AS table_name, COUNT(*) AS row_count FROM \""+identifier+"\""};});
+ const counts=[];
+ for(let offset=0;offset<countQueries.length;offset+=20){
+  const batch=await api("POST","/accounts/"+accountId+"/d1/database/"+id+"/query",{batch:countQueries.slice(offset,offset+20)});
+  counts.push(...(Array.isArray(batch)?batch:[]).flatMap(item=>item.results||[]));
+ }
  const rowCounts=Object.fromEntries(counts.map(row=>[row.table_name,Number(row.row_count)]));
  const objects=await queryRows(id,"SELECT type, COUNT(*) AS count FROM sqlite_master WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV' GROUP BY type ORDER BY type");
  const definitions=await queryRows(id,"SELECT type,name,tbl_name,COALESCE(sql,'') AS sql FROM sqlite_master WHERE type IN ('table','index','trigger','view') AND name NOT LIKE 'sqlite_%' AND name <> '_cf_KV' ORDER BY type,name");
