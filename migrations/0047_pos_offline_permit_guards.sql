@@ -25,8 +25,25 @@ BEGIN
     OR julianday(NEW.expires_at) > julianday(NEW.issued_at, '+8 hours')
     THEN RAISE(ABORT, 'offline permit duration exceeds policy') END;
 
+  SELECT CASE WHEN json_extract(NEW.claims_json, '$.permit_id') <> NEW.id
+    OR json_extract(NEW.claims_json, '$.device_id') <> NEW.device_id
+    OR json_extract(NEW.claims_json, '$.register_id') <> NEW.register_id
+    OR json_extract(NEW.claims_json, '$.session_id') <> NEW.session_id
+    OR json_extract(NEW.claims_json, '$.cashier_admin_id') <> NEW.cashier_admin_id
+    OR json_extract(NEW.claims_json, '$.cashier_grant_version') <> NEW.cashier_grant_version
+    OR json_extract(NEW.claims_json, '$.snapshot_version') <> NEW.snapshot_version
+    OR json_extract(NEW.claims_json, '$.snapshot_hash') <> NEW.snapshot_hash
+    OR json_extract(NEW.claims_json, '$.issued_at') <> NEW.issued_at
+    OR json_extract(NEW.claims_json, '$.expires_at') <> NEW.expires_at
+    OR json_extract(NEW.claims_json, '$.max_events') <> NEW.max_events
+    OR json_extract(NEW.claims_json, '$.cash_only') <> 1
+    OR json_extract(NEW.claims_json, '$.allow_refunds') <> 0
+    OR json_extract(NEW.claims_json, '$.allow_voids') <> 0
+    OR json_extract(NEW.claims_json, '$.allow_shift_close') <> 0
+    THEN RAISE(ABORT, 'offline permit claims do not match the authorized database record') END;
+
   SELECT CASE WHEN json_valid(NEW.claims_json)=0
-    OR json_array_length(json_extract(NEW.claims_json, '$.allocations')) NOT BETWEEN 1 AND 30
+    OR COALESCE(json_array_length(json_extract(NEW.claims_json, '$.allocations')),0) NOT BETWEEN 1 AND 30
     THEN RAISE(ABORT, 'offline permit allocation snapshot is invalid') END;
 
   SELECT CASE WHEN (
@@ -50,6 +67,7 @@ BEGIN
       OR a.allocated_quantity-a.consumed_quantity-a.released_quantity <> json_extract(item.value, '$.quantity')
       OR v.is_active <> 1
       OR p.status <> 'published'
+      OR p.retail_price_paisa IS NULL
       OR p.retail_price_paisa <> json_extract(item.value, '$.unit_price_paisa')
   ) THEN RAISE(ABORT, 'offline permit snapshot does not match current reserved stock and catalogue prices') END;
 END;
