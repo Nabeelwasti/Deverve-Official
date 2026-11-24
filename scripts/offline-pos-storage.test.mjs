@@ -5,7 +5,7 @@ const source = readFileSync(new URL("../src/posOffline/storage.ts", import.meta.
 const design = readFileSync(new URL("../docs/OFFLINE-POS-RESEARCH-REVIEW.md", import.meta.url), "utf8");
 
 assert.match(source, /indexedDB\.open\(OFFLINE_POS_DB_NAME, OFFLINE_POS_DB_VERSION\)/);
-assert.match(source, /database\.transaction\(\["meta", "sales", "outbox", "audit"\], "readwrite"/);
+assert.match(source, /database\.transaction\(\["meta", "permit", "catalogue", "shift", "sales", "outbox", "audit"\], "readwrite"/);
 assert.match(source, /durability: "strict"/);
 assert.match(source, /transaction\.objectStore\("sales"\)\.add\(queued\)/);
 assert.match(source, /transaction\.objectStore\("outbox"\)\.add\(/);
