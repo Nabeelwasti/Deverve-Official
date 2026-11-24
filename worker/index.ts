@@ -2600,6 +2600,9 @@ async function processOfflineSaleEvent(
     env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
   ]);
   if (!device || !permit) return { outcome: "rejected", reason_code: "device_or_permit_not_found" };
+  // The authenticated cashier session must be the exact cashier bound to the
+  // signed permit; a different cashier or manager cannot submit its queue.
+  if (admin.admin_user_id !== permit.cashier_admin_id) return { outcome: "rejected", reason_code: "authenticated_cashier_mismatch" };
   let devicePublicKey: JsonWebKey, permitClaims: Record<string, unknown>, permitPublicKey: JsonWebKey;
   try {
     devicePublicKey = JSON.parse(String(device.public_key_jwk_json)) as JsonWebKey;
@@ -2884,7 +2887,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path)))) return error("Cashier access is limited to register sales and own shift operations", 403);
+  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
 
   // Emergency offline device administration is owner/manager-only. It is kept
@@ -2903,7 +2906,9 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   };
 
   if (path.startsWith(offlineRoot + "/")) {
-    if (!canManageMoney) return error("Only an owner or manager can administer emergency offline POS devices", 403);
+    // Cashiers may submit only signed events for their own permit. All device,
+    // allocation, permit and reconciliation administration remains owner/manager-only.
+    if (!canManageMoney && !(isCashier && request.method === "POST" && path === offlineRoot + "/sync")) return error("Only an owner or manager can administer emergency offline POS devices", 403);
 
     if (request.method === "GET" && path === offlineRoot + "/verification-key") {
       if (!env.POS_OFFLINE_PERMIT_PUBLIC_JWK) return error("Offline permit verification key is not configured", 503);
