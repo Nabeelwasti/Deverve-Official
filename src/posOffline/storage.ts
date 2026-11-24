@@ -171,7 +171,7 @@ export async function queueOfflineSale(draft: OfflineSaleDraft): Promise<QueuedO
         }
         const existingSales = salesRequest.result as QueuedOfflineSale[];
         const existingOutbox = outboxRequest.result as OfflineOutboxRecord[];
-        if (existingOutbox.some((record) => record.status === "needs_review") ||
+        if (existingOutbox.some((record) => record.status === "needs_review")) {
           transaction.abort();
           reject(new Error("An earlier offline sale needs owner review. Stop offline checkout until it is resolved."));
           return;
