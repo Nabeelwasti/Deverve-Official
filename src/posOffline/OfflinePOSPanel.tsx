@@ -146,6 +146,18 @@ export default function OfflinePOSPanel({
     return "Device revoked. Its remaining stock stays reserved until the local queue is reconciled and an owner releases it.";
   });
 
+  const releaseAllocations = (id: string) => runAction(async () => {
+    const confirmed = window.confirm("Only continue after you have physically checked this device or recovered its local queue, synchronized every valid offline sale, and manually reconciled any cash/stock discrepancy. Confirm that no unsynced local sale remains?");
+    if (!confirmed) throw new Error("Queue reconciliation was not confirmed. Reserved stock remains locked.");
+    const reason = window.prompt("Record the owner’s reconciliation/recovery reason (minimum 3 characters):");
+    if (!reason || reason.trim().length < 3) throw new Error("A clear reconciliation reason is required.");
+    await adminRequest(`/api/admin/pos/offline/devices/${id}/release-allocations`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason.trim(), owner_confirms_device_queue_reconciled: true }),
+    });
+    return "Owner reconciliation attestation recorded. Unused stock reservations were released and the device permits were marked reconciled.";
+  });
+
   return (
     <div className="pos-grid">
       <section className="pos-card">
@@ -222,7 +234,7 @@ export default function OfflinePOSPanel({
             <div className="admin-panel-heading"><h3>Enrolled devices</h3><button type="button" className="admin-secondary" disabled={loading || busy} onClick={() => void loadDevices()}>Refresh</button></div>
             {loading ? <p className="admin-muted">Loading devices…</p> : devices.length ? (
               <div className="pos-table-wrap"><table className="pos-table"><thead><tr><th>Device</th><th>Register</th><th>Status</th><th>Reserved units</th><th>Action</th></tr></thead><tbody>
-                {devices.map((device) => <tr key={device.id}><td>{device.device_label}<small>{device.id}</small></td><td>{device.register_name}</td><td>{device.status}</td><td>{device.remaining_allocated_units}</td><td>{device.status === "active" && <button type="button" className="admin-danger" disabled={busy} onClick={() => void revoke(device.id)}>Revoke</button>}</td></tr>)}
+                {devices.map((device) => <tr key={device.id}><td>{device.device_label}<small>{device.id}</small></td><td>{device.register_name}</td><td>{device.status}</td><td>{device.remaining_allocated_units}</td><td>{device.status === "active" && <button type="button" className="admin-danger" disabled={busy} onClick={() => void revoke(device.id)}>Revoke</button>}{device.status === "revoked" && <button type="button" className="admin-secondary" disabled={busy} onClick={() => void releaseAllocations(device.id)}>Confirm queue reconciled & release stock</button>}</td></tr>)}
               </tbody></table></div>
             ) : <p className="admin-muted">No emergency POS devices have been enrolled.</p>}
           </section>
