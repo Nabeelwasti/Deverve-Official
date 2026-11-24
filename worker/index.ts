@@ -2712,7 +2712,7 @@ async function processOfflineSaleEvent(
     resolved.push({
       allocationId: String(row.allocation_id), productId: String(row.product_id), productName: String(row.product_name),
       variantId: String(row.variant_id), sku: String(row.sku ?? ""), size: String(row.size ?? ""), color: String(row.color ?? ""),
-      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: Number(row.cost_price_paisa ?? 0), lineTotal,
+      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: Number(allocation.cost_price_paisa ?? 0), lineTotal,
     });
   }
   const total = Number(sale.totalPaisa), tendered = Number(sale.cashTenderedPaisa), change = Number(sale.changePaisa);
@@ -2843,7 +2843,7 @@ async function issueOfflinePermit(
     const allocationResult = await env.DB.prepare(
       "SELECT a.id AS allocation_id,a.variant_id,(a.allocated_quantity-a.consumed_quantity-a.released_quantity) AS allocated_quantity," +
       "p.id AS product_id,p.name AS product_name,p.status AS product_status,p.retail_price_paisa," +
-      "v.sku,v.barcode,v.size,v.color,v.is_active " +
+      "v.sku,v.barcode,v.size,v.color,v.is_active,v.cost_price_paisa " +
       "FROM pos_offline_stock_allocations a JOIN product_variants v ON v.id=a.variant_id JOIN products p ON p.id=v.product_id " +
       "WHERE a.device_id=? AND a.status='active' AND a.allocated_quantity>a.consumed_quantity+a.released_quantity ORDER BY a.variant_id LIMIT 31"
     ).bind(deviceId).all<Record<string, unknown>>();
@@ -2860,6 +2860,7 @@ async function issueOfflinePermit(
         size: typeof row.size === "string" ? row.size.slice(0, 50) : "",
         color: typeof row.color === "string" ? row.color.slice(0, 80) : "",
         allocatedQuantity: quantity, unitPricePaisa: price,
+        costPricePaisa: row.cost_price_paisa === null || row.cost_price_paisa === undefined ? null : Number(row.cost_price_paisa),
       };
     });
     const snapshotVersion = crypto.randomUUID();
@@ -2872,7 +2873,7 @@ async function issueOfflinePermit(
       session_id: sessionId, cashier_admin_id: cashierId, cashier_grant_version: cashier.granted_at,
       snapshot_version: snapshotVersion, snapshot_hash: snapshotHash, issued_at: issuedAt, expires_at: expiresAt,
       max_events: 20, offline_checkout_enabled: true, cash_only: true, allow_refunds: false, allow_voids: false, allow_shift_close: false,
-      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa })),
+      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa, cost_price_paisa: item.costPricePaisa })),
     };
     const claimsJson = canonicalOfflineJson(claims);
     if (new TextEncoder().encode(claimsJson).byteLength > 16_384) return error("The offline permit snapshot is too large", 413);
