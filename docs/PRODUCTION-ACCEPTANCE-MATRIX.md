@@ -1,6 +1,6 @@
 # Production acceptance matrix
 
-**Last reviewed:** 23 November 2026  
+**Last reviewed:** 24 November 2026  
 **Production:** https://deverve-official.pages.dev  
 **Repository:** https://github.com/Nabeelwasti/Deverve-Official
 
@@ -18,35 +18,36 @@
 | Capability | Verified foundation | Acceptance status |
 |---|---|---|
 | Cloudflare Pages | Latest production deployment `bea6a0c6-8f3c-49d4-aa9e-2c1037bf6656` from `main` commit `46c68c94ce2b689dbff00b863259e32a458025e3` completed all five stages. PR #39 CI run `45149470914` passed all 17 steps and 158 browser tests. Production mobile browser render returned HTTP 200 and confirmed search, quote strip, hamburger, CMS content and footer strip. | Deployed and targeted homepage smoke passed; broader protected-route, provider and operational acceptance remains outstanding |
-| D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables | Schema exists; integration tests outstanding |
+| D1 commerce schema | Live database contains products, variants, orders, inventory movements, reservations, POS, payments, webhook events and audit tables. CI run `45421372915` passed 16 remote D1 inventory checks, the full migration chain `0001`–`0049` on isolated D1, and offline migrations `0045`–`0049` on a restored production clone. | Remote inventory checks and migration rehearsal passed; full offline Worker/API sale lifecycle and sustained load acceptance remain outstanding |
 | Public catalogue API | Live `/api/products` returned 3 published products; a response inspection confirmed no `cost_price_paisa` field on products or variants | Targeted public-data check passed; owner catalogue/authenticity reconciliation remains outstanding |
 | Catalogue indexes | Production D1 contains `idx_product_variants_sku_nocase` and `idx_pos_sales_status_created`; migration 0039 is applied and query plans were verified against the live database | Applied and query-plan verified; sustained workload/concurrency acceptance remains outstanding |
 | POS | Registers, sessions, sales, sale items, payments, voids, cashbook and receipt outbox exist | Online workflows implemented; owner reconciliation and device acceptance outstanding |
-| Shared stock | Inventory movement and order reservation ledgers exist. An isolated APAC D1 race test ran a website reservation and a two-line POS sale concurrently against the same five units: exactly one won; the winning POS batch committed two stock movements, payment, financial ledger, audit and receipt outbox consistently, with no orphan records. The temporary test database was deleted and its absence verified. | D1 batch concurrency behavior verified; full Worker/API remote integration and sustained production-like load testing remain outstanding |
+| Shared stock | Inventory movement and order reservation ledgers exist. An isolated APAC D1 race test ran a website reservation and a two-line POS sale concurrently against the same five units: exactly one won; the winning POS batch committed two stock movements, payment, financial ledger, audit and receipt outbox consistently, with no orphan records. The temporary test database was deleted and its absence verified. | D1 batch concurrency and 16 remote inventory integration checks passed; full offline event Worker/API integration and sustained production-like load remain outstanding |
 | Payments | Payment attempts and webhook-event foundations exist | COD active; live provider acceptance outstanding |
 | Turnstile | The live verifier health endpoint returned `status=ok`, `secret_configured=true` and the expected `deverve-official.pages.dev` hostname on 23 November 2026 | Verifier configuration/health confirmed; invalid-token Siteverify negative test and end-to-end public form acceptance remain outstanding |
 | Email / WhatsApp | Outbox and retry logic exist | Provider credentials, consent and delivery acceptance outstanding |
-| PWA | Manifest and service worker cache the shell and static assets | Installable shell; not an offline-first POS |
+| PWA | Manifest and service worker cache the shell and static assets. PR #51 adds a separate offline POS outbox, device permits and dedicated sync path without caching authenticated API traffic. | Production remains online-only; offline implementation is draft/unreleased and awaits owner keys and physical Android acceptance |
+| Offline POS migrations | CI run `45421372915` applied migrations `0001`–`0049` on isolated D1 and `0045`–`0049` on a restored production clone; existing row counts unchanged, no new FK violations, all seven tables and 20 guard triggers verified, temporary databases deleted. | Migration rehearsal passed; not applied to production; signing keypair, physical Android tests, preview acceptance and supervised rollout remain pending |
 | Encrypted D1 backup | AES-256-GCM export/restore workflow; successful run `45330719916` attempt 7 on 24 November. Private R2 object read-back and SHA-256 passed; isolated restore matched 66 tables, 102 indexes, 10 triggers and all row counts; temporary D1 database deletion was confirmed. | Backup and restore drill passed; least-privilege token scope, independent password-manager key custody, off-account copy and retention/RPO/RTO remain pending |
 
 ## Release blockers and owner-controlled prerequisites
 
 ### 1. Encrypted backups and recovery
 
-The repository workflow .github/workflows/d1-backup-restore.yml is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). It is not operationally active until all required GitHub Actions secrets are configured and a full run succeeds:
+The repository workflow `.github/workflows/d1-backup-restore.yml` is scheduled daily at 02:00 Pakistan Standard Time (21:00 UTC). The first complete encrypted backup/restore drill passed; independent recovery and least-privilege hardening remain open:
 
-- Owner confirmed on 24 November 2026 that `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured as GitHub Actions secrets. This confirms configuration only, not a successful backup or restore.
+- [x] Owner confirmed on 24 November 2026 that `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured as GitHub Actions secrets.
 - The currently configured token was created with account-wide D1 Edit and Workers R2 Storage Edit. This is broader than intended. Replace it with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list) before production acceptance.
-- Confirm the 32-byte encryption key is independently stored in an owner-controlled password manager, not only in GitHub Actions.
-- Confirm private bucket `deverve-db-backups` exists and token permissions are sufficient.
+- [ ] Confirm the 32-byte encryption key is independently stored in an owner-controlled password manager, not only in GitHub Actions.
+- [x] Confirm private bucket `deverve-db-backups` exists and the configured token can write/read the backup object.
 
-Required evidence: encrypted production snapshot, SHA-256 integrity check, successful decrypt and restore into an isolated non-production D1 database, row-count/schema comparison, confirmed deletion of the isolated database, retention verification and a documented recovery exercise. The restore script now exits unsuccessfully if temporary database deletion cannot be confirmed (PR #33). A green syntax check is not a backup. A successful upload is not a restore test.
+Required evidence for the current snapshot passed on run `45330719916` attempt 7: AES-256-GCM export, private R2 upload/read-back, SHA-256 integrity, decrypt, isolated D1 restore, 66 tables, 102 indexes, 10 triggers, row-count comparison and confirmed temporary-database deletion. This does not replace independent off-account recovery, owner key custody, R2 media backup or retention/RPO/RTO acceptance.
 
-The scheduled workflow performs the isolated restore drill too. Monitor its Actions history and configure failure notifications. No backup is guaranteed until the first successful run is observed. Keep the encryption key independently from the R2 bucket.
+Monitor each scheduled run and configure failure notifications. Keep the encryption key independently from GitHub and R2; retain failed encrypted artifacts for audit until the retention policy is approved.
 
 ### 2. Offline-first POS
 
-The current service worker intentionally excludes API requests and the POS uses live admin API calls. The current POS is not offline-first. Do not enable offline sales by caching /api/admin/pos/* or by replaying arbitrary requests to the existing online-sale route.
+Production `main` remains online-only. PR #51 adds a separate IndexedDB outbox, short-lived device-bound permits and a dedicated offline-sync endpoint; it remains draft, unmerged and unreleased. Production D1 still has no `pos_offline_*` tables and migrations `0045`–`0049` have not been applied. Never enable offline sales by caching `/api/admin/pos/*` or replaying arbitrary requests to the existing online-sale route.
 
 The implementation contract is maintained in [OFFLINE-FIRST-POS-ENGINEERING-DESIGN.md](OFFLINE-FIRST-POS-ENGINEERING-DESIGN.md). That design is the detailed source of truth for the client queue, device permits, stock allocations, sync API, conflict handling and acceptance tests.
 
@@ -62,7 +63,7 @@ Required implementation and acceptance:
 - Show explicit OFFLINE — NOT YET SYNCED receipt status, pending/syncing/accepted/conflict counts, last successful sync, permit expiry, allocation remaining and storage health. Do not present cached financial reports as current.
 - Test airplane-mode checkout/reload, app/browser termination, low or denied storage, multiple tabs, duplicate replay, same-key/different-payload conflict, lost response after server commit, device revocation, expired permit, changed prices, disabled products, stock allocation exhaustion, concurrent online sales, D1 rollback and real Android scanner/printer behavior.
 
-Until the implementation, automated tests, remote D1 acceptance and supervised physical Android acceptance all pass, use online POS only and do not advertise offline sales as supported.
+The implementation, full CI, remote D1 inventory suite, clean migration chain, production-clone migration rehearsal and encrypted backup/restore drill have passed. Continue using online POS only until the owner provisions and secures the signing keypair, narrows the Cloudflare token, completes physical Android outage/reload/reconnect acceptance, approves migration, and completes preview smoke plus a supervised pilot.
 
 ### 3. POS cashier RBAC — implemented and deployed; operational acceptance pending
 
@@ -72,7 +73,7 @@ No cashier grant currently exists in production. Owner must invite the intended 
 
 ### 4. Inventory and accounting
 
-- Add remote D1 integration tests with dedicated least-privilege test credentials.
+- Remote D1 inventory integration passed 16 checks; narrow the current broad token to least privilege, then add full offline Worker/API event-lifecycle and failure-injection coverage.
 - Run concurrent checkout/POS sales against the same variant and prove no oversell.
 - Prove reservations are released/consumed exactly once across payment success/failure, cancellation, dispatch and webhook replay.
 - Reconcile physical counts, SKU/barcodes, costs and size/colour variants with the owner before trusting valuation and gross-profit reports.
