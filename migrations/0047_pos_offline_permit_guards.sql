@@ -78,6 +78,7 @@ BEGIN
       OR p.status <> 'published'
       OR p.retail_price_paisa IS NULL
       OR p.retail_price_paisa <> json_extract(item.value, '$.unit_price_paisa')
+      OR json_extract(item.value, '$.cost_price_paisa') IS NOT v.cost_price_paisa
   ) THEN RAISE(ABORT, 'offline permit snapshot does not match current reserved stock and catalogue prices') END;
 END;
 
