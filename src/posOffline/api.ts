@@ -102,7 +102,7 @@ export async function fetchAndStoreOfflinePermit(deviceId: string): Promise<Stor
   }
   const permit = permitResponse.permit;
   if (!permit?.claims || permit.claims.device_id !== deviceId || permit.claims.permit_id !== permit.id ||
-      permit.claims.version !== 1 || permit.claims.max_events !== 20 ||
+      permit.claims.version !== 1 || permit.claims.max_events !== 20 || permit.claims.offline_checkout_enabled !== true ||
       permit.claims.cash_only !== true || permit.claims.allow_refunds !== false ||
       permit.claims.allow_voids !== false || permit.claims.allow_shift_close !== false ||
       !Array.isArray(permit.claims.allocations) || !Array.isArray(permit.snapshot) ||
@@ -149,7 +149,7 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
   if (identity.deviceId !== deviceId) throw new Error("This browser is not the enrolled device for the offline queue.");
   const permit = await readStoredOfflinePermit();
   const snapshot = await readStoredOfflineSnapshot();
-  if (!permit || permit.claims.device_id !== deviceId || !snapshot ||
+  if (!permit || permit.claims.device_id !== deviceId || permit.claims.offline_checkout_enabled !== true || !snapshot ||
       !await verifyOfflinePermitSignature(permit.claims, permit.signatureBase64Url, permit.verificationPublicKeyJwk) ||
       !await verifyOfflinePermitSnapshot(snapshot, String(permit.claims.snapshot_hash ?? ""))) {
     throw new Error("A verified local permit and catalogue snapshot are required before syncing offline sales.");
@@ -218,6 +218,10 @@ export async function syncOfflineQueue(deviceId: string): Promise<{ accepted: nu
   }
 }
 
+
+export async function getOfflinePOSStatus(): Promise<{ checkout_enabled: boolean; permit_signing_configured: boolean }> {
+  return adminRequest<{ checkout_enabled: boolean; permit_signing_configured: boolean }>("/api/admin/pos/offline/status");
+}
 
 export type OfflineShellCheck = {
   ready: boolean;
