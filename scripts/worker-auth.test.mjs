@@ -8,6 +8,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
+import { verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "../.test-dist/src/posOffline/deviceCrypto.js";
 
 test("order inventory aggregation combines duplicate variant lines before cancellation or dispatch", () => {
   assert.deepEqual(aggregateOrderVariantQuantities([
@@ -72,6 +73,36 @@ test("AI support language signal distinguishes Urdu script, Roman Urdu and ordin
   assert.match(customerLanguageHint("Aap ke paas black hoodie hai?"), /Roman Urdu/);
   assert.match(customerLanguageHint("Is there a black hoodie in stock?"), /same language and writing system/);
   assert.match(customerLanguageHint("Please check stock, aap have black?"), /No Urdu-specific signal is dominant/);
+});
+
+test("device verifies signed permit claims and exact cached catalogue snapshot", async () => {
+  const previousSecureContext = globalThis.isSecureContext;
+  Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: true });
+  try {
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+    const privateJwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
+    const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+    const snapshot = [
+      { allocationId: "allocation-1", variantId: "variant-1", productId: "product-1", productName: "Hoodie", sku: "DV-H-1", barcode: "123", size: "M", color: "Black", allocatedQuantity: 2, unitPricePaisa: 150000 },
+    ];
+    const canonical = (value) => {
+      if (value === null || typeof value !== "object") return JSON.stringify(value);
+      if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+      return "{" + Object.keys(value).sort().map(key => JSON.stringify(key) + ":" + canonical(value[key])).join(",") + "}";
+    };
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical(snapshot)));
+    const snapshotHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
+    const claims = { permit_id: "permit-1", device_id: "device-1", snapshot_hash: snapshotHash, cash_only: true };
+    const signature = await signOfflinePermitClaims(claims, JSON.stringify(privateJwk), JSON.stringify(publicJwk));
+    assert.equal(await verifyOfflinePermitSignature(claims, signature, publicJwk), true);
+    assert.equal(await verifyOfflinePermitSignature({ ...claims, cash_only: false }, signature, publicJwk), false);
+    assert.equal(await verifyOfflinePermitSnapshot(snapshot, snapshotHash), true);
+    assert.equal(await verifyOfflinePermitSnapshot([{ ...snapshot[0], unitPricePaisa: 150001 }], snapshotHash), false);
+    assert.equal(await verifyOfflinePermitSignature(claims, signature, privateJwk), false);
+  } finally {
+    if (previousSecureContext === undefined) delete globalThis.isSecureContext;
+    else Object.defineProperty(globalThis, "isSecureContext", { configurable: true, value: previousSecureContext });
+  }
 });
 
 test("offline permits are signed by the configured matching P-256 keypair", async () => {
