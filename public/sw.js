@@ -15,8 +15,13 @@ async function cacheSuccessfulResponse(cache, request, response) {
   if (!response || response.status !== 200 || response.type === "opaque") return;
   const cacheControl = response.headers.get("cache-control") || "";
   if (/no-store|private/i.test(cacheControl)) return;
-  await cache.put(request, response.clone());
-  await trimRuntimeCache(cache);
+  try {
+    await cache.put(request, response.clone());
+    await trimRuntimeCache(cache);
+  } catch {
+    // A full or unavailable cache must never turn a successful online request
+    // into an application failure; offline readiness will remain unavailable.
+  }
 }
 
 self.addEventListener("install", (event) => {
