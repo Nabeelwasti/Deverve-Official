@@ -79,16 +79,15 @@ async function createIdentity() {
   const thumbprint = b64url(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonicalPublic)));
   return { pair, publicJwk, thumbprint };
 }
-async function enrollPayload(identity, challenge, challengeId, deviceId) {
-  const message = "deverve-offline-pos:enroll:v1\\n" + challenge;
-  const signature = b64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, identity.pair.privateKey, new TextEncoder().encode(message)));
+async function enrollPayload(signer, challenge, challengeId, deviceId, claimedIdentity = signer) {
+  const message = "deverve-offline-pos:enroll:v1\n" + challenge;
+  const signature = b64url(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, signer.pair.privateKey, new TextEncoder().encode(message)));
   return {
     device_id: deviceId, register_id: registerId, device_label: "CI isolated device",
-    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+    public_key_jwk: claimedIdentity.publicJwk, public_key_thumbprint: claimedIdentity.thumbprint,
     challenge_id: challengeId, challenge, signature,
   };
 }
-
 test("real Worker creates a one-time challenge bound to register, device and P-256 key", async () => {
   const identity = await createIdentity(), deviceId = randomUUID();
   const response = await api("/api/admin/pos/offline/enrollment-challenges", {
