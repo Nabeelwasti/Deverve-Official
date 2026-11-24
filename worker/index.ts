@@ -2688,7 +2688,9 @@ async function processOfflineSaleEvent(
     if (combined.has(line.variantId)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "duplicate_variant_line");
     combined.add(line.variantId);
     const allocation = allocationByVariant.get(line.variantId);
-    if (!allocation || Number(line.quantity) > Number(allocation.quantity) || Number(line.unitPricePaisa) !== Number(allocation.unit_price_paisa) ||
+    const allocatedCost = allocation?.cost_price_paisa === null || allocation?.cost_price_paisa === undefined ? 0 : Number(allocation.cost_price_paisa);
+    if (!allocation || !Number.isSafeInteger(allocatedCost) || allocatedCost < 0 ||
+        Number(line.quantity) > Number(allocation.quantity) || Number(line.unitPricePaisa) !== Number(allocation.unit_price_paisa) ||
         Number(line.quantity) * Number(line.unitPricePaisa) !== Number(line.lineTotalPaisa)) {
       return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_allocation_or_price_mismatch");
     }
@@ -2712,7 +2714,7 @@ async function processOfflineSaleEvent(
     resolved.push({
       allocationId: String(row.allocation_id), productId: String(row.product_id), productName: String(row.product_name),
       variantId: String(row.variant_id), sku: String(row.sku ?? ""), size: String(row.size ?? ""), color: String(row.color ?? ""),
-      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: Number(allocation.cost_price_paisa ?? 0), lineTotal,
+      quantity: Number(line.quantity), unitPrice: Number(line.unitPricePaisa), costPrice: allocatedCost, lineTotal,
     });
   }
   const total = Number(sale.totalPaisa), tendered = Number(sale.cashTenderedPaisa), change = Number(sale.changePaisa);
@@ -2851,8 +2853,11 @@ async function issueOfflinePermit(
     if (!allocationRows.length || allocationRows.length > 30) return error("Allocate between 1 and 30 stock variants before issuing an offline permit", 409);
     const snapshot = allocationRows.map((row) => {
       const quantity = Number(row.allocated_quantity), price = Number(row.retail_price_paisa);
+      const costPrice = row.cost_price_paisa === null || row.cost_price_paisa === undefined ? null : Number(row.cost_price_paisa);
       if (row.product_status !== "published" || Number(row.is_active) !== 1 || !Number.isSafeInteger(quantity) || quantity < 1 ||
-          !Number.isSafeInteger(price) || price <= 0) throw new Error("offline_snapshot_invalid");
+          !Number.isSafeInteger(price) || price <= 0 || (costPrice !== null && (!Number.isSafeInteger(costPrice) || costPrice < 0))) {
+        throw new Error("offline_snapshot_invalid");
+      }
       return {
         allocationId: String(row.allocation_id), variantId: String(row.variant_id), productId: String(row.product_id),
         productName: String(row.product_name).slice(0, 160), sku: typeof row.sku === "string" ? row.sku.slice(0, 100) : "",
@@ -2860,7 +2865,7 @@ async function issueOfflinePermit(
         size: typeof row.size === "string" ? row.size.slice(0, 50) : "",
         color: typeof row.color === "string" ? row.color.slice(0, 80) : "",
         allocatedQuantity: quantity, unitPricePaisa: price,
-        costPricePaisa: row.cost_price_paisa === null || row.cost_price_paisa === undefined ? null : Number(row.cost_price_paisa),
+        costPricePaisa: costPrice,
       };
     });
     const snapshotVersion = crypto.randomUUID();
