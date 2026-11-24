@@ -12,7 +12,8 @@ import {
   readStoredOfflinePermit,
   readStoredOfflineSnapshot,
   recordOfflineSyncFailure,
-  saveVerifiedOfflinePermit,\n  setOfflineShellReadiness,
+  saveVerifiedOfflinePermit,
+  setOfflineShellReadiness,
   type QueuedOfflineSale,
   type StoredOfflinePermit,
 } from "./storage.js";
