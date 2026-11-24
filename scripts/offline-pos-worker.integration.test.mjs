@@ -593,3 +593,33 @@ test("real Worker leaves reconciliation open when the completed sale cash tender
   assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
   assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
 });
+
+
+test("real Worker handles concurrent exact duplicate sync requests with one canonical sale and one stock consumption", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const signature = await signSale(fixture.identity, fixture.sale);
+  const body = {
+    device_id: fixture.deviceId, permit_id: fixture.permit.id,
+    events: [{ event: fixture.sale, signature }],
+  };
+  const [left, right] = await Promise.all([
+    api("/api/admin/pos/offline/sync", body),
+    api("/api/admin/pos/offline/sync", body),
+  ]);
+  assert.equal(left.status, 200);
+  assert.equal(right.status, 200);
+  const leftResult = (await left.json()).results[0];
+  const rightResult = (await right.json()).results[0];
+  assert.equal(leftResult.outcome, "accepted");
+  assert.equal(rightResult.outcome, "accepted");
+  assert.equal(leftResult.canonical_sale_id, rightResult.canonical_sale_id);
+  assert.equal(leftResult.receipt_number, rightResult.receipt_number);
+  assert.equal([leftResult, rightResult].filter((result) => result.duplicate === true).length, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order'").get().count, 1);
+  assert.equal(sqlite.prepare("SELECT stock_on_hand FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 4);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+});
