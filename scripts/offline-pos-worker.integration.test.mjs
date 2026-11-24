@@ -449,32 +449,42 @@ async function createReadyOfflinePermitFixture() {
   return { identity, deviceId, variantId, permit, sale };
 }
 
-test("real Worker rolls back the entire signed sale batch after a late financial/audit write failure", async () => {
+test("real Worker rolls back every signed-sale D1 batch statement failure boundary", async () => {
   const fixture = await createReadyOfflinePermitFixture();
-  const signature = await signSale(fixture.identity, fixture.sale);
-  // The final accepted-event write is statement 17; failing immediately before it
-  // proves prior sale, item, stock, allocation, movement, payment, ledger and audit
-  // writes are all rolled back as one transaction.
-  db.failNextBatchAt = 17;
-  const response = await api("/api/admin/pos/offline/sync", {
-    device_id: fixture.deviceId, permit_id: fixture.permit.id,
-    events: [{ event: fixture.sale, signature }],
-  });
-  assert.equal(response.status, 200);
-  const result = (await response.json()).results[0];
-  assert.equal(result.outcome, "conflict");
-  assert.equal(result.reason_code, "sale_commit_guard_failed");
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sale_items").get().count, 0);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count, 0);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count, 0);
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order'").get().count, 0);
-  assert.equal(sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 5);
-  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
-  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
-  const event = sqlite.prepare("SELECT outcome FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId);
-  assert.equal(event.outcome, "conflict");
-  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(fixture.sale.eventId).count, 1);
+  // One sale line produces 19 ordered D1 statements (event, sale/guard,
+  // item/stock/allocation/movement guards, payment, ledger, audit and outcome).
+  // Fail each statement in turn. Each failed sale is preserved as a conflict
+  // after the failed atomic batch has rolled back; the next sequence can proceed.
+  for (let failAt = 0; failAt < 19; failAt += 1) {
+    const sale = {
+      ...fixture.sale,
+      eventId: randomUUID(),
+      idempotencyKey: randomUUID(),
+      createdAt: new Date(Date.now() + failAt + 1).toISOString(),
+      sequence: failAt + 1,
+    };
+    db.failNextBatchAt = failAt;
+    const response = await api("/api/admin/pos/offline/sync", {
+      device_id: fixture.deviceId,
+      permit_id: fixture.permit.id,
+      events: [{ event: sale, signature: await signSale(fixture.identity, sale) }],
+    });
+    assert.equal(response.status, 200, "failure boundary " + failAt + " returns a recoverable sync result");
+    const result = (await response.json()).results[0];
+    assert.equal(result.outcome, "conflict", "failure boundary " + failAt + " must not accept a partial sale");
+    assert.equal(result.reason_code, "sale_commit_guard_failed", "failure boundary " + failAt + " is recorded for reconciliation");
+    assert.equal(sqlite.prepare("SELECT outcome FROM pos_offline_events WHERE event_id=?").get(sale.eventId).outcome, "conflict");
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_cases WHERE event_id=? AND status='open'").get(sale.eventId).count, 1);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sales").get().count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_sale_items").get().count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_payments").get().count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM financial_transactions WHERE reference_type='pos_sale'").get().count, 0);
+    assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM inventory_movements WHERE reference_type='order'").get().count, 0);
+    assert.equal(sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 5);
+    assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 2);
+    assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 0);
+  }
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_events WHERE device_id=? AND outcome='conflict'").get(fixture.deviceId).count, 19);
 });
 
 
