@@ -160,18 +160,56 @@ D1 `batch()` provides sequential transactional execution and rolls back the batc
 - Version the shell and IndexedDB schema. Upgrade without deleting pending events. Block activation of an incompatible worker until pending data is migrated safely or the user has reconciled it.
 - Test update while offline, interrupted upgrade, old tab/new worker, and rollback.
 
-## 11. Proposed schema additions (migration review required)
+## 11. Implemented branch schema (not applied to production)
 
-Names are provisional; inspect the live D1 schema and current POS route before writing SQL:
-- `pos_offline_devices`: device ID, public key, register ID, owner enrollment, status, created/revoked timestamps, last seen.
-- `pos_offline_permits`: permit ID, device, cashier, grant version, session, snapshot version, signed claims, issued/expiry, revocation and policy version.
-- `pos_offline_stock_allocations`: device/permit/variant, allocated, consumed, released, status and audit timestamps; unique active allocation scope.
-- `pos_offline_events`: device/event ID, idempotency key, payload hash, sequence, canonical sale ID, outcome, reason code, server received/processed times; unique device/event and idempotency constraints.
-- `pos_offline_reconciliation`: immutable review cases and append-only resolution records.
+The current PR #51 branch implements migrations `0045`–`0049` after reviewing the existing online POS, stock reservation, cashier grant, ledger, audit and receipt-outbox schema. The additions are additive and are not applied to production.
 
-Do not add a migration until current `pos_sales`, `pos_sale_items`, `pos_payments`, `pos_sessions`, `inventory_movements`, `financial_transactions`, `audit_logs`, cashier grant and receipt-outbox constraints have been read from the actual production schema and local test schema. No production migration is authorized by this design document.
+The five migrations create seven offline POS tables:
+- `pos_offline_devices`
+- `pos_offline_enrollment_challenges`
+- `pos_offline_permits`
+- `pos_offline_stock_allocations`
+- `pos_offline_events`
+- `pos_offline_reconciliation_cases`
+- `pos_offline_reconciliation_actions`
 
-## 12. Test plan — required before enabling
+They add immutable device/permit/event evidence, single-use challenge guards, device-bound signed permits, stock reservation/consumption/release guards, private server-side cost snapshots, append-only reconciliation actions and audit evidence. The current CI migration chain verifies all seven tables, 20 guard triggers and zero foreign-key violations. The same migration chain has been rehearsed against an isolated restore of production data; existing row counts remained unchanged and the temporary database was deleted.
+
+**Production status:** migrations `0045`–`0049` have not been applied to production. No deployment or merge of PR #51 has occurred. Do not apply these migrations until owner approval, backup verification, physical-device acceptance and controlled release gates are complete.
+
+## 12. Test plan — status as of 24 November 2026
+
+### Verified automated coverage
+
+Full CI run [45456486261](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45456486261) passed all workflow steps on PR code head `e514856a44cba7861952cab02eb891187f6a4e98`. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
+
+Verified scenarios:
+- [x] Challenge binding, forged proof rejection without challenge consumption, one-time enrollment/replay rejection, expiry, thumbprint mismatch and unknown register.
+- [x] Device revocation, idempotent repeat revocation and audit evidence.
+- [x] Fail-closed permit issuance while offline checkout is disabled; valid P-256 signed permit binding to device/register/cashier/open shift/exact reserved stock.
+- [x] Server-only purchase-cost snapshot; device-facing catalogue snapshot does not expose cost.
+- [x] Signed cash sale, one canonical receipt, sale/items/payment/financial ledger/inventory movement/audit writes and stock/reservation counters.
+- [x] Exact duplicate retry returns the original sale/receipt; altered same-identity replay becomes a conflict.
+- [x] Concurrent exact-duplicate sync requests create one canonical sale and consume stock once.
+- [x] Ordered multi-event batch settlement for sequences 1 and 2 with balanced cash/ledger/stock.
+- [x] Invalid device signature, permit verification-key mismatch, sequence gap and revoked-device conflict.
+- [x] Late D1 batch failure rolls back the staged sale, item, stock, allocation, inventory, payment, ledger and audit writes together.
+- [x] Exact completed-sale reconciliation, one-time allocation consumption, repeated-resolution rejection and cash-tender mismatch rejection.
+- [x] Permit replacement and stock release remain blocked while unresolved offline conflicts exist.
+- [x] Isolated D1 migrations, restored-production-clone rehearsal and storefront browser suite pass in the same CI workflow.
+
+### Still required before enabling
+
+- [ ] Test distinct event IDs contending for the same device sequence using separate D1 connections and verify exactly one event wins with the other preserved as a conflict/retry.
+- [ ] Test concurrent reconciliation requests against the same case/allocation and prove only one resolution/consumption commits.
+- [ ] Expand deterministic failure injection to every individual D1 write boundary, including event insert, sale, each item, stock, allocation, inventory movement, payment, financial ledger, audit, event outcome and reconciliation case/action writes.
+- [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
+- [ ] Complete production-build cache manifest audit and real cold-cache/cold-reload acceptance.
+- [ ] Complete the physical Android pilot, airplane-mode sale, app reload/restart, reconnect/sync, scanner, printer, storage-denial and recovery acceptance.
+- [ ] Owner approves device custody, offline stock allocations, maximum permit duration, cash-only restrictions and the manual conflict procedure.
+- [ ] Owner securely provisions the separate P-256 permit-signing keypair and independent recovery custody.
+- [ ] Controlled preview deployment, smoke tests, production migration approval, controlled deployment and one-device staged enablement.
+
 
 ### Unit and database tests
 - IndexedDB transaction atomicity: sale and outbox both commit or neither commits.
