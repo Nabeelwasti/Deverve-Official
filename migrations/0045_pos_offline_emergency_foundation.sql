@@ -150,3 +150,75 @@ BEFORE DELETE ON pos_offline_reconciliation_actions
 BEGIN
   SELECT RAISE(ABORT, 'offline reconciliation actions cannot be deleted');
 END;
+
+
+-- Keep the existing online stock guard authoritative: every active offline allocation
+-- reserves its unconsumed/unreleased units in product_variants.reserved_quantity.
+-- This ensures website checkout and other online POS registers cannot sell the same units.
+CREATE TRIGGER IF NOT EXISTS pos_offline_allocation_reserve_on_insert
+AFTER INSERT ON pos_offline_stock_allocations
+WHEN NEW.status = 'active'
+BEGIN
+  UPDATE product_variants
+  SET reserved_quantity = reserved_quantity + NEW.allocated_quantity,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE id = NEW.variant_id
+    AND is_active = 1
+    AND stock_on_hand - reserved_quantity >= NEW.allocated_quantity;
+  SELECT CASE WHEN changes() <> 1
+    THEN RAISE(ABORT, 'offline allocation exceeds available stock or variant is inactive')
+  END;
+END;
+
+-- Allocation quantities are a ledger: allocation size is immutable and consumed/released
+-- quantities may only move forward. Active remaining allocation is reflected in reserved stock.
+CREATE TRIGGER IF NOT EXISTS pos_offline_allocation_guard_update
+BEFORE UPDATE ON pos_offline_stock_allocations
+BEGIN
+  SELECT CASE WHEN NEW.id <> OLD.id
+    OR NEW.device_id <> OLD.device_id
+    OR NEW.register_id <> OLD.register_id
+    OR NEW.variant_id <> OLD.variant_id
+    OR NEW.allocated_quantity <> OLD.allocated_quantity
+    OR NEW.created_by_admin_id <> OLD.created_by_admin_id
+    OR NEW.created_at <> OLD.created_at
+    OR NEW.consumed_quantity < OLD.consumed_quantity
+    OR NEW.released_quantity < OLD.released_quantity
+    THEN RAISE(ABORT, 'offline allocation identity is immutable and quantities cannot move backwards')
+  END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS pos_offline_allocation_reserve_on_update
+AFTER UPDATE OF consumed_quantity, released_quantity, status ON pos_offline_stock_allocations
+BEGIN
+  UPDATE product_variants
+  SET reserved_quantity = reserved_quantity
+    + CASE WHEN NEW.status = 'active'
+        THEN NEW.allocated_quantity - NEW.consumed_quantity - NEW.released_quantity
+        ELSE 0
+      END
+    - CASE WHEN OLD.status = 'active'
+        THEN OLD.allocated_quantity - OLD.consumed_quantity - OLD.released_quantity
+        ELSE 0
+      END,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+  WHERE id = NEW.variant_id
+    AND reserved_quantity
+      + CASE WHEN NEW.status = 'active'
+          THEN NEW.allocated_quantity - NEW.consumed_quantity - NEW.released_quantity
+          ELSE 0
+        END
+      - CASE WHEN OLD.status = 'active'
+          THEN OLD.allocated_quantity - OLD.consumed_quantity - OLD.released_quantity
+          ELSE 0
+        END >= 0;
+  SELECT CASE WHEN changes() <> 1
+    THEN RAISE(ABORT, 'offline allocation reservation could not be reconciled')
+  END;
+END;
+
+CREATE TRIGGER IF NOT EXISTS pos_offline_allocation_no_delete
+BEFORE DELETE ON pos_offline_stock_allocations
+BEGIN
+  SELECT RAISE(ABORT, 'offline stock allocation evidence cannot be deleted');
+END;
