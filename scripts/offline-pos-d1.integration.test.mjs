@@ -79,7 +79,7 @@ try {
     "pos_offline_enrollment_challenges",
   ];
   check(expectedTables.every((name) => tables.has(name)),
-    "all seven offline-POS tables are created by migrations 0045–0048");
+    "all seven offline-POS tables are created by migrations 0045–0049");
 
   const triggerRows = await rows(databaseId,
     "SELECT name FROM sqlite_master WHERE type='trigger' AND name LIKE 'pos_offline_%' ORDER BY name");
