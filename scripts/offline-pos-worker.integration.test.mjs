@@ -152,3 +152,53 @@ test("real Worker rejects mismatched key thumbprints and unknown registers", asy
   });
   assert.equal(unknownRegister.status, 404);
 });
+
+
+test("real Worker rejects an expired enrollment challenge without creating a device", async () => {
+  const identity = await createIdentity(), deviceId = randomUUID();
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  assert.equal(challengeResponse.status, 200);
+  const challenge = await challengeResponse.json();
+  sqlite.prepare("UPDATE pos_offline_enrollment_challenges SET expires_at=? WHERE id=?")
+    .run(new Date(Date.now() - 60_000).toISOString(), challenge.challenge_id);
+  const expired = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(expired.status, 409);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_devices WHERE id=?").get(deviceId).count, 0);
+  assert.equal(sqlite.prepare("SELECT consumed_at FROM pos_offline_enrollment_challenges WHERE id=?").get(challenge.challenge_id).consumed_at, null);
+});
+
+test("real Worker revokes an enrolled device, records the actor and audit evidence, and makes repeat revocation idempotent", async () => {
+  const identity = await createIdentity(), deviceId = randomUUID();
+  const challengeResponse = await api("/api/admin/pos/offline/enrollment-challenges", {
+    device_id: deviceId, register_id: registerId,
+    public_key_jwk: identity.publicJwk, public_key_thumbprint: identity.thumbprint,
+  });
+  const challenge = await challengeResponse.json();
+  const enrolled = await api("/api/admin/pos/offline/devices/enroll",
+    await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
+  assert.equal(enrolled.status, 201);
+
+  const missingReason = await api("/api/admin/pos/offline/devices/" + deviceId + "/revoke", {});
+  assert.equal(missingReason.status, 400);
+  const revoked = await api("/api/admin/pos/offline/devices/" + deviceId + "/revoke", {
+    reason: "Device reported lost during integration test",
+  });
+  assert.equal(revoked.status, 200);
+  assert.equal((await revoked.json()).revoked, true);
+  const device = sqlite.prepare("SELECT status,revoked_by_admin_id,revoked_at FROM pos_offline_devices WHERE id=?").get(deviceId);
+  assert.equal(device.status, "revoked");
+  assert.equal(device.revoked_by_admin_id, ownerId);
+  assert.ok(device.revoked_at);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_device_revoked' AND entity_id=?").get(deviceId).count, 1);
+
+  const repeated = await api("/api/admin/pos/offline/devices/" + deviceId + "/revoke", {
+    reason: "Repeat revocation is safe",
+  });
+  assert.equal(repeated.status, 200);
+  assert.equal((await repeated.json()).already_revoked, true);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE action='pos.offline_device_revoked' AND entity_id=?").get(deviceId).count, 1);
+});
