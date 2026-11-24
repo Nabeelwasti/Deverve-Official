@@ -26,12 +26,12 @@ Automated validation currently available:
 - Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
 - Latest recorded CI run `45376677652` passed all executed steps, including the storefront browser suite.
 - CI run `45393119187` executed the existing remote D1 inventory integration suite: 16 checks passed and its isolated test database was deleted. The same run passed 160 desktop/mobile storefront browser tests. This suite does not exercise the new offline-POS migrations `0045`–`0048`; a dedicated offline migration/API integration suite remains outstanding.
-- The encrypted backup workflow now confirms all three GitHub Actions secrets are present. It has successfully exported, AES-256-GCM encrypted, uploaded and read-back-verified an archive in the private R2 bucket. The isolated restore stage has not passed yet; recent attempts exposed import-order and polling issues, and the latest script revision is being re-tested. Do not call recovery accepted until restore verification and temporary-database cleanup both pass.
+- The encrypted backup workflow passed on run `45330719916` attempt 7. It exported production D1, AES-256-GCM encrypted the archive, verified R2 read-back and SHA-256, restored into an isolated D1 database, matched 66 tables, 102 indexes, 10 triggers and all row counts, then confirmed temporary-database deletion. Independent off-account backup, key custody and retention/RPO/RTO remain owner tasks.
 
 Not yet verified / release blockers:
 
 - No dedicated full offline-POS browser outage/failure-injection suite against the actual production build and no physical Android acceptance.
-- No isolated remote D1 migration/concurrency/rollback integration run, production-like backup/restore rehearsal or migration approval.
+- No dedicated isolated remote D1 integration suite for offline migrations `0045`–`0048` and the full offline-sale lifecycle, or production-like migration rehearsal/approval.
 - Signing-key generation, secure secret provisioning, rotation/revocation and recovery custody remain owner-controlled tasks.
 - Production asset-manifest/cold-reload cache acceptance, preview smoke test and supervised pilot remain outstanding.
 
