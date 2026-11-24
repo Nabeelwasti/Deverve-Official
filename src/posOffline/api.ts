@@ -12,7 +12,7 @@ import {
   readStoredOfflinePermit,
   readStoredOfflineSnapshot,
   recordOfflineSyncFailure,
-  saveVerifiedOfflinePermit,
+  saveVerifiedOfflinePermit,\n  setOfflineShellReadiness,
   type QueuedOfflineSale,
   type StoredOfflinePermit,
 } from "./storage.js";
@@ -279,6 +279,7 @@ function collectCurrentPosAssets(): string[] {
 export async function prepareOfflineShell(): Promise<OfflineShellCheck> {
   const urls = collectCurrentPosAssets();
   const result = await requestOfflineShellWorker("PRECACHE_POS_ASSETS", urls);
+  await setOfflineShellReadiness(result.ready);
   if (!result.ready) {
     const failures = [...(result.failed ?? []), ...(result.missing ?? [])];
     throw new Error(`Emergency offline cache is incomplete (${failures.length} assets could not be verified). Keep using online POS and retry after all assets load.`);
@@ -288,5 +289,7 @@ export async function prepareOfflineShell(): Promise<OfflineShellCheck> {
 
 /** Re-checks actual service-worker cache contents; a previous visit alone is not proof of offline readiness. */
 export async function checkOfflineShellReady(): Promise<OfflineShellCheck> {
-  return requestOfflineShellWorker("CHECK_POS_ASSETS", collectCurrentPosAssets());
+  const result = await requestOfflineShellWorker("CHECK_POS_ASSETS", collectCurrentPosAssets());
+  await setOfflineShellReadiness(result.ready);
+  return result;
 }
