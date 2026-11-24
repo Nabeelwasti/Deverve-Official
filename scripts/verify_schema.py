@@ -47,10 +47,6 @@ try:
 except sqlite3.IntegrityError:
     expect_challenge_update_rejected = True
 assert expect_challenge_update_rejected, "Enrollment challenges must be single-use and immutable after consumption"
-expect_integrity_error(
-    lambda: db.execute("UPDATE pos_offline_enrollment_challenges SET public_key_thumbprint=? WHERE id='offline-challenge'", ("y"*43,)),
-    "Enrollment challenge bindings must be immutable",
-)
 db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner","snapshot-1","b"*64,"{}","c"*44,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
 db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,variant_id,allocated_quantity,created_by_admin_id) VALUES (?,?,?,?,?,?)", ("offline-allocation","offline-device","main-register","offline-variant",2,"offline-owner"))
 
@@ -60,6 +56,11 @@ def expect_integrity_error(action, message):
     except sqlite3.IntegrityError:
         return
     raise AssertionError(message)
+
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_enrollment_challenges SET public_key_thumbprint=? WHERE id='offline-challenge'", ("y"*43,)),
+    "Enrollment challenge bindings must be immutable",
+)
 
 expect_integrity_error(
     lambda: db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device-2","main-register","offline-owner","Second device",public_jwk,"d"*43)),
