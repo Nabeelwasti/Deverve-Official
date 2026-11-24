@@ -2568,7 +2568,7 @@ async function recordOfflineSaleConflict(
     env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_sale_conflict','pos_offline_event',?,? WHERE EXISTS (SELECT 1 FROM pos_offline_events WHERE event_id=? AND outcome='conflict')")
       .bind(crypto.randomUUID(), admin.admin_user_id, eventId, JSON.stringify({ device_id: deviceId, permit_id: permitId, sequence, reason_code: reasonCode }), eventId),
   ]);
-  return { outcome: "conflict", event_id: eventId, reason_code: reasonCode };
+  return { outcome: "conflict", event_id: eventId, reason_code: reasonCode, server_received_at: new Date().toISOString() };
 }
 
 async function processOfflineSaleEvent(
@@ -2799,7 +2799,7 @@ async function issueOfflinePermit(
   deviceId: string,
   body: Record<string, unknown> | null,
 ): Promise<Response> {
-  const cashierId = body?.cashier_admin_id, sessionId = body?.session_id;
+  const cashierId = admin.role === "viewer" ? admin.admin_user_id : body?.cashier_admin_id, sessionId = body?.session_id;
   const durationHours = body?.duration_hours === undefined ? 4 : body.duration_hours;
   if (typeof cashierId !== "string" || !/^[a-f0-9-]{36}$/i.test(cashierId) ||
       typeof sessionId !== "string" || !/^[a-f0-9-]{36}$/i.test(sessionId) ||
