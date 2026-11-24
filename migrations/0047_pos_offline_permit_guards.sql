@@ -36,6 +36,7 @@ BEGIN
     OR json_extract(NEW.claims_json, '$.issued_at') IS NOT NEW.issued_at
     OR json_extract(NEW.claims_json, '$.expires_at') IS NOT NEW.expires_at
     OR json_extract(NEW.claims_json, '$.max_events') IS NOT NEW.max_events
+    OR json_extract(NEW.claims_json, '$.offline_checkout_enabled') IS NOT 1
     OR json_extract(NEW.claims_json, '$.cash_only') IS NOT 1
     OR json_extract(NEW.claims_json, '$.allow_refunds') IS NOT 0
     OR json_extract(NEW.claims_json, '$.allow_voids') IS NOT 0
