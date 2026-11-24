@@ -64,13 +64,9 @@ async function restoreDrill(sql,expected){
  const name="deverve-restore-drill-"+new Date().toISOString().replace(/\D/g,"").slice(0,14)+"-"+randomBytes(3).toString("hex");let id;
  try{
   const created=await api("POST","/accounts/"+accountId+"/d1/database",{name,primary_location_hint:"apac"});id=created.uuid;if(!id)throw new Error("Temporary D1 database creation returned no ID.");
-  const etag=createHash("md5").update(sql).digest("hex"),path="/accounts/"+accountId+"/d1/database/"+id+"/import";
-  const init=await api("POST",path,{action:"init",etag});if(!init.upload_url||!init.filename)throw new Error("D1 import did not provide its upload URL.");
-  const uploaded=await fetch(init.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:sql,signal:AbortSignal.timeout(120000)});
-  if(!uploaded.ok)throw new Error("Temporary D1 upload failed ("+uploaded.status+").");
-  let state=await api("POST",path,{action:"ingest",etag,filename:init.filename}),bookmark=state.at_bookmark||init.at_bookmark;
-  for(let i=0;i<180&&state.status!=="complete";i++){if(state.status==="error")throw new Error("D1 restore failed: "+(state.error||"unknown"));if(!bookmark)throw new Error("D1 restore returned no polling bookmark.");await sleep(1000);state=await api("POST",path,{action:"poll",current_bookmark:bookmark});bookmark=state.at_bookmark||bookmark;}
-  if(state.status!=="complete")throw new Error("D1 restore did not complete within three minutes.");
+  const queryPath="/accounts/"+accountId+"/d1/database/"+id+"/query",sqlText=sql.toString("utf8");
+  if(Buffer.byteLength(sqlText,"utf8")>512*1024)throw new Error("Restore SQL exceeds the safe D1 query-batch size; use a chunked dependency-ordered restore.");
+  const imported=await api("POST",queryPath,{sql:sqlText});
   const restored=await snapshot(id);
   if(stable(restored.tables)!==stable(expected.tables))throw new Error("Restored table set differs from the production export.");
   if(stable(restored.schemaObjects)!==stable(expected.schemaObjects))throw new Error("Restored schema-object counts differ from the production export.");
@@ -78,7 +74,7 @@ async function restoreDrill(sql,expected){
   const compareRows=expected.rowCounts!==null&&expected.rowCounts!==undefined;
   if(compareRows&&stable(restored.rowCounts)!==stable(expected.rowCounts))throw new Error("Restored row counts differ from the exported snapshot.");
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");
-  return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:state.result?.num_queries??null};
+  return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null};
  }finally{if(id){try{await api("DELETE","/accounts/"+accountId+"/d1/database/"+id);}catch(error){console.error("ERROR: temporary D1 restore database cleanup failed:",name,error instanceof Error?error.message:"unknown error");throw new Error("Restore drill cannot pass because its temporary D1 database was not confirmed deleted.");}}}
 }
 async function main(){
