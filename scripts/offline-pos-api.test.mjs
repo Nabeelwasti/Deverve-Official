@@ -30,7 +30,7 @@ assert.match(worker, /pos\.offline_stock_allocated/);
 assert.match(worker, /async function issueOfflinePermit/);
 assert.match(worker, /async function processOfflineSaleEvent/);
 assert.match(worker, /async function recordOfflineSaleConflict/);
-assert.match(worker, /offlineRoot \\+ "\/sync"/);
+assert.ok(worker.includes('offlineRoot + "/sync"'));
 assert.match(worker, /verifyOfflineEventSignature\(sale, signature, devicePublicKey\)/);
 assert.match(worker, /verifyOfflinePermitSignatureServer\(permitClaims/);
 assert.match(worker, /device_sequence_gap/);
