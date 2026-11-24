@@ -49,7 +49,7 @@ try {
 
   const migrationDirectory = new URL("../migrations/", import.meta.url);
   const migrations = (await readdir(migrationDirectory))
-    .filter((name) => /^\\d{4}_[a-z0-9_]+\\.sql$/i.test(name))
+    .filter((name) => /^\d{4}_[a-z0-9_]+\.sql$/i.test(name))
     .sort((a, b) => Number(a.slice(0, 4)) - Number(b.slice(0, 4)));
   check(migrations.length >= 48, "all numbered schema migrations are present");
   check(migrations.includes("0045_pos_offline_emergency_foundation.sql")
