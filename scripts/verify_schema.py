@@ -53,19 +53,21 @@ db.execute("INSERT INTO pos_offline_stock_allocations (id,device_id,register_id,
 permit_snapshot = [{
     "allocationId": "offline-allocation", "variantId": "offline-variant", "productId": "offline-product",
     "productName": "Offline POS product", "sku": "OFFLINE-1", "barcode": "", "size": "M", "color": "Black",
-    "allocatedQuantity": 2, "unitPricePaisa": 10000, "costPricePaisa": 4000,
+    "allocatedQuantity": 2, "unitPricePaisa": 10000,
 }]
 permit_snapshot_json = __import__("json").dumps(permit_snapshot, sort_keys=True, separators=(",", ":"))
 permit_snapshot_hash = __import__("hashlib").sha256(permit_snapshot_json.encode()).hexdigest()
+cost_snapshot = [{"allocationId": "offline-allocation", "variantId": "offline-variant", "costPricePaisa": 4000}]
+cost_snapshot_json = __import__("json").dumps(cost_snapshot, sort_keys=True, separators=(",", ":"))
 permit_claims = __import__("json").dumps({
     "version": 1, "permit_id": "offline-permit", "device_id": "offline-device", "register_id": "main-register",
     "session_id": "offline-session", "cashier_admin_id": "offline-owner", "cashier_grant_version": cashier_grant_version,
     "snapshot_version": "snapshot-1", "snapshot_hash": permit_snapshot_hash, "issued_at": "2026-11-24T00:00:00.000Z",
     "expires_at": "2026-11-24T04:00:00.000Z", "max_events": 20, "offline_checkout_enabled": True, "cash_only": True, "allow_refunds": False,
     "allow_voids": False, "allow_shift_close": False,
-    "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000, "cost_price_paisa": 4000}],
+    "allocations": [{"allocation_id": "offline-allocation", "variant_id": "offline-variant", "quantity": 2, "unit_price_paisa": 10000}],
 })
-db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-1",permit_snapshot_hash,permit_claims,permit_snapshot_json,"c"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
+db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-1",permit_snapshot_hash,permit_claims,permit_snapshot_json,cost_snapshot_json,"c"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z"))
 
 def expect_integrity_error(action, message):
     try:
@@ -75,7 +77,7 @@ def expect_integrity_error(action, message):
     raise AssertionError(message)
 
 offline_permit_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger'")}
-assert {"pos_offline_permit_authorization_guard", "pos_offline_allocation_insert_guard_during_permit", "pos_offline_allocation_release_guard_during_permit", "pos_offline_permit_identity_immutable", "pos_offline_permit_no_delete", "pos_offline_permit_snapshot_guard", "pos_offline_permit_snapshot_immutable"} <= offline_permit_triggers, "Signed permit authorization and snapshot guard triggers are missing"
+assert {"pos_offline_permit_authorization_guard", "pos_offline_allocation_insert_guard_during_permit", "pos_offline_allocation_release_guard_during_permit", "pos_offline_permit_identity_immutable", "pos_offline_permit_no_delete", "pos_offline_permit_snapshot_guard", "pos_offline_permit_snapshot_immutable", "pos_offline_permit_cost_snapshot_guard", "pos_offline_permit_cost_snapshot_immutable"} <= offline_permit_triggers, "Signed permit authorization and snapshot guard triggers are missing"
 expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_permits SET claims_json='{}' WHERE id='offline-permit'"),
     "Signed offline permit claims must be immutable",
@@ -87,6 +89,10 @@ expect_integrity_error(
 expect_integrity_error(
     lambda: db.execute("UPDATE pos_offline_permits SET snapshot_json='[]' WHERE id='offline-permit'"),
     "Offline permit catalogue snapshots must be immutable",
+)
+expect_integrity_error(
+    lambda: db.execute("UPDATE pos_offline_permits SET cost_snapshot_json='[]' WHERE id='offline-permit'"),
+    "Offline permit purchase-cost snapshots must be immutable",
 )
 
 expect_integrity_error(
@@ -102,7 +108,7 @@ permit_claims_two = __import__("json").loads(permit_claims)
 permit_claims_two["permit_id"] = "offline-permit-2"
 permit_claims_two["snapshot_version"] = "snapshot-2"
 expect_integrity_error(
-    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-2",permit_snapshot_hash,__import__("json").dumps(permit_claims_two),permit_snapshot_json,"f"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
+    lambda: db.execute("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,issued_at,expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ("offline-permit-2","offline-device","main-register","offline-session","offline-owner",cashier_grant_version,"snapshot-2",permit_snapshot_hash,__import__("json").dumps(permit_claims_two),permit_snapshot_json,cost_snapshot_json,"f"*86,"2026-11-24T00:00:00.000Z","2026-11-24T04:00:00.000Z")),
     "A device must not have two active offline permits",
 )
 expect_integrity_error(
