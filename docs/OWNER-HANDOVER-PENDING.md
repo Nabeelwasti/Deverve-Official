@@ -84,7 +84,8 @@ Never paste tokens or recovery keys into this file or chat.
 
 ## 7. Remaining engineering acceptance
 
-- [x] CI run `45423402930` executed the remote D1 inventory integration suite (16 checks) and deleted its temporary database. The offline-POS D1 migration-chain and production-clone migration rehearsal also passed. [ ] Full offline Worker/API event-lifecycle, signature/replay/failure-injection and multi-event concurrency integration tests remain outstanding.
+- [x] CI run `45423402930` executed the remote D1 inventory integration suite (16 checks) and deleted its temporary database. The offline-POS D1 migration-chain and production-clone migration rehearsal also passed in run `45436942628`; documentation-only head run `45437798376` also passed.
+- [ ] Full offline Worker/API event-lifecycle, signature/replay/failure-injection and multi-event concurrency integration tests remain outstanding. Tracked in [issue #52](https://github.com/Nabeelwasti/Deverve-Official/issues/52). The current `scripts/offline-pos-api.test.mjs` is source-level/static guard coverage, not live Worker/D1 lifecycle execution.
 - [ ] Run sustained production-like inventory load tests and reconcile results against real stock processes.
 - [ ] Complete live payment/courier/email/WhatsApp provider contract tests after credentials and accounts are configured.
 - [ ] Complete the full production-smoke workflow, security-header checks and protected-route checks on the final controlled deployment.
