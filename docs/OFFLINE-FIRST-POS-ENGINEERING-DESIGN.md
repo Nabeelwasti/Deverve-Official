@@ -177,11 +177,11 @@ They add immutable device/permit/event evidence, single-use challenge guards, de
 
 **Production status:** migrations `0045`–`0049` have not been applied to production. No deployment or merge of PR #51 has occurred. Do not apply these migrations until owner approval, backup verification, physical-device acceptance and controlled release gates are complete.
 
-## 12. Test plan — status as of 24 November 2026
+## 12. Test plan — status as of 25 November 2026
 
 ### Verified automated coverage
 
-Full CI run [45456486261](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45456486261) passed all workflow steps on PR code head `e514856a44cba7861952cab02eb891187f6a4e98`. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
+Full CI run [45468938449](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45468938449) passed all workflow steps on PR code head `d3d06958e22d657a404b01e1fff4da837f8c2bea`. The real Worker integration suite reports 20 tests passed, 0 failed. The real Worker integration suite invokes the compiled Worker handler using real HTTP Requests, generated test-only P-256 keys and an isolated SQLite/D1-compatible adapter with migrations `0001`–`0049`.
 
 Verified scenarios:
 - [x] Challenge binding, forged proof rejection without challenge consumption, one-time enrollment/replay rejection, expiry, thumbprint mismatch and unknown register.
@@ -191,6 +191,7 @@ Verified scenarios:
 - [x] Signed cash sale, one canonical receipt, sale/items/payment/financial ledger/inventory movement/audit writes and stock/reservation counters.
 - [x] Exact duplicate retry returns the original sale/receipt; altered same-identity replay becomes a conflict.
 - [x] Concurrent exact-duplicate sync requests create one canonical sale and consume stock once.
+- [x] Concurrent distinct signed event IDs contending for the same device sequence yield exactly one accepted sale and one conflict; only one event row and one set of sale/payment/ledger/inventory writes commit.
 - [x] Ordered multi-event batch settlement for sequences 1 and 2 with balanced cash/ledger/stock.
 - [x] Invalid device signature, permit verification-key mismatch, sequence gap and revoked-device conflict.
 - [x] Late D1 batch failure rolls back the staged sale, item, stock, allocation, inventory, payment, ledger and audit writes together.
@@ -200,7 +201,7 @@ Verified scenarios:
 
 ### Still required before enabling
 
-- [ ] Test distinct event IDs contending for the same device sequence using separate D1 connections and verify exactly one event wins with the other preserved as a conflict/retry.
+- [ ] Repeat distinct-event sequence contention using independent Cloudflare D1 request/connection paths and record the exact conflict/retry outcome under D1's production transaction semantics.
 - [ ] Test concurrent reconciliation requests against the same case/allocation and prove only one resolution/consumption commits.
 - [ ] Expand deterministic failure injection to every individual D1 write boundary, including event insert, sale, each item, stock, allocation, inventory movement, payment, financial ledger, audit, event outcome and reconciliation case/action writes.
 - [ ] Test the full mismatch matrix: wrong cashier/grant, shift closure, register/device mismatch, price change, archived product, inactive variant, allocation overdraw, totals, tender/change, cash ledger and per-variant inventory movement mismatch.
