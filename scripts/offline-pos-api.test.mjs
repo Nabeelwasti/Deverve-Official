@@ -34,7 +34,7 @@ assert.match(worker, /Offline permit signing is not configured/);
 assert.ok(worker.includes("offlineRoot + \"/verification-key\""));
 assert.match(worker, /snapshotHash = await sha256Hex\(canonicalOfflineJson\(snapshot\)\)/);
 
-assert.match(worker, /pos\\.offline_permit_issued/);
+assert.ok(worker.includes("pos.offline_permit_issued"));
 
 assert.match(worker, /Stock allocation failed\. The database rolled back the allocation batch/);
 assert.match(worker, /owner_confirms_device_queue_reconciled !== true/);
