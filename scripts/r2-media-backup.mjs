@@ -71,11 +71,28 @@ async function putObject(bucket, key, bytes, contentType) {
   if (!response.ok || payload.success === false) throw new Error("Encrypted media backup upload failed (" + response.status + ").");
 }
 async function listObjects() {
-  const result = await api("GET", "/accounts/" + accountId + "/r2/buckets/" + sourceBucket + "/objects?per_page=1000");
-  const objects = Array.isArray(result) ? result : result.objects;
-  if (!Array.isArray(objects)) throw new Error("R2 media inventory response was not an object list.");
-  if (objects.length > MAX_OBJECTS) throw new Error("R2 media inventory exceeds the configured safe object-count limit.");
-  return objects.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  const objects = [];
+  let cursor;
+  for (let page = 0; page < 10; page++) {
+    const query = new URLSearchParams({ per_page: "1000" });
+    if (cursor) query.set("cursor", cursor);
+    const response = await fetch(API + "/accounts/" + accountId + "/r2/buckets/" + sourceBucket + "/objects?" + query.toString(), {
+      headers: { Authorization: "Bearer " + token },
+      cache: "no-store",
+      signal: AbortSignal.timeout(120000)
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success !== true) {
+      const message = payload.errors?.map((item) => item.message).filter(Boolean).join("; ");
+      throw new Error("R2 media inventory request failed (" + response.status + "): " + (message || "request unsuccessful"));
+    }
+    if (!Array.isArray(payload.result)) throw new Error("R2 media inventory response was not an object list.");
+    objects.push(...payload.result);
+    if (objects.length > MAX_OBJECTS) throw new Error("R2 media inventory exceeds the configured safe object-count limit.");
+    cursor = payload.result_info?.cursor;
+    if (!payload.result_info?.is_truncated || !cursor) return objects.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+  }
+  throw new Error("R2 media inventory pagination exceeded the configured safety limit.");
 }
 async function main() {
   required(accountId, "CLOUDFLARE_ACCOUNT_ID");
