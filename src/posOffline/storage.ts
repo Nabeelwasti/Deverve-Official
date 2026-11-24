@@ -605,31 +605,57 @@ export async function saveVerifiedOfflinePermit(record: StoredOfflinePermit): Pr
   const database = await openOfflinePosDatabase();
   try {
     await new Promise<void>((resolve, reject) => {
-      const transaction = database.transaction(["permit", "catalogue", "shift", "meta", "audit"], "readwrite");
-      transaction.objectStore("permit").put(record);
-      transaction.objectStore("catalogue").put({
-        id: "active",
-        snapshotVersion: record.claims.snapshot_version,
-        snapshotHash: record.claims.snapshot_hash,
-        items: record.snapshot,
-        savedAt: record.savedAt,
-      });
-      transaction.objectStore("shift").put({
-        id: "active",
-        sessionId: record.claims.session_id,
-        registerId: record.claims.register_id,
-        cashierId: record.claims.cashier_admin_id,
-        permitId: record.permitId,
-        expiresAt: record.claims.expires_at,
-        savedAt: record.savedAt,
-      });
-      transaction.objectStore("meta").put({ id: "offline-permit-verified", value: true, verifiedAt: record.savedAt });
-      transaction.objectStore("audit").add({
-        action: "offline_permit_verified_and_stored",
-        permitId: record.permitId,
-        snapshotVersion: record.claims.snapshot_version,
-        recordedAt: record.savedAt,
-      });
+      const transaction = database.transaction(["permit", "catalogue", "shift", "meta", "audit", "sales", "outbox"], "readwrite");
+      const salesRequest = transaction.objectStore("sales").getAll();
+      const outboxRequest = transaction.objectStore("outbox").getAll();
+      let reads = 0;
+      let invalidQueue = false;
+      const persistPermit = () => {
+        reads += 1;
+        if (reads !== 2 || invalidQueue) return;
+        const sales = salesRequest.result as QueuedOfflineSale[];
+        const outbox = outboxRequest.result as OfflineOutboxRecord[];
+        const salesById = new Map(sales.map((sale) => [sale.eventId, sale]));
+        for (const entry of outbox) {
+          if (entry.status === "synced") continue;
+          const sale = salesById.get(entry.eventId);
+          if (!sale || sale.permitId !== record.permitId || sale.sequence !== entry.sequence) {
+            invalidQueue = true;
+            transaction.abort();
+            return;
+          }
+        }
+        transaction.objectStore("permit").put(record);
+        transaction.objectStore("catalogue").put({
+          id: "active",
+          snapshotVersion: record.claims.snapshot_version,
+          snapshotHash: record.claims.snapshot_hash,
+          items: record.snapshot,
+          savedAt: record.savedAt,
+        });
+        transaction.objectStore("shift").put({
+          id: "active",
+          sessionId: record.claims.session_id,
+          registerId: record.claims.register_id,
+          cashierId: record.claims.cashier_admin_id,
+          permitId: record.permitId,
+          expiresAt: record.claims.expires_at,
+          savedAt: record.savedAt,
+        });
+        transaction.objectStore("meta").put({ id: "offline-permit-verified", value: true, verifiedAt: record.savedAt });
+        transaction.objectStore("audit").add({
+          action: "offline_permit_verified_and_stored",
+          permitId: record.permitId,
+          snapshotVersion: record.claims.snapshot_version,
+          recordedAt: record.savedAt,
+        });
+      };
+      salesRequest.onsuccess = persistPermit;
+      outboxRequest.onsuccess = persistPermit;
+      salesRequest.onerror = outboxRequest.onerror = () => {
+        invalidQueue = true;
+        transaction.abort();
+      };
       transaction.oncomplete = () => resolve();
       transaction.onabort = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
       transaction.onerror = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
