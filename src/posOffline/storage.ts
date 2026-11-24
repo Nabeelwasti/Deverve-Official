@@ -253,3 +253,165 @@ export async function inspectOfflineStorage(requestPersistence = true): Promise<
   };
 }
 
+
+
+export type OfflineOutboxRecord = {
+  eventId: string;
+  sequence: number;
+  status: "pending" | "syncing" | "needs_review" | "synced";
+  attempts: number;
+  nextAttemptAt: number;
+  lastErrorCode: string | null;
+};
+
+export type OfflineSyncReceipt = {
+  eventId: string;
+  outcome: "accepted" | "already_accepted" | "conflict" | "rejected";
+  canonicalSaleId?: string;
+  receiptNumber?: string;
+  serverReceivedAt: string;
+  reasonCode?: string;
+};
+
+function assertEventId(eventId: string): void {
+  if (typeof eventId !== "string" || !/^[a-f0-9-]{36}$/i.test(eventId)) {
+    throw new Error("A valid offline sale event ID is required.");
+  }
+}
+
+/** Returns pending events in strict device sequence order. It never mutates or removes sale evidence. */
+export async function listPendingOfflineSales(limit = 10): Promise<QueuedOfflineSale[]> {
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error("Offline sync batch size must be between 1 and 20.");
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["sales", "outbox"], "readonly");
+      const salesRequest = transaction.objectStore("sales").getAll();
+      const outboxRequest = transaction.objectStore("outbox").getAll();
+      transaction.oncomplete = () => {
+        const outbox = (outboxRequest.result as OfflineOutboxRecord[])
+          .filter((record) => record.status === "pending" || record.status === "syncing")
+          .sort((a, b) => a.sequence - b.sequence)
+          .slice(0, limit);
+        const byId = new Map((salesRequest.result as QueuedOfflineSale[]).map((sale) => [sale.eventId, sale]));
+        const ordered: QueuedOfflineSale[] = [];
+        for (const record of outbox) {
+          const sale = byId.get(record.eventId);
+          if (!sale || sale.sequence !== record.sequence) {
+            reject(new Error("Offline sale queue integrity check failed. Stop syncing and request owner review."));
+            return;
+          }
+          ordered.push(sale);
+        }
+        resolve(ordered);
+      };
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline queue could not be read."));
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline queue read was interrupted."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+/** Records a retryable failure without changing the immutable sale payload or its idempotency key. */
+export async function recordOfflineSyncFailure(eventId: string, errorCode: string, retryAt = Date.now() + 30_000): Promise<void> {
+  assertEventId(eventId);
+  if (!/^[a-z0-9_]{2,64}$/i.test(errorCode) || !Number.isSafeInteger(retryAt) || retryAt < 0) {
+    throw new Error("Offline retry metadata is invalid.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["outbox", "audit"], "readwrite");
+      const store = transaction.objectStore("outbox");
+      const request = store.get(eventId);
+      request.onsuccess = () => {
+        const current = request.result as OfflineOutboxRecord | undefined;
+        if (!current || current.status === "synced" || current.status === "needs_review") {
+          transaction.abort();
+          return;
+        }
+        store.put({ ...current, status: "pending", attempts: current.attempts + 1, nextAttemptAt: retryAt, lastErrorCode: errorCode });
+        transaction.objectStore("audit").add({ action: "offline_sync_retry_scheduled", eventId, errorCode, recordedAt: new Date().toISOString() });
+      };
+      request.onerror = () => transaction.abort();
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline retry state could not be saved."));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline retry state could not be saved."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+/** Stores server acknowledgement atomically. Replayed acknowledgements are accepted only if identical. */
+export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promise<void> {
+  assertEventId(receipt?.eventId);
+  if (!receipt || !["accepted", "already_accepted", "conflict", "rejected"].includes(receipt.outcome) ||
+      !Number.isSafeInteger(Date.parse(receipt.serverReceivedAt))) {
+    throw new Error("Offline sync acknowledgement is invalid.");
+  }
+  if ((receipt.outcome === "accepted" || receipt.outcome === "already_accepted") &&
+      (typeof receipt.canonicalSaleId !== "string" || !receipt.canonicalSaleId || typeof receipt.receiptNumber !== "string" || !receipt.receiptNumber)) {
+    throw new Error("An accepted offline sale must include its canonical server sale and receipt references.");
+  }
+  if ((receipt.outcome === "conflict" || receipt.outcome === "rejected") &&
+      (typeof receipt.reasonCode !== "string" || !/^[a-z0-9_]{2,64}$/i.test(receipt.reasonCode))) {
+    throw new Error("A rejected or conflicted offline sale must include a stable reason code.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["sales", "outbox", "syncReceipts", "audit"], "readwrite");
+      const sales = transaction.objectStore("sales");
+      const outbox = transaction.objectStore("outbox");
+      const existingReceiptRequest = transaction.objectStore("syncReceipts").get(receipt.eventId);
+      const saleRequest = sales.get(receipt.eventId);
+      const outboxRequest = outbox.get(receipt.eventId);
+      let invalid = false;
+      let reads = 0;
+      const finishReads = () => {
+        reads += 1;
+        if (reads !== 3 || invalid) return;
+        const previous = existingReceiptRequest.result as OfflineSyncReceipt | undefined;
+        const sale = saleRequest.result as QueuedOfflineSale | undefined;
+        const queue = outboxRequest.result as OfflineOutboxRecord | undefined;
+        if (!sale || !queue || sale.eventId !== receipt.eventId || queue.eventId !== receipt.eventId) {
+          invalid = true;
+          transaction.abort();
+          return;
+        }
+        if (previous) {
+          if (JSON.stringify(previous) !== JSON.stringify(receipt)) {
+            invalid = true;
+            transaction.abort();
+          }
+          return;
+        }
+        const status = receipt.outcome === "accepted" || receipt.outcome === "already_accepted" ? "synced" :
+          receipt.outcome === "conflict" || receipt.outcome === "rejected" ? "needs_review" : "pending";
+        outbox.put({ ...queue, status, lastErrorCode: receipt.reasonCode ?? null });
+        transaction.objectStore("syncReceipts").add(receipt);
+        transaction.objectStore("audit").add({
+          action: status === "synced" ? "offline_sale_acknowledged" : "offline_sale_needs_review",
+          eventId: receipt.eventId,
+          outcome: receipt.outcome,
+          reasonCode: receipt.reasonCode ?? null,
+          recordedAt: new Date().toISOString(),
+        });
+      };
+      existingReceiptRequest.onsuccess = finishReads;
+      saleRequest.onsuccess = finishReads;
+      outboxRequest.onsuccess = finishReads;
+      existingReceiptRequest.onerror = saleRequest.onerror = outboxRequest.onerror = () => {
+        invalid = true;
+        transaction.abort();
+      };
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline sale acknowledgement could not be committed."));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline sale acknowledgement could not be committed."));
+    });
+  } finally {
+    database.close();
+  }
+}
