@@ -50,7 +50,7 @@ function isSafePosAsset(candidate) {
     if (url.pathname === "/") return url;
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/admin/api/") ||
         url.pathname === "/sw.js" || url.pathname === "/manifest.webmanifest") return null;
-    if (!/\\.(?:js|mjs|css|woff2?|ttf|otf|svg|png|jpe?g|webp|avif)$/i.test(url.pathname)) return null;
+    if (!/\.(?:js|mjs|css|woff2?|ttf|otf|svg|png|jpe?g|webp|avif)$/i.test(url.pathname)) return null;
     return url;
   } catch {
     return null;
