@@ -235,9 +235,10 @@ async function requestOfflineShellWorker(type: "PRECACHE_POS_ASSETS" | "CHECK_PO
   if (!globalThis.isSecureContext || !("serviceWorker" in navigator)) {
     throw new Error("A secure HTTPS browser with service-worker support is required for emergency offline caching.");
   }
-  const registration = await navigator.serviceWorker.register("/sw.js");
+  const existingRegistration = await navigator.serviceWorker.getRegistration("/");
+  const registration = existingRegistration ?? await navigator.serviceWorker.register("/sw.js");
   await navigator.serviceWorker.ready;
-  const worker = navigator.serviceWorker.controller ?? registration.active;
+  const worker = navigator.serviceWorker.controller ?? registration.active ?? registration.waiting;
   if (!worker) throw new Error("The De VERVE service worker is not active yet. Reload the POS page and try again.");
   return await new Promise<OfflineShellCheck>((resolve, reject) => {
     const channel = new MessageChannel();
