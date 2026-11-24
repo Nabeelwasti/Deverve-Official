@@ -388,6 +388,47 @@ export async function listOfflineSalesForPermit(permitId: string): Promise<Queue
   }
 }
 
+export type OfflineQueueSummary = {
+  sale: QueuedOfflineSale;
+  outbox: OfflineOutboxRecord;
+  receipt: OfflineSyncReceipt | null;
+};
+
+/** Returns durable, ordered local sale evidence and its sync state for the active permit. */
+export async function listOfflineQueueForPermit(permitId: string): Promise<OfflineQueueSummary[]> {
+  if (typeof permitId !== "string" || permitId.length < 8 || permitId.length > 160) {
+    throw new Error("Offline permit reference is invalid.");
+  }
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["sales", "outbox", "syncReceipts"], "readonly");
+      const salesRequest = transaction.objectStore("sales").getAll();
+      const outboxRequest = transaction.objectStore("outbox").getAll();
+      const receiptsRequest = transaction.objectStore("syncReceipts").getAll();
+      transaction.oncomplete = () => {
+        const sales = (salesRequest.result as QueuedOfflineSale[]).filter((sale) => sale.permitId === permitId);
+        const outbox = new Map((outboxRequest.result as OfflineOutboxRecord[]).map((record) => [record.eventId, record]));
+        const receipts = new Map((receiptsRequest.result as OfflineSyncReceipt[]).map((receipt) => [receipt.eventId, receipt]));
+        const rows: OfflineQueueSummary[] = [];
+        for (const sale of sales) {
+          const record = outbox.get(sale.eventId);
+          if (!record || record.sequence !== sale.sequence) {
+            reject(new Error("Local offline sale evidence is incomplete. Stop checkout and request owner reconciliation."));
+            return;
+          }
+          rows.push({ sale, outbox: record, receipt: receipts.get(sale.eventId) ?? null });
+        }
+        resolve(rows.sort((a, b) => a.sale.sequence - b.sale.sequence));
+      };
+      transaction.onerror = () => reject(transaction.error ?? new Error("Offline sale queue could not be read."));
+      transaction.onabort = () => reject(transaction.error ?? new Error("Offline sale queue read was aborted."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
 export async function listPendingOfflineSales(limit = 10): Promise<QueuedOfflineSale[]> {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 20) throw new Error("Offline sync batch size must be between 1 and 20.");
   const database = await openOfflinePosDatabase();
