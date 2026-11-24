@@ -25,6 +25,7 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
  const pendingSaleKeyRef=useRef(pendingSaleKey);
  const [accountId,setAccountId]=useState("cash-main"),[cashTendered,setCashTendered]=useState(""),[openingCash,setOpeningCash]=useState("0"),[countedCash,setCountedCash]=useState("");
  const [offlineRemainingByVariant,setOfflineRemainingByVariant]=useState<Record<string,number>>({});
+ const [offlineMode,setOfflineMode]=useState(false);
  const [activeTab,setActiveTab]=useState<"sell"|"cashbook"|"expenses"|"reports"|"history"|"offline">("sell"),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[message,setMessage]=useState(""),[isError,setIsError]=useState(false),[receipt,setReceipt]=useState<SaleReceipt|null>(null),[offlineQueuedReceipt,setOfflineQueuedReceipt]=useState<{eventId:string;sequence:number;totalPaisa:number;createdAt:string}|null>(null);
  const [period,setPeriod]=useState<"today"|"month"|"year">("today"),[summary,setSummary]=useState<Summary|null>(null),[expenses,setExpenses]=useState<Expense[]>([]),[sales,setSales]=useState<Sale[]>([]);
  const [voidTarget,setVoidTarget]=useState<Sale|null>(null),[voidReason,setVoidReason]=useState("");
@@ -48,7 +49,55 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
  const cashShortPaisa=selectedAccount?.kind==="cash"&&cashTenderedPaisa>0&&cashTenderedPaisa<total?total-cashTenderedPaisa:0;
  const filtered=useMemo(()=>{const q=search.trim().toLowerCase();return items.filter(item=>!q||[item.product_name,item.category,item.sku||"",item.barcode||"",item.size,item.color].join(" ").toLowerCase().includes(q));},[items,search]);
  const notify=(text:string,error=false)=>{setMessage(text);setIsError(error);};
- const load=useCallback(async()=>{setLoading(true);try{const data=await request<{items:Item[];accounts:Account[];registers:Array<{id:string;name:string;location_label:string}>;session:Session|null}>("/api/admin/pos/bootstrap");setItems(data.items);setAccounts(data.accounts);setRegisters(data.registers);setSession(data.session);if(data.accounts.length){setAccountId(current=>data.accounts.some(a=>a.id===current)?current:data.accounts.find(a=>a.kind==="cash")?.id||data.accounts[0].id);setExpenseAccount(current=>data.accounts.some(a=>a.id===current)?current:data.accounts[0].id);setMovementAccount(current=>data.accounts.some(a=>a.id===current)?current:data.accounts[0].id);}}catch(e){notify(e instanceof Error?e.message:"POS could not be loaded.",true);}finally{setLoading(false);}},[]);
+ const load=useCallback(async()=>{
+  setLoading(true);
+  try{
+   const data=await request<{items:Item[];accounts:Account[];registers:Array<{id:string;name:string;location_label:string}>;session:Session|null}>("/api/admin/pos/bootstrap");
+   setItems(data.items);setAccounts(data.accounts);setRegisters(data.registers);setSession(data.session);setOfflineMode(false);
+   if(data.accounts.length){setAccountId(current=>data.accounts.some(a=>a.id===current)?current:data.accounts.find(a=>a.kind==="cash")?.id||data.accounts[0].id);setExpenseAccount(current=>data.accounts.some(a=>a.id===current)?current:data.accounts[0].id);setMovementAccount(current=>data.accounts.some(a=>a.id===current)?current:data.accounts[0].id);}
+  }catch(e){
+   const serviceUnavailable=!navigator.onLine||e instanceof TypeError||(e instanceof AdminRequestError&&e.status>=500);
+   if(canUseOffline&&serviceUnavailable){
+    try{
+     const [health,permit,snapshot,shift,identity,shell]=await Promise.all([
+      inspectOfflineStorage(),readStoredOfflinePermit(),readStoredOfflineSnapshot(),readStoredOfflineShift(),
+      getOrCreateOfflineDeviceIdentity(),checkOfflineShellReady(),
+     ]);
+     const claims=permit?.claims;
+     if(!health.checkoutStorageReady||!permit||!snapshot||!shift||!shell.ready||!claims||
+        identity.deviceId!==claims.device_id||claims.offline_checkout_enabled!==true||
+        Date.parse(String(claims.expires_at??""))<=Date.now()||
+        !await verifyOfflinePermitSignature(claims,permit.signatureBase64Url,permit.verificationPublicKeyJwk)||
+        !await verifyOfflinePermitSnapshot(snapshot,String(claims.snapshot_hash??""))||
+        shift.sessionId!==claims.session_id||shift.registerId!==claims.register_id||
+        shift.cashierId!==claims.cashier_admin_id||shift.permitId!==permit.permitId){
+      throw new Error("No verified offline permit, cached app shell, persistent storage or matching shift is available.");
+     }
+     const offlineItems:Item[]=snapshot.map(item=>({
+      product_id:String(item.productId),product_name:String(item.productName),category:"Emergency offline allocation",
+      retail_price_paisa:Number(item.unitPricePaisa),variant_id:String(item.variantId),
+      sku:typeof item.sku==="string"?item.sku:null,barcode:typeof item.barcode==="string"?item.barcode:null,
+      size:String(item.size??""),color:String(item.color??""),stock_on_hand:Number(item.allocatedQuantity),
+      reserved_quantity:0,reorder_level:0,available_quantity:0,
+     }));
+     setItems(offlineItems);
+     setAccounts([{id:"cash-main",name:"Main cash",kind:"cash",masked_reference:"",opening_balance_paisa:0}]);
+     setRegisters([{id:String(shift.registerId),name:"Offline register",location_label:"Cached shift"}]);
+     setSession({id:String(shift.sessionId),register_id:String(shift.registerId),opening_cash_paisa:0,expected_cash_paisa:0,status:"open"});
+     setAccountId("cash-main");
+     setOfflineMode(true);
+     notify("Emergency offline mode is active. Only signed, reserved stock and cash-only walk-in sales are allowed. Shift cash reconciliation is pending synchronization.");
+     return;
+    }catch(offlineError){
+     setOfflineMode(false);
+     notify(offlineError instanceof Error?offlineError.message:"Offline POS could not be safely restored from this browser.",true);
+     return;
+    }
+   }
+   setOfflineMode(false);
+   notify(e instanceof Error?e.message:"POS could not be loaded.",true);
+  }finally{setLoading(false);}
+ },[canUseOffline]);
  const loadSummary=useCallback(async()=>{try{setSummary(await request<Summary>("/api/admin/pos/summary?period="+period));}catch(e){notify(e instanceof Error?e.message:"Reports could not be loaded.",true);}},[period]);
  const loadExpenses=useCallback(async()=>{try{const result=await request<{expenses:Expense[]}>("/api/admin/pos/expenses");setExpenses(result.expenses);setMessage("");setIsError(false);}catch(e){notify(e instanceof Error?e.message:"Expenses could not be loaded.",true);}},[]);
  const loadSales=useCallback(async()=>{try{const result=await request<{sales:Sale[]}>("/api/admin/pos/sales?limit=50");setSales(result.sales);setMessage("");setIsError(false);}catch(e){notify(e instanceof Error?e.message:"Sales history could not be loaded.",true);}},[]);
@@ -214,7 +263,7 @@ export default function POSWorkspace({canManageMoney,canUseAI=false,canUseOfflin
  const printPosWorkspace=()=>{const root=document.querySelector(".admin-dashboard .pos-workspace");if(!root)return;root.classList.add("pos-print-active");document.body.classList.add("printing-pos-workspace");const cleanup=()=>{root.classList.remove("pos-print-active");document.body.classList.remove("printing-pos-workspace");};window.addEventListener("afterprint",cleanup,{once:true});window.print();};
  return <div className="pos-workspace"><header className="pos-print-header"><img src="/api/brand/logo" alt="De VERVE"/><div><strong>DE VERVE</strong><span>BUSINESS OPERATIONS · JHELUM, PAKISTAN</span></div><time>{new Date().toLocaleString("en-PK")}</time></header>
   <div className="admin-panel-heading"><div><p className="admin-eyebrow">DE VERVE RETAIL OPERATIONS</p><h2>Point of sale & cashbook</h2><p className="admin-muted">Live counter sales, shared stock, shift cash control, expenses and financial reporting.</p></div><button type="button" className="admin-secondary" disabled={loading||busy} onClick={()=>{void load();if(activeTab==="expenses")void loadExpenses();if(activeTab==="history")void loadSales();if(activeTab==="reports"||activeTab==="cashbook")void loadSummary();}}>↻ Refresh</button></div>
-  <div className="pos-session-bar"><div><strong>{session?"Register open":"Register closed"}</strong><small>{session?"Opening float "+money(session.opening_cash_paisa)+" · Expected cash "+money(session.expected_cash_paisa):registers[0]?.name||"Main counter"}</small></div>{session?<form onSubmit={closeSession} className="pos-session-close"><input aria-label="Counted closing cash" type="number" min="0" step="0.01" value={countedCash} onChange={e=>setCountedCash(e.target.value)} placeholder="Counted cash (Rs.)" required/><button className="admin-primary" disabled={busy}>Close shift</button></form>:<form onSubmit={openSession} className="pos-session-open"><input aria-label="Opening cash float" type="number" min="0" step="0.01" value={openingCash} onChange={e=>setOpeningCash(e.target.value)} required/><button className="admin-primary" disabled={busy||loading}>Open cash register</button></form>}</div>
+  <div className="pos-session-bar"><div><strong>{offlineMode?"Emergency offline shift active":session?"Register open":"Register closed"}</strong><small>{offlineMode?"Cash totals and shift closure are unavailable until signed sales synchronize.":session?"Opening float "+money(session.opening_cash_paisa)+" · Expected cash "+money(session.expected_cash_paisa):registers[0]?.name||"Main counter"}</small></div>{session?(offlineMode?<span className="admin-muted">Cash-only · provisional sales</span>:<form onSubmit={closeSession} className="pos-session-close"><input aria-label="Counted closing cash" type="number" min="0" step="0.01" value={countedCash} onChange={e=>setCountedCash(e.target.value)} placeholder="Counted cash (Rs.)" required/><button className="admin-primary" disabled={busy}>Close shift</button></form>):<form onSubmit={openSession} className="pos-session-open"><input aria-label="Opening cash float" type="number" min="0" step="0.01" value={openingCash} onChange={e=>setOpeningCash(e.target.value)} required/><button className="admin-primary" disabled={busy||loading||offlineMode}>Open cash register</button></form>}</div>
   <nav className="pos-tabs" aria-label="POS tools">{activeTabButton("sell","Sell")}{canManageMoney&&activeTabButton("cashbook","Cashbook")}{canManageMoney&&activeTabButton("expenses","Expenses")}{canManageMoney&&activeTabButton("reports","Reports")}{activeTabButton("history","Sales history")}{canUseOffline&&activeTabButton("offline","Emergency offline")}</nav>
   {message&&<p className={isError?"pos-message is-error":"pos-message"} role={isError?"alert":"status"}>{message}</p>}
   {unknownCode&&<div className="pos-unknown-code" role="group" aria-label="Unknown scanned product"><div><strong>Scanned code: {unknownCode}</strong><small>No matching product variant exists in current stock.</small></div>{canUseAI?<button type="button" className="admin-primary" onClick={()=>{window.location.href="/admin?section=ai&barcode="+encodeURIComponent(unknownCode);}}>Identify with AI & add product</button>:<small>Ask an authorised catalogue manager to add this barcode or SKU before selling it.</small>}<button type="button" className="admin-secondary" onClick={()=>setUnknownCode("")}>Dismiss</button></div>}
