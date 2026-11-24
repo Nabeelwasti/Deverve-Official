@@ -163,7 +163,7 @@ export async function signOfflineEnrollmentChallenge(challenge: string): Promise
     const identity = await readIdentity(database);
     if (!identity?.privateKey) throw new Error("Create the local device identity before requesting enrollment.");
     await validateStoredIdentity(identity);
-    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\\n" + challenge);
+    const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
     const signature = await crypto.subtle.sign(
       { name: "ECDSA", hash: "SHA-256" },
       identity.privateKey,
