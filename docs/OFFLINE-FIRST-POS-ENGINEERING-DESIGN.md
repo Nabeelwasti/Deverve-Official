@@ -24,18 +24,19 @@ Automated validation currently available:
 
 - CI type-check and production build.
 - Worker authorization/translation tests, SQL binding audit, schema/constraint checks, offline storage/service-worker/API guardrails and storefront Playwright suite.
-- Latest recorded CI run `45376677652` passed all executed steps, including the storefront browser suite.
-- CI run `45393119187` executed the existing remote D1 inventory integration suite: 16 checks passed and its isolated test database was deleted. The same run passed 160 desktop/mobile storefront browser tests. This suite does not exercise the new offline-POS migrations `0045`–`0048`; a dedicated offline migration/API integration suite remains outstanding.
-- The encrypted backup workflow passed on run `45330719916` attempt 7. It exported production D1, AES-256-GCM encrypted the archive, verified R2 read-back and SHA-256, restored into an isolated D1 database, matched 66 tables, 102 indexes, 10 triggers and all row counts, then confirmed temporary-database deletion. Independent off-account backup, key custody and retention/RPO/RTO remain owner tasks.
+- Final-head CI run `45421372915` passed type-check/build, dependency audit, Worker/auth tests, schema checks, 160 storefront browser tests, 16 remote D1 inventory checks, the complete migration chain `0001`–`0049` on an isolated D1 database, and the production-clone migration rehearsal described below.
+- The encrypted backup workflow passed on run `45330719916` attempt 7. It exported production D1, AES-256-GCM encrypted the archive, verified R2 read-back and SHA-256, restored into an isolated D1 database, matched 66 tables, 102 indexes, 10 triggers and all row counts, then confirmed temporary-database deletion.
+- CI run `45421372915` also restored the verified backup into a temporary production clone, applied migrations `0045`–`0049`, confirmed existing row counts were unchanged and no new foreign-key violations appeared, verified all seven offline tables and 20 guard triggers, then deleted the clone. No production migration was applied.
+- Purchase-cost data is stored in immutable server-only `cost_snapshot_json`; it is excluded from cashier-facing permit claims and catalogue snapshots.
 
 Not yet verified / release blockers:
 
-- No dedicated full offline-POS browser outage/failure-injection suite against the actual production build and no physical Android acceptance.
-- No dedicated isolated remote D1 integration suite for offline migrations `0045`–`0048` and the full offline-sale lifecycle, or production-like migration rehearsal/approval.
+- No full offline-POS end-to-end browser outage/failure-injection suite against the actual deployed build, and no physical Android acceptance.
+- The offline D1 migration chain and production-clone rehearsal passed; owner migration approval and the full offline-sale Worker/API lifecycle acceptance remain outstanding.
 - Signing-key generation, secure secret provisioning, rotation/revocation and recovery custody remain owner-controlled tasks.
 - Production asset-manifest/cold-reload cache acceptance, preview smoke test and supervised pilot remain outstanding.
 
-**Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the missing integrations, automated tests, key management, backup/migration rehearsal and physical-device acceptance are complete.  
+**Safety:** The online POS remains authoritative and unchanged. Emergency checkout is deliberately disabled. No production D1 migration or deployment has been made from this branch. Do not merge or enable offline checkout until the owner-controlled signing keypair and backup-key custody are secured, the Cloudflare token is narrowed, physical Android outage/reload/reconnect tests pass, and preview smoke plus supervised pilot approval are complete.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
 **Non-goal:** Replacing the existing POS, changing the accounting model, or making customer checkout work offline.
 
