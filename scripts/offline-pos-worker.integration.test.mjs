@@ -579,6 +579,28 @@ test("real Worker resolves a conflict only against an exact completed sale and c
   assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
 });
 
+test("real Worker serializes concurrent reconciliation attempts and consumes one allocation exactly once", async () => {
+  const fixture = await createReadyOfflinePermitFixture();
+  const caseId = await openRevokedDeviceConflict(fixture);
+  const canonicalSaleId = insertCanonicalSaleForReconciliation(fixture);
+  const payload = {
+    canonical_sale_id: canonicalSaleId,
+    reason: "Concurrent duplicate reconciliation must resolve exactly once",
+  };
+  const [left, right] = await Promise.all([
+    api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", payload),
+    api("/api/admin/pos/offline/reconciliation-cases/" + caseId + "/resolve", payload),
+  ]);
+  const statuses = [left.status, right.status].sort();
+  assert.deepEqual(statuses, [200, 409]);
+  assert.equal(sqlite.prepare("SELECT status FROM pos_offline_reconciliation_cases WHERE id=?").get(caseId).status, "resolved");
+  assert.equal(sqlite.prepare("SELECT outcome,canonical_sale_id FROM pos_offline_events WHERE event_id=?").get(fixture.sale.eventId).outcome, "accepted");
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_reconciliation_actions WHERE case_id=? AND action_type='resolved'").get(caseId).count, 1);
+  assert.equal(sqlite.prepare("SELECT consumed_quantity FROM pos_offline_stock_allocations WHERE device_id=?").get(fixture.deviceId).consumed_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).stock_on_hand, 4);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(fixture.variantId).reserved_quantity, 1);
+});
+
 test("real Worker leaves reconciliation open when the completed sale cash tender does not match the immutable offline event", async () => {
   const fixture = await createReadyOfflinePermitFixture();
   const caseId = await openRevokedDeviceConflict(fixture);
