@@ -2699,9 +2699,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
       } catch { return error("Device enrollment failed safely. No offline checkout has been enabled.", 503); }
     }
 
-    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations))?$/i);
+    const deviceMatch = path.match(/^\/api\/admin\/pos\/offline\/devices\/([a-f0-9-]{36})(?:\/(revoke|allocations|release-allocations|permits))?$/i);
     if (deviceMatch) {
       const deviceId = deviceMatch[1], action = deviceMatch[2] ?? "";
+      if (request.method === "POST" && action === "permits") {
+        return issueOfflinePermit(env, admin, deviceId, await readJson(request, 4_000));
+      }
       if (request.method === "POST" && action === "revoke") {
         const body = await readJson(request, 2_000);
         const reason = typeof body?.reason === "string" ? body.reason.trim().slice(0, 300) : "";
