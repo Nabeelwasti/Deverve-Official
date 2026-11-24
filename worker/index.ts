@@ -3171,6 +3171,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
             .bind(crypto.randomUUID(), reconciliation.case_id, admin.admin_user_id, reason,
               JSON.stringify({ canonical_sale_id: canonicalSaleId, matched_line_count: expected.length, cash_payment_verified: true, inventory_movement_count: actualMovements.length, offline_event_id: reconciliation.event_id }),
               reconciliation.case_id, now),
+          env.DB.prepare("INSERT INTO pos_offline_events (device_id) SELECT NULL WHERE changes()<>1"),
           env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) VALUES (?,?,'pos.offline_reconciliation_resolved','pos_offline_reconciliation_case',?,?)")
             .bind(crypto.randomUUID(), admin.admin_user_id, reconciliation.case_id,
               JSON.stringify({ canonical_sale_id: canonicalSaleId, offline_event_id: reconciliation.event_id, matched_line_count: expected.length, reason }))
