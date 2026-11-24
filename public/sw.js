@@ -40,8 +40,7 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Keep all APIs and mutations network-only. This prevents stale authenticated
-  // data or a cached API response from being mistaken for a committed sale.
+  // APIs, authentication and all non-GET operations remain network-only.
   if (
     request.method !== "GET" ||
     url.origin !== self.location.origin ||
@@ -49,36 +48,27 @@ self.addEventListener("fetch", (event) => {
     url.pathname === "/manifest.webmanifest"
   ) return;
 
-  const cacheUpdate = async () => {
+  const cacheKey = request.mode === "navigate" ? "/" : request;
+  const network = fetch(request).then(async (response) => {
     const cache = await caches.open(CACHE_NAME);
-    const response = await fetch(request);
-    await cacheSuccessfulResponse(cache, request.mode === "navigate" ? "/" : request, response);
-  };
+    await cacheSuccessfulResponse(cache, cacheKey, response);
+    return response;
+  });
+
+  event.waitUntil(network.then(() => undefined).catch(() => undefined));
 
   if (request.mode === "navigate") {
-    event.waitUntil(cacheUpdate().catch(() => undefined));
-    event.respondWith((async () => {
+    event.respondWith(network.catch(async () => {
       const cache = await caches.open(CACHE_NAME);
-      try {
-        return await fetch(request);
-      } catch {
-        return (await cache.match(request)) || (await cache.match("/")) || Response.error();
-      }
-    })());
+      return (await cache.match(request)) || (await cache.match("/")) || Response.error();
+    }));
     return;
   }
 
   if (["script", "style", "image", "font"].includes(request.destination)) {
-    event.waitUntil(cacheUpdate().catch(() => undefined));
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
-      const cached = await cache.match(request);
-      if (cached) return cached;
-      try {
-        return await fetch(request);
-      } catch {
-        return Response.error();
-      }
+      return (await cache.match(request)) || network.catch(() => Response.error());
     })());
   }
 });
