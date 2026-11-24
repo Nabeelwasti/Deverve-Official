@@ -1089,6 +1089,7 @@ test("real Worker expires stale permits before stock allocation changes and fail
   const body = { allocations: [{ variant_id: nextVariantId, quantity: 1 }] };
   const OriginalDate = globalThis.Date;
   const simulatedNow = OriginalDate.now() + 3 * 60 * 60 * 1000;
+  sqlite.prepare("UPDATE admin_sessions SET expires_at=?").run(new OriginalDate(simulatedNow + 60 * 60 * 1000).toISOString());
   const withExpiredClock = async (operation) => {
     class FutureDate extends OriginalDate {
       constructor(...args) { super(...(args.length ? args : [simulatedNow])); }
