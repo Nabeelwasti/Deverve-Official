@@ -5,8 +5,10 @@ const MAX_RUNTIME_ENTRIES = 160;
 
 async function trimRuntimeCache(cache) {
   const keys = await cache.keys();
-  const excess = keys.length - MAX_RUNTIME_ENTRIES;
-  if (excess > 0) await Promise.all(keys.slice(0, excess).map((key) => cache.delete(key)));
+  const protectedKeys = new Set(SHELL);
+  const runtimeKeys = keys.filter((key) => !protectedKeys.has(new URL(key.url).pathname));
+  const excess = runtimeKeys.length - MAX_RUNTIME_ENTRIES;
+  if (excess > 0) await Promise.all(runtimeKeys.slice(0, excess).map((key) => cache.delete(key)));
 }
 
 async function cacheSuccessfulResponse(cache, request, response) {
