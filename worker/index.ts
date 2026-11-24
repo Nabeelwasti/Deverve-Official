@@ -3061,7 +3061,7 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     }
 
 
-    const reconciliationMatch = path.match(/^\\/api\\/admin\\/pos\\/offline\\/reconciliation-cases\\/([a-f0-9-]{36})\\/resolve$/i);
+    const reconciliationMatch = path.match(/^\/api\/admin\/pos\/offline\/reconciliation-cases\/([a-f0-9-]{36})\/resolve$/i);
     if (request.method === "POST" && reconciliationMatch) {
       if (!canManageMoney) return error("Only an owner or manager can resolve offline reconciliation cases", 403);
       if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
