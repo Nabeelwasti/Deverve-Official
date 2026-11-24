@@ -15,12 +15,6 @@ CREATE TABLE IF NOT EXISTS pos_offline_enrollment_challenges (
 CREATE INDEX IF NOT EXISTS idx_pos_offline_enrollment_challenges_expiry
   ON pos_offline_enrollment_challenges(expires_at, consumed_at);
 
-CREATE TRIGGER IF NOT EXISTS pos_offline_enrollment_challenge_no_delete
-BEFORE DELETE ON pos_offline_enrollment_challenges
-BEGIN
-  SELECT RAISE(ABORT, 'offline enrollment challenge evidence cannot be deleted');
-END;
-
 CREATE TRIGGER IF NOT EXISTS pos_offline_enrollment_challenge_update_guard
 BEFORE UPDATE ON pos_offline_enrollment_challenges
 BEGIN
