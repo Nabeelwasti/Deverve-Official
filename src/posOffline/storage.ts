@@ -345,6 +345,16 @@ export async function recordOfflineSyncFailure(eventId: string, errorCode: strin
   }
 }
 
+
+function sameSyncReceipt(left: OfflineSyncReceipt, right: OfflineSyncReceipt): boolean {
+  return left.eventId === right.eventId &&
+    left.outcome === right.outcome &&
+    left.canonicalSaleId === right.canonicalSaleId &&
+    left.receiptNumber === right.receiptNumber &&
+    left.serverReceivedAt === right.serverReceivedAt &&
+    left.reasonCode === right.reasonCode;
+}
+
 /** Stores server acknowledgement atomically. Replayed acknowledgements are accepted only if identical. */
 export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promise<void> {
   assertEventId(receipt?.eventId);
@@ -383,7 +393,7 @@ export async function acknowledgeOfflineSale(receipt: OfflineSyncReceipt): Promi
           return;
         }
         if (previous) {
-          if (JSON.stringify(previous) !== JSON.stringify(receipt)) {
+          if (!sameSyncReceipt(previous, receipt)) {
             invalid = true;
             transaction.abort();
           }
