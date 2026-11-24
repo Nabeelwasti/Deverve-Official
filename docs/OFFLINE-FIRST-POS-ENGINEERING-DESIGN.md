@@ -1,8 +1,29 @@
 # De VERVE Offline-First POS — Engineering Design and Acceptance Plan
 
-**Status:** Design baseline; implementation and production acceptance are not complete.  
-**Branch:** `feat/offline-first-pos-design`  
-**Date:** 23 November 2026  
+**Status:** Partial implementation in draft PR; emergency checkout remains disabled and production acceptance is not complete.
+**Branch:** `feat/online-first-emergency-pos-completion`
+**Date:** 24 November 2026
+
+## Implementation status — 24 November 2026
+
+Implemented on the draft branch, not deployed to production:
+
+- Additive schema foundations for device identity, signed-permit records, stock allocations, immutable event evidence, reconciliation cases/actions, and one-time enrollment challenges (`0045`, `0046`).
+- Device enrollment API uses a five-minute, single-use challenge and a P-256 ECDSA proof-of-possession. Public-key fingerprints are recomputed server-side; challenge attempts are bounded and expired challenges are pruned.
+- Owner/manager-only device listing, revocation, bounded per-variant stock allocation, and guarded stock release endpoints.
+- Offline allocations reserve the same `product_variants.reserved_quantity` counter used by existing online checkout. Allocation triggers reject overselling and preserve immutable allocation evidence.
+- Client-side enrollment challenge signing and local device-key integrity checks.
+- Sequential IndexedDB outbox leasing prevents later events from overtaking an earlier delayed, leased, or review-blocked event.
+
+Not yet implemented or verified:
+
+- Server-signed permit issuance and client-side permit verification against a separately provisioned public key.
+- Signed offline sale submission, full server-side reconciliation into POS sales/payments/inventory/ledger/receipt records, and idempotent replay handling.
+- Owner-facing UI for device enrollment, allocation, permits, sync status and conflict resolution.
+- Complete offline catalogue/shift snapshot provisioning and cache-completeness readiness gate.
+- Physical Android browser acceptance, production D1 backup/migration rehearsal, controlled preview and production rollout.
+
+**Safety:** No offline checkout is enabled. No production migration has been applied. Do not merge or deploy this branch as an offline-POS release until every outstanding item and release gate below is satisfied.  
 **Scope:** Existing React/Vite PWA, Cloudflare Pages Functions/Workers, D1, current POS and cashier RBAC.  
 **Non-goal:** Replacing the existing POS, changing the accounting model, or making customer checkout work offline.
 
