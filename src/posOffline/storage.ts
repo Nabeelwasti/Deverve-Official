@@ -629,6 +629,7 @@ export async function saveVerifiedOfflinePermit(record: StoredOfflinePermit): Pr
       const outboxRequest = transaction.objectStore("outbox").getAll();
       let reads = 0;
       let invalidQueue = false;
+      let queueConflict = false;
       const persistPermit = () => {
         reads += 1;
         if (reads !== 2 || invalidQueue) return;
@@ -640,6 +641,7 @@ export async function saveVerifiedOfflinePermit(record: StoredOfflinePermit): Pr
           const sale = salesById.get(entry.eventId);
           if (!sale || sale.permitId !== record.permitId || sale.sequence !== entry.sequence) {
             invalidQueue = true;
+            queueConflict = true;
             transaction.abort();
             return;
           }
@@ -676,7 +678,7 @@ export async function saveVerifiedOfflinePermit(record: StoredOfflinePermit): Pr
         transaction.abort();
       };
       transaction.oncomplete = () => resolve();
-      transaction.onabort = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
+      transaction.onabort = () => reject(queueConflict ? new Error("Offline permit cannot replace a permit with unresolved queued sales.") : transaction.error ?? new Error("Verified offline permit could not be stored."));
       transaction.onerror = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
     });
   } finally {
