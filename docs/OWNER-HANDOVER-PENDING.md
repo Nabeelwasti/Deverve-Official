@@ -59,10 +59,11 @@ This is the current owner-action register. It supersedes the historical 19 Novem
 The AES-256-GCM backup/restore script and scheduled workflow are in the repository. The schedule is daily at 02:00 Pakistan Standard Time (21:00 UTC). The workflow is **not operationally accepted** until the following are completed:
 
 - [x] Owner confirmed on 24 November 2026 that GitHub Actions secrets `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, and `D1_BACKUP_ENCRYPTION_KEY` are configured.
-- [ ] Review and reduce the current Cloudflare token scope before production acceptance: the owner selected account-wide D1 Edit and Workers R2 Storage Edit, which is broader than the intended least-privilege D1 plus bucket-item scope for `deverve-db-backups`.
+- [x] The workflow has produced an AES-256-GCM encrypted D1 archive in private R2 and verified the stored object's byte length and SHA-256 read-back. This confirms encrypted upload/integrity only; it is not a successful restore or accepted backup.
+- [ ] Review and reduce the current Cloudflare token scope before production acceptance: replace account-wide D1 Edit and Workers R2 Storage Edit with D1 Write plus Workers R2 Storage Bucket Item Write scoped only to `deverve-db-backups` (object read/write/list).
 - [ ] Confirm the encryption key is also stored in an owner-controlled password manager independently of GitHub and the R2 bucket; GitHub secret configuration alone is not a recoverable key-custody plan.
 - [ ] Confirm private bucket `deverve-db-backups` and workflow permissions.
-- [ ] Run a complete encrypted production export, SHA-256 integrity check, decrypt, isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup.
+- [ ] Complete the isolated non-production D1 restore, schema/row comparison and confirmed temporary database cleanup. The current restore drill still fails; keep backup acceptance blocked until a complete successful run.
 - [ ] Verify retention and a documented recovery-point/recovery-time objective.
 - [ ] Back up private R2 media separately. A D1 SQL export does not include media bytes.
 - [ ] Store an independent encrypted recovery copy outside the Cloudflare account and document named custodians.
