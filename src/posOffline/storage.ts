@@ -528,3 +528,101 @@ export async function claimOfflineSalesForSync(limit = 10, now = Date.now(), lea
     database.close();
   }
 }
+
+
+export type StoredOfflinePermit = {
+  id: "active";
+  permitId: string;
+  claims: Record<string, unknown>;
+  signatureBase64Url: string;
+  verificationPublicKeyJwk: JsonWebKey;
+  snapshot: Array<Record<string, unknown>>;
+  savedAt: string;
+};
+
+export async function saveVerifiedOfflinePermit(record: StoredOfflinePermit): Promise<void> {
+  if (!record || record.id !== "active" || typeof record.permitId !== "string" ||
+      !record.claims || typeof record.claims !== "object" || typeof record.signatureBase64Url !== "string" ||
+      !record.verificationPublicKeyJwk || !Array.isArray(record.snapshot) || !record.snapshot.length ||
+      typeof record.savedAt !== "string") throw new Error("Verified offline permit record is invalid.");
+  const database = await openOfflinePosDatabase();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["permit", "catalogue", "shift", "meta", "audit"], "readwrite");
+      transaction.objectStore("permit").put(record);
+      transaction.objectStore("catalogue").put({
+        id: "active",
+        snapshotVersion: record.claims.snapshot_version,
+        snapshotHash: record.claims.snapshot_hash,
+        items: record.snapshot,
+        savedAt: record.savedAt,
+      });
+      transaction.objectStore("shift").put({
+        id: "active",
+        sessionId: record.claims.session_id,
+        registerId: record.claims.register_id,
+        cashierId: record.claims.cashier_admin_id,
+        permitId: record.permitId,
+        expiresAt: record.claims.expires_at,
+        savedAt: record.savedAt,
+      });
+      transaction.objectStore("meta").put({ id: "offline-permit-verified", value: true, verifiedAt: record.savedAt });
+      transaction.objectStore("audit").add({
+        action: "offline_permit_verified_and_stored",
+        permitId: record.permitId,
+        snapshotVersion: record.claims.snapshot_version,
+        recordedAt: record.savedAt,
+      });
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
+      transaction.onerror = () => reject(transaction.error ?? new Error("Verified offline permit could not be stored."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function readStoredOfflinePermit(): Promise<StoredOfflinePermit | null> {
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["permit"], "readonly");
+      const request = transaction.objectStore("permit").get("active");
+      request.onsuccess = () => resolve((request.result as StoredOfflinePermit | undefined) ?? null);
+      request.onerror = () => reject(request.error ?? new Error("Stored offline permit could not be read."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function readStoredOfflineSnapshot(): Promise<Array<Record<string, unknown>> | null> {
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["catalogue"], "readonly");
+      const request = transaction.objectStore("catalogue").get("active");
+      request.onsuccess = () => {
+        const record = request.result as { items?: Array<Record<string, unknown>> } | undefined;
+        resolve(Array.isArray(record?.items) ? record.items : null);
+      };
+      request.onerror = () => reject(request.error ?? new Error("Stored offline catalogue could not be read."));
+    });
+  } finally {
+    database.close();
+  }
+}
+
+export async function readStoredOfflineShift(): Promise<Record<string, unknown> | null> {
+  const database = await openOfflinePosDatabase();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = database.transaction(["shift"], "readonly");
+      const request = transaction.objectStore("shift").get("active");
+      request.onsuccess = () => resolve((request.result as Record<string, unknown> | undefined) ?? null);
+      request.onerror = () => reject(request.error ?? new Error("Stored offline shift could not be read."));
+    });
+  } finally {
+    database.close();
+  }
+}
