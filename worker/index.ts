@@ -2598,17 +2598,27 @@ async function processOfflineSaleEvent(
 
   const [device, permit] = await Promise.all([
     env.DB.prepare("SELECT id,register_id,status,public_key_jwk_json FROM pos_offline_devices WHERE id=? LIMIT 1").bind(deviceId).first<Record<string, unknown>>(),
-    env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
+    env.DB.prepare("SELECT id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,cost_snapshot_json,signature_base64url,issued_at,expires_at,status,max_events FROM pos_offline_permits WHERE id=? AND device_id=? LIMIT 1").bind(permitId, deviceId).first<Record<string, unknown>>(),
   ]);
   if (!device || !permit) return { outcome: "rejected", reason_code: "device_or_permit_not_found" };
   // The authenticated cashier session must be the exact cashier bound to the
   // signed permit; a different cashier or manager cannot submit its queue.
   if (admin.admin_user_id !== permit.cashier_admin_id) return { outcome: "rejected", reason_code: "authenticated_cashier_mismatch" };
   let devicePublicKey: JsonWebKey, permitClaims: Record<string, unknown>, permitPublicKey: JsonWebKey;
+  let costSnapshot: Array<{ allocationId: string; variantId: string; costPricePaisa: number }>;
   try {
     devicePublicKey = JSON.parse(String(device.public_key_jwk_json)) as JsonWebKey;
     permitClaims = JSON.parse(String(permit.claims_json)) as Record<string, unknown>;
     permitPublicKey = JSON.parse(String(env.POS_OFFLINE_PERMIT_PUBLIC_JWK ?? "")) as JsonWebKey;
+    const parsedCostSnapshot = JSON.parse(String(permit.cost_snapshot_json));
+    if (!Array.isArray(parsedCostSnapshot) || parsedCostSnapshot.length < 1 || parsedCostSnapshot.length > 30 ||
+        parsedCostSnapshot.some((item) => !item || typeof item !== "object" ||
+          typeof item.allocationId !== "string" || !/^[a-f0-9-]{36}$/i.test(item.allocationId) ||
+          typeof item.variantId !== "string" || !/^[a-f0-9-]{36}$/i.test(item.variantId) ||
+          !Number.isSafeInteger(item.costPricePaisa) || item.costPricePaisa < 0)) {
+      return { outcome: "rejected", reason_code: "permit_cost_snapshot_invalid" };
+    }
+    costSnapshot = parsedCostSnapshot as typeof costSnapshot;
   } catch { return { outcome: "rejected", reason_code: "verification_key_unavailable" }; }
   if (!await verifyOfflineEventSignature(sale, signature, devicePublicKey)) return { outcome: "rejected", reason_code: "device_signature_invalid" };
   if (!await verifyOfflinePermitSignatureServer(permitClaims, String(permit.signature_base64url), permitPublicKey)) return { outcome: "rejected", reason_code: "permit_signature_invalid" };
@@ -2670,6 +2680,8 @@ async function processOfflineSaleEvent(
   if (!Array.isArray(sale.lines) || sale.lines.length < 1 || sale.lines.length > 30) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "invalid_sale_lines");
   const allocations = Array.isArray(permitClaims.allocations) ? permitClaims.allocations as Array<Record<string, unknown>> : [];
   const allocationByVariant = new Map(allocations.map((item) => [String(item.variant_id), item]));
+  const costSnapshotByAllocation = new Map(costSnapshot.map((item) => [item.allocationId, item]));
+  if (costSnapshotByAllocation.size !== allocations.length) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "permit_cost_snapshot_mismatch");
   const combined = new Set<string>();
   const resolved: Array<{ allocationId: string; productId: string; productName: string; variantId: string; sku: string; size: string; color: string; quantity: number; unitPrice: number; costPrice: number; lineTotal: number }> = [];
   let subtotal = 0;
@@ -2688,7 +2700,8 @@ async function processOfflineSaleEvent(
     if (combined.has(line.variantId)) return recordOfflineSaleConflict(env, admin, deviceId, permitId, sale, signature, payloadHash, "duplicate_variant_line");
     combined.add(line.variantId);
     const allocation = allocationByVariant.get(line.variantId);
-    const allocatedCost = allocation?.cost_price_paisa === null || allocation?.cost_price_paisa === undefined ? 0 : Number(allocation.cost_price_paisa);
+    const costEntry = allocation ? costSnapshotByAllocation.get(String(allocation.allocation_id)) : undefined;
+    const allocatedCost = costEntry && costEntry.variantId === line.variantId ? costEntry.costPricePaisa : Number.NaN;
     if (!allocation || !Number.isSafeInteger(allocatedCost) || allocatedCost < 0 ||
         Number(line.quantity) > Number(allocation.quantity) || Number(line.unitPricePaisa) !== Number(allocation.unit_price_paisa) ||
         Number(line.quantity) * Number(line.unitPricePaisa) !== Number(line.lineTotalPaisa)) {
@@ -2865,9 +2878,12 @@ async function issueOfflinePermit(
         size: typeof row.size === "string" ? row.size.slice(0, 50) : "",
         color: typeof row.color === "string" ? row.color.slice(0, 80) : "",
         allocatedQuantity: quantity, unitPricePaisa: price,
-        costPricePaisa: costPrice,
       };
     });
+    const costSnapshot = allocationRows.map((row) => ({
+      allocationId: String(row.allocation_id), variantId: String(row.variant_id),
+      costPricePaisa: Number(row.cost_price_paisa ?? 0),
+    }));
     const snapshotVersion = crypto.randomUUID();
     const snapshotHash = await sha256Hex(canonicalOfflineJson(snapshot));
     const issuedAt = new Date().toISOString();
@@ -2878,16 +2894,16 @@ async function issueOfflinePermit(
       session_id: sessionId, cashier_admin_id: cashierId, cashier_grant_version: cashier.granted_at,
       snapshot_version: snapshotVersion, snapshot_hash: snapshotHash, issued_at: issuedAt, expires_at: expiresAt,
       max_events: 20, offline_checkout_enabled: true, cash_only: true, allow_refunds: false, allow_voids: false, allow_shift_close: false,
-      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa, cost_price_paisa: item.costPricePaisa })),
+      allocations: snapshot.map((item) => ({ allocation_id: item.allocationId, variant_id: item.variantId, quantity: item.allocatedQuantity, unit_price_paisa: item.unitPricePaisa })),
     };
     const claimsJson = canonicalOfflineJson(claims);
     if (new TextEncoder().encode(claimsJson).byteLength > 16_384) return error("The offline permit snapshot is too large", 413);
     const signature = await signOfflinePermitClaims(claims, env.POS_OFFLINE_PERMIT_PRIVATE_JWK, env.POS_OFFLINE_PERMIT_PUBLIC_JWK);
     if (!signature) return error("Offline permit signing failed because the configured keypair is invalid. No permit was issued.", 503);
     const results = await env.DB.batch([
-      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
-        "SELECT ?,?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
-        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, canonicalOfflineJson(snapshot), signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
+      env.DB.prepare("INSERT INTO pos_offline_permits (id,device_id,register_id,session_id,cashier_admin_id,cashier_grant_version,snapshot_version,snapshot_hash,claims_json,snapshot_json,cost_snapshot_json,signature_base64url,policy_version,max_events,issued_at,expires_at,status) " +
+        "SELECT ?,?,?,?,?,?,?,?,?,?,?,?,1,20,?,?,'active' WHERE EXISTS (SELECT 1 FROM pos_offline_devices WHERE id=? AND status='active') AND EXISTS (SELECT 1 FROM pos_sessions WHERE id=? AND status='open' AND register_id=?) AND EXISTS (SELECT 1 FROM admin_pos_cashiers WHERE admin_user_id=? AND revoked_at IS NULL) AND NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status='active')")
+        .bind(permitId, deviceId, device.register_id, sessionId, cashierId, cashier.granted_at, snapshotVersion, snapshotHash, claimsJson, canonicalOfflineJson(snapshot), canonicalOfflineJson(costSnapshot), signature, issuedAt, expiresAt, deviceId, sessionId, device.register_id, cashierId, deviceId),
       env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_permit_issued','pos_offline_permit',?,? WHERE changes()=1")
         .bind(crypto.randomUUID(), admin.admin_user_id, permitId, JSON.stringify({ device_id: deviceId, register_id: device.register_id, cashier_admin_id: cashierId, expires_at: expiresAt, max_events: 20, cash_only: true })),
     ]);
