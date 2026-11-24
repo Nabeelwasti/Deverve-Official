@@ -2470,7 +2470,7 @@ export async function signOfflinePermitClaims(
   }
 }
 
-async function verifyOfflinePermitSignatureServer(
+export async function verifyOfflinePermitSignatureServer(
   claims: unknown,
   signatureBase64Url: string,
   publicJwk: JsonWebKey,
@@ -2491,7 +2491,7 @@ async function verifyOfflinePermitSignatureServer(
   } catch { return false; }
 }
 
-async function verifyOfflineEventSignature(
+export async function verifyOfflineEventSignature(
   payload: unknown,
   signatureBase64Url: string,
   publicJwk: JsonWebKey,
