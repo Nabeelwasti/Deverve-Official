@@ -31,6 +31,7 @@ BEGIN
       OR json_extract(item.value,'$.color') IS NOT COALESCE(v.color,'')
       OR json_extract(item.value,'$.allocatedQuantity') IS NOT (a.allocated_quantity-a.consumed_quantity-a.released_quantity)
       OR json_extract(item.value,'$.unitPricePaisa') IS NOT p.retail_price_paisa
+      OR json_extract(item.value,'$.costPricePaisa') IS NOT v.cost_price_paisa
   ) THEN RAISE(ABORT, 'offline permit catalogue snapshot does not match current products and allocations') END;
 END;
 
