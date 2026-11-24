@@ -218,7 +218,7 @@ export async function verifyOfflinePermitSignature(
       false,
       ["verify"],
     );
-    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\\n" + canonicalize(claims));
+    const message = new TextEncoder().encode("deverve-offline-pos:permit:v1\n" + canonicalize(claims));
     return await crypto.subtle.verify(
       { name: "ECDSA", hash: "SHA-256" },
       key,
