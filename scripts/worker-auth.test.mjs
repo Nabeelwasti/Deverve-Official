@@ -143,7 +143,7 @@ test("offline device enrollment proof verifies only the bound P-256 challenge si
   const challenge = Array.from(crypto.getRandomValues(new Uint8Array(32)), byte => byte.toString(16).padStart(2, "0")).join("");
   const message = new TextEncoder().encode("deverve-offline-pos:enroll:v1\n" + challenge);
   const signatureBytes = new Uint8Array(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, pair.privateKey, message));
-  const signature = btoa(String.fromCharCode(...signatureBytes)).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=+$/g, "");
+  const signature = btoa(String.fromCharCode(...signatureBytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
   assert.equal(signature.length, 86);
   assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge, signature), true);
   assert.equal(await verifyOfflineEnrollmentProof(publicKeyJwk, challenge + "x", signature), false);
