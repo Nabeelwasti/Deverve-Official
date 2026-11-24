@@ -67,6 +67,10 @@ jobs:
         run: node --check scripts/d1-inventory.integration.test.mjs
       - name: Validate encrypted D1 backup script syntax
         run: node --check scripts/d1-backup-restore.mjs
+      - name: Test encrypted private R2 media backup and recovery primitives
+        run: node --test scripts/r2-media-backup.test.mjs
+      - name: Validate encrypted private R2 media backup script syntax
+        run: node --check scripts/r2-media-backup.mjs
       - name: Validate isolated offline POS D1 migration suite syntax
         run: node --check scripts/offline-pos-d1.integration.test.mjs
       - name: Run isolated remote D1 integration suite when credentials are configured

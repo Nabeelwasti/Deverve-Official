@@ -1,6 +1,12 @@
-name: Encrypted D1 Backup and Restore Drill
+name: Encrypted D1 and R2 Media Backup and Restore Drill
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/d1-backup-restore.yml"
+      - "scripts/d1-backup-restore.mjs"
+      - "scripts/r2-media-backup.mjs"
   schedule:
     # 02:17 Pakistan Standard Time (UTC+5), every day. Avoid the top-of-hour Actions queue spike.
     - cron: "17 21 * * *"
@@ -11,9 +17,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   encrypted-backup-and-restore:
-    name: Export, encrypt, store and restore-test production D1
+    name: Export, encrypt, store and verify production D1 and private media
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -22,6 +28,8 @@ jobs:
       D1_BACKUP_R2_BUCKET: "deverve-db-backups"
       D1_BACKUP_ENCRYPTION_KEY: ${{ secrets.D1_BACKUP_ENCRYPTION_KEY }}
       D1_BACKUP_KEY_ID: "deverve-d1-key-v1"
+      R2_MEDIA_SOURCE_BUCKET: "deverve-media-private"
+      R2_MEDIA_BACKUP_BUCKET: "deverve-db-backups"
     steps:
       - name: Check out protected main source
         uses: actions/checkout@v4
@@ -38,7 +46,11 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN repository secret"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID repository secret"; exit 1; }
-          [[ "$D1_BACKUP_ENCRYPTION_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "::error::Add D1_BACKUP_ENCRYPTION_KEY (64 hex characters) in GitHub Actions secrets. Generate it with openssl rand -hex 32."; exit 1; }
-          echo "::notice::CLOUDFLARE_API_TOKEN needs D1 Write and Workers R2 Storage Bucket Item Write scoped to deverve-db-backups (object read/write/list)."
-      - name: Run encrypted backup and isolated restore drill
+          [[ "$D1_BACKUP_ENCRYPTION_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "::error::D1_BACKUP_ENCRYPTION_KEY must be 64 hexadecimal characters."; exit 1; }
+          echo "::notice::The token needs D1 Write, R2 object read on deverve-media-private, and R2 object read/write/list on deverve-db-backups."
+      - name: Test media encryption and integrity primitives
+        run: node --test scripts/r2-media-backup.test.mjs
+      - name: Run encrypted backup and isolated restore drill for production D1
         run: node scripts/d1-backup-restore.mjs
+      - name: Back up and cryptographically verify every private R2 media object
+        run: node scripts/r2-media-backup.mjs
