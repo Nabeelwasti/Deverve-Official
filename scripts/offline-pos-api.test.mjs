@@ -4,11 +4,18 @@ import { readFileSync } from "node:fs";
 const worker = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
 const migration = readFileSync(new URL("../migrations/0046_pos_offline_enrollment_challenges.sql", import.meta.url), "utf8");
 const crypto = readFileSync(new URL("../src/posOffline/deviceCrypto.ts", import.meta.url), "utf8");
+const client = readFileSync(new URL("../src/posOffline/api.ts", import.meta.url), "utf8");
+const panel = readFileSync(new URL("../src/posOffline/OfflinePOSPanel.tsx", import.meta.url), "utf8");
 
 assert.match(worker, /const offlineRoot = "\/api\/admin\/pos\/offline"/);
 assert.match(worker, /SELECT c\.id,c\.event_id,c\.reason_code,c\.opened_at,e\.device_id,e\.device_sequence,e\.outcome/);
 assert.match(worker, /WHERE c\.status='open' ORDER BY c\.opened_at LIMIT 100/);
 assert.match(worker, /pos_offline_reconciliation_cases/);
+assert.match(panel, /Offline sales needing review/);
+assert.match(panel, /openCases\.map/);
+assert.match(panel, /Manual review required/);
+assert.match(client, /const acknowledgementCommitted = result\.outcome === "accepted"/);
+assert.match(client, /if \(!acknowledgementCommitted\)/);
 assert.match(worker, /admin\.admin_user_id !== permit\.cashier_admin_id/);
 assert.match(worker, /authenticated_cashier_mismatch/);
 assert.match(worker, /request\.method === "POST" && path === offlineRoot \+ "\/sync"/);
