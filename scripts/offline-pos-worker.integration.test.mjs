@@ -118,7 +118,7 @@ test("real Worker rejects a forged proof and leaves the challenge available for 
   assert.equal(rejected.status, 403);
   assert.equal(sqlite.prepare("SELECT consumed_at FROM pos_offline_enrollment_challenges WHERE id=?").get(challenge.challenge_id).consumed_at, null);
   const valid = await api("/api/admin/pos/offline/devices/enroll", await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId));
-  assert.equal(valid.status, 200);
+  assert.equal(valid.status, 201);
   assert.equal((await valid.json()).enrolled, true);
   assert.equal(sqlite.prepare("SELECT status FROM pos_offline_devices WHERE id=?").get(deviceId).status, "active");
 });
@@ -132,7 +132,7 @@ test("real Worker consumes enrollment challenge exactly once and rejects replay"
   const challenge = await challengeResponse.json();
   const payload = await enrollPayload(identity, challenge.challenge, challenge.challenge_id, deviceId);
   const first = await api("/api/admin/pos/offline/devices/enroll", payload);
-  assert.equal(first.status, 200);
+  assert.equal(first.status, 201);
   const replay = await api("/api/admin/pos/offline/devices/enroll", payload);
   assert.equal(replay.status, 409);
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM pos_offline_devices WHERE id=?").get(deviceId).count, 1);
