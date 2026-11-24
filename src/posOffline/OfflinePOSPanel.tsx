@@ -145,7 +145,7 @@ export default function OfflinePOSPanel({
     if (!deviceId) throw new Error("This browser has not been enrolled as an offline POS device.");
     await issueOfflinePermit(deviceId, session.id, undefined, Number(durationHours));
     await fetchAndStoreOfflinePermit(deviceId);
-    return "Signed permit and catalogue snapshot verified and stored on this device. Emergency checkout remains disabled until final acceptance tests are passed.";
+    return "Signed permit and catalogue snapshot verified and stored on this device. Do not use emergency checkout until the owner has completed the physical outage, recovery and cash/stock reconciliation acceptance checks.";
   });
 
   const prepareCache = () => runAction(async () => {
@@ -186,7 +186,7 @@ export default function OfflinePOSPanel({
       <section className="pos-card">
         <div className="admin-panel-heading">
           <div><p className="admin-eyebrow">CONTROLLED CONTINUITY</p><h3>Emergency offline POS</h3></div>
-          <span className="admin-muted">Offline checkout: disabled</span>
+          <span className={checkoutEnabled ? "admin-warning" : "admin-muted"}>{checkoutEnabled ? "Deployment flag enabled · physical acceptance still required" : "Offline checkout disabled by deployment flag"}</span>
         </div>
         <p className="admin-muted">This area enrolls devices, reserves stock, verifies short-lived cash-only permits and syncs signed queued sales. It does not enable checkout while any release gate remains open.</p>
         <p className="admin-muted">Deployment gate: <strong>{checkoutEnabled ? "Enabled" : "Disabled"}</strong> · Permit signing: <strong>{permitSigningConfigured ? "Configured" : "Not configured"}</strong></p>
