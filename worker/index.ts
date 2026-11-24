@@ -3135,8 +3135,16 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
             env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_stock_released','pos_offline_stock_allocation',?,? WHERE changes()=1")
               .bind(crypto.randomUUID(), admin.admin_user_id, String(row.id), JSON.stringify({ reason, released_quantity: Number(row.allocated_quantity)-Number(row.consumed_quantity)-Number(row.released_quantity) }))
           ]);
-          if (statements.length) await env.DB.batch(statements);
-          return json({ released: true, count: active.results?.length ?? 0 });
+          statements.push(
+            env.DB.prepare("UPDATE pos_offline_permits SET status='consumed' WHERE device_id=? AND status IN ('expired','revoked') AND NOT EXISTS (SELECT 1 FROM pos_offline_stock_allocations WHERE device_id=? AND status='active')")
+              .bind(deviceId, deviceId),
+            env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'pos.offline_device_queue_reconciled','pos_offline_device',?,? WHERE NOT EXISTS (SELECT 1 FROM pos_offline_permits WHERE device_id=? AND status<>'consumed')")
+              .bind(crypto.randomUUID(), admin.admin_user_id, deviceId, JSON.stringify({ reason, owner_confirmed_queue_reconciled: true, released_allocations: active.results?.length ?? 0 }), deviceId)
+          );
+          await env.DB.batch(statements);
+          const remainingPermits = await env.DB.prepare("SELECT COUNT(*) AS count FROM pos_offline_permits WHERE device_id=? AND status<>'consumed'").bind(deviceId).first<{ count: number }>();
+          if (Number(remainingPermits?.count ?? 0) > 0) return error("The device still has an unreconciled permit or active allocation", 409);
+          return json({ released: true, count: active.results?.length ?? 0, permits_reconciled: true });
         } catch { return error("Unused offline stock could not be released", 503); }
       }
     }
@@ -3305,6 +3313,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
     try {
       const session = await env.DB.prepare("SELECT id,opening_cash_paisa FROM pos_sessions WHERE id=? AND status='open' AND (? = 0 OR opened_by_admin_id = ?)").bind(sessionId,isCashier ? 1 : 0,admin.admin_user_id).first<{id:string;opening_cash_paisa:number}>();
       if (!session) return error("Open POS session not found",404);
+      const unresolvedOfflinePermits = await env.DB.prepare(
+        "SELECT COUNT(*) AS count FROM pos_offline_permits WHERE session_id=? AND status<>'consumed'"
+      ).bind(sessionId).first<{ count: number }>();
+      if (Number(unresolvedOfflinePermits?.count ?? 0) > 0) {
+        return error("This shift has an offline device permit. Reconnect or physically recover the device, sync or manually reconcile every queued sale, revoke the device if needed, and have an owner confirm queue reconciliation and release unused stock before closing the shift.", 409);
+      }
       const movement = await env.DB.prepare("SELECT COALESCE(SUM(CASE WHEN t.direction='in' THEN t.amount_paisa ELSE -t.amount_paisa END),0) AS net FROM financial_transactions t JOIN financial_accounts a ON a.id=t.account_id WHERE t.register_session_id=? AND a.kind='cash'").bind(sessionId).first<{net:number}>();
       const expected = Number(session.opening_cash_paisa)+Number(movement?.net??0);
       const variance = Number(counted)-expected;
