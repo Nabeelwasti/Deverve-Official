@@ -8,6 +8,7 @@ type StockItem = { variant_id: string; product_name: string; sku: string | null;
 type Shift = { id: string; register_id: string; status: "open" } | null;
 type Device = { id: string; register_id: string; register_name: string; device_label: string; status: string; active_allocations: number; remaining_allocated_units: number };
 type Allocation = { id: string; device_id: string; variant_id: string; product_name: string; sku: string | null; size: string; color: string; allocated_quantity: number; consumed_quantity: number; released_quantity: number; status: string };
+type ReconciliationCase = { id: string; event_id: string; reason_code: string; opened_at: string; device_id: string; device_sequence: number; outcome: string };
 
 export default function OfflinePOSPanel({
   canManageMoney,
@@ -24,6 +25,7 @@ export default function OfflinePOSPanel({
 }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
+  const [openCases, setOpenCases] = useState<ReconciliationCase[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [registerId, setRegisterId] = useState("");
   const [deviceLabel, setDeviceLabel] = useState("De VERVE POS — Browser");
@@ -45,9 +47,10 @@ export default function OfflinePOSPanel({
     if (!canManageMoney) return;
     setLoading(true);
     try {
-      const result = await adminRequest<{ devices: Device[]; allocations: Allocation[] }>("/api/admin/pos/offline/devices");
+      const result = await adminRequest<{ devices: Device[]; allocations: Allocation[]; open_cases: ReconciliationCase[] }>("/api/admin/pos/offline/devices");
       setDevices(result.devices ?? []);
       setAllocations(result.allocations ?? []);
+      setOpenCases(result.open_cases ?? []);
       setDeviceId((current) => current || result.devices?.[0]?.id || "");
       setMessage("");
       setError(false);
@@ -199,6 +202,15 @@ export default function OfflinePOSPanel({
                 {devices.map((device) => <tr key={device.id}><td>{device.device_label}<small>{device.id}</small></td><td>{device.register_name}</td><td>{device.status}</td><td>{device.remaining_allocated_units}</td><td>{device.status === "active" && <button type="button" className="admin-danger" disabled={busy} onClick={() => void revoke(device.id)}>Revoke</button>}</td></tr>)}
               </tbody></table></div>
             ) : <p className="admin-muted">No emergency POS devices have been enrolled.</p>}
+          </section>
+
+          <section className="pos-card">
+            <div className="admin-panel-heading"><div><h3>Offline sales needing review</h3><p className="admin-muted">Conflicts remain open until an owner completes and records the corresponding manual sale, stock and cash reconciliation. They are never silently discarded.</p></div><span className="admin-muted">{openCases.length} open</span></div>
+            {openCases.length ? (
+              <div className="pos-table-wrap"><table className="pos-table"><thead><tr><th>Event</th><th>Device</th><th>Sequence</th><th>Reason</th><th>Received</th><th>Status</th></tr></thead><tbody>
+                {openCases.map((item) => <tr key={item.id}><td><strong>{item.event_id}</strong><small>Case {item.id}</small></td><td>{devices.find((device) => device.id === item.device_id)?.device_label || item.device_id}</td><td>{item.device_sequence}</td><td>{item.reason_code.replace(/_/g, " ")}</td><td>{new Date(item.opened_at).toLocaleString("en-PK")}</td><td><strong>Manual review required</strong></td></tr>)}
+              </tbody></table></div>
+            ) : <p className="admin-muted">No offline sale conflicts are waiting for review.</p>}
           </section>
 
           <section className="pos-card">
