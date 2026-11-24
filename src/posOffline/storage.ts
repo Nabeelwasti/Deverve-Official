@@ -138,13 +138,68 @@ export async function queueOfflineSale(draft: OfflineSaleDraft): Promise<QueuedO
       let queued: QueuedOfflineSale | null = null;
       let transaction: IDBTransaction;
       try {
-        transaction = database.transaction(["meta", "sales", "outbox", "audit"], "readwrite", { durability: "strict" });
+        transaction = database.transaction(["meta", "permit", "catalogue", "shift", "sales", "outbox", "audit"], "readwrite", { durability: "strict" });
       } catch {
-        transaction = database.transaction(["meta", "sales", "outbox", "audit"], "readwrite");
+        transaction = database.transaction(["meta", "permit", "catalogue", "shift", "sales", "outbox", "audit"], "readwrite");
       }
       const meta = transaction.objectStore("meta");
+      const permitRequest = transaction.objectStore("permit").get("active");
+      const catalogueRequest = transaction.objectStore("catalogue").get("active");
+      const shiftRequest = transaction.objectStore("shift").get("active");
+      const salesRequest = transaction.objectStore("sales").getAll();
+      const outboxRequest = transaction.objectStore("outbox").getAll();
+      const shellRequest = meta.get("offline-shell-ready");
       const sequenceRequest = meta.get("device-sequence");
       sequenceRequest.onsuccess = () => {
+        const permit = permitRequest.result as StoredOfflinePermit | undefined;
+        const catalogue = catalogueRequest.result as { snapshotVersion?: string; items?: Array<Record<string, unknown>> } | undefined;
+        const shift = shiftRequest.result as Record<string, unknown> | undefined;
+        const shell = shellRequest.result as { value?: boolean } | undefined;
+        const claims = permit?.claims;
+        const now = Date.now();
+        if (!permit || !claims || !catalogue || !Array.isArray(catalogue.items) || !shift || shell?.value !== true ||
+            claims.offline_checkout_enabled !== true || claims.device_id !== draft.deviceId ||
+            claims.permit_id !== draft.permitId || claims.register_id !== draft.registerId ||
+            claims.session_id !== draft.sessionId || claims.cashier_admin_id !== draft.cashierId ||
+            claims.snapshot_version !== draft.snapshotVersion || catalogue.snapshotVersion !== draft.snapshotVersion ||
+            shift.sessionId !== draft.sessionId || shift.registerId !== draft.registerId || shift.cashierId !== draft.cashierId ||
+            Date.parse(String(claims.expires_at ?? "")) <= now || Number(claims.max_events) < 1 ||
+            claims.cash_only !== true || claims.allow_refunds !== false || claims.allow_voids !== false || claims.allow_shift_close !== false) {
+          transaction.abort();
+          reject(new Error("A current verified permit, matching open shift, and verified offline app cache are required."));
+          return;
+        }
+        const existingSales = salesRequest.result as QueuedOfflineSale[];
+        const existingOutbox = outboxRequest.result as OfflineOutboxRecord[];
+        if (existingOutbox.some((record) => record.status === "needs_review") ||
+            existingSales.some((sale) => sale.permitId === draft.permitId && sale.status === "needs_review")) {
+          transaction.abort();
+          reject(new Error("An earlier offline sale needs owner review. Stop offline checkout until it is resolved."));
+          return;
+        }
+        const permitSales = existingSales.filter((sale) => sale.permitId === draft.permitId);
+        if (permitSales.length >= Number(claims.max_events)) {
+          transaction.abort();
+          reject(new Error("This offline permit has reached its signed sale-event limit."));
+          return;
+        }
+        const allocatedByVariant = new Map(catalogue.items.map((item) => [String(item.variantId), item]));
+        const usedByVariant = new Map<string, number>();
+        for (const sale of permitSales) {
+          for (const line of sale.lines) usedByVariant.set(line.variantId, (usedByVariant.get(line.variantId) ?? 0) + line.quantity);
+        }
+        for (const line of draft.lines) {
+          const snapshot = allocatedByVariant.get(line.variantId);
+          const used = usedByVariant.get(line.variantId) ?? 0;
+          if (!snapshot || line.productName !== snapshot.productName || line.sku !== snapshot.sku ||
+              line.size !== snapshot.size || line.color !== snapshot.color ||
+              line.unitPricePaisa !== snapshot.unitPricePaisa ||
+              line.quantity > Number(snapshot.allocatedQuantity) - used) {
+            transaction.abort();
+            reject(new Error("The sale contains a product or quantity outside this device's signed stock allocation."));
+            return;
+          }
+        }
         const current = sequenceRequest.result as { id: string; value: number } | undefined;
         const sequence = (current?.value ?? 0) + 1;
         queued = { ...draft, sequence, status: "pending", payloadVersion: 1 };
