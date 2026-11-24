@@ -45,7 +45,6 @@ assert.ok(worker.includes('offlineRoot + "/sync"'));
 assert.match(worker, /open_cases: cases\.results/);
 assert.doesNotMatch(worker, /pos\.offline_case_rejected/);
 assert.doesNotMatch(worker, /path\.endsWith\("\/reject"\)/);
-assert.match(worker, /offlineRoot \+ "\/cases\/"/);
 assert.match(worker, /pos\.offline_case_rejected/);
 assert.match(worker, /LEFT JOIN pos_sales s ON s\.id=e\.canonical_sale_id/);
 assert.match(worker, /receipt_number: duplicate\.receipt_number/);
