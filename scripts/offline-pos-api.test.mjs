@@ -151,3 +151,8 @@ assert.match(crypto, /export async function verifyOfflinePermitSnapshot/);
 assert.match(crypto, /deverve-offline-pos:permit:v1\\n/);
 
 console.log("Offline POS server enrollment, revocation and allocation guardrails passed.");
+
+assert.match(panel, /Local sale queue & recovery/);
+assert.match(panel, /Owner review required/);
+assert.match(panel, /Server receipt/);
+assert.match(panel, /Never clear browser data/);
