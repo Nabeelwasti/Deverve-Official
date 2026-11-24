@@ -2890,7 +2890,12 @@ async function adminPosRoutes(request: Request, env: Env, url: URL): Promise<Res
   if (!admin) return error("Authentication required", 401);
   const isCashier = Number(admin.can_use_pos) === 1 && admin.role === "viewer";
   if (!["owner", "manager", "orders"].includes(admin.role) && !isCashier) return error("You do not have permission to use the POS", 403);
-  if (isCashier && !((request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales", "/api/admin/pos/offline/verification-key"].includes(path)) || (request.method === "GET" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path)) || (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales", "/api/admin/pos/offline/sync"].includes(path)) || (request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path))) return error("Cashier access is limited to register sales, own shift operations and signed offline sale sync", 403);
+  const cashierCanUseStandardPos = (request.method === "GET" && ["/api/admin/pos/bootstrap", "/api/admin/pos/sales"].includes(path)) ||
+    (request.method === "POST" && ["/api/admin/pos/sessions/open", "/api/admin/pos/sessions/close", "/api/admin/pos/sales"].includes(path));
+  const cashierCanReadOfflinePermit = request.method === "GET" && (path === "/api/admin/pos/offline/verification-key" || /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permit$/i.test(path));
+  const cashierCanIssueOfflinePermit = request.method === "POST" && /^\/api\/admin\/pos\/offline\/devices\/[a-f0-9-]{36}\/permits$/i.test(path);
+  const cashierCanSyncOfflineSales = request.method === "POST" && path === "/api/admin/pos/offline/sync";
+  if (isCashier && !(cashierCanUseStandardPos || cashierCanReadOfflinePermit || cashierCanIssueOfflinePermit || cashierCanSyncOfflineSales)) return error("Cashier access is limited to register sales, own shift operations and signed offline POS actions", 403);
   const canManageMoney = ["owner", "manager"].includes(admin.role);
 
   // Emergency offline device administration is owner/manager-only. It is kept
