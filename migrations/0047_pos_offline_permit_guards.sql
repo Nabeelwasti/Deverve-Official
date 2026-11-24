@@ -56,6 +56,14 @@ BEGIN
 
   SELECT CASE WHEN EXISTS (
     SELECT 1
+    FROM pos_offline_events e
+    LEFT JOIN pos_offline_reconciliation_cases c ON c.event_id=e.event_id
+    WHERE e.device_id=NEW.device_id
+      AND (e.outcome='pending' OR (e.outcome IN ('conflict','rejected') AND (c.id IS NULL OR c.status='open')))
+  ) THEN RAISE(ABORT, 'offline permit cannot be renewed while prior sales are unresolved') END;
+
+  SELECT CASE WHEN EXISTS (
+    SELECT 1
     FROM json_each(json_extract(NEW.claims_json, '$.allocations')) item
     LEFT JOIN pos_offline_stock_allocations a
       ON a.id=json_extract(item.value, '$.allocation_id')
