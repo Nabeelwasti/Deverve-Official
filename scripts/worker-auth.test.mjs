@@ -1033,6 +1033,7 @@ class FakeStatement {
     if (q.startsWith("SELECT status,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=?")) return this.db.posSales.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed'")) return [...this.db.posReceiptOutbox.values()].find(row=>row.sale_id===v[0]&&row.channel===v[1]&&row.status==="failed")??null;
     if (q.startsWith("SELECT id FROM ai_provider_keys WHERE key_fingerprint")) return [...this.db.aiKeys.values()].find((row) => row.key_fingerprint === v[0]) ?? null;
+    if (q.startsWith("SELECT command,command_sha256 FROM admin_ai_action_confirmations")) { const row=this.db.aiConfirmations.get(v[0]); return row&&row.admin_user_id===v[1]&&!row.consumed_at&&row.expires_at>v[2]?row:null; }
     if (q.startsWith("SELECT s.id, s.customer_id")) {
       const session = [...this.db.customerSessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const customer = session && this.db.customers.get(session.customer_id);
@@ -1275,6 +1276,9 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE admin_ai_action_confirmations SET consumed_at=?")) { const [consumedAt,id,adminId,expiresAt]=v; const row=this.db.aiConfirmations.get(id); if(!row||row.admin_user_id!==adminId||row.consumed_at||row.expires_at<=expiresAt)return {success:true,meta:{changes:0}}; row.consumed_at=consumedAt; return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("INSERT INTO admin_ai_action_confirmations")) { const [id,admin_user_id,command,command_sha256,created_at,expires_at]=v; this.db.aiConfirmations.set(id,{id,admin_user_id,command,command_sha256,created_at,expires_at,consumed_at:null}); return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("DELETE FROM admin_ai_action_confirmations")) { let changes=0; for(const [id,row] of this.db.aiConfirmations){if(row.expires_at<v[0]||(row.consumed_at&&row.consumed_at<v[1])){this.db.aiConfirmations.delete(id);changes++;}} return {success:true,meta:{changes}}; }
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
       const [status, updatedAt, id, previousStatus] = v;
       const row = this.db.orders.get(id);
@@ -1891,6 +1895,7 @@ class FakeD1 {
   sessions = new Map();
   posCashiers = new Map();
   aiKeys = new Map();
+   aiConfirmations = new Map();
   failAiKeyRead = false;
   attempts = new Map();
   paymentAttempts = new Map();
@@ -1945,6 +1950,13 @@ const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") =>
   get: async key => db.mediaObjects.get(key)??null
 }, ADMIN_BOOTSTRAP_TOKEN: token });
 const origin = "https://deverve.example";
+async function executeAIAction(db, command, headers = {}, configuredEnv = env(db)) {
+  const previewResponse = await handleRequest(request("/api/admin/ai/execute", "POST", { command }, headers), configuredEnv);
+  if (!previewResponse.ok) return previewResponse;
+  const preview = await previewResponse.json();
+  if (!preview.confirmation_required) return new Response(JSON.stringify(preview), { status: previewResponse.status, headers: { "content-type": "application/json" } });
+  return handleRequest(request("/api/admin/ai/execute", "POST", { confirmation_id: preview.confirmation_id }, headers), configuredEnv);
+}
 const request = (path, method, body, headers = {}) => {
   const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals" || path === "/api/customer/register";
   const payload = protectedPublicWrite && body && typeof body === "object"
