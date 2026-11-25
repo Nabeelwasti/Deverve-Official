@@ -2820,6 +2820,10 @@ test("authorised rental staff can preview and download private CNIC images with 
   const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
   const testEnv = { ...env(db), MEDIA: { get: async () => ({ body: new Response(bytes).body }) } };
   const headers = { cookie: "__Host-deverve_admin="+token, "sec-fetch-site": "same-origin" };
+  const withoutDedicatedHmac = { ...testEnv, CNIC_PREVIEW_HMAC_KEY: undefined };
+  const unavailablePreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), withoutDedicatedHmac);
+  assert.equal(unavailablePreview.status,503,"CNIC preview must fail closed without its dedicated HMAC secret even when the bootstrap token exists");
+  assert.equal(db.audits.length,0);
   const preview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get("content-disposition"), 'inline; filename="cnic_front.png"');
