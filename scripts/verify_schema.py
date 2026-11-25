@@ -443,6 +443,7 @@ assert {"trg_rental_documents_delete_requires_due_clearance", "trg_rental_docume
 cnic_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
 assert {"cnic_clearance_at", "cnic_clearance_by_admin_id", "cnic_clearance_note", "cnic_retention_due_at", "cnic_retention_status", "cnic_retention_deleted_at", "cnic_retention_last_error", "cnic_retention_claim_token", "cnic_retention_claim_expires_at"} <= cnic_columns, "Owner/manager CNIC clearance and retention fields are missing"
 assert any(row[1] == "idx_rental_cnic_retention_due" for row in db.execute("PRAGMA index_list(rental_requests)")), "CNIC retention due-date index is missing"
+assert any(row[1] == "idx_rental_cnic_retention_claim" for row in db.execute("PRAGMA index_list(rental_requests)")), "CNIC retention claim-lease index is missing"
 assert "rental_cnic_holds" in actual_tables, "CNIC legal/business hold ledger is missing"
 assert "trg_rental_requests_no_delete" in {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='rental_requests'")}, "Rental business history must be immutable"
 assert any(row[1] == "idx_rental_cnic_holds_one_active" for row in db.execute("PRAGMA index_list(rental_cnic_holds)")), "Unique active CNIC hold index is missing"
