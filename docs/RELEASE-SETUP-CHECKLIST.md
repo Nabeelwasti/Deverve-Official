@@ -1,3 +1,26 @@
+# Current release reconciliation — 26 November 2026
+
+This section supersedes older dated status notes below. The authoritative detailed audit is [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md).
+
+- [x] Reconcile GitHub `main` at `77b429e41ace7afcc0d181a7f2e6a2e3b64e8356`; latest build/type-check, CodeQL/Gitleaks and outbox bundle build passed (runs 45606537953, 45606537815 and 45606537816).
+- [x] Read-only Cloudflare reconciliation: live Pages deployment is still `2cdb7e70` from `48f4bc7`; automatic production/preview deployment remains disabled.
+- [x] Verify production D1 contains migrations 0050–0054 schema, COD expiry column and CNIC retention guards; keep offline POS migrations 0045–0049 unapplied.
+- [x] Verify `deverve-rental-cnic-indefinite` R2 lock remains enabled for `rental-private/`; preserve existing daily CNIC Worker.
+- [x] Retrieve and inspect the successful 26,768-byte outbox bundle artifact; verify that `deverve-outbox` is still absent from production.
+- [ ] Provision independent application keys only after password-manager escrow and a separate recovery copy are established.
+- [ ] Deploy and runtime-test the outbox Worker through a controlled release; verify its five-minute Cron Trigger. Keep customer email/WhatsApp inactive until provider configuration and test delivery pass.
+- [ ] Attach the CNIC retention legal approval artifact, approving authority, date and exact scope; complete lock-transition review before any deletion behavior changes.
+- [ ] Establish independent off-account/offline backup and key escrow; complete a separate restore drill.
+- [ ] Configure least-privilege Cloudflare credentials and verify GitHub main-branch protection with an administrator.
+- [ ] Add and rehearse a durable migration-history ledger; do not record offline POS migrations as applied.
+- [ ] Complete owner catalogue, inventory, vehicle, pricing and policy review.
+- [ ] Complete physical Android/PWA, offline/reconnect, barcode/camera, printer and POS cash/shift acceptance.
+- [ ] Deploy current Pages source only after all secret/recovery gates pass, then run production smoke tests and owner sign-off.
+
+**Release status: NOT READY.** Keep the current Pages deployment stable, online POS authoritative, offline checkout disabled and the CNIC R2 indefinite lock enabled.
+
+---
+
 # De VERVE release and owner setup checklist
 
 Last reconciled: 21 November 2026 — catalogue release deployed; owner/operational acceptance still open  
