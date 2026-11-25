@@ -161,17 +161,19 @@ Recommended cadence: automated encrypted D1 and full private-R2 media snapshots 
 
 **Release limitation:** these procedures improve independent recovery, but they do not certify a completed disaster-recovery program until the owner has completed and documented the actual Drive/Dropbox uploads, independent copy and restore drill.
 
-## Automated encrypted D1 backup and restore drill
+## Automated encrypted D1 and R2 backup and restore drill
 
-The repository includes `scripts/d1-backup-restore.mjs` and the `Encrypted D1 and R2 Media Backup and Restore Drill` workflow. It runs on workflow dispatch, relevant pushes to `main`, and daily at 21:17 UTC (02:17 Pakistan time). It exports production D1, encrypts the SQL in memory with AES-256-GCM, uploads only the encrypted archive and a non-sensitive manifest to the private `deverve-db-backups` R2 bucket, then decrypts the archive in memory and imports it into a temporary APAC D1 database. The drill verifies table names and schema-object counts, compares row counts when the source snapshot is stable, and deletes the temporary database. Plaintext SQL is never written to the GitHub runner filesystem or uploaded to R2 by this workflow. The same workflow backs up every object in `deverve-media-private`, encrypts each with AES-256-GCM/HKDF-SHA256, verifies R2 read-back/decryption/SHA-256, checks that the source inventory stayed stable, and stores an encrypted `.dvmanifest` inventory. GitHub scheduled runs may be delayed; check the actual run result rather than assuming it started exactly at 02:17.
+The repository includes `scripts/d1-backup-restore.mjs` and the `Encrypted D1 and R2 Media Backup and Restore Drill` workflow. It runs on workflow dispatch, relevant pushes to `main`, and daily at 21:17 UTC (02:17 Pakistan time). It exports production D1, encrypts the SQL in memory with AES-256-GCM, uploads only the encrypted archive and a non-sensitive D1 manifest to the private `deverve-db-backups` R2 bucket, then decrypts the archive in memory and imports it into a temporary APAC D1 database. The drill verifies table names and schema-object counts, compares row counts when the source snapshot is stable, and deletes the temporary database. Plaintext SQL is never written to the GitHub runner filesystem or uploaded to R2 by this workflow.
 
-### One-time owner setup
+The same workflow backs up every object in `deverve-media-private`, encrypts each with AES-256-GCM/HKDF-SHA256, verifies R2 read-back/decryption/SHA-256, checks that the source inventory stayed stable, and stores an encrypted `.dvmanifest` inventory. The 25 Nov 2026 live run verified all 40 source objects and the encrypted manifest. GitHub scheduled runs may be delayed; check the actual run result rather than assuming it started exactly at 02:17.
 
-1. In GitHub, open **Settings → Secrets and variables → Actions → New repository secret**.
-2. Add `D1_BACKUP_ENCRYPTION_KEY` with a fresh 32-byte hex key generated locally using `openssl rand -hex 32`. Do not paste this key into chat or commit it.
-3. Keep a separate recovery copy of this key in the business password manager. Do not rotate it unless the previous key is retained for older archives.
-4. Create a narrowly scoped Cloudflare API token with **D1 Write** permission and **Workers R2 Storage Bucket Item Write** scoped only to the `deverve-db-backups` bucket. The R2 bucket-item write permission includes object read, write and list access required for upload and read-back; do not grant account-wide R2 administration.
-5. Open **Actions → Encrypted D1 Backup and Restore Drill → Run workflow**. The workflow also runs daily at 21:00 UTC (02:00 Pakistan Standard Time).
+### Existing automated configuration and owner custody
+
+- The repository already has `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` and `D1_BACKUP_ENCRYPTION_KEY` configured as GitHub Actions secrets. The successful live backup/restore run confirms that the workflow can use them.
+- Do not create a replacement key or rotate the existing key casually. All historical encrypted D1/media archives use its key ID; retain the existing key until a documented dual-key rotation and restore plan is completed.
+- The encryption key has **not** been independently confirmed in the business owner's password manager or a separate recovery escrow. The owner must arrange that custody outside GitHub. Never paste the key into chat, commit it, or place it in the same folder as encrypted backups.
+- The Cloudflare token works for the current D1 and R2 backup operations, including isolated D1 restore cleanup and source-media reads. Its least-privilege scope has not been verified and it is broader than ideal. Do not replace it until the exact D1 temporary-database and source/backup R2 read/write/list permissions have been validated with a new token and a successful full backup/restore run.
+- The workflow schedule is 21:17 UTC (02:17 Pakistan time), not 21:00 UTC. It also supports manual dispatch and relevant pushes to `main`.
 
 ### Existing legacy snapshot
 
