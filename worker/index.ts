@@ -6846,7 +6846,9 @@ export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExec
       if ((variants.results?.length ?? 0) > 25000) return error("The catalogue has reached its safe variant response limit. Please contact De VERVE before ordering.", 503);
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variants.results ?? []) {
-        variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), variant]);
+        const productVariants = variantsByProduct.get(variant.product_id);
+        if (productVariants) productVariants.push(variant);
+        else variantsByProduct.set(variant.product_id, [variant]);
       }
       return json({ products: products.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [], media: mediaByProduct.get(product.id) ?? [] })) });
     } catch {
