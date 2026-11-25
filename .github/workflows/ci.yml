@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           cache: npm
@@ -33,7 +33,7 @@ jobs:
           npm audit --json > npm-audit.json || true
           node -e 'const report = JSON.parse(require("node:fs").readFileSync("npm-audit.json", "utf8")); const counts = report.metadata?.vulnerabilities || {}; console.log("Full dependency audit:", JSON.stringify(counts)); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(name + ": " + item.severity + ", direct=" + item.isDirect + ", fixAvailable=" + JSON.stringify(item.fixAvailable));'
       - name: Upload resolved dependency audit artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: dependency-audit-${{ github.run_number }}
           path: |
@@ -95,8 +95,11 @@ jobs:
         run: |
           if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
             npm run test:d1:integration
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping remote D1 integration on a pull request without protected Cloudflare credentials."
           else
-            echo "Skipping remote D1 integration: Cloudflare test credentials are not configured."
+            echo "::error::Cloudflare D1 integration credentials are required on main-branch runs."
+            exit 1
           fi
       - name: Run isolated offline POS D1 migration suite when credentials are configured
         env:
@@ -106,8 +109,11 @@ jobs:
         run: |
           if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
             npm run test:offline:d1
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping offline POS D1 migration suite on a pull request without protected Cloudflare credentials."
           else
-            echo "Skipping offline POS D1 migration suite: Cloudflare test credentials are not configured."
+            echo "::error::Cloudflare D1 integration credentials are required on main-branch runs."
+            exit 1
           fi
       - name: Rehearse offline POS migrations on an isolated production backup clone
         env:
@@ -119,7 +125,16 @@ jobs:
           D1_BACKUP_ENCRYPTION_KEY: ${{ secrets.D1_BACKUP_ENCRYPTION_KEY }}
           D1_BACKUP_KEY_ID: "deverve-d1-key-v1"
           OFFLINE_POS_MIGRATION_CHECK: "true"
-        run: node scripts/d1-backup-restore.mjs
+        shell: bash
+        run: |
+          if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${D1_BACKUP_ENCRYPTION_KEY:-}" ]]; then
+            node scripts/d1-backup-restore.mjs
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping production-backup-clone rehearsal on a pull request without protected Cloudflare and backup-key secrets."
+          else
+            echo "::error::Cloudflare account and D1 backup-key secrets are required on main-branch runs."
+            exit 1
+          fi
       - name: Install Chromium headless shell for browser tests
         timeout-minutes: 8
         run: npx playwright install chromium --only-shell
