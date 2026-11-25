@@ -59,7 +59,7 @@ beforeEach(async () => {
   sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
   const migrations = readdirSync(join(root, "migrations")).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
-  assert.equal(migrations.length, 49, "expected the complete numbered migration chain");
+  assert.deepEqual(migrations.map((name) => Number(name.slice(0, 4))), Array.from({ length: migrations.length }, (_, index) => index + 1), "expected a gap-free numbered migration chain");
   for (const name of migrations) sqlite.exec(readFileSync(join(root, "migrations", name), "utf8"));
   db = new LocalD1(sqlite);
   const expires = new Date(Date.now() + 60 * 60_000).toISOString();
