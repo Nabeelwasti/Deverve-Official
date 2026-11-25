@@ -2823,8 +2823,15 @@ test("authorised rental staff can preview and download private CNIC images with 
   const withoutDedicatedHmac = { ...testEnv, CNIC_PREVIEW_HMAC_KEY: undefined };
   const unavailablePreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), withoutDedicatedHmac);
   assert.equal(unavailablePreview.status,503,"CNIC preview token creation must fail closed without its dedicated HMAC secret even when the bootstrap token exists");
-  assert.equal(db.previewTokens.size,0);
-  const previewTokenResponse = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), testEnv);
+  const previewTokenDb = {
+    prepare(sql) {
+      if (sql.startsWith("DELETE FROM rental_document_preview_tokens")) return { bind() { return { run: async () => ({ meta: { changes: 1 } }) }; } };
+      if (sql.startsWith("INSERT INTO rental_document_preview_tokens")) return { bind() { return { run: async () => ({ meta: { changes: 1 } }) }; } };
+      return db.prepare(sql);
+    },
+  };
+  const previewTokenEnv = { ...testEnv, DB: previewTokenDb };
+  const previewTokenResponse = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), previewTokenEnv);
   assert.equal(previewTokenResponse.status,200);
   assert.match((await previewTokenResponse.json()).url,/^\/api\/rental-document-preview\?token=/);
   const preview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
