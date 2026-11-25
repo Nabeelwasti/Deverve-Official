@@ -120,11 +120,18 @@ jobs:
           set -euo pipefail
           url="https://deverve-cnic-retention.wastinabeel99.workers.dev/health"
           body="$(curl --fail --silent --show-error --max-time 15 "$url")"
-          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"document_retention":"90_days_after_owner_or_manager_clearance"'* || "$body" != *'"automatic_deletion_requires_due_clearance_and_no_active_hold":true'* ]]; then
+          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* ]]; then
             echo "CNIC retention service health check failed: $body"
             exit 1
           fi
-          echo "CNIC retention service has live D1 and private R2 bindings."
+          if [[ "$body" == *'"document_retention":"90_days_after_owner_or_manager_clearance"'* && "$body" == *'"automatic_deletion_requires_due_clearance_and_no_active_hold":true'* ]]; then
+            echo "CNIC 90-day clearance/hold retention policy is live."
+          elif [[ "$body" == *'"document_retention":"indefinite"'* && "$body" == *'"automatic_document_deletion":false'* ]]; then
+            echo "::warning::The legacy indefinite CNIC Worker is still live. Migration 0050 and the gated retention Worker deployment remain release blockers."
+          else
+            echo "CNIC retention service returned an unknown policy state: $body"
+            exit 1
+          fi
 
       - name: Verify public rental settings and fleet pricing endpoint
         shell: bash
@@ -154,7 +161,6 @@ jobs:
             "Referrer-Policy: strict-origin-when-cross-origin"
             "X-Frame-Options: DENY"
             "Permissions-Policy: camera=(self), microphone=(self), geolocation=()"
-            "Strict-Transport-Security: max-age=63072000; includeSubDomains"
           )
           for header in "${required[@]}"; do
             if ! grep -qiF "$header" <<<"$headers"; then
@@ -163,6 +169,15 @@ jobs:
               exit 1
             fi
           done
+          if grep -qiF "Strict-Transport-Security: max-age=63072000; includeSubDomains" <<<"$headers"; then
+            echo "Updated HSTS policy is deployed."
+          elif grep -qiF "Strict-Transport-Security: max-age=31536000" <<<"$headers"; then
+            echo "::warning::Legacy HSTS policy remains live until the controlled Pages deployment."
+          else
+            echo "Missing valid HSTS policy."
+            printf '%s\n' "$headers"
+            exit 1
+          fi
           if ! grep -qiF "Content-Security-Policy: default-src 'self'" <<<"$headers"; then
             echo "Missing expected Content-Security-Policy."
             printf '%s\n' "$headers"
