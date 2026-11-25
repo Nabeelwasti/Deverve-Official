@@ -6841,9 +6841,9 @@ export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExec
         mediaByProduct.set(productId, [...(mediaByProduct.get(productId) ?? []), { id: media.id, media_type: media.media_type, mime_type: media.mime_type, alt_text: media.alt_text, caption: media.caption, is_primary: media.is_primary, color: media.color || "", url: "/media/" + media.id }]);
       }
       const variants = await env.DB.prepare(
-        "SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 5000",
+        "SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 25001",
       ).bind(...productIds).all<PublicVariantRow>();
-      if ((variants.results?.length ?? 0) >= 5000) return error("The catalogue has reached its safe variant response limit. Please contact De VERVE before ordering.", 503);
+      if ((variants.results?.length ?? 0) > 25000) return error("The catalogue has reached its safe variant response limit. Please contact De VERVE before ordering.", 503);
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variants.results ?? []) {
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), variant]);
