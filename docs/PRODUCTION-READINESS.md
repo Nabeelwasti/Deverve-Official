@@ -1,3 +1,40 @@
+# Current production reconciliation — 25 November 2026
+
+This section supersedes older dated snapshots below whenever they conflict.
+
+## Verified live state
+- Mainline PRs #56–#61 are merged. Main CI run [45520354785](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45520354785) passed.
+- Cloudflare Pages production deployment [2cdb7e70](https://2cdb7e70.deverve-official.pages.dev) is live from commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`. Automatic Pages deployments and previews remain disabled.
+- Encrypted backup run [45517680549](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45517680549) restored 66 D1 tables in a temporary APAC D1 database and verified all 40 historical R2 source objects (38 catalogue + 2 legacy CNIC images). The encrypted media manifest was read back and decrypted successfully. This proves same-account recovery, not account-loss recovery.
+- Production R2 backup lifecycle is 90 days for encrypted D1/media archives and manifests, 30 days for legacy plaintext D1 SQL, and 7 days for incomplete multipart uploads. The historical 25 Nov media snapshot expires by 23 Feb 2027. New routine media snapshots in PR #62 exclude `rental-private/`.
+
+## Hardening branch and CI
+- PR [#62](https://github.com/Nabeelwasti/Deverve-Official/pull/62) is open. Its latest completed PR-head checks [45565989472](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45565989472) and [45565989553](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45565989553) passed build/type-check, production dependency audit, Worker tests, schema/constraint validation, isolated offline POS integration tests, R2 backup tests, browser tests, CodeQL and secret scanning.
+- PR #62 adds mandatory Turnstile on registration/enquiries, hides exact public stock/reservation counts, moves queue work off request traffic, adds a five-minute scheduled outbox/COD reservation worker, expires unpaid manual COD reservations after 24 hours, adds owner/manager CNIC clearance + 90-day retention with legal holds, adds two-step AI action confirmation, and enforces a 30-minute admin idle timeout.
+- The branch adds migrations `0050`–`0053`. They have **not** been applied to production. Production migrations `0045`–`0049` also remain unapplied; these are the separate offline POS schema and must not be activated until its own release gates pass.
+- Production D1 daily quota was reported exhausted during this work. No production D1 migration or business-data write was attempted. The new deployment workflows fail closed if required production schema is missing or D1 cannot be queried.
+- A full temporary Cloudflare Worker-to-isolated-D1 runtime deployment previously returned HTTP 403 from the available API token. The local Worker/SQLite integration and isolated D1 uniqueness tests pass, but they do not replace that full Cloudflare runtime proof.
+
+## CNIC retention and security controls
+- The operating policy is: retain both CNIC sides until an authorised owner or manager records final clearance confirming payments/deposits, damages, fees, challans and related obligations are settled; then retain for 90 days. Vehicle return or booking completion alone does not start the clock. An active legal/business hold pauses deletion.
+- PR #62 implements the clearance checklist, immutable clearance record, legal/business hold ledger, guarded D1 document deletion, permanently retained rental business history, and a scheduled R2/D1 retention Worker.
+- Production still has the enabled R2 bucket-lock rule `deverve-rental-cnic-indefinite`. The gated deployment workflow checks migration 0050 and the live Worker health policy before removing only that rule. Until migration and Worker deployment succeed, the old lock remains and no CNIC deletion is enabled.
+- Legacy rentals remain uncleared. No clearance timestamp is inferred and no existing CNIC object was changed or deleted.
+- New purpose-separated AI vault and CNIC preview secrets are provisioned by a guarded workflow using domain-separated HKDF derivation from the existing backup root key. The bootstrap token remains a legacy decryption fallback until existing Gemini key rows are re-encrypted and verified.
+
+## Remaining release gates
+1. Apply only migrations 0050–0053 after the D1 quota is available and a fresh encrypted backup is verified. Do not apply offline POS migrations 0045–0049 as part of this step.
+2. Deploy and health-check the scheduled outbox Worker and CNIC retention Worker. Verify the COD expiry cron and R2 lock transition.
+3. Complete the full Cloudflare Worker-to-isolated-D1 runtime test with a token that can create/deploy/delete a temporary Worker and D1 database.
+4. Configure GitHub main branch protection and replace the broad, non-expiring Cloudflare API token with a tested least-privilege token.
+5. Verify owner password-manager escrow and a separate recovery copy of the backup key. Independent off-account/offline disaster recovery remains deferred until the business domain/email are established, as directed by the owner.
+6. Configure verified sender/email and WhatsApp provider credentials before enabling delivery. Customer email verification/password recovery remains unavailable until a verified sender is configured.
+7. Complete catalogue/fleet/pricing/legal-policy owner review and the real-device acceptance stage at the end: Android PWA, airplane-mode sale/reload, sync/conflict handling, camera/barcode scanner, printer and shift controls.
+8. Reconcile the existing open production register against physical cash before closing it. Do not close it through software alone.
+
+**Release decision:** keep the current online POS authoritative. Do not enable offline checkout or apply migrations 0045–0049. PR #62 is code-complete and CI-green, but production is not fully accepted until the gates above are evidenced.
+---
+
 # Current production release reconciliation — 23 November 2026
 
 - Current application release is PR #39, merge commit `46c68c94ce2b689dbff00b863259e32a458025e3`. PR #39 CI run [45149470914](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45149470914) passed all 17 steps, including all 158 desktop/mobile storefront browser tests.
