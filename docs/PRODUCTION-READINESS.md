@@ -20,7 +20,7 @@ This section supersedes older dated snapshots below whenever they conflict.
 - PR #62 implements the clearance checklist, immutable clearance record, legal/business hold ledger, guarded D1 document deletion, permanently retained rental business history, and an hourly-at-minute-0-UTC R2/D1 retention Worker (up to 10 due rentals per run).
 - Production still has the enabled R2 bucket-lock rule `deverve-rental-cnic-indefinite`. The gated deployment workflow checks migration 0050 and the live Worker health policy before removing only that rule. Until migration and Worker deployment succeed, the old lock remains and no CNIC deletion is enabled.
 - Legacy rentals remain uncleared. No clearance timestamp is inferred and no existing CNIC object was changed or deleted.
-- New purpose-separated AI vault and CNIC preview secrets are provisioned by a guarded workflow using domain-separated HKDF derivation from the existing backup root key. The bootstrap token remains a legacy decryption fallback until existing Gemini key rows are re-encrypted and verified.
+- New independent random 256-bit AI vault and CNIC preview secrets are provisioned by a guarded workflow directly into Cloudflare Pages; they are not derived from the backup root or bootstrap token. The workflow never overwrites existing secrets and refuses to regenerate a missing key after the hierarchy marker exists. The bootstrap token remains a legacy decryption fallback only for existing Gemini key rows until they are re-encrypted and verified.
 
 ## Remaining release gates
 1. Apply only migrations 0050–0053 after the D1 quota is available and a fresh encrypted backup is verified. Do not apply offline POS migrations 0045–0049 as part of this step.
