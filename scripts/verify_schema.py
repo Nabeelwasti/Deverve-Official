@@ -41,11 +41,11 @@ public_jwk = '{"kty":"EC","crv":"P-256","x":"abc","y":"def"}'
 db.execute("INSERT INTO pos_offline_devices (id,register_id,enrolled_by_admin_id,device_label,public_key_jwk_json,public_key_thumbprint) VALUES (?,?,?,?,?,?)", ("offline-device","main-register","offline-owner","Pilot Android POS",public_jwk,"a"*43))
 db.execute("INSERT INTO admin_pos_cashiers (admin_user_id,granted_by_admin_id) VALUES (?,?)", ("offline-owner","offline-owner"))
 cashier_grant_version = db.execute("SELECT granted_at FROM admin_pos_cashiers WHERE admin_user_id='offline-owner'").fetchone()[0]
-db.execute("INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)", ("offline-challenge","22222222-2222-4222-8222-222222222222","main-register","z"*43,"c"*43,"2026-11-25T00:00:00.000Z","offline-owner"))
-db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T01:00:00.000Z' WHERE id='offline-challenge'")
+db.execute("INSERT INTO pos_offline_enrollment_challenges (id,device_id,register_id,public_key_thumbprint,challenge_hash,expires_at,created_by_admin_id) VALUES (?,?,?,?,?,?,?)", ("offline-challenge","22222222-2222-4222-8222-222222222222","main-register","z"*43,"c"*43,"2026-11-26T00:00:00.000Z","offline-owner"))
+db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-26T01:00:00.000Z' WHERE id='offline-challenge'")
 expect_challenge_update_rejected = False
 try:
-    db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-24T02:00:00.000Z' WHERE id='offline-challenge'")
+    db.execute("UPDATE pos_offline_enrollment_challenges SET consumed_at='2026-11-26T02:00:00.000Z' WHERE id='offline-challenge'")
 except sqlite3.IntegrityError:
     expect_challenge_update_rejected = True
 assert expect_challenge_update_rejected, "Enrollment challenges must be single-use and immutable after consumption"
