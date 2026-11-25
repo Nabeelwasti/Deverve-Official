@@ -38,3 +38,17 @@ test("invalid key material and archive headers are rejected", () => {
   assert.throws(() => deriveMediaKey("not-a-key"));
   assert.throws(() => decryptMedia(Buffer.from("not-an-archive"), deriveMediaKey(fixtureKey)));
 });
+
+
+test("private media inventory manifests are opaque until authenticated decryption", () => {
+  const key = deriveMediaKey(fixtureKey);
+  const manifest = JSON.stringify({
+    source_bucket: "deverve-media-private",
+    objects: [{ source_key: "rental-private/request-id/cnic_front.jpg", custom_metadata: { document: "private" } }],
+  });
+  const encrypted = encryptMedia(Buffer.from(manifest), key);
+  assert.equal(encrypted.subarray(0, 8).toString("ascii"), "DVMEDIA1");
+  assert.equal(encrypted.includes(Buffer.from("rental-private")), false);
+  assert.equal(encrypted.includes(Buffer.from("cnic_front")), false);
+  assert.equal(decryptMedia(encrypted, key).toString("utf8"), manifest);
+});
