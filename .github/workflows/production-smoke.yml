@@ -71,6 +71,11 @@ jobs:
             echo "Public product catalogue API did not return the expected safe product JSON."
             exit 1
           fi
+          if jq -e '.products | all(.[]; all(.variants[]?; (has("stock_on_hand") | not) and (has("reserved_quantity") | not)))' <<<"$products" >/dev/null; then
+            echo "Public catalogue hides exact stock and reservation counts."
+          else
+            echo "::warning::Legacy public catalogue still exposes exact stock/reservation counts until the controlled Pages deployment."
+          fi
           status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-page.json -w '%{http_code}' "$base/api/pages/production-smoke-page-that-does-not-exist")"
           if [[ "$status" != "404" ]]; then
             echo "Expected unpublished/missing CMS page to return 404, received HTTP $status:"
