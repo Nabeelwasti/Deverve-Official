@@ -50,6 +50,16 @@ BEGIN
   SELECT RAISE(ABORT, 'CNIC deletion requires recorded clearance, 90-day expiry and no active hold');
 END;
 
+
+-- Rental financial and operational history is retained even after CNIC evidence
+-- is purged; the retention worker removes only the two private document objects
+-- and their metadata, never the rental request or its settlement/audit history.
+CREATE TRIGGER IF NOT EXISTS trg_rental_requests_no_delete
+BEFORE DELETE ON rental_requests
+BEGIN
+  SELECT RAISE(ABORT, 'Rental business history must be retained');
+END;
+
 CREATE TRIGGER IF NOT EXISTS trg_rental_cnic_clearance_immutable
 BEFORE UPDATE OF cnic_clearance_at, cnic_clearance_by_admin_id, cnic_clearance_note, cnic_retention_due_at
 ON rental_requests
