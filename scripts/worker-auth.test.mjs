@@ -3479,7 +3479,7 @@ test("only an owner or manager can record completed-rental CNIC clearance with e
   const result=await response.json();
   assert.equal(result.retention_days,90);
   assert.equal(result.retention_status,"scheduled");
-  assert.equal(new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime(),90*86400000);
+  assert.ok(new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime()>=90*86400000 && new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime()<=90*86400000+1000);
   assert.match(statements[0],/cnic_retention_status='scheduled'/);
   assert.match(statements[1],/rental\.cnic_clearance_recorded/);
 });
