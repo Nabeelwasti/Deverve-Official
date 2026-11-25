@@ -6573,6 +6573,58 @@ export function buildPosStockGuard(items: ReadonlyArray<{ variant_id: string; qu
   };
 }
 
+export async function processExpiredCodReservations(env: Env): Promise<void> {
+  const now = new Date().toISOString();
+  let due: Array<{id:string;order_number:string;reservation_lines:number;expires_at:string}> = [];
+  try {
+    const result = await env.DB.prepare(
+      "SELECT o.id,o.order_number,COUNT(DISTINCT r.variant_id) AS reservation_lines,MAX(r.expires_at) AS expires_at FROM orders o JOIN order_inventory_reservations r ON r.order_id=o.id WHERE o.order_status='pending' AND o.payment_status='pending' AND o.payment_method='cod' AND o.payment_provider='manual' AND r.status='reserved' AND r.expires_at IS NOT NULL AND r.expires_at<=? AND NOT EXISTS (SELECT 1 FROM order_inventory_reservations future WHERE future.order_id=o.id AND future.status='reserved' AND (future.expires_at IS NULL OR future.expires_at>?)) AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id=o.id AND pa.provider='safepay' AND pa.status IN ('created','pending','succeeded')) GROUP BY o.id,o.order_number ORDER BY MIN(r.expires_at),o.id LIMIT 25"
+    ).bind(now,now).all<{id:string;order_number:string;reservation_lines:number;expires_at:string}>();
+    due = result.results ?? [];
+  } catch {
+    console.error(JSON.stringify({event:"cod-reservation-expiry-scan-failed",error_code:"d1_unavailable"}));
+    return;
+  }
+
+  let expired = 0, skipped = 0;
+  for (const order of due) {
+    const expectedLines = Number(order.reservation_lines);
+    if (!order.id || !Number.isSafeInteger(expectedLines) || expectedLines < 1) { skipped++; continue; }
+    try {
+      const results = await env.DB.batch([
+        env.DB.prepare(
+          "UPDATE orders SET order_status='cancelled',delivery_fee_status=CASE WHEN delivery_fee_status='awaiting_customer' THEN 'declined' ELSE delivery_fee_status END,delivery_fee_token_hash=NULL,delivery_fee_expires_at=NULL,updated_at=? WHERE id=? AND order_status='pending' AND payment_status='pending' AND payment_method='cod' AND payment_provider='manual' AND EXISTS (SELECT 1 FROM order_inventory_reservations r WHERE r.order_id=orders.id AND r.status='reserved') AND NOT EXISTS (SELECT 1 FROM order_inventory_reservations r WHERE r.order_id=orders.id AND r.status='reserved' AND (r.expires_at IS NULL OR r.expires_at>?)) AND NOT EXISTS (SELECT 1 FROM payment_attempts pa WHERE pa.order_id=orders.id AND pa.provider='safepay' AND pa.status IN ('created','pending','succeeded')) AND NOT EXISTS (SELECT 1 FROM order_inventory_reservations r LEFT JOIN product_variants v ON v.id=r.variant_id WHERE r.order_id=orders.id AND r.status='reserved' AND (v.id IS NULL OR v.reserved_quantity<r.quantity))"
+        ).bind(now,order.id,now),
+        env.DB.prepare(
+          "UPDATE product_variants SET reserved_quantity=reserved_quantity-(SELECT SUM(r.quantity) FROM order_inventory_reservations r WHERE r.order_id=? AND r.variant_id=product_variants.id AND r.status='reserved'),updated_at=? WHERE id IN (SELECT variant_id FROM order_inventory_reservations WHERE order_id=? AND status='reserved') AND changes()=1"
+        ).bind(order.id,now,order.id),
+        env.DB.prepare(
+          "UPDATE order_inventory_reservations SET status='released',released_at=?,updated_at=? WHERE order_id=? AND status='reserved' AND changes()=?"
+        ).bind(now,now,order.id,expectedLines),
+        env.DB.prepare(
+          "INSERT INTO order_status_events (id,order_id,from_status,to_status,actor_type,actor_id,note) SELECT ?,?,'pending','cancelled','system',NULL,'Unpaid COD reservation expired after 24 hours; reserved stock was released.' WHERE EXISTS (SELECT 1 FROM order_inventory_reservations WHERE order_id=? AND status='released' AND released_at=?)"
+        ).bind(crypto.randomUUID(),order.id,order.id,now),
+        env.DB.prepare(
+          "INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,NULL,'order.reservation_expired','order',?,? WHERE EXISTS (SELECT 1 FROM order_inventory_reservations WHERE order_id=? AND status='released' AND released_at=?)"
+        ).bind(crypto.randomUUID(),order.id,JSON.stringify({order_number:order.order_number,reservation_lines:expectedLines,expires_at:order.expires_at,policy:"24_hour_unpaid_cod"}),order.id,now),
+      ]);
+      if (Number(results[0]?.meta?.changes ?? 0) === 1 &&
+          Number(results[1]?.meta?.changes ?? 0) === expectedLines &&
+          Number(results[2]?.meta?.changes ?? 0) === expectedLines &&
+          Number(results[3]?.meta?.changes ?? 0) === 1 &&
+          Number(results[4]?.meta?.changes ?? 0) === 1) {
+        expired++;
+      } else {
+        skipped++;
+      }
+    } catch {
+      skipped++;
+      console.error(JSON.stringify({event:"cod-reservation-expiry-failed",order_id:order.id,error_code:"atomic_release_failed"}));
+    }
+  }
+  console.log(JSON.stringify({event:"cod-reservation-expiry-run",due_orders:due.length,expired_orders:expired,skipped_orders:skipped,policy_hours:24}));
+}
+
 export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
