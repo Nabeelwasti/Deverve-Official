@@ -35,7 +35,7 @@ const latestRun = ordered[0] || null;
 const latestSuccess = ordered.find((run) => run.conclusion === "success") || null;
 const now = Date.now();
 const successAgeHours = latestSuccess ? (now - Date.parse(latestSuccess.updated_at || latestSuccess.created_at)) / 3_600_000 : Number.POSITIVE_INFINITY;
-const latestFailed = Boolean(latestRun && latestRun.status === "completed" && latestRun.conclusion === "failure");
+const latestFailed = Boolean(latestRun && latestRun.status === "completed" && latestRun.conclusion && !["success", "cancelled", "skipped"].includes(latestRun.conclusion));
 const stale = !latestSuccess || successAgeHours > thresholdHours;
 const alert = latestFailed || stale;
 
