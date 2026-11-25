@@ -218,6 +218,7 @@ async function restoreDrill(sql,expected){
      rentalDeleteGuard="blocked";
     }
    }
+   if(await count("SELECT COUNT(*) AS count FROM rental_cnic_holds WHERE released_at IS NULL")!==0)throw new Error("The hardening rehearsal left an active legal hold after its release fixture.");
    const afterGuards=await snapshot(id);
    const expectedDocumentCount=migrated.rowCounts.rental_documents-(documents.length?1:0);
    if(afterGuards.rowCounts.rental_documents!==expectedDocumentCount||afterGuards.rowCounts.rental_requests!==migrated.rowCounts.rental_requests)throw new Error("Guard tests changed rental history unexpectedly.");
