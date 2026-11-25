@@ -6539,7 +6539,7 @@ async function publicInspirationalQuoteRoute(request: Request, url: URL): Promis
       ).map(item => ({ quote: item.quote.trim(), author: item.author.trim() })).slice(0, 100);
       if (!quotes.length) return error("The online quote service returned no usable quotes", 502);
       try {
-        await edgeCache?.put(cacheKey, json({ quotes }, 200, { "cache-control": "public, max-age=0, s-maxage=3600" }));
+        await edgeCache?.put(cacheKey, json({ quotes }, 200, { "cache-control": "public, max-age=0, s-maxage=60" }));
       } catch { /* A cache write failure must not hide a valid quote list. */ }
     } catch {
       return error("The online quote service is temporarily unavailable", 503);
@@ -6804,7 +6804,7 @@ export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExec
       const asset = await env.DB.prepare("SELECT m.object_key, m.mime_type AS content_type FROM media_assets m WHERE m.id = ? AND m.status = 'ready' AND (EXISTS (SELECT 1 FROM products p WHERE p.image_key = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM product_media_assets pm JOIN products p ON p.id = pm.product_id WHERE pm.media_asset_id = m.id AND p.status = 'published') OR EXISTS (SELECT 1 FROM vehicles v WHERE v.image_key = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM vehicle_media_assets vm JOIN vehicles v ON v.id = vm.vehicle_id WHERE vm.media_asset_id = m.id AND v.status = 'available') OR EXISTS (SELECT 1 FROM store_settings s WHERE s.setting_key='brand_assets' AND s.is_public=1 AND (json_extract(s.setting_value_json,'$.logo_id')=m.id OR json_extract(s.setting_value_json,'$.favicon_id')=m.id)) OR EXISTS (SELECT 1 FROM store_settings s, json_each(s.setting_value_json) ca WHERE s.setting_key='category_assets' AND s.is_public=1 AND ca.value=m.id) OR EXISTS (SELECT 1 FROM store_settings s, json_each(s.setting_value_json,'$.section_images') si WHERE s.setting_key='site_design' AND s.is_public=1 AND si.value=m.id) OR EXISTS (SELECT 1 FROM store_settings s, json_each(s.setting_value_json,'$.methods') pm WHERE s.setting_key='payment_methods' AND s.is_public=1 AND json_extract(pm.value,'$.enabled')=1 AND json_extract(pm.value,'$.qr_media_id')=m.id) OR EXISTS (SELECT 1 FROM site_page_sections ps JOIN site_pages p ON p.id=ps.page_id WHERE p.status='published' AND ps.is_visible=1 AND (json_extract(ps.content_json,'$.image_url')='/media/'||m.id OR json_extract(ps.content_json,'$.video_url')='/media/'||m.id OR instr(char(10)||coalesce(json_extract(ps.content_json,'$.images'),'')||char(10),char(10)||'/media/'||m.id||char(10))>0)) OR EXISTS (SELECT 1 FROM site_page_sections ps JOIN site_pages p ON p.id=ps.page_id, json_each(json_extract(ps.content_json,'$.category_images')) ci WHERE p.status='published' AND ps.is_visible=1 AND (ci.value=m.id OR ci.value='/media/'||m.id))) LIMIT 1").bind(publicMedia[1]).first<{ object_key: string; content_type: string }>();
       if (!asset) return error("Media not found", 404);
       const object = await env.MEDIA.get(asset.object_key); if (!object) return error("Media not found", 404);
-      return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" } });
+      return new Response(object.body, { headers: { "content-type": asset.content_type, "cache-control": "public, max-age=60", "x-content-type-options": "nosniff" } });
     } catch { return error("Media is temporarily unavailable", 503); }
   }
 
