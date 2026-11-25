@@ -116,10 +116,10 @@ test("overlapping scheduled runs cannot both claim or delete the same rental", a
       statement.run = async () => {
         calls.push({ kind: "run", sql, values: statement.values });
         if (sql.includes("SET cnic_retention_status='purging'")) {
-          const [token, expiresAt, _claimedAt, rentalId, dueAt, reclaimAt] = statement.values;
+          const [token, expiresAt, _claimedAt, rentalId, _dueAt, reclaimAt] = statement.values;
           const eligible = state.status === "scheduled" || state.status === "retry"
             || (state.status === "purging" && (!state.claimExpiresAt || state.claimExpiresAt <= reclaimAt));
-          if (!eligible || rentalId !== "rental-concurrent" || dueAt < "2026-01-01T00:00:00.000Z") return { meta: { changes: 0 } };
+          if (!eligible || rentalId !== "rental-concurrent") return { meta: { changes: 0 } };
           state.status = "purging";
           state.claimToken = token;
           state.claimExpiresAt = expiresAt;
