@@ -612,7 +612,7 @@ A draft approval record is now tracked in `docs/CNIC-RETENTION-APPROVAL-RECORD.m
 
 ## Owner-confirmed CNIC policy update — 21 November 2026
 
-The owner has confirmed that rental applicants must submit both sides of the CNIC for identity matching, rental approval, fraud prevention/security for premium and high-value vehicles, and legitimate rental-history verification. Access is limited to the owner and specifically authorized relevant rental managers/staff. The owner-selected retention period is 90 days after all payments, damages, charges, challans (if any) and other relevant fees/obligations are fully cleared and reconciled. Customer deletion requests are reviewed by staff and decided by the owner or authorized manager, with reasons recorded.
+The owner has confirmed that rental applicants must submit both sides of the CNIC for identity matching, rental approval, fraud prevention/security for premium and high-value vehicles, and legitimate rental-history verification. Access is limited to the owner and specifically authorized relevant rental managers/staff. The owner-selected retention period is 90 days after an authorised owner or manager records final clearance confirming all payments, damages, charges, challans (if any) and other relevant fees/obligations are fully cleared and reconciled. Customer deletion requests are reviewed by staff and decided by the owner or authorized manager, with reasons recorded.
 
 The policy is documented in:
 - `docs/CNIC-RETENTION-APPROVAL-RECORD.md`
