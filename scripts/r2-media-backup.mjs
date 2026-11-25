@@ -13,7 +13,7 @@ const MAX_OBJECT_BYTES = 100 * 1024 * 1024;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 export function isBackupEligibleMediaObject(object) {
   const key = object?.key;
-  return typeof key === "string" && key.length > 0 && !key.startsWith("/") && !key.includes("\\\\") && !key.split("/").includes("..") && !key.startsWith("rental-private/");
+  return typeof key === "string" && key.length > 0 && !key.startsWith("/") && !key.includes(String.fromCharCode(92)) && !key.split("/").includes("..") && !key.startsWith("rental-private/");
 }
 export function deriveMediaKey(hex) {
   if (!/^[a-f0-9]{64}$/i.test(hex)) throw new Error("D1_BACKUP_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters.");
