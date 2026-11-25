@@ -104,6 +104,19 @@ async function restoreDrill(sql,expected){
     "0049_pos_offline_private_cost_snapshot.sql"
    ];
    const foreignKeysBefore=await queryRows(id,"PRAGMA foreign_key_check");
+   const fixtureVariants=await queryRows(id,"SELECT id FROM product_variants LIMIT 1");
+   if(!fixtureVariants.length)throw new Error("Cannot exercise COD expiry backfill because the restored production clone has no product variant fixture.");
+   const fixtureVariantId=String(fixtureVariants[0].id).replace(/'/g,"''");
+   const fixtureSuffix=randomBytes(6).toString("hex");
+   const manualOrderId="hardening-fixture-manual-"+fixtureSuffix;
+   const safepayOrderId="hardening-fixture-safepay-"+fixtureSuffix;
+   const sqlValue=value=>"'"+String(value).replace(/'/g,"''")+"'";
+   const insertOrder=async(id,number,provider)=>api("POST",queryPath,{sql:"INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,payment_provider) VALUES ("+[id,number,"CI fixture","0000000000","Isolated migration test only","Test",100,100,"cod","pending","pending",provider].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   await insertOrder(manualOrderId,"HDG-MANUAL-"+fixtureSuffix,"manual");
+   await insertOrder(safepayOrderId,"HDG-SAFEPAY-"+fixtureSuffix,"safepay");
+   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-manual-"+fixtureSuffix,manualOrderId,fixtureVariantId,1,"reserved","manual"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-safepay-"+fixtureSuffix,safepayOrderId,fixtureVariantId,1,"reserved","safepay"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   const hardeningBaseline=await snapshot(id);
    for(const filename of migrationFiles){
     const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
     await api("POST",queryPath,{sql:migration});
@@ -170,6 +183,8 @@ async function restoreDrill(sql,expected){
    if(await count("SELECT COUNT(*) AS count FROM admin_sessions WHERE last_seen_at IS NULL")!==0)throw new Error("Admin idle-timeout migration left sessions without last_seen_at.");
    if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations r JOIN orders o ON o.id=r.order_id WHERE r.status='reserved' AND r.payment_provider='manual' AND o.order_status='pending' AND o.payment_status='pending' AND o.payment_method='cod' AND o.payment_provider='manual' AND r.expires_at IS NULL")!==0)throw new Error("A pending manual COD reservation was left without an expiry.");
    if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE payment_provider='safepay' AND expires_at IS NOT NULL")!==0)throw new Error("The COD migration unexpectedly added expiry to a Safepay reservation.");
+   if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE order_id='"+manualOrderId+"' AND expires_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','+23 hours') AND expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now','+25 hours')")!==1)throw new Error("The manual COD fixture did not receive its 24-hour expiry.");
+   if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE order_id='"+safepayOrderId+"' AND expires_at IS NOT NULL")!==0)throw new Error("The Safepay fixture was incorrectly assigned a COD expiry.");
    for(const [table,rowCount] of Object.entries(restored.rowCounts)){
     if(migrated.rowCounts[table]!==rowCount)throw new Error("Hardening migrations unexpectedly changed existing row counts in "+table+".");
    }
@@ -197,7 +212,7 @@ async function restoreDrill(sql,expected){
    if(afterGuards.rowCounts.rental_documents!==migrated.rowCounts.rental_documents||afterGuards.rowCounts.rental_requests!==migrated.rowCounts.rental_requests)throw new Error("Guard tests changed rental or CNIC-document row counts.");
    const foreignKeysAfter=await queryRows(id,"PRAGMA foreign_key_check");
    if(stable(foreignKeysAfter)!==stable(foreignKeysBefore))throw new Error("Hardening migrations introduced a foreign-key violation on the restored production clone.");
-   hardeningMigrationRehearsal={status:"passed",migrations:migrationFiles.length,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,existing_row_counts_unchanged:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
+   hardeningMigrationRehearsal={status:"passed",migrations:migrationFiles.length,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,existing_row_counts_unchanged:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,manual_cod_backfill:"24h_verified",safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
   }
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");
   return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null,offline_migration_rehearsal:offlineMigrationRehearsal,hardening_migration_rehearsal:hardeningMigrationRehearsal};
