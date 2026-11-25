@@ -9,6 +9,11 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/deploy-outbox.yml"
+      - "workers/outbox/**"
+      - "worker/index.ts"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.worker.json"
 
 permissions:
   contents: read
