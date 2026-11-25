@@ -2325,7 +2325,7 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     assert.equal(Number.isInteger(variant.available_quantity),true);
   }
   const overflowVariantIds=[];
-  for (let index=0; index<4998; index+=1) {
+  for (let index=0; index<24999; index+=1) {
     const id=crypto.randomUUID();
     overflowVariantIds.push(id);
     db.variants.set(id,{id,product_id:productId,sku:"DV-LIMIT-"+index,size:"LIMIT-"+index,color:"Test",stock_on_hand:1,reserved_quantity:0,is_active:1,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
