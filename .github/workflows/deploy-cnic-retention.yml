@@ -1,14 +1,9 @@
 name: Deploy CNIC retention Worker
 
+# CNIC deletion is a controlled, owner/legal-approved release. Never deploy it
+# automatically on a code push while production schema and legal gates are pending.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "workers/deverve-cnic-retention.js"
-      - "workers/cnic-retention/**"
-      - "migrations/0050_cnic_clearance_retention_workflow.sql"
-      - ".github/workflows/deploy-cnic-retention.yml"
 
 permissions:
   contents: read
@@ -41,8 +36,8 @@ jobs:
             -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/355da876-17c4-4762-a59d-bb85f2e4551b/query" \
             -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
             -H "Content-Type: application/json" \
-            --data '{"sql":"SELECT (SELECT COUNT(*) FROM pragma_table_info('"'rental_requests'"') WHERE name IN ('"'cnic_clearance_at'"','"'cnic_retention_due_at'"','"'cnic_retention_status'"')) AS retention_columns, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'table'"' AND name='"'rental_cnic_holds'"') AS has_hold_table, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_documents_delete_requires_due_clearance'"') AS has_delete_guard, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_requests_no_delete'"') AS preserves_rental_history"}')"
-          jq -e '.success == true and .result[0].results[0].retention_columns == 3 and .result[0].results[0].has_hold_table == 1 and .result[0].results[0].has_delete_guard == 1 and .result[0].results[0].preserves_rental_history == 1' <<<"$response" >/dev/null || {
+            --data '{"sql":"SELECT (SELECT COUNT(*) FROM pragma_table_info('"'rental_requests'"') WHERE name IN ('"'cnic_clearance_at'"','"'cnic_retention_due_at'"','"'cnic_retention_status'"')) AS retention_columns, (SELECT COUNT(*) FROM pragma_table_info('"'rental_requests'"') WHERE name IN ('"'cnic_retention_claim_token'"','"'cnic_retention_claim_expires_at'"')) AS claim_columns, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'table'"' AND name='"'rental_cnic_holds'"') AS has_hold_table, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_documents_delete_requires_due_clearance'"') AS has_delete_guard, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_requests_no_delete'"') AS preserves_rental_history"}')"
+          jq -e '.success == true and .result[0].results[0].retention_columns == 3 and .result[0].results[0].claim_columns == 2 and .result[0].results[0].has_hold_table == 1 and .result[0].results[0].has_delete_guard == 1 and .result[0].results[0].preserves_rental_history == 1' <<<"$response" >/dev/null || {
             echo "::error::Production D1 is not yet ready for the 90-day CNIC retention Worker. No deployment was made."
             exit 1
           }

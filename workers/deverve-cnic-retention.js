@@ -1,13 +1,14 @@
 const MAX_PURGES_PER_RUN = 10;
+const CLAIM_LEASE_MS = 30 * 60 * 1000;
 
-async function recordRetry(env, rentalId, code) {
+async function recordRetry(env, rentalId, code, claimToken) {
   try {
     await env.DB.prepare(
-      "UPDATE rental_requests SET cnic_retention_status='retry',cnic_retention_last_error=?,updated_at=? WHERE id=? AND cnic_retention_status='purging'"
-    ).bind(code, new Date().toISOString(), rentalId).run();
+      "UPDATE rental_requests SET cnic_retention_status='retry',cnic_retention_claim_token=NULL,cnic_retention_claim_expires_at=NULL,cnic_retention_last_error=?,updated_at=? WHERE id=? AND cnic_retention_status='purging' AND cnic_retention_claim_token=?"
+    ).bind(code, new Date().toISOString(), rentalId, claimToken).run();
   } catch {
-    // Keep the row in purging state. The next run safely retries R2 deletion,
-    // which is idempotent, before attempting the D1 metadata transaction again.
+    // Keep the claim until it expires. A later scheduled run can safely reclaim
+    // it; R2 deletion is idempotent and every D1 mutation is claim-token guarded.
   }
 }
 
@@ -27,8 +28,8 @@ export default {
     let dueRows = [];
     try {
       const due = await env.DB.prepare(
-        "SELECT id,cnic_retention_due_at FROM rental_requests r WHERE r.cnic_retention_status IN ('scheduled','retry','purging') AND r.cnic_retention_due_at IS NOT NULL AND r.cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL) ORDER BY r.cnic_retention_due_at,r.id LIMIT ?"
-      ).bind(now, MAX_PURGES_PER_RUN).all();
+        "SELECT id,cnic_retention_due_at FROM rental_requests r WHERE (r.cnic_retention_status IN ('scheduled','retry') OR (r.cnic_retention_status='purging' AND (r.cnic_retention_claim_expires_at IS NULL OR r.cnic_retention_claim_expires_at <= ?))) AND r.cnic_retention_due_at IS NOT NULL AND r.cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL) ORDER BY r.cnic_retention_due_at,r.id LIMIT ?"
+      ).bind(now, now, MAX_PURGES_PER_RUN).all();
       dueRows = due.results ?? [];
     } catch (error) {
       console.error(JSON.stringify({event:"cnic-retention-scan-failed",error_code:"d1_unavailable",expired_upload_tokens:expiredUploadTokens}));
@@ -39,10 +40,13 @@ export default {
     for (const row of dueRows) {
       const rentalId = String(row.id || "");
       if (!rentalId) { skipped++; continue; }
+      const claimToken = crypto.randomUUID();
+      const claimedAt = new Date().toISOString();
+      const claimExpiresAt = new Date(Date.now() + CLAIM_LEASE_MS).toISOString();
       try {
         const claim = await env.DB.prepare(
-          "UPDATE rental_requests SET cnic_retention_status='purging',cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_status IN ('scheduled','retry','purging') AND cnic_retention_due_at IS NOT NULL AND cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL)"
-        ).bind(new Date().toISOString(), rentalId, now).run();
+          "UPDATE rental_requests SET cnic_retention_status='purging',cnic_retention_claim_token=?,cnic_retention_claim_expires_at=?,cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_due_at IS NOT NULL AND cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL) AND (cnic_retention_status IN ('scheduled','retry') OR (cnic_retention_status='purging' AND (cnic_retention_claim_expires_at IS NULL OR cnic_retention_claim_expires_at <= ?)))"
+        ).bind(claimToken, claimExpiresAt, claimedAt, rentalId, now, now).run();
         if (Number(claim.meta?.changes ?? 0) !== 1) { skipped++; continue; }
 
         const docs = await env.DB.prepare(
@@ -57,14 +61,14 @@ export default {
 
         const completedAt = new Date().toISOString();
         const written = await env.DB.batch([
-          env.DB.prepare("DELETE FROM rental_documents WHERE rental_request_id=?").bind(rentalId),
-          env.DB.prepare("UPDATE rental_requests SET cnic_retention_status='deleted',cnic_retention_deleted_at=?,cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_status='purging' AND cnic_retention_due_at<=? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL)").bind(completedAt,completedAt,rentalId,now),
+          env.DB.prepare("DELETE FROM rental_documents WHERE rental_request_id=? AND EXISTS (SELECT 1 FROM rental_requests WHERE id=? AND cnic_retention_status='purging' AND cnic_retention_claim_token=? AND cnic_retention_claim_expires_at>? AND cnic_retention_due_at<=? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL))").bind(rentalId,rentalId,claimToken,completedAt,now),
+          env.DB.prepare("UPDATE rental_requests SET cnic_retention_status='deleted',cnic_retention_claim_token=NULL,cnic_retention_claim_expires_at=NULL,cnic_retention_deleted_at=?,cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_status='purging' AND cnic_retention_claim_token=? AND cnic_retention_claim_expires_at>? AND cnic_retention_due_at<=? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL)").bind(completedAt,completedAt,rentalId,claimToken,completedAt,now),
           env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,NULL,'rental.cnic_retention_deleted','rental_request',?,? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id=? AND cnic_retention_status='deleted' AND cnic_retention_deleted_at=?)").bind(crypto.randomUUID(),rentalId,JSON.stringify({document_count:records.length,retention_due_at:row.cnic_retention_due_at,retention_days:90,storage:"private_r2"}),rentalId,completedAt),
         ]);
         if (Number(written[1]?.meta?.changes ?? 0) !== 1 || Number(written[2]?.meta?.changes ?? 0) !== 1) throw new Error("d1_retention_commit_unverified");
         completed++;
       } catch (error) {
-        await recordRetry(env, rentalId, error instanceof Error && error.message === "object_key_scope_invalid" ? "object_key_scope_invalid" : "r2_or_d1_delete_failed");
+        await recordRetry(env, rentalId, error instanceof Error && error.message === "object_key_scope_invalid" ? "object_key_scope_invalid" : "r2_or_d1_delete_failed", claimToken);
         retried++;
         console.error(JSON.stringify({event:"cnic-retention-delete-retry",rental_id:rentalId,error_code:error instanceof Error && error.message === "object_key_scope_invalid" ? "object_key_scope_invalid" : "r2_or_d1_delete_failed"}));
       }

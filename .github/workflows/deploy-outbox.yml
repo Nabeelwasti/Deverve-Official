@@ -1,13 +1,9 @@
 name: Deploy scheduled outbox Worker
 
+# The outbox changes order/payment state and releases stock. Deploy only as
+# an explicit controlled release after migration 0051 and smoke-test approval.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "workers/outbox/**"
-      - "worker/index.ts"
-      - ".github/workflows/deploy-outbox.yml"
 
 permissions:
   contents: read
