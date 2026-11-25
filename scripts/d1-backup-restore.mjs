@@ -104,19 +104,6 @@ async function restoreDrill(sql,expected){
     "0049_pos_offline_private_cost_snapshot.sql"
    ];
    const foreignKeysBefore=await queryRows(id,"PRAGMA foreign_key_check");
-   const fixtureVariants=await queryRows(id,"SELECT id FROM product_variants LIMIT 1");
-   if(!fixtureVariants.length)throw new Error("Cannot exercise COD expiry backfill because the restored production clone has no product variant fixture.");
-   const fixtureVariantId=String(fixtureVariants[0].id).replace(/'/g,"''");
-   const fixtureSuffix=randomBytes(6).toString("hex");
-   const manualOrderId="hardening-fixture-manual-"+fixtureSuffix;
-   const safepayOrderId="hardening-fixture-safepay-"+fixtureSuffix;
-   const sqlValue=value=>"'"+String(value).replace(/'/g,"''")+"'";
-   const insertOrder=async(id,number,provider)=>api("POST",queryPath,{sql:"INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,payment_provider) VALUES ("+[id,number,"CI fixture","0000000000","Isolated migration test only","Test",100,100,"cod","pending","pending",provider].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
-   await insertOrder(manualOrderId,"HDG-MANUAL-"+fixtureSuffix,"manual");
-   await insertOrder(safepayOrderId,"HDG-SAFEPAY-"+fixtureSuffix,"safepay");
-   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-manual-"+fixtureSuffix,manualOrderId,fixtureVariantId,1,"reserved","manual"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
-   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-safepay-"+fixtureSuffix,safepayOrderId,fixtureVariantId,1,"reserved","safepay"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
-   const hardeningBaseline=await snapshot(id);
    for(const filename of migrationFiles){
     const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
     await api("POST",queryPath,{sql:migration});
@@ -149,6 +136,19 @@ async function restoreDrill(sql,expected){
     "0054_cnic_retention_claim_lease.sql"
    ];
    const foreignKeysBefore=await queryRows(id,"PRAGMA foreign_key_check");
+   const fixtureVariants=await queryRows(id,"SELECT id FROM product_variants LIMIT 1");
+   if(!fixtureVariants.length)throw new Error("Cannot exercise COD expiry backfill because the restored production clone has no product variant fixture.");
+   const fixtureVariantId=String(fixtureVariants[0].id).replace(/'/g,"''");
+   const fixtureSuffix=randomBytes(6).toString("hex");
+   const manualOrderId="hardening-fixture-manual-"+fixtureSuffix;
+   const safepayOrderId="hardening-fixture-safepay-"+fixtureSuffix;
+   const sqlValue=value=>"'"+String(value).replace(/'/g,"''")+"'";
+   const insertOrder=async(id,number,provider)=>api("POST",queryPath,{sql:"INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,payment_provider) VALUES ("+[id,number,"CI fixture","0000000000","Isolated migration test only","Test",100,100,"cod","pending","pending",provider].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   await insertOrder(manualOrderId,"HDG-MANUAL-"+fixtureSuffix,"manual");
+   await insertOrder(safepayOrderId,"HDG-SAFEPAY-"+fixtureSuffix,"safepay");
+   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-manual-"+fixtureSuffix,manualOrderId,fixtureVariantId,1,"reserved","manual"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-safepay-"+fixtureSuffix,safepayOrderId,fixtureVariantId,1,"reserved","safepay"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   const hardeningBaseline=await snapshot(id);
    for(const filename of migrationFiles){
     const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
     await api("POST",queryPath,{sql:migration});
