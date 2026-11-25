@@ -2324,12 +2324,15 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
     assert.equal(Object.hasOwn(variant,"reserved_quantity"),false);
     assert.equal(Number.isInteger(variant.available_quantity),true);
   }
+  const overflowVariantIds=[];
   for (let index=0; index<4998; index+=1) {
     const id=crypto.randomUUID();
+    overflowVariantIds.push(id);
     db.variants.set(id,{id,product_id:productId,sku:"DV-LIMIT-"+index,size:"LIMIT-"+index,color:"Test",stock_on_hand:1,reserved_quantity:0,is_active:1,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
   }
   const oversizedCatalogue=await handleRequest(new Request(origin+"/api/products?limit=12"),env(db));
   assert.equal(oversizedCatalogue.status,503,"an oversized variant response must fail closed instead of silently dropping catalogue variants");
+  for (const id of overflowVariantIds) db.variants.delete(id);
 
   const payload = {
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
