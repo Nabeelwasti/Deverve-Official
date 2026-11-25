@@ -1248,3 +1248,13 @@
 
 
 .pos-offline-warning{margin:12px 0;padding:12px 14px;border:1px dashed #b45309;border-radius:10px;background:#fff7ed;color:#7c2d12}.pos-offline-warning strong{display:block;letter-spacing:.06em;font-size:.85rem}.pos-offline-warning p{margin:6px 0 0;font-size:.9rem;line-height:1.45}
+
+
+.admin-rental-retention{display:grid;gap:10px;padding:14px;margin:14px 0;border:1px solid var(--admin-border,#d8e0e8);border-radius:12px;background:var(--admin-panel-soft,#f7f9fb)}
+.admin-rental-retention>p{margin:0;font-size:13px;line-height:1.5}
+.admin-rental-retention form{display:grid;gap:9px;padding-top:10px;border-top:1px solid var(--admin-border,#d8e0e8)}
+.admin-rental-retention form>strong{font-size:13px}
+.admin-rental-retention form label{display:grid;gap:5px;font-size:13px}
+.admin-rental-retention form label:has(input[type="checkbox"]){display:flex;align-items:flex-start;gap:8px}
+.admin-rental-retention input:not([type="checkbox"]),.admin-rental-retention textarea{width:100%;min-width:0;padding:9px;border:1px solid var(--admin-border,#cbd5e1);border-radius:8px;background:var(--admin-input,#fff);color:inherit;font:inherit}
+.admin-rental-retention form button{justify-self:start}
