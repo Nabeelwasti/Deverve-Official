@@ -31,7 +31,7 @@ The following operational policy was expressly confirmed by the owner:
 ### 2.3 Retention and deletion clock
 
 - The owner-selected retention rule is **90 days after successful clearance of all amounts and obligations relating to the rental**.
-- The 90-day clock starts only when an authorized staff member records that all rental payments, damages, charges, challans (if any), penalties and other applicable fees have been fully settled and reconciled. Vehicle return alone, booking completion, or partial payment does not start the clock.
+- The 90-day clock starts only when an authorised owner or manager records final clearance confirming that all rental payments, deposits, damages, charges, challans (if any), penalties and other applicable fees have been fully settled and reconciled. Vehicle return alone, booking completion, or partial payment does not start the clock.
 - If any amount, damage assessment, challan, dispute, claim, investigation or other relevant obligation remains unresolved, the clearance event must not be recorded and the deletion clock must not start.
 - When the 90-day period expires, CNIC images should enter the approved deletion workflow and be securely deleted from primary storage and managed copies/backups according to the technically verified backup-expiry schedule, unless a documented lawful hold or other counsel-confirmed legal requirement applies.
 - A legal hold must identify its reason, authorizing owner/manager, scope, start date, review date and release decision. Holds must be reviewed periodically and lifted promptly when no longer justified.
