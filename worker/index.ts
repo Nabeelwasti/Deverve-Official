@@ -1853,10 +1853,10 @@ async function rentalPreviewHmacKeyForSecret(secret:string):Promise<CryptoKey|nu
  return crypto.subtle.importKey("raw",material,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"]);
 }
 async function rentalPreviewHmacKey(env:Env):Promise<CryptoKey|null>{
- return rentalPreviewHmacKeyForSecret(env.CNIC_PREVIEW_HMAC_KEY?.trim()||env.ADMIN_BOOTSTRAP_TOKEN?.trim()||"");
+ return rentalPreviewHmacKeyForSecret(env.CNIC_PREVIEW_HMAC_KEY?.trim()||"");
 }
 async function rentalPreviewHmacKeys(env:Env):Promise<CryptoKey[]>{
- const secrets=[env.CNIC_PREVIEW_HMAC_KEY?.trim()||"",env.ADMIN_BOOTSTRAP_TOKEN?.trim()||""].filter((secret,index,all)=>secret.length>=24&&all.indexOf(secret)===index);
+ const secrets=[env.CNIC_PREVIEW_HMAC_KEY?.trim()||""].filter(secret=>secret.length>=24);
  const keys=await Promise.all(secrets.map(rentalPreviewHmacKeyForSecret));
  return keys.filter((key):key is CryptoKey=>Boolean(key));
 }
