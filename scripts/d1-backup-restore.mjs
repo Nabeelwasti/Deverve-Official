@@ -164,7 +164,7 @@ async function restoreDrill(sql,expected){
    const preIndexes=new Set((await queryRows(id,"SELECT name FROM sqlite_master WHERE type='index'")).map(row=>row.name));
    const preTriggers=new Set((await queryRows(id,"SELECT name FROM sqlite_master WHERE type='trigger'")).map(row=>row.name));
    const schemaAlreadyHardened=expectedTables.every(name=>preTables.has(name))&&requiredRentalColumns.every(name=>preRentalColumns.has(name))&&preReservationColumns.has("expires_at")&&requiredIndexes.every(name=>preIndexes.has(name))&&requiredTriggers.every(name=>preTriggers.has(name))&&!preTriggers.has("trg_rental_documents_no_delete");
-   const anyHardeningMarker=expectedTables.some(name=>preTables.has(name))||preRentalColumns.has("cnic_clearance_at")||preReservationColumns.has("expires_at")||preTriggers.has("trg_rental_documents_delete_requires_due_clearance");
+   const anyHardeningMarker=expectedTables.some(name=>preTables.has(name))||preRentalColumns.has("cnic_clearance_at")||preReservationColumns.has("expires_at")||requiredIndexes.some(name=>preIndexes.has(name))||requiredTriggers.some(name=>preTriggers.has(name))||preTriggers.has("trg_rental_documents_delete_requires_due_clearance");
    if(anyHardeningMarker&&!schemaAlreadyHardened)throw new Error("Restored production clone contains a partial or inconsistent 0050–0054 schema; refusing to guess which migrations ran.");
    let migrationsApplied=0;
    if(!schemaAlreadyHardened){
