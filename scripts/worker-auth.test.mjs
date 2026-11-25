@@ -757,7 +757,7 @@ test("public enquiry submissions accept complaint, DMCA and other important cont
   for (const contactType of ["complaint","dmca","legal","business","other"]) {
     const response = await handleRequest(request("/api/enquiries", "POST", {
       enquiryType: contactType, name: "Test Customer", phone: "+923001234567",
-      email: "customer@example.com", message: "Please review this important enquiry.",
+      email: "customer@example.com", message: "Please review this important enquiry.", turnstile_token: "test-valid-token",
     }), env(db));
     assert.equal(response.status, 201);
     const saved = [...db.enquiries.values()].at(-1);
@@ -766,7 +766,7 @@ test("public enquiry submissions accept complaint, DMCA and other important cont
   }
   const invalid = await handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "unknown", name: "Test Customer", phone: "+923001234567",
-    message: "This type should be rejected.",
+    message: "This type should be rejected.", turnstile_token: "test-valid-token",
   }), env(db));
   assert.equal(invalid.status, 400);
 });
@@ -775,7 +775,7 @@ test("public enquiry submissions are rate-limited per client IP with retry guida
   const db = new FakeD1();
   const submit = (ip) => handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "general", name: "Test Customer", phone: "+923001234567",
-    email: "customer@example.com", message: "Please contact me about your products.",
+    email: "customer@example.com", message: "Please contact me about your products.", turnstile_token: "test-valid-token",
   }, { "cf-connecting-ip": ip }), env(db));
   for (let index = 0; index < 8; index += 1) {
     const response = await submit("203.0.113.9");
