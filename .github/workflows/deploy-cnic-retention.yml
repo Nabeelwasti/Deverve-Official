@@ -1,0 +1,55 @@
+name: Deploy CNIC retention Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "workers/deverve-cnic-retention.js"
+      - "workers/cnic-retention/**"
+      - "migrations/0050_cnic_clearance_retention_workflow.sql"
+      - ".github/workflows/deploy-cnic-retention.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deverve-cnic-retention-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Verify production CNIC retention schema before deployment
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing Cloudflare API token"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing Cloudflare account ID"; exit 1; }
+          response="$(curl --fail-with-body --silent --show-error --max-time 20 \
+            -X POST "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database/355da876-17c4-4762-a59d-bb85f2e4551b/query" \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data '{"sql":"SELECT (SELECT COUNT(*) FROM pragma_table_info('"'rental_requests'"') WHERE name IN ('"'cnic_clearance_at'"','"'cnic_retention_due_at'"','"'cnic_retention_status'"')) AS retention_columns, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'table'"' AND name='"'rental_cnic_holds'"') AS has_hold_table, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_documents_delete_requires_due_clearance'"') AS has_delete_guard, EXISTS(SELECT 1 FROM sqlite_master WHERE type='"'trigger'"' AND name='"'trg_rental_requests_no_delete'"') AS preserves_rental_history"}')"
+          jq -e '.success == true and .result[0].results[0].retention_columns == 3 and .result[0].results[0].has_hold_table == 1 and .result[0].results[0].has_delete_guard == 1 and .result[0].results[0].preserves_rental_history == 1' <<<"$response" >/dev/null || {
+            echo "::error::Production D1 is not yet ready for the 90-day CNIC retention Worker. No deployment was made."
+            exit 1
+          }
+      - name: Type-check Worker and application
+        run: npm run check
+      - name: Deploy scheduled CNIC retention Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@4.45.0 deploy --config workers/cnic-retention/wrangler.toml
