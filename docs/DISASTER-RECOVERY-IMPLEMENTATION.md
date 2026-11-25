@@ -1,9 +1,9 @@
 # De VERVE disaster recovery architecture and release gates
 
-**Last reviewed:** 20 November 2026  
+**Last reviewed:** 25 November 2026  
 **Production database:** `deverve-production` (Cloudflare D1)  
 **Primary object store:** `deverve-media-private` (Cloudflare R2, APAC)  
-**Current release state:** recovery design documented; unattended off-site backup and verified restore are not yet active. Cloudflare Pages deployment remains disabled.
+**Current release state:** encrypted daily D1 backup + isolated restore and encrypted private-R2 media backup + per-object read-back/decryption verification are active and verified in GitHub Actions. Production Pages is deployed with automatic Git deployments paused. Independent off-account backup, offline copy, key escrow, full Worker-to-temporary-D1 runtime acceptance and owner/legal/device acceptance remain open.
 
 > This document is an implementation specification and operational status record. It does not claim that a backup has been created, that a restore has succeeded, or that recovery objectives have been achieved.
 
@@ -124,31 +124,38 @@ Every backup run must report:
 
 A failed job must alert the owner through a configured business notification channel, retry transient failures with bounded backoff, preserve the last known-good backup and never delete the source object. If the latest successful backup exceeds the RPO, display a clear recovery warning in the owner dashboard.
 
-## 7. Current verified status — 20 November 2026
+## 7. Current verified status — 25 November 2026
 
-- Production D1 was inspected read-only during the project audit. No production data was changed by that inspection.
-- Production contains the expected schema structures for AI task continuity and order inventory reservations.
-- The live R2 bucket is private; its managed public `r2.dev` endpoint is disabled.
-- An enabled indefinite R2 Bucket Lock rule protects the `rental-private/` prefix. This protects the matching evidence objects against overwrite/delete while the rule remains enabled; it does not back up D1 or create an independent provider copy.
-- The Cloudflare account Queue listing returned no queues. The Safepay queue producer/consumer and DLQ remain unconfigured.
-- The existing secure-backup operations document describes a manual encrypted CNIC and D1 export process. Dropbox folder structure exists, but the De VERVE Worker does not have a Dropbox API token or unattended upload integration.
-- No scheduled D1 Workflow export, dedicated backup bucket, automated media/evidence replication, independent encrypted off-site D1 archive or successful isolated restore drill has been verified.
-- No production backup export was initiated during this implementation because Cloudflare documents that D1 export can temporarily block database queries; a controlled low-traffic window and a configured destination are required.
+- Production D1 is still the authoritative live database. All recent production inspections were read-only; no production D1 migration or business-data write was performed.
+- The dedicated APAC R2 bucket `deverve-db-backups` is private. Its managed public `r2.dev` endpoint is disabled and it has no custom domain. The source bucket `deverve-media-private` is also private with public domains disabled.
+- GitHub Actions workflow `.github/workflows/d1-backup-restore.yml` now runs the encrypted D1 backup/isolated restore drill and private R2 media backup. It runs on workflow dispatch, relevant main-branch pushes and daily at 21:17 UTC (02:17 Pakistan time). GitHub schedule dispatch can be delayed; on-time execution must be monitored rather than assumed.
+- Latest verified backup run: [GitHub Actions #45517680549](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45517680549), completed successfully on 25 November 2026. D1 archive `d1/encrypted/deverve-production-20261125T002339Z.dvbackup` is AES-256-GCM encrypted, R2 read-back verified, and restored into a temporary D1 database. Restore verification passed for 66 tables; the temporary database was deleted.
+- The same run encrypted and verified all 40 source R2 objects (38 catalogue objects and 2 rental-private CNIC images), totalling 20,001,859 plaintext bytes. Every encrypted object was read back, decrypted and SHA-256 checked; the source inventory was rechecked for stability.
+- The media manifest is also encrypted with the HKDF-derived AES-256-GCM media key and stored as `.dvmanifest`. The prior plaintext media inventory manifest was deleted only after the encrypted replacement was verified. No customer image bytes or private object paths are stored in a plaintext media manifest.
+- R2 lifecycle rules expire encrypted D1/media archives and manifests after 90 days, legacy plaintext D1 SQL snapshots after 30 days, and incomplete multipart uploads after 7 days. Review these periods against the approved CNIC retention policy before claiming that managed backup copies satisfy the 90-day post-clearance deletion promise.
+- A legacy plaintext D1 SQL object `d1/deverve-production-2026-11-21.sql` (139,921 bytes) remains in the private backup bucket. Do not delete it until the owner has independently confirmed recovery-key custody and the encrypted backup restore procedure. Its configured lifecycle is 30 days.
+- The encryption key is present as a GitHub Actions secret and the live workflow succeeds. An independently controlled owner password-manager escrow and separate recovery copy have **not** been verified.
+- No unattended Dropbox/Google Drive copy, independent cloud account, disconnected offline copy or full account-loss recovery path has been verified.
+- The production Pages application is live on `deverve-official.pages.dev`; automatic Git deployments remain disabled. A controlled production deployment and the production smoke workflow passed.
+- Offline POS migrations 0045–0049 remain unapplied to production. The offline checkout flag and P-256 signing keys remain absent. The production Worker has not yet been exercised end-to-end against a temporary Cloudflare D1 because the available Cloudflare API token lacks Worker-script deployment permission.
+- The Safepay queue producer/consumer and DLQ remain unconfigured.
 
-**Release verdict: disaster recovery is not production-ready yet.** The architecture is specified, but the automated jobs, secrets, off-site copy, alerts and restore drill remain implementation gates. Do not describe the system as protected by automated disaster recovery until all gates pass.
+**Release verdict:** automated encrypted D1 and R2 backup/restore checks are now working within the Cloudflare account. Full disaster recovery is still **not production-ready** until key custody, independent off-account/offline copies, alerting, account-loss recovery and the approved CNIC backup-expiry process are verified.
 
-## 8. Required configuration before activation
+## 8. Remaining configuration before full disaster-recovery acceptance
 
-- [ ] Create a dedicated private R2 backup bucket in the approved region.
-- [ ] Approve backup retention and configure lock rules only for the dedicated backup prefixes.
-- [ ] Implement and deploy the scheduled D1 export Workflow in a non-production environment first.
-- [ ] Create a dedicated Dropbox API app with least-privilege scopes and a separate business security identity.
-- [ ] Add backup encryption key, key version, Dropbox refresh token and required Cloudflare account/database identifiers as Worker secrets.
-- [ ] Implement the R2 object inventory/copy and event-triggered private evidence backup.
-- [ ] Implement checksums, manifests, owner alerts, retry policy and backup-age dashboard.
-- [ ] Perform a full isolated D1 + R2 + CNIC evidence restore drill.
-- [ ] Record measured RPO/RTO and obtain business owner sign-off.
-- [ ] Only then consider a separately authorized production deployment.
+- [x] Dedicated private APAC R2 backup bucket `deverve-db-backups` created; public access disabled.
+- [x] R2 lifecycle rules configured for encrypted backups/manifests (90 days), legacy plaintext D1 snapshot (30 days) and incomplete multipart uploads (7 days).
+- [x] Scheduled/dispatchable GitHub Actions D1 export workflow deployed and a live isolated restore passed.
+- [x] Backup encryption key and Cloudflare identifiers configured as GitHub Actions secrets; the key is never stored in Git or chat.
+- [x] Daily R2 media inventory/copy, per-object AES-GCM encryption, read-back/decryption/SHA-256 verification and encrypted manifest implemented.
+- [ ] Owner independently confirms encryption-key escrow in a password manager and a separate recovery copy.
+- [ ] Create a dedicated Dropbox API app with least-privilege scopes and a separate business security identity; upload and verify encrypted backups off-account.
+- [ ] Add a separate disconnected encrypted offline copy.
+- [ ] Implement owner-visible failure/backup-age alerts and monthly/quarterly restore exercises.
+- [ ] Reconcile R2 backup retention with the CNIC 90-day post-clearance policy; counsel/owner approval is required before enabling document deletion or changing evidence retention.
+- [ ] Complete a full application-level D1 + R2 + private CNIC recovery exercise and record measured RPO/RTO.
+- [ ] Obtain business-owner acceptance of the recovery plan and the actual key-custody procedure.
 
 ## 9. Official technical references
 
@@ -176,11 +183,11 @@ A subsequent Cloudflare API read-back and non-destructive R2 object comparison r
 
 ## 11. Immediate next implementation gates
 
-1. Build and test the scheduled D1 export Workflow against a non-production D1 database first; use bounded polling, retry/backoff, an overlap guard and a low-traffic schedule.
-2. Encrypt each backup artifact with AES-256-GCM using a unique nonce and a key held outside Cloudflare and Dropbox; record only the key version.
-3. Upload the encrypted D1 dump and manifest under timestamped, write-once object keys in `deverve-db-backups/d1/`. Do not overwrite a previous successful backup.
-4. Add an independently controlled Dropbox destination with a dedicated least-privilege API app and MFA-protected business identity. Verify Dropbox's returned content hash against its documented block-hash algorithm; a successful HTTP upload alone is not verification.
-5. Add a separate offline encrypted copy and test key escrow/recovery.
-6. Perform an isolated D1 import into a newly created non-production database, validate schema/data/integrity and exercise application smoke tests. Keep production untouched.
-7. Add a monthly automated restore smoke test, quarterly full restore exercise and owner-visible alert when the last successful backup exceeds the target RPO.
-8. Only after the isolated process passes should a production backup schedule be enabled, during a controlled quiet window and with a documented maintenance notice/monitoring plan.
+1. [x] Scheduled/dispatchable encrypted D1 export and isolated restore drill implemented and verified.
+2. [x] AES-256-GCM encryption, unique nonces, HKDF-separated media key and R2 read-back/checksum verification implemented.
+3. [x] Timestamped encrypted D1 and R2 media snapshots stored in the private backup bucket; latest D1 restore passed and all 40 media objects were decrypted/verified.
+4. [ ] Add an independently controlled Dropbox destination with a dedicated least-privilege API app and MFA-protected business identity. Verify the provider's content hash; an HTTP upload alone is not verification.
+5. [ ] Add a separate offline encrypted copy and verify owner key escrow/recovery.
+6. [x] Isolated D1 import/restore, schema/data integrity checks and production-backup-clone offline migration rehearsal passed. Keep production untouched.
+7. [ ] Add owner-visible failure/backup-age alerts, monthly automated restore smoke tests and quarterly full recovery exercises.
+8. [ ] Review backup retention with the CNIC 90-day post-clearance policy and ensure private evidence copies expire/purge consistently. Do not weaken existing evidence controls or enable automatic deletion before legal/owner approval.
