@@ -111,7 +111,7 @@ interface ProductRow {
   seo_title: string;
   seo_description: string;
 }
-interface PublicVariantRow { id: string; product_id: string; sku: string | null; size: string; color: string; stock_on_hand: number; reserved_quantity: number; }
+interface PublicVariantRow { id: string; product_id: string; sku: string | null; size: string; color: string; available_quantity: number; }
 interface AdminRow {
   id: string;
   email: string;
@@ -4997,7 +4997,7 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     const body = await readJson(request, 8_000);
     if (!body) return error("Please submit valid account details", 400);
     if (cleanText(body.website, 120)) return json({ accepted: true });
-    if (body.turnstile_token && !(await verifyTurnstile(request, body.turnstile_token))) return error("The security check could not be verified. Please retry it.", 403);
+    if (!body.turnstile_token || !(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
     const email = cleanText(body.email, 160).toLowerCase();
     const fullName = cleanText(body.full_name, 100);
     const phone = cleanText(body.phone, 24);
@@ -6511,8 +6511,7 @@ export function buildPosStockGuard(items: ReadonlyArray<{ variant_id: string; qu
   };
 }
 
-export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecutionContext): Promise<Response> {
-  if(ctx)try{ctx.waitUntil(processEnquiryEmailQueue(env));}catch{}
+export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExecutionContext): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: { "allow": "GET, POST, OPTIONS" } });
@@ -6601,12 +6600,11 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
         mediaByProduct.set(productId, [...(mediaByProduct.get(productId) ?? []), { id: media.id, media_type: media.media_type, mime_type: media.mime_type, alt_text: media.alt_text, caption: media.caption, is_primary: media.is_primary, color: media.color || "", url: "/media/" + media.id }]);
       }
       const variants = await env.DB.prepare(
-        "SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 500",
+        "SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 5000",
       ).bind(...productIds).all<PublicVariantRow>();
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variants.results ?? []) {
-        const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
-        variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), { ...variant, available_quantity: available }]);
+        variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), variant]);
       }
       return json({ products: products.map((product) => ({ ...product, variants: variantsByProduct.get(product.id) ?? [], media: mediaByProduct.get(product.id) ?? [] })) });
     } catch {
@@ -6648,7 +6646,7 @@ export async function handleRequest(request: Request, env: Env, ctx?:WorkerExecu
 
     // Honeypot field: bots that fill hidden fields receive a neutral success response.
     if (cleanText(body.website, 120)) return json({ accepted: true });
-    if (body.turnstile_token && !(await verifyTurnstile(request, body.turnstile_token))) return error("The security check could not be verified. Please retry it.", 403);
+    if (!body.turnstile_token || !(await verifyTurnstile(request, body.turnstile_token))) return error("Please complete the security check and try again.", 403);
     const enquiryType = cleanText(body.enquiryType, 20);
     const customerName = cleanText(body.name, 100);
     const phone = cleanText(body.phone, 24);
