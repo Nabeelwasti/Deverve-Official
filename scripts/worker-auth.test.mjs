@@ -1,6 +1,6 @@
-test("website enquiries can be submitted without a blocked Turnstile widget and are queued for owner email", async () => {
+test("website enquiries are queued for owner email after Turnstile verification", async () => {
  const db=new FakeD1();
- const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json","cf-connecting-ip":"203.0.113.88"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:""})}),env(db));
+ const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json","cf-connecting-ip":"203.0.113.88"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:"",turnstile_token:"test-valid-token"})}),env(db));
  assert.equal(response.status,201);assert.equal((await response.json()).accepted,true);assert.equal(db.enquiries.size,1);assert.equal(db.enquiryEmailQueue.size,1);assert.equal([...db.enquiryEmailQueue.values()][0].status,"queued");
 });
 
@@ -1190,9 +1190,9 @@ class FakeStatement {
     if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.color, pm.position, pm.is_primary FROM product_media_assets")) {
       return { success: true, results: [] };
     }
-    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {
+    if (q.startsWith("SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1")) {
       const ids = new Set(v);
-      return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+      return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ id:row.id, product_id:row.product_id, sku:row.sku, size:row.size, color:row.color, available_quantity:Math.max(0,Number(row.stock_on_hand??0)-Number(row.reserved_quantity??0)) })) };
     }
     if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available'")) return { success: true, results: [...this.db.vehicles.values()].filter((row) => row.status === "available") };
     if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles")) return { success: true, results: [...this.db.vehicles.values()] };
