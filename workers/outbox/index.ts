@@ -1,5 +1,6 @@
 import {
   processEnquiryEmailQueue,
+  processExpiredCodReservations,
   processNotificationOutbox,
   processPosReceiptOutbox,
   type Env,
@@ -16,6 +17,7 @@ interface ExecutionContext {
 export default {
   scheduled(_controller: ScheduledController, env: Env, context: ExecutionContext) {
     const tasks = [
+      processExpiredCodReservations(env),
       processEnquiryEmailQueue(env),
       processNotificationOutbox(env),
       processPosReceiptOutbox(env),
