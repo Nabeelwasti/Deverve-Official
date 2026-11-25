@@ -1093,6 +1093,9 @@ class FakeStatement {
     if (q.startsWith("SELECT id, status FROM vehicles WHERE id = ?")) { const row = this.db.vehicles.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
     if (q.startsWith("SELECT COUNT(*) AS count FROM rental_requests WHERE vehicle_id = ? AND status IN")) return { count: [...this.db.rentalRequests.values()].filter(row => row.vehicle_id === v[0] && ["requested","reviewing","confirmed","active"].includes(row.status)).length };
     if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status, admin_note FROM rental_requests WHERE id = ?") || q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id,status,cnic_clearance_at,cnic_retention_status,cnic_retention_due_at FROM rental_requests WHERE id=?")) return this.db.rentalRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT COUNT(*) AS count FROM rental_documents WHERE rental_request_id=?")) return {count:[...this.db.rentalDocuments.values()].filter(item=>item.rental_request_id===v[0]&&["cnic_front","cnic_back"].includes(item.document_side)).length};
+    if (q.startsWith("SELECT id FROM rental_cnic_holds WHERE rental_request_id=? AND released_at IS NULL")) return null;
     if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token")) {
@@ -3443,4 +3446,69 @@ test("public website translation enforces an atomic account-wide daily inference
   }), testEnv);
   assert.equal(blocked.status, 429);
   assert.equal(calls, 20);
+});
+
+test("only an owner or manager can record completed-rental CNIC clearance with every reconciliation check", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared",cnic_retention_due_at:null});
+  db.rentalDocuments.set("front",{id:"front",rental_request_id:rentalId,document_side:"cnic_front"});
+  db.rentalDocuments.set("back",{id:"back",rental_request_id:rentalId,document_side:"cnic_back"});
+  let statements=[];
+  db.batch=async(items)=>{statements=items.map(item=>item.sql);return [{meta:{changes:1}},{meta:{changes:1}}];};
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final bank reconciliation and vehicle inspection signed off."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.retention_days,90);
+  assert.equal(result.retention_status,"scheduled");
+  assert.equal(new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime(),90*86400000);
+  assert.match(statements[0],/cnic_retention_status='scheduled'/);
+  assert.match(statements[1],/rental\.cnic_clearance_recorded/);
+});
+
+test("CNIC clearance fails closed when any financial, damage, challan, fee or dispute check is missing", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  let batches=0;db.batch=async()=>{batches++;return [];};
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,400);
+  assert.equal(batches,0);
+});
+
+test("CNIC clearance cannot begin until the rental is completed", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"active",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,409);
+});
+
+test("rental staff cannot approve CNIC clearance or retention holds", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const admin=[...db.admins.values()][0];admin.role="rental";
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,403);
 });
