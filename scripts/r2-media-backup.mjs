@@ -108,7 +108,7 @@ async function main() {
   const totalBytes = objects.reduce((sum, object) => sum + Number(object.size || 0), 0);
   if (totalBytes > MAX_TOTAL_BYTES) throw new Error("R2 media inventory exceeds the configured 512 MiB safety limit.");
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-  const manifestKey = "media-manifests/deverve-media-" + stamp + ".json";
+  const manifestKey = "media-manifests/deverve-media-" + stamp + ".dvmanifest";
   const records = [];
   let verifiedBytes = 0;
 
@@ -173,11 +173,23 @@ async function main() {
     source_commit: process.env.D1_BACKUP_SOURCE_COMMIT || process.env.GITHUB_SHA || null,
     objects: records
   };
-  await putObject(backupBucket, manifestKey, Buffer.from(JSON.stringify(manifest, null, 2)), "application/json");
+  // Object keys and custom metadata can reveal private rental/document relationships.
+  // Encrypt the manifest as well as each media payload; never leave a plaintext inventory in R2.
+  const encryptedManifest = encryptMedia(Buffer.from(JSON.stringify(manifest)), key);
+  await putObject(backupBucket, manifestKey, encryptedManifest, "application/octet-stream");
   const manifestReadback = await getObject(backupBucket, manifestKey);
-  const parsed = JSON.parse(manifestReadback.bytes.toString("utf8"));
-  if (parsed.format !== manifest.format || parsed.object_count !== records.length || parsed.all_objects_readback_and_decryption_verified !== true) {
-    throw new Error("Media backup manifest read-back verification failed.");
+  if (sha256(manifestReadback.bytes) !== sha256(encryptedManifest)) {
+    throw new Error("Encrypted media manifest R2 read-back checksum failed.");
+  }
+  const parsed = JSON.parse(decryptMedia(manifestReadback.bytes, key).toString("utf8"));
+  if (
+    parsed.format !== manifest.format ||
+    parsed.object_count !== records.length ||
+    parsed.objects?.length !== records.length ||
+    parsed.all_objects_readback_and_decryption_verified !== true ||
+    parsed.objects.some((record) => record.verified !== true)
+  ) {
+    throw new Error("Encrypted media backup manifest read-back verification failed.");
   }
   console.log(JSON.stringify({
     backup: "encrypted_media_snapshot_verified",
