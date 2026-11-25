@@ -120,7 +120,7 @@ jobs:
           set -euo pipefail
           url="https://deverve-cnic-retention.wastinabeel99.workers.dev/health"
           body="$(curl --fail --silent --show-error --max-time 15 "$url")"
-          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"document_retention":"indefinite"'* || "$body" != *'"automatic_document_deletion":false'* ]]; then
+          if [[ "$body" != *'"status":"ok"'* || "$body" != *'"database_connected":true'* || "$body" != *'"private_storage_binding":true'* || "$body" != *'"document_retention":"90_days_after_owner_or_manager_clearance"'* || "$body" != *'"automatic_deletion_requires_due_clearance_and_no_active_hold":true'* ]]; then
             echo "CNIC retention service health check failed: $body"
             exit 1
           fi
@@ -154,7 +154,7 @@ jobs:
             "Referrer-Policy: strict-origin-when-cross-origin"
             "X-Frame-Options: DENY"
             "Permissions-Policy: camera=(self), microphone=(self), geolocation=()"
-            "Strict-Transport-Security: max-age=31536000"
+            "Strict-Transport-Security: max-age=63072000; includeSubDomains"
           )
           for header in "${required[@]}"; do
             if ! grep -qiF "$header" <<<"$headers"; then
