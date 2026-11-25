@@ -1855,7 +1855,8 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_sessions")) {
-      this.db.sessions.set(v[0], { id: v[0], admin_user_id: v[1], token_hash: v[2], expires_at: v[3], revoked_at: null });
+      const now = new Date().toISOString();
+      this.db.sessions.set(v[0], { id: v[0], admin_user_id: v[1], token_hash: v[2], created_at: now, last_seen_at: now, expires_at: v[3], revoked_at: null });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_login_attempts")) {
