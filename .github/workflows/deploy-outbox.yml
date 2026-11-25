@@ -47,12 +47,23 @@ jobs:
           }
       - name: Type-check Worker and application
         run: npm run check
-      - name: Build exact production outbox Worker bundle without deploying
+      - name: Build and isolate exact production outbox Worker bundle without deploying
+        shell: bash
         run: |
-          rm -rf outbox-worker-bundle
-          npx --yes wrangler@4.45.0 deploy --dry-run --outdir outbox-worker-bundle --config workers/outbox/wrangler.toml
-          test -d outbox-worker-bundle || { echo "::error::Wrangler did not produce an isolated Worker bundle."; exit 1; }
-          grep -R -q "deverve-outbox-drain" outbox-worker-bundle || { echo "::error::Expected outbox Worker entrypoint not found in bundle."; find outbox-worker-bundle -maxdepth 2 -type f -print; exit 1; }
+          set -euo pipefail
+          rm -rf outbox-worker-bundle .wrangler/outbox-build
+          npx --yes wrangler@4.45.0 deploy --dry-run --outdir .wrangler/outbox-build --config workers/outbox/wrangler.toml
+          mkdir -p outbox-worker-bundle
+          worker_file="$(grep -R -l --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --include='*.js' 'deverve-outbox-drain' . | head -n 1 || true)"
+          if [[ -z "$worker_file" ]]; then
+            echo "::error::Expected compiled outbox Worker code was not found."
+            find . -path './node_modules' -prune -o -path './.git' -prune -o -type f -mmin -5 -size +1k -print
+            exit 1
+          fi
+          cp "$worker_file" outbox-worker-bundle/index.js
+          test -s outbox-worker-bundle/index.js
+          echo "Verified compiled Worker entrypoint: $worker_file"
+          wc -c outbox-worker-bundle/index.js
       - name: Upload immutable outbox Worker bundle for controlled API deployment
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
