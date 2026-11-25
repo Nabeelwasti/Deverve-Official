@@ -1,3 +1,32 @@
+# Latest production reconciliation — 25 November 2026 (post-PR #76)
+
+This section is authoritative and supersedes all older snapshots below.
+
+## Verified code and production state
+- PR #76 is merged to `main` as [`eb6ae7c`](https://github.com/Nabeelwasti/Deverve-Official/commit/eb6ae7caea3332d29b1a4ac4e7686862dab3d35e). Its exact-head Build/type-check run [45593971942](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45593971942) passed, including the storefront Playwright browser suite. CodeQL and Gitleaks run [45593971938](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45593971938) passed. The available GitHub integration reports no separate post-merge status checks for the merge commit.
+- A fresh Cloudflare Pages API read confirms the project remains connected to GitHub `main`, but production and preview auto-deployments are disabled. The live production deployment remains [`2cdb7e70`](https://2cdb7e70.deverve-official.pages.dev), from commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`; it does not include current `main`.
+- The production Pages bindings still list the existing `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1`, D1 `deverve-production`, private R2 `deverve-media-private`, and translation service binding. Dedicated `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` are absent. Do not deploy current `main` until both purpose-separated keys and recovery custody are provisioned and verified.
+- Fresh read-only D1 metadata confirms 66 application tables, 1,298,432 bytes, APAC primary. Migrations `0050`–`0054` remain unapplied: CNIC hold/retention/claim fields and tables, COD reservation expiry, and related indexes are absent. Offline POS migrations `0045`–`0049` remain a separate release and must not be applied with this hardening deployment.
+- Fresh aggregate production counts: 1 open POS session, 0 pending manual COD reservations, 1 rental request and 2 rental-document metadata rows. No customer PII or document object content was read. No production D1 writes were made.
+- The production Worker inventory remains `deverve-cnic-retention` (legacy daily cron), `deverve-site-translation`, and `deverve-turnstile-verify`; `deverve-outbox` is absent. Preserve the existing CNIC R2 indefinite-lock rule.
+- The owner has confirmed legal approval for the CNIC retention policy. Before enabling deletion or changing the R2 lock, attach and verify the approval artifact, scope, effective date and approved wording in the controlled policy record.
+- A temporary, isolated runtime permission probe succeeded in creating a throwaway D1 database, creating its test table/row, deploying a throwaway Worker with a D1 binding, and deleting both resources successfully. The attempted external HTTP invocation was blocked by the execution environment with a 403 “requests ... are not allowed”; this is not evidence of an application Worker response. No temporary resources remain. The previous GitHub Actions Cloudflare token's Worker-create 403 remains unresolved for CI runtime testing.
+
+## Remaining release gates
+1. Before any production migration, take another fresh encrypted backup and restore it to an isolated clone. The 25 November 09:05 UTC backup and its same-account restore have passed, and the PR #77 CI rehearsal applied offline POS migrations `0045`–`0049` to an isolated clone successfully. This does not test hardening migrations `0050`–`0054` or provide off-account disaster recovery; recheck quota immediately before the release.
+2. Attach and verify the owner-confirmed legal approval record. Then rehearse and apply migrations `0050`–`0054` in order, after backup and compatibility gates pass. Keep `0045`–`0049` separate.
+3. Provision `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` using the guarded secret workflow; verify password-manager escrow and a separate recovery copy before Pages deployment. Never invent or reuse placeholder keys.
+4. Deploy and health-check `deverve-outbox` only after migration `0051`; test COD expiry on isolated fixtures before activation.
+5. Deploy the new CNIC retention Worker only after migrations `0050` and `0054`, verified legal evidence, a tested claim lease and the R2 lock-transition review. Never delete existing CNIC objects merely to clear a checklist.
+6. Complete a real Worker-to-isolated-D1 HTTP runtime test from an allowed runner. The temporary API deployment probe proved create/delete permission but did not prove runtime execution.
+7. Configure GitHub main-branch protection and replace the broad, non-expiring Cloudflare API token with a tested least-privilege token.
+8. Configure verified sender/email and WhatsApp provider credentials before enabling delivery or customer email verification/password recovery.
+9. Complete catalogue/fleet/pricing/legal-policy owner review. Physical-device acceptance is deliberately last: Android PWA, airplane-mode sale/reload, sync/conflict handling, camera/barcode, printer and shift controls.
+10. Reconcile the one open production POS session against physical cash before software closure. Do not close it programmatically.
+
+**Release decision:** do not deploy current `main` yet. CI/security/browser tests passed on PR #76's exact head, but production schema, purpose-separated secrets, backup/restore evidence and scheduled Worker releases are still incomplete. Keep the existing production deployment stable, retain the CNIC lock, and keep online POS authoritative.
+---
+
 # Current production reconciliation — 25 November 2026
 
 This section supersedes older dated snapshots below whenever they conflict.
@@ -14,7 +43,7 @@ This section supersedes older dated snapshots below whenever they conflict.
 - The production `deverve-outbox` Worker does not exist. The existing `deverve-cnic-retention` Worker is an older deployment with a daily cron (`0 3 * * *`); it is not the new 90-day deletion implementation. The production CNIC R2 indefinite-lock rule remains intact.
 - The Pages production environment currently lists `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1`; dedicated `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` bindings are not present. Do not deploy the latest Pages code until the dedicated keys are provisioned and their owner-controlled recovery custody is confirmed.
 - PR #62 added mandatory Turnstile, public stock minimisation, scheduled outbox processing, 24-hour expiry for unpaid manual COD reservations, owner/manager CNIC clearance plus 90-day retention with holds, one-time AI-action confirmation, a 30-minute admin idle timeout, purpose-separated application keys and CI hardening.
-- The encrypted backup workflow previously verified same-account D1/R2 recovery. This is not independent off-account disaster recovery. The prior production D1 quota exhaustion report remains a reason to re-check quota and obtain a fresh verified backup before migrations.
+- The latest encrypted D1 backup manifest was created 2026-11-25 09:05:21 UTC (AES-256-GCM, key ID `deverve-d1-key-v1`, 193,182-byte ciphertext); R2 read-back checksum/size and isolated restore both passed with 66 tables, 102 indexes, 10 triggers and matching row-count snapshot. A later PR #77 CI rehearsal also restored that backup to an isolated D1 clone and successfully applied offline POS migrations `0045`–`0049`, then deleted the clone. This remains same-account R2 recovery, not independent off-account disaster recovery. A fresh read-only D1 usage query for 2026-11-24 10:00 UTC through 2026-11-25 10:30 UTC recorded 204,014 rows read and 27 rows written; production D1 size is 1,298,432 bytes. No current quota error was observed; recheck immediately before migrations, especially if the account is on the Free plan.
 
 ## Deployment and migration safety
 - PR #71 adds a 30-minute exclusive claim lease to the CNIC retention Worker. It can reclaim an interrupted job after lease expiry, and claim-token checks protect metadata deletion, final status changes and retries.
