@@ -63,6 +63,8 @@ jobs:
         run: |
           node --check workers/deverve-cnic-retention.js
           node --check scripts/reconcile-cnic-r2-retention-lock.mjs
+      - name: Validate backup freshness monitor syntax
+        run: node --check scripts/backup-health-monitor.mjs
       - name: Bundle scheduled Workers without deploying
         run: |
           npx --yes wrangler@4.45.0 deploy --dry-run --config workers/outbox/wrangler.toml
