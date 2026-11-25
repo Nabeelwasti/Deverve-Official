@@ -105,3 +105,63 @@ test("rental submission preserves the versioned CNIC notice and consent metadata
   assert.match(migration,/cnic_consent_version TEXT NOT NULL DEFAULT 'legacy-unknown'/);
   assert.match(migration,/cnic_consent_at TEXT/);
 });
+
+
+test("overlapping scheduled runs cannot both claim or delete the same rental", async () => {
+  const state = { status: "scheduled", claimToken: null, claimExpiresAt: null, deletedAt: null };
+  const calls = [];
+  const db = {
+    prepare(sql) {
+      const statement = { sql, values: [], bind(...values) { this.values = values; return this; } };
+      statement.run = async () => {
+        calls.push({ kind: "run", sql, values: statement.values });
+        if (sql.includes("SET cnic_retention_status='purging'")) {
+          const [token, expiresAt, _claimedAt, rentalId, dueAt, reclaimAt] = statement.values;
+          const eligible = state.status === "scheduled" || state.status === "retry"
+            || (state.status === "purging" && (!state.claimExpiresAt || state.claimExpiresAt <= reclaimAt));
+          if (!eligible || rentalId !== "rental-concurrent" || dueAt < "2026-01-01T00:00:00.000Z") return { meta: { changes: 0 } };
+          state.status = "purging";
+          state.claimToken = token;
+          state.claimExpiresAt = expiresAt;
+          return { meta: { changes: 1 } };
+        }
+        if (sql.includes("SET cnic_retention_status='retry'")) {
+          const token = statement.values[3];
+          if (state.status === "purging" && state.claimToken === token) {
+            state.status = "retry"; state.claimToken = null; state.claimExpiresAt = null;
+            return { meta: { changes: 1 } };
+          }
+          return { meta: { changes: 0 } };
+        }
+        return { meta: { changes: 0 } };
+      };
+      statement.all = async () => {
+        calls.push({ kind: "all", sql, values: statement.values });
+        if (sql.includes("SELECT id,cnic_retention_due_at")) return { results: [{ id: "rental-concurrent", cnic_retention_due_at: "2026-01-01T00:00:00.000Z" }] };
+        if (sql.includes("SELECT id,object_key FROM rental_documents")) return { results: [{ id: "front", object_key: "rental-private/rental-concurrent/front.jpg" }] };
+        return { results: [] };
+      };
+      statement.first = async () => ({ ok: 1 });
+      return statement;
+    },
+    async batch(statements) {
+      calls.push({ kind: "batch" });
+      const update = statements[1];
+      const token = update.values[3];
+      if (state.status !== "purging" || state.claimToken !== token) {
+        return [{ meta: { changes: 0 } }, { meta: { changes: 0 } }, { meta: { changes: 0 } }];
+      }
+      state.status = "deleted"; state.deletedAt = update.values[0]; state.claimToken = null; state.claimExpiresAt = null;
+      return [{ meta: { changes: 1 } }, { meta: { changes: 1 } }, { meta: { changes: 1 } }];
+    },
+  };
+  const deleted = [];
+  const env = { DB: db, MEDIA: { async delete(key) { deleted.push(key); } } };
+  await Promise.all([
+    retentionWorker.scheduled({}, env),
+    retentionWorker.scheduled({}, env),
+  ]);
+  assert.equal(state.status, "deleted");
+  assert.equal(deleted.length, 1, "Only the execution holding the claim may delete the R2 object");
+  assert.equal(calls.filter(call => call.kind === "batch").length, 1, "Only one execution may commit deletion metadata and audit evidence");
+});
