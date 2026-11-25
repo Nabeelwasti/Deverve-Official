@@ -2821,9 +2821,12 @@ test("authorised rental staff can preview and download private CNIC images with 
   const testEnv = { ...env(db), MEDIA: { get: async () => ({ body: new Response(bytes).body }) } };
   const headers = { cookie: "__Host-deverve_admin="+token, "sec-fetch-site": "same-origin" };
   const withoutDedicatedHmac = { ...testEnv, CNIC_PREVIEW_HMAC_KEY: undefined };
-  const unavailablePreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), withoutDedicatedHmac);
-  assert.equal(unavailablePreview.status,503,"CNIC preview must fail closed without its dedicated HMAC secret even when the bootstrap token exists");
-  assert.equal(db.audits.length,0);
+  const unavailablePreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), withoutDedicatedHmac);
+  assert.equal(unavailablePreview.status,503,"CNIC preview token creation must fail closed without its dedicated HMAC secret even when the bootstrap token exists");
+  assert.equal(db.previewTokens.size,0);
+  const previewTokenResponse = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), testEnv);
+  assert.equal(previewTokenResponse.status,200);
+  assert.match((await previewTokenResponse.json()).url,/^\/api\/rental-document-preview\?token=/);
   const preview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get("content-disposition"), 'inline; filename="cnic_front.png"');
