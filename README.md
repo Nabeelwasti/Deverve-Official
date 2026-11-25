@@ -88,8 +88,9 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 3. Copy the exact DNS records Resend provides (SPF and DKIM; add the recommended DMARC record) into the domain's DNS provider. Do not invent or reuse sample DNS values. Wait until Resend shows the domain as Verified.
 4. In Resend → API Keys, create a production key restricted to sending from the verified domain if the account offers that restriction. Copy it once; do not place it in GitHub or send it in chat.
 5. In Cloudflare → Workers & Pages → deverve-official → Settings → Variables and Secrets → Production, add RESEND_API_KEY as an encrypted Secret and RESEND_FROM_EMAIL as the verified sender address (plain address only, e.g. receipts@your-owned-domain).
-6. In Admin → Website & brand settings, set the primary owner notification email to a business-owned inbox. No recipient is configured by default; owner alerts and enquiry emails remain queued until a valid business address is saved. A customer email entered as the invoice-copy address queues a transactional receipt; it is not a marketing subscription.
-7. After the owner authorises deployment, send a controlled test invoice to an address the owner controls and verify delivery, retry handling and sender authentication.
+6. Add the same RESEND_API_KEY secret and RESEND_FROM_EMAIL variable to the separate scheduled Worker `deverve-outbox`. Pages project variables are not automatically shared with a standalone Worker; without these Worker bindings, queued emails remain pending.
+7. In Admin → Website & brand settings, set the primary owner notification email to a business-owned inbox. No recipient is configured by default; owner alerts and enquiry emails remain queued until a valid business address is saved. A customer email entered as the invoice-copy address queues a transactional receipt; it is not a marketing subscription.
+8. After the owner authorises deployment, send a controlled test invoice to an address the owner controls and verify delivery, retry handling and sender authentication.
 
 ### Meta WhatsApp Business delivery
 
@@ -98,9 +99,10 @@ Mobile-first fashion, wholesale and vehicle-rental storefront with a role-based 
 3. In Meta for Developers, create a Business app, add the WhatsApp product, and complete the Cloud API setup. Record the **Phone Number ID** (not the visible phone number).
 4. Create a System User in Business Settings, assign the WhatsApp account/phone asset, and generate a production token with the WhatsApp messaging permissions required by Meta. Keep the token private.
 5. In WhatsApp Manager → Message templates, create a Utility template named deverve_pos_receipt in English (US), with this body and three placeholders in exactly this order: “Hello {{1}}, thank you for shopping with De VERVE. Your receipt {{2}} totals {{3}}. Please keep this message for your records.” Submit it and wait for Meta approval.
-6. In the same Cloudflare Production Variables and Secrets screen, add WHATSAPP_ACCESS_TOKEN as an encrypted Secret; WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_RECEIPT_TEMPLATE=deverve_pos_receipt and WHATSAPP_RECEIPT_LANGUAGE=en_US as variables. WHATSAPP_API_VERSION is optional; the code has a default.
-7. At checkout, staff may tick the WhatsApp receipt option only after the customer has actually agreed to receive the transactional receipt on WhatsApp. A supplied phone number alone is not opt-in. Do not use this channel for promotions unless the separate marketing permission is obtained.
-8. After deployment is authorised, test only with a business-controlled, opted-in number first. Confirm the provider message ID and delivery status before enabling normal use.
+6. In the Pages Production Variables and Secrets screen, add WHATSAPP_ACCESS_TOKEN as an encrypted Secret; WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_RECEIPT_TEMPLATE=deverve_pos_receipt and WHATSAPP_RECEIPT_LANGUAGE=en_US as variables. WHATSAPP_API_VERSION is optional; the code has a default.
+7. Add the same WhatsApp token and template variables to the separate scheduled Worker `deverve-outbox`; standalone Workers do not inherit Pages environment variables.
+8. At checkout, staff may tick the WhatsApp receipt option only after the customer has actually agreed to receive the transactional receipt on WhatsApp. A supplied phone number alone is not opt-in. Do not use this channel for promotions unless the separate marketing permission is obtained.
+9. After deployment is authorised, test only with a business-controlled, opted-in number first. Confirm the provider message ID and delivery status before enabling normal use.
 
 ### 90-day CNIC retention policy and controlled deletion
 
