@@ -193,26 +193,37 @@ async function restoreDrill(sql,expected){
     catch(error){if(String(error).includes(message))return;throw new Error(label+" failed with an unexpected error: "+(error instanceof Error?error.message:String(error)));}
     throw new Error(label+" unexpectedly succeeded.");
    };
-   const documents=await queryRows(id,"SELECT id FROM rental_documents LIMIT 1");
+   const documents=await queryRows(id,"SELECT id,rental_request_id FROM rental_documents LIMIT 1");
    let documentDeleteGuard="skipped_no_existing_documents";
+   let rentalDeleteGuard="skipped_no_existing_rentals";
    if(documents.length){
     const documentId=String(documents[0].id).replace(/'/g,"''");
-    await expectBlocked("DELETE FROM rental_documents WHERE id='"+documentId+"'","CNIC deletion requires recorded clearance","CNIC document delete guard");
+    const rentalId=String(documents[0].rental_request_id).replace(/'/g,"''");
     await expectBlocked("UPDATE rental_documents SET byte_size=byte_size WHERE id='"+documentId+"'","Permanent CNIC evidence metadata is immutable","CNIC document metadata immutability guard");
-    documentDeleteGuard="blocked_without_clearance";
-   }
-   const rentals=await queryRows(id,"SELECT id FROM rental_requests LIMIT 1");
-   let rentalDeleteGuard="skipped_no_existing_rentals";
-   if(rentals.length){
-    const rentalId=String(rentals[0].id).replace(/'/g,"''");
+    await api("POST",queryPath,{sql:"UPDATE rental_requests SET cnic_clearance_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-100 days'),cnic_retention_due_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 days'),cnic_retention_status='purging' WHERE id='"+rentalId+"'"});
+    const holdId="hardening-hold-"+fixtureSuffix;
+    await api("POST",queryPath,{sql:"INSERT INTO rental_cnic_holds (id,rental_request_id,reason,placed_at,review_at) VALUES ("+[holdId,rentalId,"CI fixture legal hold prevents deletion","strftime('%Y-%m-%dT%H:%M:%fZ','now')","strftime('%Y-%m-%dT%H:%M:%fZ','now','+7 days')].map((value,index)=>index<3?sqlValue(value):value).join(",")+")"});
+    await expectBlocked("DELETE FROM rental_documents WHERE id='"+documentId+"'","CNIC deletion requires recorded clearance","CNIC active-hold delete guard");
+    await api("POST",queryPath,{sql:"UPDATE rental_cnic_holds SET released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),release_note='CI fixture released' WHERE id='"+holdId+"'"});
+    await expectBlocked("UPDATE rental_requests SET cnic_clearance_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-99 days') WHERE id='"+rentalId+"'","Recorded CNIC clearance and retention deadline are immutable","CNIC clearance immutability guard");
+    await api("POST",queryPath,{sql:"DELETE FROM rental_documents WHERE id='"+documentId+"'"});
+    documentDeleteGuard="blocked_by_hold_then_allowed_after_release";
     await expectBlocked("DELETE FROM rental_requests WHERE id='"+rentalId+"'","Rental business history must be retained","Rental history delete guard");
     rentalDeleteGuard="blocked";
+   }else{
+    const rentals=await queryRows(id,"SELECT id FROM rental_requests LIMIT 1");
+    if(rentals.length){
+     const rentalId=String(rentals[0].id).replace(/'/g,"''");
+     await expectBlocked("DELETE FROM rental_requests WHERE id='"+rentalId+"'","Rental business history must be retained","Rental history delete guard");
+     rentalDeleteGuard="blocked";
+    }
    }
    const afterGuards=await snapshot(id);
-   if(afterGuards.rowCounts.rental_documents!==migrated.rowCounts.rental_documents||afterGuards.rowCounts.rental_requests!==migrated.rowCounts.rental_requests)throw new Error("Guard tests changed rental or CNIC-document row counts.");
+   const expectedDocumentCount=migrated.rowCounts.rental_documents-(documents.length?1:0);
+   if(afterGuards.rowCounts.rental_documents!==expectedDocumentCount||afterGuards.rowCounts.rental_requests!==migrated.rowCounts.rental_requests)throw new Error("Guard tests changed rental history unexpectedly.");
    const foreignKeysAfter=await queryRows(id,"PRAGMA foreign_key_check");
    if(stable(foreignKeysAfter)!==stable(foreignKeysBefore))throw new Error("Hardening migrations introduced a foreign-key violation on the restored production clone.");
-   hardeningMigrationRehearsal={status:"passed",migrations:migrationFiles.length,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,existing_row_counts_unchanged:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,manual_cod_backfill:"24h_verified",safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
+   hardeningMigrationRehearsal={status:"passed",migrations:migrationFiles.length,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,existing_row_counts_unchanged:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,manual_cod_backfill:"24h_verified",safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,active_hold_guard:"blocked",released_hold_due_deletion:"allowed_on_clone",rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
   }
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");
   return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null,offline_migration_rehearsal:offlineMigrationRehearsal,hardening_migration_rehearsal:hardeningMigrationRehearsal};
