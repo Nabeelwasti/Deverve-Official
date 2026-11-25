@@ -6,7 +6,7 @@ test("website enquiries are queued for owner email after Turnstile verification"
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, processExpiredCodReservations, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 import { verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "../.test-dist/src/posOffline/deviceCrypto.js";
 
@@ -3511,4 +3511,46 @@ test("rental staff cannot approve CNIC clearance or retention holds", async () =
     note:"Final reconciliation."
   },{cookie,"sec-fetch-site":"same-origin"}),env(db));
   assert.equal(response.status,403);
+});
+
+test("expired unpaid manual COD reservations atomically cancel orders, release stock and write audit events", async () => {
+  const calls=[];
+  const db={
+    prepare(sql){return {sql,values:[],bind(...values){this.values=values;return this;},async all(){calls.push({kind:"all",sql:this.sql,values:this.values});return {results:[{id:"order-1",order_number:"DV-TEST-1",reservation_lines:2,expires_at:"2026-01-01T00:00:00.000Z"}]};}};},
+    async batch(statements){calls.push({kind:"batch",sql:statements.map(item=>item.sql)});return [{meta:{changes:1}},{meta:{changes:2}},{meta:{changes:2}},{meta:{changes:1}},{meta:{changes:1}}];}
+  };
+  await processExpiredCodReservations({DB:db});
+  const batch=calls.find(item=>item.kind==="batch");
+  assert.equal(batch.sql.length,5);
+  assert.match(batch.sql[0],/order_status='cancelled'/);
+  assert.match(batch.sql[0],/payment_status='pending'/);
+  assert.match(batch.sql[0],/payment_provider='manual'/);
+  assert.match(batch.sql[0],/NOT EXISTS \(SELECT 1 FROM payment_attempts/);
+  assert.match(batch.sql[1],/reserved_quantity=reserved_quantity-/);
+  assert.match(batch.sql[2],/status='released'/);
+  assert.match(batch.sql[3],/order_status_events/);
+  assert.match(batch.sql[4],/order\.reservation_expired/);
+});
+
+test("COD reservation expiry scan ignores online payment reservations and protects late Safepay callbacks", async () => {
+  let batchCalled=false,scanSql="";
+  const db={
+    prepare(sql){return {sql,bind(){return this;},async all(){scanSql=sql;return {results:[]};}};},
+    async batch(){batchCalled=true;return [];}
+  };
+  await processExpiredCodReservations({DB:db});
+  assert.equal(batchCalled,false);
+  assert.match(scanSql,/o\.payment_provider='manual'/);
+  assert.match(scanSql,/NOT EXISTS \(SELECT 1 FROM payment_attempts pa WHERE pa.order_id=o.id AND pa.provider='safepay'/);
+});
+
+test("COD reservation expiry does not write cancellation events when the order changed concurrently", async () => {
+  let batchSql=[];
+  const db={
+    prepare(sql){return {sql,bind(){return this;},async all(){return {results:[{id:"order-race",order_number:"DV-RACE",reservation_lines:1,expires_at:"2026-01-01T00:00:00.000Z"}]};}};},
+    async batch(statements){batchSql=statements.map(item=>item.sql);return [{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}}];}
+  };
+  await processExpiredCodReservations({DB:db});
+  assert.equal(batchSql.length,5);
+  assert.match(batchSql[3],/EXISTS \(SELECT 1 FROM order_inventory_reservations/);
 });
