@@ -143,6 +143,7 @@ interface SessionRow {
   is_active: number;
   expires_at: string;
   revoked_at: string | null;
+  last_seen_at?: string | null;
   can_use_pos: number;
 }
 
@@ -505,9 +506,18 @@ async function createSession(db: D1Database, adminId: string): Promise<{ token: 
 async function currentAdmin(request: Request, db: D1Database): Promise<SessionRow | null> {
   const token = cookieValue(request, "__Host-deverve_admin");
   if (!token || token.length > 100) return null;
-  return db.prepare(
-    "SELECT s.id, s.admin_user_id, u.email, u.role, u.is_active, s.expires_at, s.revoked_at, EXISTS (SELECT 1 FROM admin_pos_cashiers pc WHERE pc.admin_user_id=u.id AND pc.revoked_at IS NULL) AS can_use_pos FROM admin_sessions s JOIN admin_users u ON u.id = s.admin_user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND u.is_active = 1 LIMIT 1",
-  ).bind(await sha256(token), new Date().toISOString()).first<SessionRow>();
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const idleCutoff = new Date(now.getTime() - 30 * 60 * 1000).toISOString();
+  const session = await db.prepare(
+    "SELECT s.id, s.admin_user_id, u.email, u.role, u.is_active, s.expires_at, s.revoked_at, s.last_seen_at, EXISTS (SELECT 1 FROM admin_pos_cashiers pc WHERE pc.admin_user_id=u.id AND pc.revoked_at IS NULL) AS can_use_pos FROM admin_sessions s JOIN admin_users u ON u.id = s.admin_user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > ? AND COALESCE(s.last_seen_at,s.created_at) > ? AND u.is_active = 1 LIMIT 1",
+  ).bind(await sha256(token), nowIso, idleCutoff).first<SessionRow>();
+  if (!session) return null;
+  const lastSeen = Date.parse(session.last_seen_at || "");
+  if (!Number.isFinite(lastSeen) || now.getTime() - lastSeen >= 5 * 60 * 1000) {
+    try { await db.prepare("UPDATE admin_sessions SET last_seen_at=? WHERE id=? AND revoked_at IS NULL").bind(nowIso, session.id).run(); } catch {}
+  }
+  return session;
 }
 
 async function readJson(request: Request, maxBytes = 8_000): Promise<Record<string, unknown> | null> {
