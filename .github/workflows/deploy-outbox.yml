@@ -2,6 +2,7 @@ name: Build scheduled outbox Worker bundle
 
 # The outbox changes order/payment state and releases stock. Deploy only as
 # an explicit controlled release after migration 0051 and smoke-test approval.
+# This workflow only builds an immutable artifact; the authorized Cloudflare API connection performs the upload.
 on:
   workflow_dispatch:
   push:
