@@ -1,3 +1,27 @@
+# Latest production reconciliation — 25 November 2026 (post-PR #83 and verified outbox build)
+
+This section is authoritative and supersedes older snapshots below.
+
+## Verified code, CI and backup state
+- GitHub `main` is `b0bf2dfa97275612d7b64d179fdd0d5e48ea9273`. PRs #80–#83 are merged. PR #83 passed its exact-head build/type-check, all 160 desktop/mobile storefront browser tests, CodeQL and Gitleaks. Post-merge main build/type-check run [45605262532](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45605262532) and CodeQL/Gitleaks run [45605262444](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45605262444) passed.
+- The encrypted production backup and post-backup migration rehearsal pipeline passed on 25 November. The latest verified encrypted backup is `d1/encrypted/deverve-production-20261125T105958Z.dvbackup` (196,732 bytes); restore row counts matched, private R2 media checksums passed, and temporary D1 clones were deleted and confirmed absent.
+- Production D1 migrations `0050`–`0054` are applied. Read-only verification confirms `rental_cnic_holds`, `admin_ai_action_confirmations`, all seven required indexes and all four CNIC retention guard triggers. The COD `expires_at` column is present. The production migration rehearsal passed against an isolated backup clone.
+- Fresh production query: 0 pending manual COD orders and 0 eligible expired manual COD orders. No production business rows were changed. The one open POS session remains untouched pending physical cash reconciliation.
+- The outbox Worker bundle was built from `main` by successful run [45605262319](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45605262319). The verified artifact is `deverve-outbox-bundle` (26,768-byte ZIP; SHA-256 `09ed9197e58c96718e6cb8c635d413205b836aee1a917b482c76d0ee979bc902`). Its isolated `index.js` contains the expected scheduled handler, COD-expiry logic and notification queue functions, with the production D1 and private R2 bindings in the deployment manifest. **The artifact is built but the Worker is not yet deployed.**
+- Cloudflare API create/delete permission was validated with a temporary no-binding Worker probe; the probe was deleted and no temporary Worker remains. This does not itself constitute an application runtime test.
+
+## Current production deployment and remaining release gates
+- Cloudflare Pages project `deverve-official` remains on deployment `2cdb7e70` from commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`. Automatic production and preview deployments remain disabled. Do not deploy current Pages `main` until purpose-separated secrets `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` are provisioned and owner-controlled recovery custody is verified.
+- `deverve-outbox` is still absent from production; deploy the verified artifact through the Cloudflare API and confirm its five-minute Cron Trigger before considering COD expiry live. Email and WhatsApp delivery remain inactive until verified provider credentials are configured.
+- The owner has explicitly confirmed legal approval for the CNIC retention policy. The approval artifact, approving authority, date and scope are not yet attached to the controlled policy record. Keep the `deverve-rental-cnic-indefinite` R2 lock enabled and do not deploy deletion behavior until the approved scope and runtime health gates are documented.
+- Offline POS migrations `0045`–`0049` remain unapplied; `OFFLINE_POS_CHECKOUT_ENABLED` remains disabled/unset and online POS remains authoritative.
+- Independent off-account backup/key escrow, password-manager recovery custody, GitHub `main` branch protection, least-privilege Cloudflare token, verified email/WhatsApp provider credentials, catalogue/fleet/pricing/legal-policy owner review, and physical-device acceptance remain open. Device acceptance remains last, as requested.
+- The production POS session must be reconciled against physical cash before software closure; do not close it programmatically.
+
+**Release decision:** code and automated checks are current and passing, production schema hardening is complete, and the scheduled outbox artifact is verified. The full Pages application and scheduled Worker are not yet deployed. Keep the existing Pages deployment stable, retain the CNIC R2 lock, keep online POS authoritative, and keep offline checkout disabled until the remaining secrets, Worker deployment, recovery custody, access-control and owner/device acceptance gates pass.
+
+---
+
 # Latest production reconciliation — 25 November 2026 (post-migration 0050–0054)
 
 This section is authoritative and supersedes all older snapshots below.
