@@ -61,7 +61,9 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
   await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
   await page.getByLabel("How can we help?").fill("Please share information about available garments.");
   await expect(page.locator(".enquiry-form [data-testid=turnstile-test-widget]")).toBeVisible();
-  await page.getByRole("button", { name: /Send enquiry/ }).click();
+  const submitButton = page.getByRole("button", { name: /Send enquiry/ });
+  await expect(submitButton).toBeEnabled();
+  await submitButton.click();
 
   await expect(page.getByRole("status")).toContainText("Your enquiry has been received");
   expect(submitted).toMatchObject({
