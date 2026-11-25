@@ -497,14 +497,34 @@ async function currentAdmin(request: Request, db: D1Database): Promise<SessionRo
 
 async function readJson(request: Request, maxBytes = 8_000): Promise<Record<string, unknown> | null> {
   const length = Number(request.headers.get("content-length") ?? "0");
-  if (length > maxBytes) return null;
-  const raw = await request.text();
-  if (new TextEncoder().encode(raw).byteLength > maxBytes) return null;
+  if (Number.isFinite(length) && length > maxBytes) return null;
+  if (!request.body) return null;
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
   try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      total += part.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(part.value);
+    }
+    if (total === 0) return null;
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    const raw = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const value: unknown = JSON.parse(raw);
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
   } catch {
+    try { await reader.cancel(); } catch {}
     return null;
+  } finally {
+    try { reader.releaseLock(); } catch {}
   }
 }
 
