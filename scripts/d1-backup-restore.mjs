@@ -148,32 +148,55 @@ async function restoreDrill(sql,expected){
    await insertOrder(safepayOrderId,"HDG-SAFEPAY-"+fixtureSuffix,"safepay");
    await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-manual-"+fixtureSuffix,manualOrderId,fixtureVariantId,1,"reserved","manual"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
    await api("POST",queryPath,{sql:"INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider) VALUES ("+[ "hardening-reservation-safepay-"+fixtureSuffix,safepayOrderId,fixtureVariantId,1,"reserved","safepay"].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
+   const rentalFixtureId="hardening-fixture-rental-"+fixtureSuffix;
+   const documentFixtureId="hardening-fixture-document-"+fixtureSuffix;
+   const objectKey="ci-fixture/"+fixtureSuffix+".jpg";
+   await api("POST",queryPath,{sql:"INSERT INTO rental_requests (id,customer_name,phone,pickup_location,pickup_at,return_at,driver_option,reference_code,cnic_consent_version) VALUES ("+[rentalFixtureId,"CI Fixture","0000000000","Isolated migration test only","2030-01-01T10:00:00.000Z","2030-01-02T10:00:00.000Z","self_drive","HDG-RENTAL-"+fixtureSuffix,"ci-fixture"].map(sqlValue).join(",")+")"});
+   await api("POST",queryPath,{sql:"INSERT INTO rental_documents (id,rental_request_id,document_side,object_key,mime_type,byte_size) VALUES ("+[documentFixtureId,rentalFixtureId,"cnic_front",objectKey,"image/jpeg",1].map(value=>typeof value==="number"?String(value):sqlValue(value)).join(",")+")"});
    const hardeningBaseline=await snapshot(id);
-   for(const filename of migrationFiles){
-    const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
-    await api("POST",queryPath,{sql:migration});
-    console.log("APPLIED TO RESTORED PRODUCTION CLONE",filename);
+   const expectedTables=["rental_cnic_holds","admin_ai_action_confirmations"];
+   const requiredRentalColumns=["cnic_clearance_at","cnic_clearance_by_admin_id","cnic_clearance_note","cnic_retention_due_at","cnic_retention_status","cnic_retention_deleted_at","cnic_retention_last_error","cnic_retention_claim_token","cnic_retention_claim_expires_at"];
+   const requiredIndexes=["idx_rental_cnic_holds_one_active","idx_rental_cnic_holds_review","idx_rental_cnic_retention_due","idx_order_inventory_reservations_expiry","idx_admin_ai_action_confirmations_pending","idx_admin_sessions_idle_expiry","idx_rental_cnic_retention_claim"];
+   const requiredTriggers=["trg_rental_documents_delete_requires_due_clearance","trg_rental_requests_no_delete","trg_rental_cnic_clearance_immutable","trg_rental_documents_no_update"];
+   const preTables=new Set((await queryRows(id,"SELECT name FROM sqlite_master WHERE type='table'")).map(row=>row.name));
+   const preRentalColumns=new Set((await queryRows(id,"PRAGMA table_info(rental_requests)")).map(column=>column.name));
+   const preReservationColumns=new Set((await queryRows(id,"PRAGMA table_info(order_inventory_reservations)")).map(column=>column.name));
+   const preIndexes=new Set((await queryRows(id,"SELECT name FROM sqlite_master WHERE type='index'")).map(row=>row.name));
+   const preTriggers=new Set((await queryRows(id,"SELECT name FROM sqlite_master WHERE type='trigger'")).map(row=>row.name));
+   const schemaAlreadyHardened=expectedTables.every(name=>preTables.has(name))&&requiredRentalColumns.every(name=>preRentalColumns.has(name))&&preReservationColumns.has("expires_at")&&requiredIndexes.every(name=>preIndexes.has(name))&&requiredTriggers.every(name=>preTriggers.has(name))&&!preTriggers.has("trg_rental_documents_no_delete");
+   const anyHardeningMarker=expectedTables.some(name=>preTables.has(name))||preRentalColumns.has("cnic_clearance_at")||preReservationColumns.has("expires_at")||preTriggers.has("trg_rental_documents_delete_requires_due_clearance");
+   if(anyHardeningMarker&&!schemaAlreadyHardened)throw new Error("Restored production clone contains a partial or inconsistent 0050–0054 schema; refusing to guess which migrations ran.");
+   let migrationsApplied=0;
+   if(!schemaAlreadyHardened){
+    for(const filename of migrationFiles){
+     const migration=await readFile(new URL("../migrations/"+filename,import.meta.url),"utf8");
+     await api("POST",queryPath,{sql:migration});
+     migrationsApplied+=1;
+     console.log("APPLIED TO RESTORED PRODUCTION CLONE",filename);
+    }
+   }else{
+    const migration0051=await readFile(new URL("../migrations/0051_cod_reservation_expiry.sql",import.meta.url),"utf8");
+    const backfillStart=migration0051.indexOf("UPDATE order_inventory_reservations");
+    if(backfillStart<0)throw new Error("COD expiry backfill statement is missing from migration 0051.");
+    await api("POST",queryPath,{sql:migration0051.slice(backfillStart)});
+    console.log("REPLAYED 0051 COD BACKFILL AGAINST ISOLATED FIXTURES; SCHEMA ALREADY PRESENT");
    }
    const migrated=await snapshot(id);
    const tableSet=new Set(migrated.tables);
-   const expectedTables=["rental_cnic_holds","admin_ai_action_confirmations"];
    if(!expectedTables.every(name=>tableSet.has(name)))throw new Error("Hardening migrations did not create both required tables.");
    if(tableSet.has("pos_offline_devices"))throw new Error("Hardening migration rehearsal unexpectedly included the separate offline-POS schema.");
    const columns=async table=>new Set((await queryRows(id,"PRAGMA table_info("+table+")")).map(column=>column.name));
    const rentalColumns=await columns("rental_requests");
    const reservationColumns=await columns("order_inventory_reservations");
    const sessionColumns=await columns("admin_sessions");
-   const requiredRentalColumns=["cnic_clearance_at","cnic_clearance_by_admin_id","cnic_clearance_note","cnic_retention_due_at","cnic_retention_status","cnic_retention_deleted_at","cnic_retention_last_error","cnic_retention_claim_token","cnic_retention_claim_expires_at"];
    if(!requiredRentalColumns.every(name=>rentalColumns.has(name)))throw new Error("Hardening migration rehearsal is missing one or more CNIC clearance/retention/claim columns.");
    if(!reservationColumns.has("expires_at"))throw new Error("COD reservation expiry column was not installed.");
    if(!sessionColumns.has("last_seen_at"))throw new Error("Expected admin session last_seen_at column is missing.");
    const indexRows=await queryRows(id,"SELECT name FROM sqlite_master WHERE type='index'");
    const indexes=new Set(indexRows.map(row=>row.name));
-   const requiredIndexes=["idx_rental_cnic_holds_one_active","idx_rental_cnic_holds_review","idx_rental_cnic_retention_due","idx_order_inventory_reservations_expiry","idx_admin_ai_action_confirmations_pending","idx_admin_sessions_idle_expiry","idx_rental_cnic_retention_claim"];
    if(!requiredIndexes.every(name=>indexes.has(name)))throw new Error("Hardening migration rehearsal is missing one or more required indexes.");
    const triggerRows=await queryRows(id,"SELECT name FROM sqlite_master WHERE type='trigger'");
    const triggers=new Set(triggerRows.map(row=>row.name));
-   const requiredTriggers=["trg_rental_documents_delete_requires_due_clearance","trg_rental_requests_no_delete","trg_rental_cnic_clearance_immutable","trg_rental_documents_no_update"];
    if(!requiredTriggers.every(name=>triggers.has(name)))throw new Error("Hardening migration rehearsal is missing one or more CNIC retention guard triggers.");
    if(triggers.has("trg_rental_documents_no_delete"))throw new Error("Legacy unconditional CNIC delete trigger was not replaced.");
    const count=async sql=>Number((await queryRows(id,sql))[0]?.count??-1);
@@ -193,7 +216,7 @@ async function restoreDrill(sql,expected){
     catch(error){if(String(error).includes(message))return;throw new Error(label+" failed with an unexpected error: "+(error instanceof Error?error.message:String(error)));}
     throw new Error(label+" unexpectedly succeeded.");
    };
-   const documents=await queryRows(id,"SELECT id,rental_request_id FROM rental_documents LIMIT 1");
+   const documents=await queryRows(id,"SELECT id,rental_request_id FROM rental_documents WHERE id='"+documentFixtureId+"' LIMIT 1");
    let documentDeleteGuard="skipped_no_existing_documents";
    let rentalDeleteGuard="skipped_no_existing_rentals";
    if(documents.length){
@@ -226,7 +249,7 @@ async function restoreDrill(sql,expected){
    if(afterGuards.rowCounts.rental_documents!==expectedDocumentCount||afterGuards.rowCounts.rental_requests!==migrated.rowCounts.rental_requests)throw new Error("Guard tests changed rental history unexpectedly.");
    const foreignKeysAfter=await queryRows(id,"PRAGMA foreign_key_check");
    if(stable(foreignKeysAfter)!==stable(foreignKeysBefore))throw new Error("Hardening migrations introduced a foreign-key violation on the restored production clone.");
-   hardeningMigrationRehearsal={status:"passed",migrations:migrationFiles.length,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,migrations_preserved_existing_row_counts:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,manual_cod_backfill:"24h_verified",safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,active_hold_guard:"blocked",released_hold_due_deletion:"allowed_on_clone",rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
+   hardeningMigrationRehearsal={status:"passed",migrations:migrationsApplied,schema_was_already_hardened:schemaAlreadyHardened,created_tables:expectedTables.length,required_indexes:requiredIndexes.length,required_triggers:requiredTriggers.length,migrations_preserved_existing_row_counts:true,historical_clearance_inferred:false,pending_manual_cod_without_expiry:0,manual_cod_backfill:"24h_verified",safepay_reservations_expired:0,document_delete_guard:documentDeleteGuard,active_hold_guard:"blocked",released_hold_due_deletion:"allowed_on_clone",rental_history_delete_guard:rentalDeleteGuard,foreign_key_check:"no_new_violations"};
   }
   const total=Object.values(restored.rowCounts).reduce((sum,n)=>sum+n,0);if(total===0)throw new Error("Restored database contains no application rows.");
   return {status:"passed",table_count:restored.tables.length,schema_objects:restored.schemaObjects,row_count_check:compareRows?"passed":"skipped_due_to_concurrent_production_writes",row_counts_sha256:sha(Buffer.from(stable(restored.rowCounts))),imported_queries:Array.isArray(imported)?imported.length:null,offline_migration_rehearsal:offlineMigrationRehearsal,hardening_migration_rehearsal:hardeningMigrationRehearsal};
