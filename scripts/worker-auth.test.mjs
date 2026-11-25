@@ -3554,3 +3554,19 @@ test("COD reservation expiry does not write cancellation events when the order c
   assert.equal(batchSql.length,5);
   assert.match(batchSql[3],/EXISTS \(SELECT 1 FROM order_inventory_reservations/);
 });
+
+test("customer login has an email-account throttle that cannot be bypassed by rotating IP addresses", async () => {
+  const db=new FakeD1();
+  let last;
+  for(let attempt=1;attempt<=11;attempt++){
+    const response=await handleRequest(new Request(origin+"/api/customer/login",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,"sec-fetch-site":"same-origin","cf-connecting-ip":"198.51.100."+attempt},
+      body:JSON.stringify({email:"same-account@example.com",password:"incorrect-password"})
+    }),env(db));
+    last=response;
+    if(attempt<=10)assert.equal(response.status,401);
+  }
+  assert.equal(last.status,429);
+  assert.equal(db.rateLimits.size,12);
+});
