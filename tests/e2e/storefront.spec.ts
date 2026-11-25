@@ -60,6 +60,7 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
   await page.getByLabel("Your name").fill("Browser Test Customer");
   await page.getByLabel("Phone / WhatsApp").fill("+923001234567");
   await page.getByLabel("How can we help?").fill("Please share information about available garments.");
+  await expect(page.locator(".enquiry-form [data-testid=turnstile-test-widget]")).toBeVisible();
   await page.getByRole("button", { name: /Send enquiry/ }).click();
 
   await expect(page.getByRole("status")).toContainText("Your enquiry has been received");
@@ -67,6 +68,7 @@ test("storefront renders and accepts a customer enquiry", async ({ page }) => {
     name: "Browser Test Customer",
     phone: "+923001234567",
     website: "",
+    turnstile_token: "e2e-turnstile-token",
   });
 });
 
