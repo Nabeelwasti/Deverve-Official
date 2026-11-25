@@ -105,7 +105,7 @@ test("scheduled COD expiry releases only overdue unpaid manual reservations atom
     const orderNumber = "EXP-" + item.name.toUpperCase();
     ids[item.name] = { variantId, orderId };
     sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active) VALUES (?,?,?,?,?,?,?,1)")
-      .run(variantId, productId, "SKU-" + item.name, "M", "Black", 10, item.reserved);
+      .run(variantId, productId, "SKU-" + item.name, "SIZE-" + item.name, "Black", 10, item.reserved);
     sqlite.prepare("INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,payment_provider) VALUES (?,?,?,?,?,?,?,?,'cod','pending','pending',?)")
       .run(orderId, orderNumber, "Test Customer", "+923001234567", "Test address", "Jhelum", 10000, 10000, item.provider);
     sqlite.prepare("INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider,expires_at) VALUES (?,?,?,?,'reserved',?,?)")
