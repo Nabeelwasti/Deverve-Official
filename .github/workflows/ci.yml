@@ -20,9 +20,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
@@ -33,7 +33,7 @@ jobs:
           npm audit --json > npm-audit.json || true
           node -e 'const report = JSON.parse(require("node:fs").readFileSync("npm-audit.json", "utf8")); const counts = report.metadata?.vulnerabilities || {}; console.log("Full dependency audit:", JSON.stringify(counts)); for (const [name, item] of Object.entries(report.vulnerabilities || {})) console.log(name + ": " + item.severity + ", direct=" + item.isDirect + ", fixAvailable=" + JSON.stringify(item.fixAvailable));'
       - name: Upload resolved dependency audit artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: dependency-audit-${{ github.run_number }}
           path: |
@@ -45,6 +45,8 @@ jobs:
         run: npm run check
       - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
+      - name: Fail on high or critical vulnerabilities across all dependencies
+        run: npm audit --audit-level=high
       - name: Verify Pages security headers are included in build output
         run: |
           test -s dist/_headers
