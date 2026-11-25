@@ -17,7 +17,7 @@ This section supersedes older dated snapshots below whenever they conflict.
 
 ## CNIC retention and security controls
 - The operating policy is: retain both CNIC sides until an authorised owner or manager records final clearance confirming payments/deposits, damages, fees, challans and related obligations are settled; then retain for 90 days. Vehicle return or booking completion alone does not start the clock. An active legal/business hold pauses deletion.
-- PR #62 implements the clearance checklist, immutable clearance record, legal/business hold ledger, guarded D1 document deletion, permanently retained rental business history, and a scheduled R2/D1 retention Worker.
+- PR #62 implements the clearance checklist, immutable clearance record, legal/business hold ledger, guarded D1 document deletion, permanently retained rental business history, and an hourly-at-minute-0-UTC R2/D1 retention Worker (up to 10 due rentals per run).
 - Production still has the enabled R2 bucket-lock rule `deverve-rental-cnic-indefinite`. The gated deployment workflow checks migration 0050 and the live Worker health policy before removing only that rule. Until migration and Worker deployment succeed, the old lock remains and no CNIC deletion is enabled.
 - Legacy rentals remain uncleared. No clearance timestamp is inferred and no existing CNIC object was changed or deleted.
 - New purpose-separated AI vault and CNIC preview secrets are provisioned by a guarded workflow using domain-separated HKDF derivation from the existing backup root key. The bootstrap token remains a legacy decryption fallback until existing Gemini key rows are re-encrypted and verified.
