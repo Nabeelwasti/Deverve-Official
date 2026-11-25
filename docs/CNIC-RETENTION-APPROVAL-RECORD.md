@@ -1,6 +1,6 @@
 # De VERVE — CNIC collection, access, retention and deletion decision record
 
-**Status: OWNER POLICY RECORDED — LEGAL REVIEW AND FORMAL SIGNATURE PENDING.** This record captures the rental-CNIC policy expressly confirmed by the business owner in the project conversation. It is not a lawyer's opinion, a signed contract, or proof that customer notices/consents have been deployed. Do not represent the legal review as complete.
+**Status: OWNER CONFIRMS LEGAL APPROVAL RECEIVED — APPROVAL EVIDENCE/SCOPE TO BE ATTACHED; FORMAL OWNER SIGNATURE PENDING.** This record captures the rental-CNIC policy confirmed by the business owner and the owner's subsequent confirmation that legal approval has been obtained. The approving authority, approval date, scope and written evidence must be attached to the controlled business record. Until that evidence is attached, do not claim that this document itself is a lawyer's opinion, signed contract, or proof that customer notices/consents have been deployed.
 
 ## 1. System and data scope
 
@@ -65,7 +65,7 @@ This is a preliminary compliance assessment, not a legal opinion. No AI assistan
 
 ## 4. Optional independent legal review for additional assurance
 
-The owner may choose to obtain an independent Pakistan-qualified legal review for additional assurance. The business must not claim that lawyers have reviewed or approved this policy unless a real review has taken place and written evidence is retained. The following topics are suitable for that review:
+The owner confirms legal approval has been obtained. The business should retain the actual approval artifact, identify the approving authority and date, and confirm that its scope covers this policy and the deployed workflow. An additional independent Pakistan-qualified legal review remains optional for extra assurance. The business must not claim that lawyers reviewed or approved the policy beyond what the retained evidence actually establishes. The following topics are suitable for that review:
 
 1. Whether a full front-and-back CNIC copy is necessary for every rental request, and whether less intrusive identity checks or partial masking can achieve the same purpose.
 2. The legal basis and adequacy of customer notice/affirmative acknowledgement for collection, verification, storage, access, retention and disclosures.
@@ -134,4 +134,4 @@ The policy above is not proof that the website currently implements every requir
 
 Any implementation change must include a reviewed plan, migration/rollback, isolated restore test, regression tests, production verification and updated staff/customer documentation. Never use real customer CNICs in test fixtures.
 
-**Final status: OWNER POLICY CAPTURED IN WRITING; FORMAL OWNER SIGNATURE AND TECHNICAL ACCEPTANCE REMAIN PENDING. No external lawyer review is claimed or recorded. The business may operate its stated policy subject to applicable law, without representing this document as a legal opinion or guarantee.**
+**Final status: OWNER CONFIRMS LEGAL APPROVAL RECEIVED; THE APPROVAL ARTIFACT, APPROVING AUTHORITY, DATE AND SCOPE MUST BE ATTACHED TO THIS CONTROLLED RECORD. FORMAL OWNER SIGNATURE AND TECHNICAL ACCEPTANCE REMAIN PENDING. No lawyer's opinion is claimed beyond the evidence actually retained. The business may operate its stated policy subject to applicable law, without representing this document as a legal opinion or guarantee.**
