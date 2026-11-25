@@ -101,7 +101,7 @@ test("rental submission preserves the versioned CNIC notice and consent metadata
   assert.match(workerSource,/rental-cnic-2026-11-21-v1/);
   assert.match(workerSource,/cnic_consent_at/);
   assert.match(appSource,/cnic_consent_version/);
-  assert.match(appSource,/90 days after all rental payments/);
+  assert.match(appSource,/90 days after an authorised owner or manager records final clearance/);
   assert.match(migration,/cnic_consent_version TEXT NOT NULL DEFAULT 'legacy-unknown'/);
   assert.match(migration,/cnic_consent_at TEXT/);
 });
