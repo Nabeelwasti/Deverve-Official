@@ -95,8 +95,11 @@ jobs:
         run: |
           if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
             npm run test:d1:integration
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping remote D1 integration on a pull request without protected Cloudflare credentials."
           else
-            echo "Skipping remote D1 integration: Cloudflare test credentials are not configured."
+            echo "::error::Cloudflare D1 integration credentials are required on main-branch runs."
+            exit 1
           fi
       - name: Run isolated offline POS D1 migration suite when credentials are configured
         env:
@@ -106,8 +109,11 @@ jobs:
         run: |
           if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" ]]; then
             npm run test:offline:d1
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping offline POS D1 migration suite on a pull request without protected Cloudflare credentials."
           else
-            echo "Skipping offline POS D1 migration suite: Cloudflare test credentials are not configured."
+            echo "::error::Cloudflare D1 integration credentials are required on main-branch runs."
+            exit 1
           fi
       - name: Rehearse offline POS migrations on an isolated production backup clone
         env:
@@ -123,8 +129,11 @@ jobs:
         run: |
           if [[ -n "${CLOUDFLARE_API_TOKEN:-}" && -n "${CLOUDFLARE_ACCOUNT_ID:-}" && -n "${D1_BACKUP_ENCRYPTION_KEY:-}" ]]; then
             node scripts/d1-backup-restore.mjs
+          elif [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
+            echo "Skipping production-backup-clone rehearsal on a pull request without protected Cloudflare and backup-key secrets."
           else
-            echo "Skipping production-backup-clone rehearsal: protected Cloudflare and backup-key secrets are unavailable to this workflow run."
+            echo "::error::Cloudflare account and D1 backup-key secrets are required on main-branch runs."
+            exit 1
           fi
       - name: Install Chromium headless shell for browser tests
         timeout-minutes: 8
