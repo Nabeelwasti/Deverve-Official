@@ -598,7 +598,7 @@ async function adminProductRoutes(request: Request, env: Env, url: URL): Promise
       if (!productRows.length) return json({ products: [], has_more: false, next_offset: offset });
       const productIds = productRows.map((product) => product.id);
       const placeholders = productIds.map(() => "?").join(",");
-      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 10000").bind(...productIds).all<PublicVariantRow>();
+      const variantRows = await env.DB.prepare("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 10000").bind(...productIds).all<AdminVariantRow>();
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variantRows.results ?? []) {
         const available = Math.max(0, variant.stock_on_hand - variant.reserved_quantity);
