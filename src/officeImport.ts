@@ -1,11 +1,12 @@
 const MAX_ENTRIES=250,MAX_EXPANDED=12_000_000,MAX_RATIO=120;
 const decoder=new TextDecoder("utf-8",{fatal:true});
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer { const buffer=new ArrayBuffer(bytes.byteLength); new Uint8Array(buffer).set(bytes); return buffer; }
 type Entry={name:string;method:number;flags:number;crc:number;compressed:number;size:number;offset:number};
 function u16(v:DataView,p:number){if(p<0||p+2>v.byteLength)throw new Error("Office archive is truncated.");return v.getUint16(p,true);}
 function u32(v:DataView,p:number){if(p<0||p+4>v.byteLength)throw new Error("Office archive is truncated.");return v.getUint32(p,true);}
 function crc32(a:Uint8Array){let c=0xffffffff;for(const b of a){c^=b;for(let i=0;i<8;i++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;}
 function safePath(s:string){return !!s&&s.length<=240&&!s.startsWith("/")&&!s.includes("\\")&&!s.split("/").some(x=>x===".."||x===".")&&!/^[A-Za-z]:/.test(s)&&!/[\u0000-\u001f]/.test(s);}
-async function inflate(a:Uint8Array){if(typeof DecompressionStream==="undefined")throw new Error("Use a modern Chrome browser to read DOCX/XLSX files.");try{return new Uint8Array(await new Response(new Blob([a]).stream().pipeThrough(new DecompressionStream("deflate-raw" as CompressionFormat))).arrayBuffer());}catch{throw new Error("Office document contains damaged or unsupported compressed data.");}}
+async function inflate(a:Uint8Array){if(typeof DecompressionStream==="undefined")throw new Error("Use a modern Chrome browser to read DOCX/XLSX files.");try{return new Uint8Array(await new Response(new Blob([toArrayBuffer(a)]).stream().pipeThrough(new DecompressionStream("deflate-raw" as CompressionFormat))).arrayBuffer());}catch{throw new Error("Office document contains damaged or unsupported compressed data.");}}
 async function unzip(file:File){
  if(file.size<22||file.size>5_000_000)throw new Error("Office documents must be no larger than 5 MB.");
  const bytes=new Uint8Array(await file.arrayBuffer()),v=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),min=Math.max(0,bytes.length-65557);let end=-1;
