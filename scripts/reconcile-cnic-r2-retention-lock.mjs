@@ -35,8 +35,8 @@ if (!healthResponse.ok ||
 
 const schedules = await request("GET", "/accounts/" + accountId + "/workers/scripts/deverve-cnic-retention/schedules");
 const cronExpressions = (schedules.schedules || []).map((item) => item.cron);
-if (!cronExpressions.includes("0 3 * * *")) {
-  throw new Error("The daily 03:00 UTC CNIC retention Cron Trigger is not confirmed; R2 lock rules were not changed.");
+if (!cronExpressions.includes("0 * * * *")) {
+  throw new Error("The hourly CNIC retention Cron Trigger is not confirmed; R2 lock rules were not changed.");
 }
 
 const path = "/accounts/" + accountId + "/r2/buckets/" + bucket + "/lock";
