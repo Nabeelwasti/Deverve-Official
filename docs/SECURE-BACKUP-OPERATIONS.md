@@ -2,7 +2,7 @@
 
 **Business account:** `deverve61@gmail.com` (Google Drive and Dropbox are separate services using the same email identity)  
 **Applies to:** production D1 business records, permanent CNIC evidence metadata, and encrypted CNIC evidence files  
-**Status:** manual owner-controlled process; Dropbox folder structure is ready, but no unattended Dropbox or Google Drive integration is configured
+**Status:** encrypted daily D1 backup/isolated restore and encrypted R2 media backup are automated and verified in GitHub Actions. Dropbox/Google Drive off-site copies and disconnected offline copies remain manual/unconfigured; owner key escrow is not verified.
 
 ## 1. Non-negotiable evidence rules
 
@@ -74,6 +74,16 @@ Use the same folder categories for matching business records:
 
 The current website does not yet produce one complete all-business archive or upload every category automatically. Export records from their authorized workspaces, encrypt sensitive exports before upload, and keep public marketing assets separate. A full automated D1 + private R2 + business-media archive and tested restore pipeline remains a release requirement.
 
+## Current verified automated backup status — 25 November 2026
+
+- Latest successful run: [GitHub Actions #45517680549](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45517680549).
+- D1 archive: `d1/encrypted/deverve-production-20261125T002339Z.dvbackup`, AES-256-GCM, R2 read-back verified, isolated restore passed for 66 tables, temporary D1 deleted.
+- Private media: 40 source objects (38 catalogue, 2 rental-private CNIC) totaling 20,001,859 plaintext bytes. Every object was encrypted, read back, decrypted and SHA-256 verified; the source inventory remained stable.
+- Media manifest: `media-manifests/deverve-media-20261125T002348Z.dvmanifest`, encrypted and read-back/decrypted successfully. The previous plaintext media inventory manifest was deleted only after the encrypted replacement passed verification.
+- R2 lifecycle: encrypted D1/media archives and manifests expire after 90 days; legacy plaintext D1 SQL expires after 30 days; incomplete multipart uploads expire after 7 days. The backup and source media buckets have public domains disabled.
+- The encryption key is stored as a GitHub Actions secret. Independent owner password-manager escrow and a separate recovery copy remain unverified. Never paste the key into chat or commit it to Git.
+- This is verified recovery within the same Cloudflare account. Dropbox/Google Drive off-site replication, an offline copy, and account-loss recovery are not configured or verified.
+
 ## 3. Password custody
 
 - Use a different random password for each backup or a formally managed business vault entry.
@@ -129,11 +139,11 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 | Dropbox vault | Folder structure created in verified business account; no files uploaded yet; no OAuth sync |
 | Google Drive upload | Manual owner upload; ChatGPT Drive connector disabled by workspace administrator; no website OAuth integration |
 | Emailing CNIC backups | Not used and not recommended |
-| Scheduled D1 SQL export | Not configured |
+| Scheduled encrypted D1 SQL export + isolated restore | Configured; last run passed 25 Nov 2026 (66 tables) |
 | Automated R2-to-Google-Drive replication | Not configured |
 | Automated R2-to-Dropbox replication | Not configured |
 | Full replacement-system CNIC import | Requires a separately reviewed recovery importer |
-| Tested end-to-end disaster recovery drill | Still required |
+| D1 isolated restore + R2 per-object encrypted read-back/decryption | Passed 25 Nov 2026; full off-account disaster recovery still required |
 
 ## 7. Owner acceptance checklist
 
@@ -152,7 +162,7 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 
 ## Automated encrypted D1 backup and restore drill
 
-The repository includes `scripts/d1-backup-restore.mjs` and the manually triggered / daily `Encrypted D1 Backup and Restore Drill` workflow. It exports production D1, encrypts the SQL in memory with AES-256-GCM, uploads only the encrypted archive and a non-sensitive manifest to the private `deverve-db-backups` R2 bucket, then decrypts the archive in memory and imports it into a temporary APAC D1 database. The drill verifies table names and schema-object counts, compares row counts when the source snapshot is stable, and deletes the temporary database. Plaintext SQL is never written to the GitHub runner filesystem or uploaded to R2 by this workflow.
+The repository includes `scripts/d1-backup-restore.mjs` and the `Encrypted D1 and R2 Media Backup and Restore Drill` workflow. It runs on workflow dispatch, relevant pushes to `main`, and daily at 21:17 UTC (02:17 Pakistan time). It exports production D1, encrypts the SQL in memory with AES-256-GCM, uploads only the encrypted archive and a non-sensitive manifest to the private `deverve-db-backups` R2 bucket, then decrypts the archive in memory and imports it into a temporary APAC D1 database. The drill verifies table names and schema-object counts, compares row counts when the source snapshot is stable, and deletes the temporary database. Plaintext SQL is never written to the GitHub runner filesystem or uploaded to R2 by this workflow. The same workflow backs up every object in `deverve-media-private`, encrypts each with AES-256-GCM/HKDF-SHA256, verifies R2 read-back/decryption/SHA-256, checks that the source inventory stayed stable, and stores an encrypted `.dvmanifest` inventory. GitHub scheduled runs may be delayed; check the actual run result rather than assuming it started exactly at 02:17.
 
 ### One-time owner setup
 
@@ -164,7 +174,7 @@ The repository includes `scripts/d1-backup-restore.mjs` and the manually trigger
 
 ### Existing legacy snapshot
 
-The current R2 inventory contains the legacy plaintext SQL object `d1/deverve-production-2026-11-21.sql` (139,921 bytes) in the private `deverve-db-backups` bucket. Cloudflare confirms the bucket has no enabled public `r2.dev` endpoint or custom domain. Keep the bucket private; do not copy this file to Drive or another third-party cloud. Do not delete the only existing SQL snapshot until the first AES-256-GCM backup and isolated restore drill succeeds and the owner has independently verified the recovery key. Then remove the legacy plaintext object under the normal backup-retention procedure.
+The R2 inventory still contains the legacy plaintext SQL object `d1/deverve-production-2026-11-21.sql` (139,921 bytes) in the private `deverve-db-backups` bucket. Cloudflare confirms the bucket has no enabled public `r2.dev` endpoint or custom domain. Keep the bucket private; do not copy this file to Drive or another third-party cloud. A newer AES-256-GCM backup and isolated restore drill have now passed, but do not delete the legacy object until the owner independently verifies recovery-key custody and the encrypted recovery procedure. Its R2 lifecycle rule expires legacy plaintext D1 objects after 30 days.
 
 ### Current verification boundary
 
