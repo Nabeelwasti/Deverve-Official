@@ -185,12 +185,11 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
-test("Pages execution context schedules the contact enquiry queue without delaying the response", async () => {
+test("ordinary API traffic does not drain the enquiry outbox", async () => {
   const scheduled=[];
   const response=await handleRequest(new Request(origin+"/api/health"),env(new FakeD1()),{waitUntil(promise){scheduled.push(promise);}});
   assert.equal(response.status,200);
-  assert.equal(scheduled.length,1);
-  await Promise.all(scheduled);
+  assert.equal(scheduled.length,0);
 });
 
 test("queued contact enquiries are delivered to the configured owner email through Resend", async () => {
@@ -741,13 +740,15 @@ test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wal
   assert.equal(Number.isNaN(parseRentalDateTime("2026-02-30T10:30")), true);
   assert.equal(Number.isNaN(parseRentalDateTime("2026-11-15 10:30")), true);
 });
-test("public enquiry submissions reject missing or invalid Turnstile tokens", async () => {
+test("public enquiry submissions reject missing and invalid Turnstile tokens", async () => {
   const db = new FakeD1();
-  const response = await handleRequest(request("/api/enquiries", "POST", {
+  const missing = await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{"content-type":"application/json","origin":origin,"sec-fetch-site":"same-origin"},body:JSON.stringify({enquiryType:"general",name:"Test Customer",phone:"+923001234567",message:"Please contact me."})}),env(db));
+  assert.equal(missing.status,403);
+  const invalid = await handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "general", name: "Test Customer", phone: "+923001234567",
     message: "Please contact me.", turnstile_token: "invalid-token",
   }), env(db));
-  assert.equal(response.status, 403);
+  assert.equal(invalid.status, 403);
   assert.equal(db.enquiries.size, 0);
 });
 
@@ -937,6 +938,13 @@ test("private media library and file previews are unavailable to read-only staff
   assert.equal(file.status, 403);
 });
 
+
+test("customer registration rejects a missing Turnstile token", async () => {
+  const db=new FakeD1();
+  const response=await handleRequest(new Request(origin+"/api/customer/register",{method:"POST",headers:{"content-type":"application/json","origin":origin,"sec-fetch-site":"same-origin"},body:JSON.stringify({full_name:"Test Customer",phone:"+923001234567",email:"missing-token@example.com",password:"A-strong-customer-password-2026"})}),env(db));
+  assert.equal(response.status,403);
+  assert.equal(db.customers.size,0);
+});
 
 test("customer registration creates a secure session and stores a password hash", async () => {
   const db = new FakeD1();
@@ -2291,6 +2299,11 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(publicVariants.length, 2, "sold-out sizes remain visible as disabled customer choices");
   assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-M").available_quantity, 5);
   assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-S").available_quantity, 0);
+  for (const variant of publicVariants) {
+    assert.equal(Object.hasOwn(variant,"stock_on_hand"),false);
+    assert.equal(Object.hasOwn(variant,"reserved_quantity"),false);
+    assert.equal(Number.isInteger(variant.available_quantity),true);
+  }
 
   const payload = {
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
