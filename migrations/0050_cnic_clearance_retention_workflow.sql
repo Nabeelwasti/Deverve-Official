@@ -1,7 +1,7 @@
 -- Owner/manager-controlled CNIC clearance and 90-day post-clearance retention.
 -- Existing rentals remain not_cleared; no historical clearance is inferred.
 ALTER TABLE rental_requests ADD COLUMN cnic_clearance_at TEXT;
-ALTER TABLE rental_requests ADD COLUMN cnic_clearance_by_admin_id TEXT REFERENCES admin_users(id) ON DELETE SET NULL;
+ALTER TABLE rental_requests ADD COLUMN cnic_clearance_by_admin_id TEXT REFERENCES admin_users(id) ON DELETE RESTRICT;
 ALTER TABLE rental_requests ADD COLUMN cnic_clearance_note TEXT NOT NULL DEFAULT '';
 ALTER TABLE rental_requests ADD COLUMN cnic_retention_due_at TEXT;
 ALTER TABLE rental_requests ADD COLUMN cnic_retention_status TEXT NOT NULL DEFAULT 'not_cleared'
