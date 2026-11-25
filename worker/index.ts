@@ -1129,6 +1129,64 @@ async function adminExchangeRoutes(request: Request, env: Env, url: URL): Promis
   if (!admin) return error("Authentication required", 401);
   if (!["owner", "manager", "orders"].includes(admin.role)) return error("You do not have permission to manage exchanges.", 403);
 
+  if (retentionMatch) {
+    if (request.method !== "POST") return error("Method not allowed", 405);
+    if (!["owner", "manager"].includes(admin.role)) return error("Only the owner or an authorized manager can approve CNIC clearance or holds", 403);
+    if (!requireSameOrigin(request, url)) return error("Request origin could not be verified", 403);
+    const body = await readJson(request, 4000);
+    if (!body) return error("Submit valid retention approval details", 400);
+    const rentalId = retentionMatch[1], action = retentionMatch[2];
+    const now = new Date().toISOString();
+    try {
+      const rental = await env.DB.prepare("SELECT id,status,cnic_clearance_at,cnic_retention_status,cnic_retention_due_at FROM rental_requests WHERE id=? LIMIT 1").bind(rentalId).first<{id:string;status:string;cnic_clearance_at:string|null;cnic_retention_status:string;cnic_retention_due_at:string|null}>();
+      if (!rental) return error("Rental request not found", 404);
+      if (action === "clearance") {
+        if (rental.status !== "completed") return error("A rental must be marked completed before final financial and incident clearance can be recorded", 409);
+        if (rental.cnic_clearance_at || rental.cnic_retention_status !== "not_cleared") return error("CNIC clearance has already been recorded and cannot be reset", 409);
+        const checks = ["payments_settled","damages_settled","challans_settled","fees_settled","no_open_disputes"];
+        if (checks.some(key => body[key] !== true)) return error("Confirm every payment, damage, challan, fee and dispute check before starting retention", 400);
+        const note = cleanText(body.note, 500);
+        if (note.length < 10) return error("Add a meaningful reconciliation note (at least 10 characters)", 400);
+        const docs = await env.DB.prepare("SELECT COUNT(*) AS count FROM rental_documents WHERE rental_request_id=? AND document_side IN ('cnic_front','cnic_back')").bind(rentalId).first<{count:number}>();
+        if (Number(docs?.count ?? 0) !== 2) return error("Both original CNIC images must remain present before clearance can be recorded", 409);
+        const due = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString();
+        const metadata = JSON.stringify({payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,retention_days:90,retention_due_at:due,note});
+        const written = await env.DB.batch([
+          env.DB.prepare("UPDATE rental_requests SET cnic_clearance_at=?,cnic_clearance_by_admin_id=?,cnic_clearance_note=?,cnic_retention_due_at=?,cnic_retention_status='scheduled',cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND status='completed' AND cnic_clearance_at IS NULL AND cnic_retention_status='not_cleared'").bind(now,admin.admin_user_id,note,due,now,rentalId),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'rental.cnic_clearance_recorded','rental_request',?,? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id=? AND cnic_clearance_at=? AND cnic_retention_status='scheduled')").bind(crypto.randomUUID(),admin.admin_user_id,rentalId,metadata,rentalId,now),
+        ]);
+        if ((written[0]?.meta?.changes ?? 0) !== 1 || (written[1]?.meta?.changes ?? 0) !== 1) return error("Clearance could not be recorded safely. Refresh and review the rental before retrying", 409);
+        return json({updated:true,retention_status:"scheduled",clearance_at:now,retention_due_at:due,retention_days:90});
+      }
+      const holdAction = cleanText(body.action, 10);
+      if (holdAction === "place") {
+        if (["purging","deleted"].includes(rental.cnic_retention_status)) return error("CNIC deletion has already started or completed; a new hold cannot be applied", 409);
+        const reason = cleanText(body.reason, 500);
+        const reviewAt = cleanText(body.review_at, 40);
+        if (reason.length < 10 || !Number.isFinite(Date.parse(reviewAt)) || Date.parse(reviewAt) <= Date.now()) return error("Enter a clear hold reason and a future review date", 400);
+        const holdId = crypto.randomUUID();
+        const written = await env.DB.batch([
+          env.DB.prepare("INSERT INTO rental_cnic_holds (id,rental_request_id,reason,placed_by_admin_id,placed_at,review_at) SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM rental_cnic_holds WHERE rental_request_id=? AND released_at IS NULL) AND EXISTS (SELECT 1 FROM rental_requests WHERE id=? AND cnic_retention_status NOT IN ('purging','deleted'))").bind(holdId,rentalId,reason,admin.admin_user_id,now,reviewAt,rentalId,rentalId),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'rental.cnic_hold_placed','rental_request',?,? WHERE EXISTS (SELECT 1 FROM rental_cnic_holds WHERE id=?)").bind(crypto.randomUUID(),admin.admin_user_id,rentalId,JSON.stringify({reason,review_at:reviewAt}),holdId),
+        ]);
+        if ((written[0]?.meta?.changes ?? 0) !== 1 || (written[1]?.meta?.changes ?? 0) !== 1) return error("A hold already exists or this rental is no longer eligible", 409);
+        return json({updated:true,hold_active:true,review_at:reviewAt});
+      }
+      if (holdAction === "release") {
+        const releaseNote = cleanText(body.note, 500);
+        if (releaseNote.length < 10) return error("Add a reason for releasing this hold (at least 10 characters)", 400);
+        const active = await env.DB.prepare("SELECT id FROM rental_cnic_holds WHERE rental_request_id=? AND released_at IS NULL LIMIT 1").bind(rentalId).first<{id:string}>();
+        if (!active) return error("No active hold exists for this rental", 404);
+        const written = await env.DB.batch([
+          env.DB.prepare("UPDATE rental_cnic_holds SET released_by_admin_id=?,released_at=?,release_note=? WHERE id=? AND released_at IS NULL").bind(admin.admin_user_id,now,releaseNote,active.id),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'rental.cnic_hold_released','rental_request',?,? WHERE EXISTS (SELECT 1 FROM rental_cnic_holds WHERE id=? AND released_at=?)").bind(crypto.randomUUID(),admin.admin_user_id,rentalId,JSON.stringify({hold_id:active.id,note:releaseNote}),active.id,now),
+        ]);
+        if ((written[0]?.meta?.changes ?? 0) !== 1 || (written[1]?.meta?.changes ?? 0) !== 1) return error("The hold could not be released safely", 409);
+        return json({updated:true,hold_active:false});
+      }
+      return error("Choose a valid hold action", 400);
+    } catch { return error("CNIC retention approval could not be saved", 503); }
+  }
   if (collection && request.method === "GET") {
     try {
       const rows = await env.DB.prepare("SELECT e.id, e.order_id, e.customer_id, e.exchange_number, e.reason, e.details, e.status, e.admin_note, e.created_at, e.updated_at, e.received_at, e.completed_at, o.order_number, c.full_name AS customer_name, c.email AS customer_email, c.phone AS customer_phone FROM exchange_requests e JOIN orders o ON o.id = e.order_id JOIN customers c ON c.id = e.customer_id ORDER BY e.created_at DESC LIMIT 100").all<Record<string, unknown>>();
@@ -1423,6 +1481,9 @@ interface RentalRequestRow {
   pickup_location: string; destination: string | null; pickup_at: string; return_at: string;
   driver_option: string; status: string; customer_note: string; admin_note: string;
   reference_code: string; created_at: string; updated_at: string;
+  cnic_clearance_at?: string | null; cnic_clearance_by_admin_id?: string | null; cnic_clearance_note?: string;
+  cnic_retention_due_at?: string | null; cnic_retention_status?: string; cnic_retention_deleted_at?: string | null;
+  cnic_retention_last_error?: string | null; cnic_hold_active?: number; cnic_hold_reason?: string | null;
 }
 
 async function publicVehicleRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
@@ -1859,8 +1920,9 @@ async function adminRentalDocumentRoutes(request: Request, env: Env, url: URL): 
 
 async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<Response | null> {
   const collection = url.pathname === "/api/admin/rentals";
+  const retentionMatch = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})\/cnic-(clearance|hold)$/i);
   const match = url.pathname.match(/^\/api\/admin\/rentals\/([a-f0-9-]{36})$/i);
-  if (!collection && !match) return null;
+  if (!collection && !match && !retentionMatch) return null;
   let admin: SessionRow | null;
   try { admin = await currentAdmin(request, env.DB); }
   catch { return error("Rental management is temporarily unavailable", 503); }
@@ -1868,7 +1930,7 @@ async function adminRentalRoutes(request: Request, env: Env, url: URL): Promise<
   if (!["owner", "manager", "rental"].includes(admin.role)) return error("You do not have permission to manage rentals", 403);
   if (collection && request.method === "GET") {
     try {
-      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_city, r.pickup_address, r.destination_city, r.destination_address, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.rental_days, r.estimated_daily_rate_paisa, r.estimated_total_paisa, r.created_at, r.updated_at, r.cnic_consent_version, r.cnic_consent_at, v.name AS vehicle_name, v.vehicle_type, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_front') AS cnic_front_uploaded, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_back') AS cnic_back_uploaded FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
+      const result = await env.DB.prepare("SELECT r.id, r.vehicle_id, r.customer_name, r.phone, r.email, r.pickup_location, r.destination, r.pickup_city, r.pickup_address, r.destination_city, r.destination_address, r.pickup_at, r.return_at, r.driver_option, r.status, r.customer_note, r.admin_note, r.reference_code, r.rental_days, r.estimated_daily_rate_paisa, r.estimated_total_paisa, r.created_at, r.updated_at, r.cnic_consent_version, r.cnic_consent_at, r.cnic_clearance_at, r.cnic_clearance_by_admin_id, r.cnic_clearance_note, r.cnic_retention_due_at, r.cnic_retention_status, r.cnic_retention_deleted_at, r.cnic_retention_last_error, EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL) AS cnic_hold_active, (SELECT h.reason FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL ORDER BY h.placed_at DESC LIMIT 1) AS cnic_hold_reason, v.name AS vehicle_name, v.vehicle_type, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_front') AS cnic_front_uploaded, EXISTS (SELECT 1 FROM rental_documents d WHERE d.rental_request_id=r.id AND d.document_side='cnic_back') AS cnic_back_uploaded FROM rental_requests r LEFT JOIN vehicles v ON v.id = r.vehicle_id ORDER BY r.created_at DESC LIMIT 100").all<RentalRequestRow & { vehicle_name: string | null; vehicle_type: string | null }>();
       return json({ rentals: result.results ?? [] });
     } catch { return error("Rental requests could not be loaded", 503); }
   }
