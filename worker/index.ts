@@ -6843,6 +6843,7 @@ export async function handleRequest(request: Request, env: Env, _ctx?:WorkerExec
       const variants = await env.DB.prepare(
         "SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (" + placeholders + ") ORDER BY size, color LIMIT 5000",
       ).bind(...productIds).all<PublicVariantRow>();
+      if ((variants.results?.length ?? 0) >= 5000) return error("The catalogue has reached its safe variant response limit. Please contact De VERVE before ordering.", 503);
       const variantsByProduct = new Map<string, Array<PublicVariantRow & { available_quantity: number }>>();
       for (const variant of variants.results ?? []) {
         variantsByProduct.set(variant.product_id, [...(variantsByProduct.get(variant.product_id) ?? []), variant]);
