@@ -1083,9 +1083,9 @@ class FakeStatement {
     }
     if (q.startsWith("SELECT COUNT(*) AS total FROM owner_notifications")) return { total: [...this.db.notifications.values()].filter((row) => row.is_read === 0).length };
     if (q.startsWith("SELECT s.id, s.admin_user_id")) {
-      const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
+      const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1] && (item.last_seen_at || item.created_at || new Date().toISOString()) > v[2]);
       const admin = session && this.db.admins.get(session.admin_user_id);
-      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at, can_use_pos: this.db.posCashiers.get(admin.id)?.revoked_at == null && this.db.posCashiers.has(admin.id) ? 1 : 0 } : null;
+      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at, last_seen_at: session.last_seen_at || session.created_at || new Date().toISOString(), can_use_pos: this.db.posCashiers.get(admin.id)?.revoked_at == null && this.db.posCashiers.has(admin.id) ? 1 : 0 } : null;
     }
     if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.wholesale_price_paisa")) {
       const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
@@ -1276,6 +1276,7 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE admin_sessions SET last_seen_at=?")) { const [lastSeen,id]=v; const row=[...this.db.sessions.values()].find(item=>item.id===id); if(row)row.last_seen_at=lastSeen; return {success:true,meta:{changes:row?1:0}}; }
     if (q.startsWith("UPDATE admin_ai_action_confirmations SET consumed_at=?")) { const [consumedAt,id,adminId,expiresAt]=v; const row=this.db.aiConfirmations.get(id); if(!row||row.admin_user_id!==adminId||row.consumed_at||row.expires_at<=expiresAt)return {success:true,meta:{changes:0}}; row.consumed_at=consumedAt; return {success:true,meta:{changes:1}}; }
     if (q.startsWith("INSERT INTO admin_ai_action_confirmations")) { const [id,admin_user_id,command,command_sha256,created_at,expires_at]=v; this.db.aiConfirmations.set(id,{id,admin_user_id,command,command_sha256,created_at,expires_at,consumed_at:null}); return {success:true,meta:{changes:1}}; }
     if (q.startsWith("DELETE FROM admin_ai_action_confirmations")) { let changes=0; for(const [id,row] of this.db.aiConfirmations){if(row.expires_at<v[0]||(row.consumed_at&&row.consumed_at<v[1])){this.db.aiConfirmations.delete(id);changes++;}} return {success:true,meta:{changes}}; }
@@ -3617,4 +3618,14 @@ test("JSON request body limits are enforced during streaming when Content-Length
   assert.equal(requestWithoutLength.headers.has("content-length"),false);
   const response=await handleRequest(requestWithoutLength,env(db));
   assert.equal(response.status,400);
+});
+
+test("administrator sessions expire after 30 minutes of inactivity", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const session=[...db.sessions.values()][0];
+  session.last_seen_at=new Date(Date.now()-31*60*1000).toISOString();
+  const response=await handleRequest(request("/api/admin/ai/tasks","GET",undefined,{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,401);
 });
