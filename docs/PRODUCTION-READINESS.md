@@ -506,11 +506,13 @@ Automated payment refunds, notification delivery, live payment onboarding, owner
 6. **AI:** Gemini key manager exists, but active provider health, rate/usage caps, data classification, prompt-injection protections and owner policy approval must be validated before describing public AI chat as production-ready.
 7. **Business acceptance:** actual product/variant/stock and vehicle/fleet/rates are intentionally owner-supplied. Legal policy approval, real device tests, operational support and real transaction/notification acceptance are outstanding.
 
-### Safe next-release rule
+### Safe next-release rule — updated 25 November 2026
 
-- Use normal commit messages; automatic production deployment from `main` is enabled.
-- Do not call Cloudflare deployment APIs or Wrangler. Do not apply migrations, change secrets, import/delete data or alter R2 objects.
-- Before a later release: export and verify D1 backup; reconcile migration ledger; stage migrations `0030` and `0031` in an isolated copy; test all Worker/browser paths; obtain owner/provider approvals; deploy only after the owner explicitly says **“deploy now”**; then run the live smoke and restore/transaction acceptance plan.
+- Cloudflare Pages automatic production and preview deployments are disabled. Keep them disabled; use only the controlled release workflows.
+- Do not run `wrangler d1 migrations apply` against production: it would also apply the separate offline POS migrations `0045`–`0049`. The hardening release must apply only reviewed migrations `0050`–`0053), individually, after a fresh encrypted backup and schema preflight.
+- If production D1 is unavailable or quota-exhausted, stop before any migration or deployment. The CNIC and outbox Worker workflows fail closed until their required columns/tables are confirmed.
+- Deploy the CNIC Worker, verify its hourly Cron and health response, and only then remove the single reviewed indefinite R2 lock rule. Deploy the outbox Worker only after reservation-expiry schema verification and confirm its five-minute Cron.
+- Deploy Pages only after the new purpose-separated secrets are provisioned, migrations `0050`–`0053` are verified, both scheduled Workers are healthy, and offline checkout remains disabled. Run production smoke checks immediately after the controlled deployment.
 
 **Verdict:** source CI is passing, but the service is **not certified production-ready for unrestricted commerce**. External integrations, backup/recovery, migration release, owner data, legal approval and live acceptance are real blockers—not tasks that can responsibly be marked complete from source code alone.
 
