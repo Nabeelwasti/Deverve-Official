@@ -142,18 +142,20 @@ A failed job must alert the owner through a configured business notification cha
 
 **Release verdict:** automated encrypted D1 and R2 backup/restore checks are now working within the Cloudflare account. Full disaster recovery is still **not production-ready** until key custody, independent off-account/offline copies, alerting, account-loss recovery and the approved CNIC backup-expiry process are verified.
 
-## 8. Required configuration before activation
+## 8. Remaining configuration before full disaster-recovery acceptance
 
-- [ ] Create a dedicated private R2 backup bucket in the approved region.
-- [ ] Approve backup retention and configure lock rules only for the dedicated backup prefixes.
-- [ ] Implement and deploy the scheduled D1 export Workflow in a non-production environment first.
-- [ ] Create a dedicated Dropbox API app with least-privilege scopes and a separate business security identity.
-- [ ] Add backup encryption key, key version, Dropbox refresh token and required Cloudflare account/database identifiers as Worker secrets.
-- [ ] Implement the R2 object inventory/copy and event-triggered private evidence backup.
-- [ ] Implement checksums, manifests, owner alerts, retry policy and backup-age dashboard.
-- [ ] Perform a full isolated D1 + R2 + CNIC evidence restore drill.
-- [ ] Record measured RPO/RTO and obtain business owner sign-off.
-- [ ] Only then consider a separately authorized production deployment.
+- [x] Dedicated private APAC R2 backup bucket `deverve-db-backups` created; public access disabled.
+- [x] R2 lifecycle rules configured for encrypted backups/manifests (90 days), legacy plaintext D1 snapshot (30 days) and incomplete multipart uploads (7 days).
+- [x] Scheduled/dispatchable GitHub Actions D1 export workflow deployed and a live isolated restore passed.
+- [x] Backup encryption key and Cloudflare identifiers configured as GitHub Actions secrets; the key is never stored in Git or chat.
+- [x] Daily R2 media inventory/copy, per-object AES-GCM encryption, read-back/decryption/SHA-256 verification and encrypted manifest implemented.
+- [ ] Owner independently confirms encryption-key escrow in a password manager and a separate recovery copy.
+- [ ] Create a dedicated Dropbox API app with least-privilege scopes and a separate business security identity; upload and verify encrypted backups off-account.
+- [ ] Add a separate disconnected encrypted offline copy.
+- [ ] Implement owner-visible failure/backup-age alerts and monthly/quarterly restore exercises.
+- [ ] Reconcile R2 backup retention with the CNIC 90-day post-clearance policy; counsel/owner approval is required before enabling document deletion or changing evidence retention.
+- [ ] Complete a full application-level D1 + R2 + private CNIC recovery exercise and record measured RPO/RTO.
+- [ ] Obtain business-owner acceptance of the recovery plan and the actual key-custody procedure.
 
 ## 9. Official technical references
 
