@@ -6171,16 +6171,43 @@ async function adminAIExecuteRoute(request:Request,env:Env,url:URL):Promise<Resp
  const limited=await enforcePublicRateLimit(request,env,"admin_ai_execute",30,900);if(limited)return limited;
  const body=await readJson(request,20000);if(!body)return error("A valid written request is required",400);
  const originalCommand=cleanText(body.command,1200).trim();
- if(!originalCommand)return error("A written request is required",400);
- const resolution=await resolveAdminAIActionIntent(originalCommand,env,body.messages);
- if(!resolution.command){
-  const taskId=typeof body.task_id==="string"&&/^[0-9a-f-]{36}$/i.test(body.task_id)?body.task_id:crypto.randomUUID();
-  await persistAdminAIQuickReply(env,admin,taskId,originalCommand,resolution.reply,resolution.model);
-  return json({ok:true,action:null,task_id:taskId,model:resolution.model,message:resolution.reply});
- }
- const command=resolution.command;
- const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\s+/g," ").trim();
+ const confirmationId=cleanText(body.confirmation_id,36).trim();
+ if(!confirmationId&&!originalCommand)return error("A written request is required",400);
  const now=new Date().toISOString();
+ let command="";
+ if(confirmationId){
+  if(!/^[0-9a-f-]{36}$/i.test(confirmationId))return error("The confirmation reference is invalid",400);
+  const pending=await env.DB.prepare("SELECT command,command_sha256 FROM admin_ai_action_confirmations WHERE id=? AND admin_user_id=? AND consumed_at IS NULL AND expires_at>? LIMIT 1").bind(confirmationId,admin.admin_user_id,now).first<{command:string;command_sha256:string}>();
+  if(!pending)return error("This action preview has expired or was already used. Ask the assistant to prepare it again.",409);
+  if(await sha256(pending.command)!==pending.command_sha256)return error("The saved action preview failed its integrity check. Prepare it again.",409);
+  const claimed=await env.DB.prepare("UPDATE admin_ai_action_confirmations SET consumed_at=? WHERE id=? AND admin_user_id=? AND consumed_at IS NULL AND expires_at>?").bind(now,confirmationId,admin.admin_user_id,now).run();
+  if((claimed.meta?.changes??0)!==1)return error("This action preview was already confirmed or expired. Prepare it again.",409);
+  command=pending.command;
+ }else{
+  const resolution=await resolveAdminAIActionIntent(originalCommand,env,body.messages);
+  if(!resolution.command){
+   const taskId=typeof body.task_id==="string"&&/^[0-9a-f-]{36}$/i.test(body.task_id)?body.task_id:crypto.randomUUID();
+   await persistAdminAIQuickReply(env,admin,taskId,originalCommand,resolution.reply,resolution.model);
+   return json({ok:true,action:null,task_id:taskId,model:resolution.model,message:resolution.reply});
+  }
+  command=resolution.command;
+  const preview=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\s+/g," ").trim();
+  const supported=/^(?:please )?publish all draft products$/.test(preview)||/^(?:please )?publish all eligible draft products$/.test(preview)||/^(?:please )?publish all drafts$/.test(preview)
+   ||/^(?:please )?publish product .+$/i.test(command)
+   ||/^(?:please )?(?:set|update) stock for sku [A-Za-z0-9._-]{2,80} to [0-9]{1,8}$/i.test(preview)
+   ||/^(?:please )?(?:mark|set|update) enquiry [0-9a-f-]{36} (?:status )?(?:to|as) (new|contacted|qualified|closed|spam)$/i.test(preview)
+   ||/^(?:please )?(?:mark|set|update) wholesale quote [0-9a-f-]{36} (?:status )?(?:to|as) prepared$/i.test(preview)
+   ||/^(?:please )?(?:set|mark|update) vehicle [0-9a-f-]{36} (?:status )?(?:to|as) (available|maintenance|retired)$/i.test(preview)
+   ||/^(?:please )?(?:set|mark|update) order [0-9a-f-]{36} (?:status )?(?:to|as) (confirmed|processing|dispatched|delivered|cancelled)$/i.test(preview);
+  if(!supported)return error("I could not safely match this request to an available business action. No changes were made.",422);
+  const id=crypto.randomUUID(),expiresAt=new Date(Date.now()+120000).toISOString();
+  await env.DB.batch([
+   env.DB.prepare("INSERT INTO admin_ai_action_confirmations (id,admin_user_id,command,command_sha256,created_at,expires_at) VALUES (?,?,?,?,?,?)").bind(id,admin.admin_user_id,command,await sha256(command),now,expiresAt),
+   env.DB.prepare("DELETE FROM admin_ai_action_confirmations WHERE expires_at<? OR consumed_at IS NOT NULL AND consumed_at<?").bind(now,new Date(Date.now()-86400000).toISOString()),
+  ]);
+  return json({ok:true,action:null,confirmation_required:true,confirmation_id:id,expires_at:expiresAt,action_preview:command,message:"Review this action before it runs: "+command+". No business change has been made. Confirm within 2 minutes to execute it."});
+ }
+ const normalized=command.toLowerCase().replace(/[.!?]+$/,"").replace(/\s+/g," ").trim();
  try{
   if(/^(?:please )?publish all draft products$/.test(normalized)||/^(?:please )?publish all eligible draft products$/.test(normalized)||/^(?:please )?publish all drafts$/.test(normalized)){
    const before=await env.DB.prepare("SELECT COUNT(*) AS count FROM products WHERE status='draft'").first<{count:number}>();
