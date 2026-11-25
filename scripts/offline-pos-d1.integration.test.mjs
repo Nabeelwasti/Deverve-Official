@@ -153,10 +153,16 @@ try {
 } finally {
   if (databaseId) {
     await api("DELETE", "/accounts/" + accountId + "/d1/database/" + databaseId);
-    const databases = await api("GET", "/accounts/" + accountId + "/d1/database?per_page=100");
-    if ((databases ?? []).some((database) => database.uuid === databaseId)) {
-      throw new Error("Temporary offline-POS migration test database still exists after cleanup.");
+    let deleted = false;
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const databases = await api("GET", "/accounts/" + accountId + "/d1/database?per_page=100");
+      if (!(databases ?? []).some((database) => database.uuid === databaseId)) {
+        deleted = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
-    console.log("Deleted isolated D1 migration test database:", databaseName);
+    if (!deleted) throw new Error("Temporary offline-POS migration test database still exists after cleanup.");
+    console.log("Deleted and verified isolated D1 migration test database:", databaseName);
   }
 }
