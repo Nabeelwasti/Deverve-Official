@@ -1,4 +1,4 @@
-name: Deploy scheduled outbox Worker
+name: Build scheduled outbox Worker bundle
 
 # The outbox changes order/payment state and releases stock. Deploy only as
 # an explicit controlled release after migration 0051 and smoke-test approval.
@@ -17,7 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     if: ${{ github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[deploy-outbox]')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -46,25 +46,13 @@ jobs:
           }
       - name: Type-check Worker and application
         run: npm run check
-      - name: Deploy scheduled outbox Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing Cloudflare API token"; exit 1; }
-          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing Cloudflare account ID"; exit 1; }
-          npx --yes wrangler@4.45.0 deploy --config workers/outbox/wrangler.toml
-      - name: Verify the five-minute outbox Cron Trigger
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          response="$(curl --fail-with-body --silent --show-error --max-time 20 \
-            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/scripts/deverve-outbox/schedules" \
-            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN")"
-          jq -e '.success == true and any(.result.schedules[]?; .cron == "*/5 * * * *")' <<<"$response" >/dev/null || {
-            echo "::error::The scheduled outbox Cron Trigger was not confirmed."
-            exit 1
-          }
+      - name: Build exact production outbox Worker bundle without deploying
+        run: npx --yes wrangler@4.45.0 deploy --dry-run --outdir dist --config workers/outbox/wrangler.toml
+      - name: Upload immutable outbox Worker bundle for controlled API deployment
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: deverve-outbox-bundle
+          path: dist/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
