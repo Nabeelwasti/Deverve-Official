@@ -1190,6 +1190,10 @@ class FakeStatement {
     if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.color, pm.position, pm.is_primary FROM product_media_assets")) {
       return { success: true, results: [] };
     }
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (")) {
+      const ids = new Set(v);
+      return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+    }
     if (q.startsWith("SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1")) {
       const ids = new Set(v);
       return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ id:row.id, product_id:row.product_id, sku:row.sku, size:row.size, color:row.color, available_quantity:Math.max(0,Number(row.stock_on_hand??0)-Number(row.reserved_quantity??0)) })) };
