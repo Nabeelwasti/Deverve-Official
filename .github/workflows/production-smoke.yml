@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           base="https://deverve-official.pages.dev"
-          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges" "/api/admin/inventory" "/api/admin/pos/bootstrap" "/api/admin/pos/summary" "/api/admin/pos/expenses" "/api/admin/pos/sales/00000000-0000-4000-8000-000000000000/void" "/api/admin/vehicles/00000000-0000-4000-8000-000000000000/media"; do
+          for route in "/api/customer/returns" "/api/admin/returns" "/api/customer/exchanges" "/api/admin/exchanges" "/api/admin/inventory" "/api/admin/pos/bootstrap" "/api/admin/pos/summary" "/api/admin/pos/expenses" "/api/admin/pos/offline/status" "/api/admin/pos/offline/verification-key" "/api/admin/pos/offline/devices" "/api/admin/pos/sales/00000000-0000-4000-8000-000000000000/void" "/api/admin/vehicles/00000000-0000-4000-8000-000000000000/media"; do
             status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-route.json -w '%{http_code}' "$base$route")"
             if [[ "$status" != "401" ]]; then
               echo "Expected unauthenticated access to $route to return 401, received HTTP $status:"
@@ -50,7 +50,16 @@ jobs:
               exit 1
             fi
           done
-          echo "Customer exchange and legacy return routes are deployed and require authentication."
+          status="$(curl --silent --show-error --max-time 15 -o /tmp/deverve-offline-sync.json -w '%{http_code}' \
+            -X POST "$base/api/admin/pos/offline/sync" \
+            -H 'Content-Type: application/json' \
+            --data '{}')"
+          if [[ "$status" != "401" ]]; then
+            echo "Expected unauthenticated offline POS sync to return 401, received HTTP $status:"
+            cat /tmp/deverve-offline-sync.json
+            exit 1
+          fi
+          echo "Customer exchange, legacy return and emergency offline POS routes require authentication."
 
       - name: Verify CMS, product SEO, sitemap and owner notification routes
         shell: bash
