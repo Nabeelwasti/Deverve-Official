@@ -2,6 +2,14 @@ const FORMAT = "DEVERVE-CNIC-BACKUP";
 const VERSION = 1;
 const ITERATIONS = 310000;
 const AAD = new TextEncoder().encode("De VERVE permanent evidence backup v1");
+
+// TypeScript 7 models typed-array backing stores as ArrayBufferLike. WebCrypto
+// requires an actual ArrayBuffer, so copy bytes into an owned buffer explicitly.
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return buffer;
+}
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
 // Two maximum-size 8 MiB source images are JSON/base64 encoded, then the ciphertext is base64 encoded again.
 // 32 MiB leaves safe room for both encoding layers and the envelope metadata.
@@ -23,8 +31,8 @@ function fromBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, character => character.charCodeAt(0));
 }
 async function deriveKey(password: string, salt: Uint8Array): Promise<CryptoKey> {
-  const material = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  const material = await crypto.subtle.importKey("raw", toArrayBuffer(new TextEncoder().encode(password)), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({ name: "PBKDF2", salt: toArrayBuffer(salt), iterations: ITERATIONS, hash: "SHA-256" }, material, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 function hasImageSignature(type: string, bytes: Uint8Array): boolean {
   if (type === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
@@ -56,7 +64,7 @@ export async function createEncryptedEvidenceBackup(referenceCode: string, files
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const key = await deriveKey(password, salt);
   const plaintext = new TextEncoder().encode(JSON.stringify(payload));
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: AAD, tagLength: 128 }, key, plaintext);
+  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: toArrayBuffer(iv), additionalData: toArrayBuffer(AAD), tagLength: 128 }, key, toArrayBuffer(plaintext));
   const envelope: EncryptedEnvelope = { format: FORMAT, version: VERSION, cipher: "AES-256-GCM", kdf: "PBKDF2-SHA-256", iterations: ITERATIONS, salt: toBase64(salt), iv: toBase64(iv), ciphertext: toBase64(new Uint8Array(ciphertext)) };
   const serialized = JSON.stringify(envelope);
   if (new TextEncoder().encode(serialized).byteLength > MAX_ARCHIVE_BYTES) throw new Error("The encrypted backup exceeds the supported archive size. Reduce the image sizes and try again.");
@@ -72,7 +80,7 @@ export async function decryptEvidenceBackup(file: File, password: string): Promi
   const salt = fromBase64(envelope.salt), iv = fromBase64(envelope.iv), ciphertext = fromBase64(envelope.ciphertext);
   if (salt.length !== 16 || iv.length !== 12 || ciphertext.length < 17 || ciphertext.length > MAX_ARCHIVE_BYTES) throw new Error("The backup integrity metadata is invalid.");
   let plaintext: ArrayBuffer;
-  try { plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: AAD, tagLength: 128 }, await deriveKey(password, salt), ciphertext); }
+  try { plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: toArrayBuffer(iv), additionalData: toArrayBuffer(AAD), tagLength: 128 }, await deriveKey(password, salt), toArrayBuffer(ciphertext)); }
   catch { throw new Error("Backup password is incorrect or the encrypted file has been changed or damaged."); }
   let payload: EvidencePayload;
   try { payload = JSON.parse(new TextDecoder().decode(plaintext)) as EvidencePayload; } catch { throw new Error("The decrypted backup content is invalid."); }
