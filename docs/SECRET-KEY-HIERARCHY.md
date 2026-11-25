@@ -5,7 +5,7 @@ The provisioning workflow creates two Cloudflare Pages production secrets:
 - `AI_KEYS_ENCRYPTION_KEY`: AES-GCM key for newly stored Gemini provider credentials.
 - `CNIC_PREVIEW_HMAC_KEY`: HMAC key for new short-lived CNIC preview signatures.
 
-They are independently derived with HKDF-SHA256 from the existing 32-byte `D1_BACKUP_ENCRYPTION_KEY`, using different fixed salt/info labels. This removes `ADMIN_BOOTSTRAP_TOKEN` from new AI-key encryption and new CNIC preview signatures. Existing preview tokens retain a short legacy verification overlap; they expire after two minutes.
+They are independently derived with HKDF-SHA256 from the existing 32-byte `D1_BACKUP_ENCRYPTION_KEY`, using different fixed salt/info labels. This removes `ADMIN_BOOTSTRAP_TOKEN` from new AI-key encryption and CNIC preview signatures. CNIC preview verification uses only `CNIC_PREVIEW_HMAC_KEY`; a preview link issued before the controlled deployment may need to be refreshed, and all links expire after two minutes.
 
 ## Migration and rotation
 - Existing Gemini vault rows encrypted with the legacy bootstrap-derived key remain decryptable.
