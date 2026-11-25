@@ -479,6 +479,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .rental-modal .rental-consent input{width:20px;min-width:20px;height:20px;min-height:20px;margin-top:1px}
 .rental-price-estimate{border:1px solid #cbdced;border-radius:16px;background:linear-gradient(135deg,#f0f7ff,#fff);padding:16px}
 .turnstile-shell{display:grid;gap:6px;padding:12px;border:1px solid #dce7f2;border-radius:14px;background:#f8fbff;max-width:100%}
+.enquiry-form .rental-security-block{margin-top:18px}.enquiry-form .rental-security-block .required-fields-note{margin:0 0 8px}
 .turnstile-widget{min-height:72px;display:flex;align-items:center;justify-content:flex-start;margin:0;overflow:visible}
 .turnstile-widget iframe{max-width:100%}.turnstile-status{margin:0;color:#52677f;font-size:12px;line-height:1.5}
 .turnstile-status.is-verified{color:#176b46;font-weight:750}
