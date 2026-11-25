@@ -58,4 +58,7 @@ test("routine media backups exclude private rental CNIC evidence", () => {
   assert.equal(isBackupEligibleMediaObject({key:"rental-private/request-id/cnic_front.jpg"}), false);
   assert.equal(isBackupEligibleMediaObject({key:"rental-private/request-id/cnic_back.webp"}), false);
   assert.equal(isBackupEligibleMediaObject({key:""}), false);
+  assert.equal(isBackupEligibleMediaObject({key:"/catalogue/hidden.jpg"}), false);
+  assert.equal(isBackupEligibleMediaObject({key:"catalogue/../private.jpg"}), false);
+  assert.equal(isBackupEligibleMediaObject({key:"catalogue\\\\..\\\\private.jpg"}), false);
 });
