@@ -5617,8 +5617,26 @@ async function adminAIKeyRoutes(request:Request,env:Env,url:URL):Promise<Respons
   if(path==="/api/admin/ai/keys"&&request.method==="GET"){
     try{
       const environment_keys=await importConfiguredGeminiEnvKeys(env);
-      const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
-      return json({keys:rows.results??[],environment_keys,encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),model:"Gemini 3.8 Flash primary with automatic fallbacks",models:GEMINI_MODEL_FALLBACKS});
+      let migrated_legacy_keys=0;
+      if((env.AI_KEYS_ENCRYPTION_KEY?.trim()||"").length>=24){
+        const legacy=await env.DB.prepare("SELECT * FROM ai_provider_keys WHERE provider='gemini' AND encryption_mode='bootstrap-derived' ORDER BY priority,created_at").all<GeminiKeyRow>();
+        for(const row of legacy.results??[]){
+          try{
+            const plaintext=await decryptGeminiKey(env,row);
+            const encrypted=await encryptGeminiKey(env,plaintext);
+            const now=new Date().toISOString();
+            const result=await env.DB.batch([
+              env.DB.prepare("UPDATE ai_provider_keys SET key_ciphertext=?,key_iv=?,encryption_mode='dedicated',updated_at=? WHERE id=? AND provider='gemini' AND encryption_mode='bootstrap-derived' AND key_fingerprint=?").bind(encrypted.ciphertext,encrypted.iv,now,row.id,row.key_fingerprint),
+              env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,?,'ai.key_reencrypted','ai_provider_key',?,? WHERE EXISTS (SELECT 1 FROM ai_provider_keys WHERE id=? AND encryption_mode='dedicated')").bind(crypto.randomUUID(),admin.admin_user_id,row.id,JSON.stringify({from:"bootstrap-derived",to:"dedicated"}),row.id),
+            ]);
+            if((result[0]?.meta?.changes??0)===1&&(result[1]?.meta?.changes??0)===1)migrated_legacy_keys++;
+          }catch{}
+        }
+      }
+      const rows=await env.DB.prepare("SELECT id,label,priority,enabled,failure_count,cooldown_until,last_used_at,last_error,created_at,updated_at,encryption_mode FROM ai_provider_keys WHERE provider='gemini' ORDER BY priority,created_at").all<Record<string,unknown>>();
+      const allRows=rows.results??[];
+      const legacy_keys_remaining=allRows.filter(row=>row.encryption_mode==="bootstrap-derived").length;
+      return json({keys:allRows,environment_keys,encryption_ready:aiKeyEncryptionMode(env)!=="unavailable",encryption_mode:aiKeyEncryptionMode(env),migrated_legacy_keys,legacy_keys_remaining,model:"Gemini 3.8 Flash primary with automatic fallbacks",models:GEMINI_MODEL_FALLBACKS});
     }catch{return error("AI key vault is not initialized. Apply the AI provider migration and redeploy.",503);}
   }
   if(!requireSameOrigin(request,url))return error("Request origin could not be verified",403);
