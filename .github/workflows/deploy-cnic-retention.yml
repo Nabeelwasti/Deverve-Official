@@ -1,15 +1,9 @@
 name: Deploy CNIC retention Worker
 
+# CNIC deletion is a controlled, owner/legal-approved release. Never deploy it
+# automatically on a code push while production schema and legal gates are pending.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - "workers/deverve-cnic-retention.js"
-      - "workers/cnic-retention/**"
-      - "migrations/0050_cnic_clearance_retention_workflow.sql"
-      - "migrations/0054_cnic_retention_claim_lease.sql"
-      - ".github/workflows/deploy-cnic-retention.yml"
 
 permissions:
   contents: read
