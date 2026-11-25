@@ -3,41 +3,105 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import retentionWorker from "../workers/deverve-cnic-retention.js";
 
-test("scheduled CNIC maintenance revokes expired upload tokens but never deletes stored documents", async () => {
-  const executedSql=[];
-  const db={prepare(sql){return {sql,values:[],bind(...values){this.values=values;return this;},async run(){executedSql.push({sql:this.sql,values:this.values});return {success:true,meta:{changes:3}};},async all(){throw new Error("Must not query documents for deletion");}};},async batch(){throw new Error("Must not batch document deletion");}};
-  const deletedObjects=[];
-  await retentionWorker.scheduled({}, {DB:db,MEDIA:{async delete(key){deletedObjects.push(key);}}});
-  assert.equal(executedSql.length,1);
-  assert.match(executedSql[0].sql,/document_upload_token_hash = NULL/);
-  assert.match(executedSql[0].sql,/document_upload_expires_at = NULL/);
-  assert.doesNotMatch(executedSql[0].sql,/DELETE FROM rental_documents/i);
-  assert.deepEqual(deletedObjects,[]);
+function makeDb({dueRows=[],documents=[],hold=false,failDelete=false}={}) {
+  const calls=[];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        sql, values:[],
+        bind(...values){this.values=values;return this;},
+        async run(){
+          calls.push({kind:"run",sql:this.sql,values:this.values});
+          if(this.sql.includes("SET cnic_retention_status='purging'")) return {success:true,meta:{changes:1}};
+          if(this.sql.includes("SET cnic_retention_status='retry'")) return {success:true,meta:{changes:1}};
+          return {success:true,meta:{changes:3}};
+        },
+        async all(){
+          calls.push({kind:"all",sql:this.sql,values:this.values});
+          if(this.sql.includes("SELECT id,cnic_retention_due_at")) return {success:true,results:hold?[]:dueRows};
+          if(this.sql.includes("SELECT id,object_key FROM rental_documents")) return {success:true,results:documents};
+          return {success:true,results:[]};
+        },
+        async first(){return {ok:1};}
+      };
+    },
+    async batch(statements) {
+      const sql=statements.map(s=>s.sql);
+      calls.push({kind:"batch",sql});
+      if(failDelete) throw new Error("simulated D1 commit failure");
+      return [{success:true,meta:{changes:documents.length}},{success:true,meta:{changes:1}},{success:true,meta:{changes:1}}];
+    }
+  };
+}
+
+test("scheduled CNIC maintenance deletes only after a due clearance, records audit and preserves rental history", async () => {
+  const db=makeDb({dueRows:[{id:"rental-1",cnic_retention_due_at:"2026-01-01T00:00:00.000Z"}],documents:[
+    {id:"front",object_key:"rental-private/rental-1/front-cnic.jpg"},
+    {id:"back",object_key:"rental-private/rental-1/back-cnic.jpg"}
+  ]});
+  const deleted=[];
+  await retentionWorker.scheduled({}, {DB:db,MEDIA:{async delete(key){deleted.push(key);}}});
+  assert.deepEqual(deleted,["rental-private/rental-1/front-cnic.jpg","rental-private/rental-1/back-cnic.jpg"]);
+  const batch=db.calls.find(call=>call.kind==="batch");
+  assert.match(batch.sql[0],/DELETE FROM rental_documents/);
+  assert.match(batch.sql[1],/cnic_retention_status='deleted'/);
+  assert.match(batch.sql[2],/rental\.cnic_retention_deleted/);
+  assert.equal(db.calls.some(call=>call.sql?.includes("DELETE FROM rental_requests")),false);
 });
 
-test("retention health reports indefinite private document retention", async () => {
+test("active legal or business hold blocks CNIC deletion", async () => {
+  const db=makeDb({dueRows:[],documents:[{id:"front",object_key:"rental-private/rental-1/front.jpg"}],hold:true});
+  const deleted=[];
+  await retentionWorker.scheduled({}, {DB:db,MEDIA:{async delete(key){deleted.push(key);}}});
+  assert.deepEqual(deleted,[]);
+  assert.equal(db.calls.some(call=>call.kind==="batch"),false);
+});
+
+test("R2 lock or storage failure preserves D1 evidence and schedules a safe retry", async () => {
+  const db=makeDb({dueRows:[{id:"rental-2",cnic_retention_due_at:"2026-01-01T00:00:00.000Z"}],documents:[
+    {id:"front",object_key:"rental-private/rental-2/front.jpg"}
+  ]});
+  await retentionWorker.scheduled({}, {DB:db,MEDIA:{async delete(){throw new Error("ObjectLockedByBucketPolicy");}}});
+  assert.equal(db.calls.some(call=>call.kind==="batch"),false);
+  assert.equal(db.calls.some(call=>call.sql?.includes("SET cnic_retention_status='retry'")),true);
+});
+
+test("unexpected CNIC object keys are never deleted", async () => {
+  const db=makeDb({dueRows:[{id:"rental-3",cnic_retention_due_at:"2026-01-01T00:00:00.000Z"}],documents:[
+    {id:"front",object_key:"catalogue/other-customer.jpg"}
+  ]});
+  const deleted=[];
+  await retentionWorker.scheduled({}, {DB:db,MEDIA:{async delete(key){deleted.push(key);}}});
+  assert.deepEqual(deleted,[]);
+  assert.equal(db.calls.some(call=>call.sql?.includes("SET cnic_retention_status='retry'")),true);
+});
+
+test("retention health reports the owner/manager clearance policy", async () => {
   const env={DB:{prepare(){return {async first(){return {ok:1};}};}},MEDIA:{async get(){return null;}}};
   const response=await retentionWorker.fetch(new Request("https://retention.example/health"),env);
   assert.equal(response.status,200);
-  assert.deepEqual(await response.json(),{status:"ok",database_connected:true,private_storage_binding:true,document_retention:"indefinite",automatic_document_deletion:false,legacy_preview_token_expiry_seconds:120});
+  assert.deepEqual(await response.json(),{status:"ok",database_connected:true,private_storage_binding:true,document_retention:"90_days_after_owner_or_manager_clearance",automatic_deletion_requires_due_clearance_and_no_active_hold:true,legacy_preview_token_expiry_seconds:120});
 });
 
-test("rental upload and scheduled maintenance code never delete CNIC evidence objects", () => {
-  const workerSource = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
-  assert.doesNotMatch(workerSource, /env\.MEDIA\.delete\(object\.key\)/);
-  assert.match(workerSource, /rental-private\//);
+test("CNIC retention migration requires completed clearance, 90 days and no active hold before metadata deletion", () => {
+  const migration=readFileSync(new URL("../migrations/0050_cnic_clearance_retention_workflow.sql",import.meta.url),"utf8");
+  assert.match(migration,/cnic_retention_due_at/);
+  assert.match(migration,/cnic_retention_status = 'purging'/);
+  assert.match(migration,/cnic_retention_due_at <=/);
+  assert.match(migration,/released_at IS NULL/);
+  assert.match(migration,/rental_cnic_clearance_immutable/);
 });
 
-
-test("rental submission requires a versioned CNIC notice and stores acknowledgement metadata", () => {
-  const workerSource = readFileSync(new URL("../worker/index.ts", import.meta.url), "utf8");
-  const appSource = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
-  const migration = readFileSync(new URL("../migrations/0038_rental_cnic_consent_record.sql", import.meta.url), "utf8");
-  assert.match(workerSource, /cnic_consent_version/);
-  assert.match(workerSource, /rental-cnic-2026-11-21-v1/);
-  assert.match(workerSource, /cnic_consent_at/);
-  assert.match(appSource, /cnic_consent_version/);
-  assert.match(appSource, /90 days after all rental payments/);
-  assert.match(migration, /cnic_consent_version TEXT NOT NULL DEFAULT 'legacy-unknown'/);
-  assert.match(migration, /cnic_consent_at TEXT/);
+test("rental submission preserves the versioned CNIC notice and consent metadata", () => {
+  const workerSource=readFileSync(new URL("../worker/index.ts",import.meta.url),"utf8");
+  const appSource=readFileSync(new URL("../src/App.tsx",import.meta.url),"utf8");
+  const migration=readFileSync(new URL("../migrations/0038_rental_cnic_consent_record.sql",import.meta.url),"utf8");
+  assert.match(workerSource,/cnic_consent_version/);
+  assert.match(workerSource,/rental-cnic-2026-11-21-v1/);
+  assert.match(workerSource,/cnic_consent_at/);
+  assert.match(appSource,/cnic_consent_version/);
+  assert.match(appSource,/90 days after an authorised owner or manager records final clearance/);
+  assert.match(migration,/cnic_consent_version TEXT NOT NULL DEFAULT 'legacy-unknown'/);
+  assert.match(migration,/cnic_consent_at TEXT/);
 });

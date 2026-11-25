@@ -1,12 +1,83 @@
+const MAX_PURGES_PER_RUN = 10;
+
+async function recordRetry(env, rentalId, code) {
+  try {
+    await env.DB.prepare(
+      "UPDATE rental_requests SET cnic_retention_status='retry',cnic_retention_last_error=?,updated_at=? WHERE id=? AND cnic_retention_status='purging'"
+    ).bind(code, new Date().toISOString(), rentalId).run();
+  } catch {
+    // Keep the row in purging state. The next run safely retries R2 deletion,
+    // which is idempotent, before attempting the D1 metadata transaction again.
+  }
+}
+
 export default {
   async scheduled(_controller, env) {
     const now = new Date().toISOString();
-    // Upload tokens are temporary credentials, not the stored CNIC files.
-    // Expiring a token never changes or deletes private R2 document objects.
-    const expiredTokens = await env.DB.prepare(
-      "UPDATE rental_requests SET document_upload_token_hash = NULL, document_upload_expires_at = NULL WHERE document_upload_expires_at IS NOT NULL AND document_upload_expires_at <= ?"
-    ).bind(now).run();
-    console.log(JSON.stringify({event:"cnic-upload-token-cleanup",documents_deleted:0,automatic_document_deletion:false,expired_upload_tokens:expiredTokens.meta?.changes||0}));
+    let expiredUploadTokens = 0;
+    try {
+      const expired = await env.DB.prepare(
+        "UPDATE rental_requests SET document_upload_token_hash = NULL, document_upload_expires_at = NULL WHERE document_upload_expires_at IS NOT NULL AND document_upload_expires_at <= ?"
+      ).bind(now).run();
+      expiredUploadTokens = Number(expired.meta?.changes ?? 0);
+    } catch (error) {
+      console.error(JSON.stringify({event:"cnic-upload-token-cleanup-failed",error_code:"d1_unavailable"}));
+    }
+
+    let dueRows = [];
+    try {
+      const due = await env.DB.prepare(
+        "SELECT id,cnic_retention_due_at FROM rental_requests r WHERE r.cnic_retention_status IN ('scheduled','retry','purging') AND r.cnic_retention_due_at IS NOT NULL AND r.cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL) ORDER BY r.cnic_retention_due_at,r.id LIMIT ?"
+      ).bind(now, MAX_PURGES_PER_RUN).all();
+      dueRows = due.results ?? [];
+    } catch (error) {
+      console.error(JSON.stringify({event:"cnic-retention-scan-failed",error_code:"d1_unavailable",expired_upload_tokens:expiredUploadTokens}));
+      return;
+    }
+
+    let completed = 0, retried = 0, skipped = 0;
+    for (const row of dueRows) {
+      const rentalId = String(row.id || "");
+      if (!rentalId) { skipped++; continue; }
+      try {
+        const claim = await env.DB.prepare(
+          "UPDATE rental_requests SET cnic_retention_status='purging',cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_status IN ('scheduled','retry','purging') AND cnic_retention_due_at IS NOT NULL AND cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL)"
+        ).bind(new Date().toISOString(), rentalId, now).run();
+        if (Number(claim.meta?.changes ?? 0) !== 1) { skipped++; continue; }
+
+        const docs = await env.DB.prepare(
+          "SELECT id,object_key FROM rental_documents WHERE rental_request_id=? ORDER BY document_side"
+        ).bind(rentalId).all();
+        const records = docs.results ?? [];
+        for (const doc of records) {
+          const objectKey = String(doc.object_key || "");
+          if (!objectKey.startsWith("rental-private/" + rentalId + "/")) throw new Error("object_key_scope_invalid");
+          await env.MEDIA.delete(objectKey);
+        }
+
+        const completedAt = new Date().toISOString();
+        const written = await env.DB.batch([
+          env.DB.prepare("DELETE FROM rental_documents WHERE rental_request_id=?").bind(rentalId),
+          env.DB.prepare("UPDATE rental_requests SET cnic_retention_status='deleted',cnic_retention_deleted_at=?,cnic_retention_last_error=NULL,updated_at=? WHERE id=? AND cnic_retention_status='purging' AND cnic_retention_due_at<=? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=rental_requests.id AND h.released_at IS NULL)").bind(completedAt,completedAt,rentalId,now),
+          env.DB.prepare("INSERT INTO audit_logs (id,actor_admin_id,action,entity_type,entity_id,metadata_json) SELECT ?,NULL,'rental.cnic_retention_deleted','rental_request',?,? WHERE EXISTS (SELECT 1 FROM rental_requests WHERE id=? AND cnic_retention_status='deleted' AND cnic_retention_deleted_at=?)").bind(crypto.randomUUID(),rentalId,JSON.stringify({document_count:records.length,retention_due_at:row.cnic_retention_due_at,retention_days:90,storage:"private_r2"}),rentalId,completedAt),
+        ]);
+        if (Number(written[1]?.meta?.changes ?? 0) !== 1 || Number(written[2]?.meta?.changes ?? 0) !== 1) throw new Error("d1_retention_commit_unverified");
+        completed++;
+      } catch (error) {
+        await recordRetry(env, rentalId, error instanceof Error && error.message === "object_key_scope_invalid" ? "object_key_scope_invalid" : "r2_or_d1_delete_failed");
+        retried++;
+        console.error(JSON.stringify({event:"cnic-retention-delete-retry",rental_id:rentalId,error_code:error instanceof Error && error.message === "object_key_scope_invalid" ? "object_key_scope_invalid" : "r2_or_d1_delete_failed"}));
+      }
+    }
+    console.log(JSON.stringify({
+      event:"cnic-retention-run",
+      expired_upload_tokens:expiredUploadTokens,
+      due_records:dueRows.length,
+      deleted_records:completed,
+      retry_records:retried,
+      skipped_records:skipped,
+      retention_days_after_owner_manager_clearance:90
+    }));
   },
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -14,7 +85,7 @@ export default {
       try {
         const result = await env.DB.prepare("SELECT 1 AS ok").first();
         const healthy = result?.ok === 1 && Boolean(env.MEDIA);
-        return new Response(JSON.stringify({status:healthy?"ok":"unavailable",database_connected:result?.ok===1,private_storage_binding:Boolean(env.MEDIA),document_retention:"indefinite",automatic_document_deletion:false,legacy_preview_token_expiry_seconds:120}), {
+        return new Response(JSON.stringify({status:healthy?"ok":"unavailable",database_connected:result?.ok===1,private_storage_binding:Boolean(env.MEDIA),document_retention:"90_days_after_owner_or_manager_clearance",automatic_deletion_requires_due_clearance_and_no_active_hold:true,legacy_preview_token_expiry_seconds:120}), {
           status:healthy?200:503,headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"}
         });
       } catch {

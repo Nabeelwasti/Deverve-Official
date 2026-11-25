@@ -1,0 +1,20 @@
+name = "deverve-cnic-retention"
+main = "../deverve-cnic-retention.js"
+compatibility_date = "2026-11-15"
+workers_dev = true
+preview_urls = false
+
+[observability]
+enabled = true
+
+[triggers]
+crons = ["0 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "deverve-production"
+database_id = "355da876-17c4-4762-a59d-bb85f2e4551b"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "deverve-media-private"

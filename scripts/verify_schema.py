@@ -21,7 +21,7 @@ required_tables = {
     "return_requests", "return_request_items", "return_status_events", "owner_notifications",
     "pos_offline_devices", "pos_offline_permits", "pos_offline_stock_allocations", "pos_offline_events",
     "pos_offline_reconciliation_cases", "pos_offline_reconciliation_actions", "pos_offline_enrollment_challenges",
-    "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions",
+    "order_inventory_reservations", "discount_coupons", "discount_coupon_redemptions", "rental_cnic_holds", "admin_ai_action_confirmations",
 }
 actual_tables = {
     row[0] for row in db.execute(
@@ -437,10 +437,16 @@ email_queue_columns = {row[1] for row in db.execute("PRAGMA table_info(enquiry_e
 assert {"status", "attempts", "next_attempt_at", "processing_started_at"} <= email_queue_columns, "Enquiry email queue lease fields are missing"
 assert any(row[1] == "idx_enquiry_email_queue_lease" for row in db.execute("PRAGMA index_list(enquiry_email_queue)")), "Enquiry email queue lease index is missing"
 
-# Permanent CNIC evidence guards: no document row deletion, metadata mutation,
-# or cascade deletion of the linked rental request may succeed.
+# CNIC records remain protected until owner/manager clearance + 90 days.
 cnic_triggers = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='rental_documents'")}
-assert {"trg_rental_documents_no_delete", "trg_rental_documents_no_update"} <= cnic_triggers, "Permanent CNIC evidence protection triggers are missing"
+assert {"trg_rental_documents_delete_requires_due_clearance", "trg_rental_documents_no_update"} <= cnic_triggers, "CNIC retention gate and immutable metadata triggers are missing"
+cnic_columns = {row[1] for row in db.execute("PRAGMA table_info(rental_requests)")}
+assert {"cnic_clearance_at", "cnic_clearance_by_admin_id", "cnic_clearance_note", "cnic_retention_due_at", "cnic_retention_status", "cnic_retention_deleted_at", "cnic_retention_last_error"} <= cnic_columns, "Owner/manager CNIC clearance and retention fields are missing"
+assert any(row[1] == "idx_rental_cnic_retention_due" for row in db.execute("PRAGMA index_list(rental_requests)")), "CNIC retention due-date index is missing"
+assert "rental_cnic_holds" in actual_tables, "CNIC legal/business hold ledger is missing"
+assert "trg_rental_requests_no_delete" in {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='rental_requests'")}, "Rental business history must be immutable"
+assert any(row[1] == "idx_rental_cnic_holds_one_active" for row in db.execute("PRAGMA index_list(rental_cnic_holds)")), "Unique active CNIC hold index is missing"
+db.execute("INSERT INTO admin_users (id,email,password_hash,role) VALUES (?,?,?,'owner')", ("cnic-owner", "cnic-owner@example.test", "hash"))
 db.execute("INSERT INTO rental_requests (id,customer_name,phone,pickup_location,pickup_at,return_at,driver_option) VALUES (?,?,?,?,?,?,?)", ("cnic-retention-test", "Evidence Test", "+923000000000", "Jhelum", "2026-11-20T10:00:00Z", "2026-11-21T10:00:00Z", "self_drive"))
 db.execute("INSERT INTO rental_documents (id,rental_request_id,document_side,object_key,mime_type,byte_size) VALUES (?,?,?,?,?,?)", ("cnic-retention-doc", "cnic-retention-test", "cnic_front", "rental-private/cnic-retention-test/front.jpg", "image/jpeg", 1024))
 for statement, values in [
@@ -453,8 +459,26 @@ for statement, values in [
     except sqlite3.IntegrityError:
         pass
     else:
-        raise AssertionError(f"Permanent CNIC evidence protection failed to reject: {statement}")
+        raise AssertionError(f"CNIC evidence protection failed to reject before clearance: {statement}")
 assert db.execute("SELECT object_key FROM rental_documents WHERE id='cnic-retention-doc'").fetchone()[0] == "rental-private/cnic-retention-test/front.jpg"
+db.execute("UPDATE rental_requests SET status='completed',cnic_clearance_at='2026-01-01T00:00:00.000Z',cnic_clearance_by_admin_id='cnic-owner',cnic_clearance_note='All final settlement checks confirmed',cnic_retention_due_at='2000-01-01T00:00:00.000Z',cnic_retention_status='purging' WHERE id='cnic-retention-test'")
+try:
+    db.execute("DELETE FROM rental_requests WHERE id='cnic-retention-test'")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise AssertionError("Rental business history must remain even after the CNIC retention deadline")
+db.execute("INSERT INTO rental_cnic_holds (id,rental_request_id,reason,placed_by_admin_id,placed_at,review_at) VALUES (?,?,?,?,?,?)", ("cnic-hold", "cnic-retention-test", "Open legal review requires evidence preservation", "cnic-owner", "2026-01-02T00:00:00.000Z", "2026-01-09T00:00:00.000Z"))
+try:
+    db.execute("DELETE FROM rental_documents WHERE id='cnic-retention-doc'")
+except sqlite3.IntegrityError:
+    pass
+else:
+    raise AssertionError("An active legal/business hold must block CNIC deletion even after the retention date")
+db.execute("UPDATE rental_cnic_holds SET released_by_admin_id='cnic-owner',released_at='2026-01-10T00:00:00.000Z',release_note='Legal review completed; release approved' WHERE id='cnic-hold'")
+db.execute("DELETE FROM rental_documents WHERE id='cnic-retention-doc'")
+assert db.execute("SELECT COUNT(*) FROM rental_documents WHERE id='cnic-retention-doc'").fetchone()[0] == 0, "Due, cleared CNIC evidence should be deletable after all holds are released"
+assert db.execute("SELECT cnic_retention_status,cnic_retention_due_at FROM rental_requests WHERE id='cnic-retention-test'").fetchone() == ("purging", "2000-01-01T00:00:00.000Z"), "CNIC purge must not delete rental business history"
 
 
 # Discount vouchers are stored as one-way hashes and exchange compensation is case/customer bound.

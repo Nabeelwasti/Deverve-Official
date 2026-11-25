@@ -343,6 +343,8 @@ function Storefront() {
   const [checkoutTurnstileReset, setCheckoutTurnstileReset] = useState(0);
   const [rentalTurnstileToken, setRentalTurnstileToken] = useState("");
   const [rentalTurnstileReset, setRentalTurnstileReset] = useState(0);
+  const [enquiryTurnstileToken, setEnquiryTurnstileToken] = useState("");
+  const [enquiryTurnstileReset, setEnquiryTurnstileReset] = useState(0);
   const [products, setProducts] = useState<StoreProduct[]>([]);
   const filteredProducts=useMemo(()=>{
     const term=search.trim().toLowerCase();
@@ -657,13 +659,17 @@ function Storefront() {
 
   const submitEnquiry = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!enquiryTurnstileToken) {
+      setSubmitMessage("Please complete the Cloudflare security check before sending your enquiry.");
+      return;
+    }
     setSending(true);
     setSubmitMessage("");
     try {
       const response = await fetch("/api/enquiries", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(enquiry),
+        body: JSON.stringify({ ...enquiry, turnstile_token: enquiryTurnstileToken }),
       });
       const result = await response.json() as { accepted?: boolean; error?: string };
       if (!response.ok || !result.accepted) throw new Error(result.error || "Your enquiry could not be sent.");
@@ -675,6 +681,8 @@ function Storefront() {
       setSubmitMessage(error instanceof Error ? error.message : "The enquiry service is not available yet. Please contact us on WhatsApp.");
     } finally {
       setSending(false);
+      setEnquiryTurnstileToken("");
+      setEnquiryTurnstileReset((value) => value + 1);
     }
   };
 
@@ -1036,7 +1044,8 @@ function Storefront() {
               <label className="enquiry-message">How can we help?<textarea required minLength={5} maxLength={3000} rows={4} value={enquiry.message} onChange={(event) => updateEnquiry({ ...enquiry, message: event.target.value })} /></label>
               <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={enquiry.website} onChange={(event) => updateEnquiry({ ...enquiry, website: event.target.value })} /></label>
             </div>
-            <div className="enquiry-submit"><button className="button button-primary" type="submit" disabled={sending}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
+            <section className="rental-security-block" aria-label="Required enquiry security verification"><p className="required-fields-note">Complete this security check to protect your message.</p><TurnstileWidget resetKey={enquiryTurnstileReset} onToken={setEnquiryTurnstileToken} /></section>
+            <div className="enquiry-submit"><button className="button button-primary" type="submit" disabled={sending || !enquiryTurnstileToken}>{sending ? "Sending..." : "Send enquiry"} <span>↗</span></button><p role="status" aria-live="polite">{submitMessage}</p></div>
           </form>
           <small>Prices, product availability, delivery, payment and rental terms are confirmed directly by the De VERVE team.</small>
         </section>
@@ -1062,7 +1071,7 @@ function Storefront() {
             <label>Return date & time<span className="required-star" aria-hidden="true"> *</span><input type="datetime-local" required min={rentalForm.pickup_at} value={rentalForm.return_at} onChange={(e) => updateRentalForm({ ...rentalForm, return_at: e.target.value })} /></label>
             <label>Driver option<span className="required-star" aria-hidden="true"> *</span><select required value={rentalForm.driver_option} onChange={(e) => updateRentalForm({ ...rentalForm, driver_option: e.target.value })}><option value="with_driver">With driver</option><option value="self_drive">Self drive (subject to approval)</option></select></label>
             <label className="checkout-address">Additional details (optional)<textarea rows={2} maxLength={500} value={rentalForm.customer_note} onChange={(e) => updateRentalForm({ ...rentalForm, customer_note: e.target.value })} /></label>
-            <div className="rental-documents-upload rental-documents-preupload"><h3>Mandatory CNIC verification<span className="required-star" aria-hidden="true"> *</span></h3><p>Both sides of your valid CNIC are required for identity matching, rental approval, fraud prevention, vehicle security and relevant rental-history checks. Images are stored in private, access-controlled storage linked to your rental record. Only the owner and specifically authorised rental managers or staff may view them; access is logged.</p><p><strong>Retention:</strong> CNIC images are scheduled for deletion 90 days after all rental payments, damages, charges, fees, challans (if any) and related obligations have been fully cleared. The 90-day period does not begin while a relevant amount, damage assessment, challan, dispute or claim remains unresolved. You may request deletion by contacting De VERVE with your rental reference. Staff review the request and the owner or an authorised manager records the decision. A documented legal hold or other applicable legal requirement may affect the timing. Read the full <button type="button" className="text-link" onClick={() => { setRentalOpen(false); navigate("policies"); }}>privacy and rental policy</button>.</p><p>JPG, PNG or WebP; maximum 4 MB per image. Do not upload another person's CNIC unless you are authorised to act for them.</p><label>CNIC front image<span className="required-star" aria-hidden="true"> *</span><input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalFrontFile(e.target.files?.[0]??null)}/></label>{rentalFrontFile && <small>Selected: {rentalFrontFile.name}</small>}<label>CNIC back image<span className="required-star" aria-hidden="true"> *</span><input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalBackFile(e.target.files?.[0]??null)}/></label>{rentalBackFile && <small>Selected: {rentalBackFile.name}</small>}<label className="rental-consent"><input type="checkbox" required checked={rentalDocsConsent} onChange={(e)=>setRentalDocsConsent(e.target.checked)}/> I confirm that I am authorised to submit these documents and acknowledge the CNIC purposes, restricted access, 90-day post-clearance retention rule and deletion-request process explained above and in the De VERVE privacy policy.<span className="required-star" aria-hidden="true"> *</span></label></div>
+            <div className="rental-documents-upload rental-documents-preupload"><h3>Mandatory CNIC verification<span className="required-star" aria-hidden="true"> *</span></h3><p>Both sides of your valid CNIC are required for identity matching, rental approval, fraud prevention, vehicle security and relevant rental-history checks. Images are stored in private, access-controlled storage linked to your rental record. Only the owner and specifically authorised rental managers or staff may view them; access is logged.</p><p><strong>Retention:</strong> CNIC images are scheduled for deletion 90 days after an authorised owner or manager records final clearance confirming that all rental payments, deposits, damages, charges, fees, challans (if any) and related obligations are fully settled and reconciled. Vehicle return or booking completion alone does not start the 90-day period. The period does not begin while a relevant amount, damage assessment, challan, dispute, claim or legal matter remains unresolved. You may request deletion by contacting De VERVE with your rental reference. Staff review the request and the owner or an authorised manager records the decision. A documented legal hold or other applicable legal requirement may affect the timing. Read the full <button type="button" className="text-link" onClick={() => { setRentalOpen(false); navigate("policies"); }}>privacy and rental policy</button>.</p><p>JPG, PNG or WebP; maximum 4 MB per image. Do not upload another person's CNIC unless you are authorised to act for them.</p><label>CNIC front image<span className="required-star" aria-hidden="true"> *</span><input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalFrontFile(e.target.files?.[0]??null)}/></label>{rentalFrontFile && <small>Selected: {rentalFrontFile.name}</small>}<label>CNIC back image<span className="required-star" aria-hidden="true"> *</span><input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e)=>setRentalBackFile(e.target.files?.[0]??null)}/></label>{rentalBackFile && <small>Selected: {rentalBackFile.name}</small>}<label className="rental-consent"><input type="checkbox" required checked={rentalDocsConsent} onChange={(e)=>setRentalDocsConsent(e.target.checked)}/> I confirm that I am authorised to submit these documents and acknowledge the CNIC purposes, restricted access, 90-day post-clearance retention rule and deletion-request process explained above and in the De VERVE privacy policy.<span className="required-star" aria-hidden="true"> *</span></label></div>
             <section className="rental-price-estimate" aria-live="polite"><strong>Rental price estimate</strong>{rentalDurationDays > 0 ? <p>{rentalDurationDays} rental day{rentalDurationDays===1?"":"s"} · {rentalForm.driver_option==="with_driver"?"With driver":"Self drive"} · {rentalDailyRatePaisa!==null&&rentalDailyRatePaisa!==undefined?formatPrice(rentalDailyRatePaisa)+" / day":"Rate to be confirmed"}</p> : <p>Select valid pickup and return dates to calculate the duration.</p>}<strong className="rental-estimate-total">{rentalEstimatedTotalPaisa!==null?formatPrice(rentalEstimatedTotalPaisa):"Final price will be confirmed by De VERVE"}</strong><small>Full 24-hour rental periods are rounded up to the next day. Fuel, tolls, deposits, extra hours and route charges are confirmed separately before booking.</small></section>
             <label className="form-trap" aria-hidden="true">Website<input tabIndex={-1} autoComplete="off" value={rentalForm.website} onChange={(e) => updateRentalForm({ ...rentalForm, website: e.target.value })} /></label>
           </div>

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test, { afterEach, beforeEach } from "node:test";
-import { handleRequest, verifyOfflinePermitSignatureServer } from "../.test-dist/worker/index.js";
+import { handleRequest, processExpiredCodReservations, verifyOfflinePermitSignatureServer } from "../.test-dist/worker/index.js";
 
 if (!globalThis.crypto) Object.defineProperty(globalThis, "crypto", { value: webcrypto });
 
@@ -59,7 +59,7 @@ beforeEach(async () => {
   sqlite = new DatabaseSync(":memory:");
   sqlite.exec("PRAGMA foreign_keys = ON");
   const migrations = readdirSync(join(root, "migrations")).filter((name) => /^\d{4}_.+\.sql$/.test(name)).sort();
-  assert.equal(migrations.length, 49, "expected the complete numbered migration chain");
+  assert.deepEqual(migrations.map((name) => Number(name.slice(0, 4))), Array.from({ length: migrations.length }, (_, index) => index + 1), "expected a gap-free numbered migration chain");
   for (const name of migrations) sqlite.exec(readFileSync(join(root, "migrations", name), "utf8"));
   db = new LocalD1(sqlite);
   const expires = new Date(Date.now() + 60 * 60_000).toISOString();
@@ -84,6 +84,55 @@ async function api(path, body, method = "POST") {
     body: body === undefined ? undefined : JSON.stringify(body),
   }), env);
 }
+test("scheduled COD expiry releases only overdue unpaid manual reservations atomically", async () => {
+  const productId = randomUUID();
+  sqlite.prepare("INSERT INTO products (id,slug,name,category,audience,status,retail_price_paisa) VALUES (?,?,?,'test','unisex','published',10000)")
+    .run(productId, "expiry-test-" + productId, "Reservation expiry test");
+
+  const now = Date.now();
+  const past = new Date(now - 60_000).toISOString();
+  const future = new Date(now + 60_000).toISOString();
+  const cases = [
+    { name: "expired-manual", provider: "manual", expiry: past, reserved: 2, quantity: 2, expected: "cancelled" },
+    { name: "future-manual", provider: "manual", expiry: future, reserved: 1, quantity: 1, expected: "pending" },
+    { name: "safepay", provider: "safepay", expiry: past, reserved: 1, quantity: 1, expected: "pending" },
+    { name: "stock-mismatch", provider: "manual", expiry: past, reserved: 0, quantity: 1, expected: "pending" },
+  ];
+  const ids = {};
+  for (const item of cases) {
+    const variantId = randomUUID();
+    const orderId = randomUUID();
+    const orderNumber = "EXP-" + item.name.toUpperCase();
+    ids[item.name] = { variantId, orderId };
+    sqlite.prepare("INSERT INTO product_variants (id,product_id,sku,size,color,stock_on_hand,reserved_quantity,is_active) VALUES (?,?,?,?,?,?,?,1)")
+      .run(variantId, productId, "SKU-" + item.name, "SIZE-" + item.name, "Black", 10, item.reserved);
+    sqlite.prepare("INSERT INTO orders (id,order_number,customer_name,phone,delivery_address,city,subtotal_paisa,total_paisa,payment_method,payment_status,order_status,payment_provider) VALUES (?,?,?,?,?,?,?,?,'cod','pending','pending',?)")
+      .run(orderId, orderNumber, "Test Customer", "+923001234567", "Test address", "Jhelum", 10000, 10000, item.provider);
+    sqlite.prepare("INSERT INTO order_inventory_reservations (id,order_id,variant_id,quantity,status,payment_provider,expires_at) VALUES (?,?,?,?,'reserved',?,?)")
+      .run(randomUUID(), orderId, variantId, item.quantity, item.provider, item.expiry);
+  }
+
+  await processExpiredCodReservations(env);
+
+  const expired = ids["expired-manual"];
+  assert.equal(sqlite.prepare("SELECT order_status FROM orders WHERE id=?").get(expired.orderId).order_status, "cancelled");
+  assert.equal(sqlite.prepare("SELECT status FROM order_inventory_reservations WHERE order_id=?").get(expired.orderId).status, "released");
+  const releasedVariant = sqlite.prepare("SELECT stock_on_hand,reserved_quantity FROM product_variants WHERE id=?").get(expired.variantId);
+  assert.equal(releasedVariant.stock_on_hand, 10, "expiry releases a reservation; it does not alter physical stock");
+  assert.equal(releasedVariant.reserved_quantity, 0);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM order_status_events WHERE order_id=? AND to_status='cancelled'").get(expired.orderId).count, 1);
+  assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM audit_logs WHERE entity_id=? AND action='order.reservation_expired'").get(expired.orderId).count, 1);
+
+  for (const name of ["future-manual", "safepay", "stock-mismatch"]) {
+    const item = ids[name];
+    assert.equal(sqlite.prepare("SELECT order_status FROM orders WHERE id=?").get(item.orderId).order_status, "pending", name + " order must remain pending");
+    assert.equal(sqlite.prepare("SELECT status FROM order_inventory_reservations WHERE order_id=?").get(item.orderId).status, "reserved", name + " reservation must remain intact");
+  }
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(ids["future-manual"].variantId).reserved_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(ids["safepay"].variantId).reserved_quantity, 1);
+  assert.equal(sqlite.prepare("SELECT reserved_quantity FROM product_variants WHERE id=?").get(ids["stock-mismatch"].variantId).reserved_quantity, 0);
+});
+
 async function createIdentity() {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
   const publicJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
@@ -1089,7 +1138,7 @@ test("real Worker expires stale permits before stock allocation changes and fail
   const body = { allocations: [{ variant_id: nextVariantId, quantity: 1 }] };
   const OriginalDate = globalThis.Date;
   const simulatedNow = OriginalDate.now() + 3 * 60 * 60 * 1000;
-  sqlite.prepare("UPDATE admin_sessions SET expires_at=?").run(new OriginalDate(simulatedNow + 60 * 60 * 1000).toISOString());
+  sqlite.prepare("UPDATE admin_sessions SET expires_at=?,last_seen_at=?").run(new OriginalDate(simulatedNow + 60 * 60 * 1000).toISOString(),new OriginalDate(simulatedNow).toISOString());
   const withExpiredClock = async (operation) => {
     class FutureDate extends OriginalDate {
       constructor(...args) { super(...(args.length ? args : [simulatedNow])); }

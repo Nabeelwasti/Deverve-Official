@@ -1,12 +1,12 @@
-test("website enquiries can be submitted without a blocked Turnstile widget and are queued for owner email", async () => {
+test("website enquiries are queued for owner email after Turnstile verification", async () => {
  const db=new FakeD1();
- const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json","cf-connecting-ip":"203.0.113.88"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:""})}),env(db));
+ const response=await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{origin,"content-type":"application/json","cf-connecting-ip":"203.0.113.88"},body:JSON.stringify({name:"Contact Form Customer",phone:"+923001234567",email:"customer@example.com",enquiryType:"complaint",message:"Please contact me about my order.",website:"",turnstile_token:"test-valid-token"})}),env(db));
  assert.equal(response.status,201);assert.equal((await response.json()).accepted,true);assert.equal(db.enquiries.size,1);assert.equal(db.enquiryEmailQueue.size,1);assert.equal([...db.enquiryEmailQueue.values()][0].status,"queued");
 });
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
+import { aggregateOrderVariantQuantities, buildPosStockGuard, fingerprintPosSaleRequest, buildSafepayCheckoutUrl, callGemini, customerLanguageHint, handleRequest, importConfiguredGeminiEnvKeys, isSafeNotificationRecipient, isValidEmailAddress, isWithinExchangeWindow, parseRentalDateTime, processEnquiryEmailQueue, processNotificationOutbox, processPosReceiptOutbox, processExpiredCodReservations, selectOrderPromotion, verifySafepaySignature, verifyOfflineEnrollmentProof, signOfflinePermitClaims, verifyOfflinePermitSignatureServer, verifyOfflineEventSignature } from "../.test-dist/worker/index.js";
 import safepayQueueConsumer from "../.test-dist/workers/safepay-consumer/index.js";
 import { verifyOfflinePermitSignature, verifyOfflinePermitSnapshot } from "../.test-dist/src/posOffline/deviceCrypto.js";
 
@@ -185,12 +185,11 @@ globalThis.fetch = async (input, init = {}) => {
   return nativeFetch(input, init);
 };
 
-test("Pages execution context schedules the contact enquiry queue without delaying the response", async () => {
+test("ordinary API traffic does not drain the enquiry outbox", async () => {
   const scheduled=[];
   const response=await handleRequest(new Request(origin+"/api/health"),env(new FakeD1()),{waitUntil(promise){scheduled.push(promise);}});
   assert.equal(response.status,200);
-  assert.equal(scheduled.length,1);
-  await Promise.all(scheduled);
+  assert.equal(scheduled.length,0);
 });
 
 test("queued contact enquiries are delivered to the configured owner email through Resend", async () => {
@@ -741,13 +740,15 @@ test("rental datetime-local values use Pakistan UTC+05:00 and reject invalid wal
   assert.equal(Number.isNaN(parseRentalDateTime("2026-02-30T10:30")), true);
   assert.equal(Number.isNaN(parseRentalDateTime("2026-11-15 10:30")), true);
 });
-test("public enquiry submissions reject missing or invalid Turnstile tokens", async () => {
+test("public enquiry submissions reject missing and invalid Turnstile tokens", async () => {
   const db = new FakeD1();
-  const response = await handleRequest(request("/api/enquiries", "POST", {
+  const missing = await handleRequest(new Request(origin+"/api/enquiries",{method:"POST",headers:{"content-type":"application/json","origin":origin,"sec-fetch-site":"same-origin"},body:JSON.stringify({enquiryType:"general",name:"Test Customer",phone:"+923001234567",message:"Please contact me."})}),env(db));
+  assert.equal(missing.status,403);
+  const invalid = await handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "general", name: "Test Customer", phone: "+923001234567",
     message: "Please contact me.", turnstile_token: "invalid-token",
   }), env(db));
-  assert.equal(response.status, 403);
+  assert.equal(invalid.status, 403);
   assert.equal(db.enquiries.size, 0);
 });
 
@@ -756,7 +757,7 @@ test("public enquiry submissions accept complaint, DMCA and other important cont
   for (const contactType of ["complaint","dmca","legal","business","other"]) {
     const response = await handleRequest(request("/api/enquiries", "POST", {
       enquiryType: contactType, name: "Test Customer", phone: "+923001234567",
-      email: "customer@example.com", message: "Please review this important enquiry.",
+      email: "customer@example.com", message: "Please review this important enquiry.", turnstile_token: "test-valid-token",
     }), env(db));
     assert.equal(response.status, 201);
     const saved = [...db.enquiries.values()].at(-1);
@@ -765,7 +766,7 @@ test("public enquiry submissions accept complaint, DMCA and other important cont
   }
   const invalid = await handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "unknown", name: "Test Customer", phone: "+923001234567",
-    message: "This type should be rejected.",
+    message: "This type should be rejected.", turnstile_token: "test-valid-token",
   }), env(db));
   assert.equal(invalid.status, 400);
 });
@@ -774,7 +775,7 @@ test("public enquiry submissions are rate-limited per client IP with retry guida
   const db = new FakeD1();
   const submit = (ip) => handleRequest(request("/api/enquiries", "POST", {
     enquiryType: "general", name: "Test Customer", phone: "+923001234567",
-    email: "customer@example.com", message: "Please contact me about your products.",
+    email: "customer@example.com", message: "Please contact me about your products.", turnstile_token: "test-valid-token",
   }, { "cf-connecting-ip": ip }), env(db));
   for (let index = 0; index < 8; index += 1) {
     const response = await submit("203.0.113.9");
@@ -938,6 +939,13 @@ test("private media library and file previews are unavailable to read-only staff
 });
 
 
+test("customer registration rejects a missing Turnstile token", async () => {
+  const db=new FakeD1();
+  const response=await handleRequest(new Request(origin+"/api/customer/register",{method:"POST",headers:{"content-type":"application/json","origin":origin,"sec-fetch-site":"same-origin"},body:JSON.stringify({full_name:"Test Customer",phone:"+923001234567",email:"missing-token@example.com",password:"A-strong-customer-password-2026"})}),env(db));
+  assert.equal(response.status,403);
+  assert.equal(db.customers.size,0);
+});
+
 test("customer registration creates a secure session and stores a password hash", async () => {
   const db = new FakeD1();
   const response = await handleRequest(request("/api/customer/register", "POST", {
@@ -1025,6 +1033,7 @@ class FakeStatement {
     if (q.startsWith("SELECT status,customer_phone,customer_email,email_receipt_requested,whatsapp_receipt_consent FROM pos_sales WHERE id=?")) return this.db.posSales.get(v[0]) ?? null;
     if (q.startsWith("SELECT id FROM pos_receipt_outbox WHERE sale_id=? AND channel=? AND status='failed'")) return [...this.db.posReceiptOutbox.values()].find(row=>row.sale_id===v[0]&&row.channel===v[1]&&row.status==="failed")??null;
     if (q.startsWith("SELECT id FROM ai_provider_keys WHERE key_fingerprint")) return [...this.db.aiKeys.values()].find((row) => row.key_fingerprint === v[0]) ?? null;
+    if (q.startsWith("SELECT command,command_sha256 FROM admin_ai_action_confirmations")) { const row=this.db.aiConfirmations.get(v[0]); return row&&row.admin_user_id===v[1]&&!row.consumed_at&&row.expires_at>v[2]?row:null; }
     if (q.startsWith("SELECT s.id, s.customer_id")) {
       const session = [...this.db.customerSessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
       const customer = session && this.db.customers.get(session.customer_id);
@@ -1074,9 +1083,9 @@ class FakeStatement {
     }
     if (q.startsWith("SELECT COUNT(*) AS total FROM owner_notifications")) return { total: [...this.db.notifications.values()].filter((row) => row.is_read === 0).length };
     if (q.startsWith("SELECT s.id, s.admin_user_id")) {
-      const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1]);
+      const session = [...this.db.sessions.values()].find((item) => item.token_hash === v[0] && !item.revoked_at && item.expires_at > v[1] && (item.last_seen_at || item.created_at || new Date().toISOString()) > v[2]);
       const admin = session && this.db.admins.get(session.admin_user_id);
-      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at, can_use_pos: this.db.posCashiers.get(admin.id)?.revoked_at == null && this.db.posCashiers.has(admin.id) ? 1 : 0 } : null;
+      return admin?.is_active ? { id: session.id, admin_user_id: admin.id, email: admin.email, role: admin.role, is_active: admin.is_active, expires_at: session.expires_at, revoked_at: session.revoked_at, last_seen_at: session.last_seen_at || session.created_at || new Date().toISOString(), can_use_pos: this.db.posCashiers.get(admin.id)?.revoked_at == null && this.db.posCashiers.has(admin.id) ? 1 : 0 } : null;
     }
     if (q.startsWith("SELECT v.id, v.product_id, v.sku, v.size, v.color, v.stock_on_hand, v.reserved_quantity, v.cost_price_paisa, p.name, p.wholesale_price_paisa")) {
       const variant = this.db.variants.get(v[0]); const product = variant && this.db.products.get(variant.product_id);
@@ -1085,6 +1094,9 @@ class FakeStatement {
     if (q.startsWith("SELECT id, status FROM vehicles WHERE id = ?")) { const row = this.db.vehicles.get(v[0]); return row ? { id: row.id, status: row.status } : null; }
     if (q.startsWith("SELECT COUNT(*) AS count FROM rental_requests WHERE vehicle_id = ? AND status IN")) return { count: [...this.db.rentalRequests.values()].filter(row => row.vehicle_id === v[0] && ["requested","reviewing","confirmed","active"].includes(row.status)).length };
     if (q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status, admin_note FROM rental_requests WHERE id = ?") || q.startsWith("SELECT id, vehicle_id, pickup_at, return_at, status FROM rental_requests WHERE id = ?")) return this.db.rentalRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT id,status,cnic_clearance_at,cnic_retention_status,cnic_retention_due_at FROM rental_requests WHERE id=?")) return this.db.rentalRequests.get(v[0]) ?? null;
+    if (q.startsWith("SELECT COUNT(*) AS count FROM rental_documents WHERE rental_request_id=?")) return {count:[...this.db.rentalDocuments.values()].filter(item=>item.rental_request_id===v[0]&&["cnic_front","cnic_back"].includes(item.document_side)).length};
+    if (q.startsWith("SELECT id FROM rental_cnic_holds WHERE rental_request_id=? AND released_at IS NULL")) return null;
     if (q.startsWith("SELECT id, status, valid_until, approval_token FROM wholesale_quotes WHERE id = ?")) return this.db.wholesaleQuotes.get(v[0]) ?? null;
     if (q.startsWith("SELECT id, business_name, contact_name, phone, email, delivery_address, requested_items, quoted_total_paisa, status, valid_until, city, approval_token, converted_order_id FROM wholesale_quotes WHERE approval_token = ?")) return [...this.db.wholesaleQuotes.values()].find((row) => row.approval_token === v[0]) ?? null;
     if (q.startsWith("SELECT order_number, total_paisa, order_status, payment_provider FROM orders WHERE checkout_token")) {
@@ -1182,9 +1194,13 @@ class FakeStatement {
     if (q.startsWith("SELECT pm.product_id, a.id, a.media_type, a.mime_type, a.alt_text, a.caption, pm.color, pm.position, pm.is_primary FROM product_media_assets")) {
       return { success: true, results: [] };
     }
-    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1")) {
+    if (q.startsWith("SELECT id, product_id, sku, size, color, stock_on_hand, reserved_quantity FROM product_variants WHERE is_active = 1 AND product_id IN (")) {
       const ids = new Set(v);
       return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ ...row, reserved_quantity: row.reserved_quantity ?? 0 })) };
+    }
+    if (q.startsWith("SELECT id, product_id, sku, size, color, MAX(0, stock_on_hand - reserved_quantity) AS available_quantity FROM product_variants WHERE is_active = 1")) {
+      const ids = new Set(v);
+      return { success: true, results: [...this.db.variants.values()].filter((row) => ids.has(row.product_id)).map((row) => ({ id:row.id, product_id:row.product_id, sku:row.sku, size:row.size, color:row.color, available_quantity:Math.max(0,Number(row.stock_on_hand??0)-Number(row.reserved_quantity??0)) })) };
     }
     if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, image_key, description FROM vehicles WHERE status = 'available'")) return { success: true, results: [...this.db.vehicles.values()].filter((row) => row.status === "available") };
     if (q.startsWith("SELECT id, name, vehicle_type, transmission, seats, fuel_type, daily_rate_paisa, with_driver_daily_rate_paisa, status, image_key, description, created_at, updated_at FROM vehicles")) return { success: true, results: [...this.db.vehicles.values()] };
@@ -1260,6 +1276,10 @@ class FakeStatement {
   async run() {
     const q = this.sql;
     const v = this.values;
+    if (q.startsWith("UPDATE admin_sessions SET last_seen_at=?")) { const [lastSeen,id]=v; const row=[...this.db.sessions.values()].find(item=>item.id===id); if(row)row.last_seen_at=lastSeen; return {success:true,meta:{changes:row?1:0}}; }
+    if (q.startsWith("UPDATE admin_ai_action_confirmations SET consumed_at=?")) { const [consumedAt,id,adminId,expiresAt]=v; const row=this.db.aiConfirmations.get(id); if(!row||row.admin_user_id!==adminId||row.consumed_at||row.expires_at<=expiresAt)return {success:true,meta:{changes:0}}; row.consumed_at=consumedAt; return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("INSERT INTO admin_ai_action_confirmations")) { const [id,admin_user_id,command,command_sha256,created_at,expires_at]=v; this.db.aiConfirmations.set(id,{id,admin_user_id,command,command_sha256,created_at,expires_at,consumed_at:null}); return {success:true,meta:{changes:1}}; }
+    if (q.startsWith("DELETE FROM admin_ai_action_confirmations")) { let changes=0; for(const [id,row] of this.db.aiConfirmations){if(row.expires_at<v[0]||(row.consumed_at&&row.consumed_at<v[1])){this.db.aiConfirmations.delete(id);changes++;}} return {success:true,meta:{changes}}; }
     if (q.startsWith("UPDATE orders SET order_status = ?")) {
       const [status, updatedAt, id, previousStatus] = v;
       const row = this.db.orders.get(id);
@@ -1835,7 +1855,8 @@ class FakeStatement {
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_sessions")) {
-      this.db.sessions.set(v[0], { id: v[0], admin_user_id: v[1], token_hash: v[2], expires_at: v[3], revoked_at: null });
+      const now = new Date().toISOString();
+      this.db.sessions.set(v[0], { id: v[0], admin_user_id: v[1], token_hash: v[2], created_at: now, last_seen_at: now, expires_at: v[3], revoked_at: null });
       return { success: true, meta: { changes: 1 } };
     }
     if (q.startsWith("INSERT INTO admin_login_attempts")) {
@@ -1876,6 +1897,7 @@ class FakeD1 {
   sessions = new Map();
   posCashiers = new Map();
   aiKeys = new Map();
+   aiConfirmations = new Map();
   failAiKeyRead = false;
   attempts = new Map();
   paymentAttempts = new Map();
@@ -1928,8 +1950,15 @@ const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") =>
   delete: async key => db.mediaObjects.delete(key),
   head: async key => { const item=db.mediaObjects.get(key); return item?{customMetadata:item.customMetadata}:null; },
   get: async key => db.mediaObjects.get(key)??null
-}, ADMIN_BOOTSTRAP_TOKEN: token });
+}, ADMIN_BOOTSTRAP_TOKEN: token, CNIC_PREVIEW_HMAC_KEY: "test-cnic-preview-hmac-key-with-more-than-32-characters" });
 const origin = "https://deverve.example";
+async function executeAIAction(db, command, headers = {}, configuredEnv = env(db)) {
+  const previewResponse = await handleRequest(request("/api/admin/ai/execute", "POST", { command }, headers), configuredEnv);
+  if (!previewResponse.ok) return previewResponse;
+  const preview = await previewResponse.json();
+  if (!preview.confirmation_required) return new Response(JSON.stringify(preview), { status: previewResponse.status, headers: { "content-type": "application/json" } });
+  return handleRequest(request("/api/admin/ai/execute", "POST", { confirmation_id: preview.confirmation_id }, headers), configuredEnv);
+}
 const request = (path, method, body, headers = {}) => {
   const protectedPublicWrite = path === "/api/enquiries" || path === "/api/orders" || path === "/api/rentals" || path === "/api/customer/register";
   const payload = protectedPublicWrite && body && typeof body === "object"
@@ -2291,6 +2320,20 @@ test("COD checkout verifies live price, reserves stock once, and fulfils orders 
   assert.equal(publicVariants.length, 2, "sold-out sizes remain visible as disabled customer choices");
   assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-M").available_quantity, 5);
   assert.equal(publicVariants.find((variant) => variant.sku === "DV-CHECKOUT-S").available_quantity, 0);
+  for (const variant of publicVariants) {
+    assert.equal(Object.hasOwn(variant,"stock_on_hand"),false);
+    assert.equal(Object.hasOwn(variant,"reserved_quantity"),false);
+    assert.equal(Number.isInteger(variant.available_quantity),true);
+  }
+  const overflowVariantIds=[];
+  for (let index=0; index<24999; index+=1) {
+    const id=crypto.randomUUID();
+    overflowVariantIds.push(id);
+    db.variants.set(id,{id,product_id:productId,sku:"DV-LIMIT-"+index,size:"LIMIT-"+index,color:"Test",stock_on_hand:1,reserved_quantity:0,is_active:1,created_at:new Date().toISOString(),updated_at:new Date().toISOString()});
+  }
+  const oversizedCatalogue=await handleRequest(new Request(origin+"/api/products?limit=12"),env(db));
+  assert.equal(oversizedCatalogue.status,503,"an oversized variant response must fail closed instead of silently dropping catalogue variants");
+  for (const id of overflowVariantIds) db.variants.delete(id);
 
   const payload = {
     checkout_token: "123e4567-e89b-42d3-a456-426614174000",
@@ -2773,11 +2816,25 @@ test("authorised rental staff can preview and download private CNIC images with 
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   const tokenHash = Buffer.from(digest).toString("base64url");
   db.admins.set(adminId, { id: adminId, email: "rental@deverve.example", role: "rental", is_active: 1 });
-  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
+  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, created_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   db.rentalDocuments.set("doc-front", { id: "doc-front", rental_request_id: rentalId, document_side: "cnic_front", object_key: "rental-private/test/front.png", mime_type: "image/png" });
   const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
   const testEnv = { ...env(db), MEDIA: { get: async () => ({ body: new Response(bytes).body }) } };
   const headers = { cookie: "__Host-deverve_admin="+token, "sec-fetch-site": "same-origin" };
+  const withoutDedicatedHmac = { ...testEnv, CNIC_PREVIEW_HMAC_KEY: undefined };
+  const unavailablePreview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), withoutDedicatedHmac);
+  assert.equal(unavailablePreview.status,503,"CNIC preview token creation must fail closed without its dedicated HMAC secret even when the bootstrap token exists");
+  const previewTokenDb = {
+    prepare(sql) {
+      if (sql.startsWith("DELETE FROM rental_document_preview_tokens")) return { bind() { return { run: async () => ({ meta: { changes: 1 } }) }; } };
+      if (sql.startsWith("INSERT INTO rental_document_preview_tokens")) return { bind() { return { run: async () => ({ meta: { changes: 1 } }) }; } };
+      return db.prepare(sql);
+    },
+  };
+  const previewTokenEnv = { ...testEnv, DB: previewTokenDb };
+  const previewTokenResponse = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front/preview-token", "POST", {}, headers), previewTokenEnv);
+  assert.equal(previewTokenResponse.status,200);
+  assert.match((await previewTokenResponse.json()).url,/^\/api\/rental-document-preview\?token=/);
   const preview = await handleRequest(request("/api/admin/rentals/"+rentalId+"/documents/cnic_front", "GET", undefined, headers), testEnv);
   assert.equal(preview.status, 200);
   assert.equal(preview.headers.get("content-disposition"), 'inline; filename="cnic_front.png"');
@@ -3153,7 +3210,7 @@ test("AI owner exact-SKU stock command records a balanced inventory adjustment a
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   db.products.set("product-stock-1", { id:"product-stock-1", name:"Test Hoodie", status:"published" });
   db.variants.set("variant-stock-1", { id:"variant-stock-1", product_id:"product-stock-1", sku:"DV-TEST-M-BLK", size:"M", color:"Black", stock_on_hand:5, reserved_quantity:2, is_active:1 });
-  const response = await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 8"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.77"}),env(db));
+  const response = await executeAIAction(db,"set stock for SKU DV-TEST-M-BLK to 8",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.77"});
   assert.equal(response.status,200);
   const payload=await response.json();
   assert.equal(payload.previous_stock,5);
@@ -3167,7 +3224,7 @@ test("AI owner exact-SKU stock command records a balanced inventory adjustment a
   assert.equal(db.audits.length,1);
   assert.equal(db.audits[0][2],"ai.inventory.stock_adjusted");
 
-  const rejected=await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-TEST-M-BLK to 1"},{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.78"}),env(db));
+  const rejected=await executeAIAction(db,"set stock for SKU DV-TEST-M-BLK to 1",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.78"});
   assert.equal(rejected.status,409);
   assert.equal(db.variants.get("variant-stock-1").stock_on_hand,8);
   assert.equal(db.movements.length,1);
@@ -3179,7 +3236,7 @@ test("AI owner command updates enquiry status and writes an audit record", async
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
   db.enquiries.set(id, { id, status: "new", customer_name: "Test visitor" });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set enquiry " + id + " status to contacted" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.90" }), env(db));
+  const response = await executeAIAction(db,"set enquiry " + id + " status to contacted",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.90"});
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "update_enquiry_status");
@@ -3209,7 +3266,7 @@ test("AI owner natural-language intent planner interprets conversational request
     return originalFetch(input, init);
   };
   try {
-    const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "Please mark this customer enquiry as contacted. We have called and confirmed the details." }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.96" }), configured);
+    const response = await executeAIAction(db,"Please mark this customer enquiry as contacted. We have called and confirmed the details.",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.96"},configured);
     assert.equal(response.status, 200);
     assert.equal(plannerCalled, true);
     assert.equal(db.enquiries.get(id).status, "contacted");
@@ -3253,7 +3310,7 @@ test("AI owner command prepares a requested wholesale quote without sending or a
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   db.wholesaleQuotes.set(id, { id, status: "requested", valid_until: null, approval_token: "opaque-token" });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set wholesale quote " + id + " status to prepared" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.91" }), env(db));
+  const response = await executeAIAction(db,"set wholesale quote " + id + " status to prepared",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.91"});
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "prepare_wholesale_quote");
@@ -3270,7 +3327,7 @@ test("AI owner order status command reuses the guarded order workflow and audit 
   const id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
   db.orders.set(id, { id, order_number: "DV-TEST-ORDER", order_status: "pending", payment_provider: "manual", payment_status: "pending", delivery_fee_status: "accepted" });
   db.orderItems.push({ id: "order-line-1", order_id: id, variant_id: "variant-order-1", quantity: 1 });
-  const response = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set order " + id + " status to confirmed" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.94" }), env(db));
+  const response = await executeAIAction(db,"set order " + id + " status to confirmed",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.94"});
   assert.equal(response.status, 200);
   const payload = await response.json();
   assert.equal(payload.action, "update_order_status");
@@ -3279,7 +3336,7 @@ test("AI owner order status command reuses the guarded order workflow and audit 
   assert.equal(db.orderStatusEvents.at(-1).to_status, "confirmed");
   // The order status event is the durable transition record; this fake D1 batch does not model SQLite changes() for the companion audit INSERT.
 
-  const invalid = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set order " + id + " status to delivered" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.95" }), env(db));
+  const invalid = await executeAIAction(db,"set order " + id + " status to delivered",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.95"});
   assert.equal(invalid.status, 409);
   assert.equal(db.orders.get(id).order_status, "confirmed");
 });
@@ -3290,12 +3347,12 @@ test("AI owner vehicle status action protects active rentals and records the cha
   const cookie = setup.headers.get("set-cookie").split(";")[0];
   const id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
   db.vehicles.set(id, { id, name: "Test vehicle", status: "available" });
-  const changed = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set vehicle " + id + " status to maintenance" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.92" }), env(db));
+  const changed = await executeAIAction(db,"set vehicle " + id + " status to maintenance",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.92"});
   assert.equal(changed.status, 200);
   assert.equal(db.vehicles.get(id).status, "maintenance");
   assert.equal(db.audits.at(-1).action, "ai.vehicle.status_updated");
   db.rentalRequests.set("rental-active-1", { id: "rental-active-1", vehicle_id: id, status: "confirmed" });
-  const blocked = await handleRequest(request("/api/admin/ai/execute", "POST", { command: "set vehicle " + id + " status to available" }, { cookie, "sec-fetch-site": "same-origin", "cf-connecting-ip": "203.0.113.93" }), env(db));
+  const blocked = await executeAIAction(db,"set vehicle " + id + " status to available",{cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.93"});
   assert.equal(blocked.status, 409);
   assert.equal(db.vehicles.get(id).status, "maintenance");
 });
@@ -3426,4 +3483,173 @@ test("public website translation enforces an atomic account-wide daily inference
   }), testEnv);
   assert.equal(blocked.status, 429);
   assert.equal(calls, 20);
+});
+
+test("only an owner or manager can record completed-rental CNIC clearance with every reconciliation check", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared",cnic_retention_due_at:null});
+  db.rentalDocuments.set("front",{id:"front",rental_request_id:rentalId,document_side:"cnic_front"});
+  db.rentalDocuments.set("back",{id:"back",rental_request_id:rentalId,document_side:"cnic_back"});
+  let statements=[];
+  db.batch=async(items)=>{statements=items.map(item=>item.sql);return [{meta:{changes:1}},{meta:{changes:1}}];};
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final bank reconciliation and vehicle inspection signed off."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,200);
+  const result=await response.json();
+  assert.equal(result.retention_days,90);
+  assert.equal(result.retention_status,"scheduled");
+  assert.ok(new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime()>=90*86400000 && new Date(result.retention_due_at).getTime()-new Date(result.clearance_at).getTime()<=90*86400000+1000);
+  assert.match(statements[0],/cnic_retention_status='scheduled'/);
+  assert.match(statements[1],/rental\.cnic_clearance_recorded/);
+});
+
+test("CNIC clearance fails closed when any financial, damage, challan, fee or dispute check is missing", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  let batches=0;db.batch=async()=>{batches++;return [];};
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,400);
+  assert.equal(batches,0);
+});
+
+test("CNIC clearance cannot begin until the rental is completed", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"active",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,409);
+});
+
+test("rental staff cannot approve CNIC clearance or retention holds", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const admin=[...db.admins.values()][0];admin.role="rental";
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const rentalId=crypto.randomUUID();
+  db.rentalRequests.set(rentalId,{id:rentalId,status:"completed",cnic_clearance_at:null,cnic_retention_status:"not_cleared"});
+  const response=await handleRequest(request("/api/admin/rentals/"+rentalId+"/cnic-clearance","POST",{
+    payments_settled:true,damages_settled:true,challans_settled:true,fees_settled:true,no_open_disputes:true,
+    note:"Final reconciliation."
+  },{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,403);
+});
+
+test("expired unpaid manual COD reservations atomically cancel orders, release stock and write audit events", async () => {
+  const calls=[];
+  const db={
+    prepare(sql){return {sql,values:[],bind(...values){this.values=values;return this;},async all(){calls.push({kind:"all",sql:this.sql,values:this.values});return {results:[{id:"order-1",order_number:"DV-TEST-1",reservation_lines:2,expires_at:"2026-01-01T00:00:00.000Z"}]};}};},
+    async batch(statements){calls.push({kind:"batch",sql:statements.map(item=>item.sql)});return [{meta:{changes:1}},{meta:{changes:2}},{meta:{changes:2}},{meta:{changes:1}},{meta:{changes:1}}];}
+  };
+  await processExpiredCodReservations({DB:db});
+  const batch=calls.find(item=>item.kind==="batch");
+  assert.equal(batch.sql.length,5);
+  assert.match(batch.sql[0],/order_status='cancelled'/);
+  assert.match(batch.sql[0],/payment_status='pending'/);
+  assert.match(batch.sql[0],/payment_provider='manual'/);
+  assert.match(batch.sql[0],/NOT EXISTS \(SELECT 1 FROM payment_attempts/);
+  assert.match(batch.sql[1],/reserved_quantity=reserved_quantity-/);
+  assert.match(batch.sql[2],/status='released'/);
+  assert.match(batch.sql[3],/order_status_events/);
+  assert.match(batch.sql[4],/order\.reservation_expired/);
+});
+
+test("COD reservation expiry scan ignores online payment reservations and protects late Safepay callbacks", async () => {
+  let batchCalled=false,scanSql="";
+  const db={
+    prepare(sql){return {sql,bind(){return this;},async all(){scanSql=sql;return {results:[]};}};},
+    async batch(){batchCalled=true;return [];}
+  };
+  await processExpiredCodReservations({DB:db});
+  assert.equal(batchCalled,false);
+  assert.match(scanSql,/o\.payment_provider='manual'/);
+  assert.match(scanSql,/NOT EXISTS \(SELECT 1 FROM payment_attempts pa WHERE pa.order_id=o.id AND pa.provider='safepay'/);
+});
+
+test("COD reservation expiry does not write cancellation events when the order changed concurrently", async () => {
+  let batchSql=[];
+  const db={
+    prepare(sql){return {sql,bind(){return this;},async all(){return {results:[{id:"order-race",order_number:"DV-RACE",reservation_lines:1,expires_at:"2026-01-01T00:00:00.000Z"}]};}};},
+    async batch(statements){batchSql=statements.map(item=>item.sql);return [{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}},{meta:{changes:0}}];}
+  };
+  await processExpiredCodReservations({DB:db});
+  assert.equal(batchSql.length,5);
+  assert.match(batchSql[3],/EXISTS \(SELECT 1 FROM order_inventory_reservations/);
+});
+
+test("customer login has an email-account throttle that cannot be bypassed by rotating IP addresses", async () => {
+  const db=new FakeD1();
+  let last;
+  for(let attempt=1;attempt<=11;attempt++){
+    const response=await handleRequest(new Request(origin+"/api/customer/login",{
+      method:"POST",
+      headers:{"content-type":"application/json",origin,"sec-fetch-site":"same-origin","cf-connecting-ip":"198.51.100."+attempt},
+      body:JSON.stringify({email:"same-account@example.com",password:"incorrect-password"})
+    }),env(db));
+    last=response;
+    if(attempt<=10)assert.equal(response.status,401);
+  }
+  assert.equal(last.status,429);
+  assert.equal(db.rateLimits.size,12);
+});
+
+test("AI actions are preview-only until owner confirmation and confirmation IDs are one-time", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  db.products.set("product-confirm-1",{id:"product-confirm-1",name:"Confirm Hoodie",status:"published"});
+  db.variants.set("variant-confirm-1",{id:"variant-confirm-1",product_id:"product-confirm-1",sku:"DV-CONFIRM-M",size:"M",color:"Black",stock_on_hand:4,reserved_quantity:1,is_active:1});
+  const headers={cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.111"};
+  const previewResponse=await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-CONFIRM-M to 9"},headers),env(db));
+  assert.equal(previewResponse.status,200);
+  const preview=await previewResponse.json();
+  assert.equal(preview.confirmation_required,true);
+  assert.match(preview.action_preview,/set stock for SKU DV-CONFIRM-M to 9/i);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,4);
+  const confirmBody={confirmation_id:preview.confirmation_id};
+  const confirmed=await handleRequest(request("/api/admin/ai/execute","POST",confirmBody,headers),env(db));
+  assert.equal(confirmed.status,200);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,9);
+  const replay=await handleRequest(request("/api/admin/ai/execute","POST",confirmBody,headers),env(db));
+  assert.equal(replay.status,409);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,9);
+});
+
+test("JSON request body limits are enforced during streaming when Content-Length is absent", async () => {
+  const db=new FakeD1();
+  const raw=JSON.stringify({email:"large@example.com",password:"x".repeat(12000)});
+  const bytes=new TextEncoder().encode(raw);
+  const body=new ReadableStream({start(controller){controller.enqueue(bytes);controller.close();}});
+  const requestWithoutLength=new Request(origin+"/api/customer/login",{
+    method:"POST",headers:{"content-type":"application/json",origin,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.222"},
+    body,duplex:"half"
+  });
+  assert.equal(requestWithoutLength.headers.has("content-length"),false);
+  const response=await handleRequest(requestWithoutLength,env(db));
+  assert.equal(response.status,400);
+});
+
+test("administrator sessions expire after 30 minutes of inactivity", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  const session=[...db.sessions.values()][0];
+  session.last_seen_at=new Date(Date.now()-31*60*1000).toISOString();
+  const response=await handleRequest(request("/api/admin/ai/tasks","GET",undefined,{cookie,"sec-fetch-site":"same-origin"}),env(db));
+  assert.equal(response.status,401);
 });

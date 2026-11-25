@@ -1,5 +1,6 @@
 -- First-class reservation ledger: one durable row per order and variant.
--- No automatic expiry is applied: payment-provider callbacks may arrive late.
+-- Initial reservation ledger. Manual COD expiry is added safely in migration 0051;
+-- online payment-provider reservations remain unexpired here to preserve late callbacks.
 CREATE TABLE IF NOT EXISTS order_inventory_reservations (
   id TEXT PRIMARY KEY,
   order_id TEXT NOT NULL REFERENCES orders(id) ON DELETE RESTRICT,

@@ -6,7 +6,7 @@
 
 ## 1. Non-negotiable evidence rules
 
-- Keep every original CNIC image in the existing private R2 bucket under `rental-private/`. The production D1 immutability triggers and indefinite R2 retention remain the primary safeguards.
+- Keep every original CNIC image private in the existing R2 bucket under `rental-private/` until an authorised owner/manager records final clearance, then for 90 more days. The application-controlled retention Worker is the only automated deletion path; never delete evidence manually.
 - Never email CNIC images, decrypted recovery ZIPs, passwords, raw SQL exports, or identity documents. Ordinary email is not a secure evidence vault.
 - Never upload raw/unencrypted SQL exports to Drive. Never place CNIC images in public website media, public links, GitHub, analytics, AI tools, or staff personal accounts.
 - Do not delete, overwrite, rename, or attempt to replace an original CNIC evidence object. The backup is an additional copy, not permission to alter the original.
@@ -78,7 +78,7 @@ The current website does not yet produce one complete all-business archive or up
 
 - Latest successful run: [GitHub Actions #45517680549](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45517680549).
 - D1 archive: `d1/encrypted/deverve-production-20261125T002339Z.dvbackup`, AES-256-GCM, R2 read-back verified, isolated restore passed for 66 tables, temporary D1 deleted.
-- Private media: 40 source objects (38 catalogue, 2 rental-private CNIC) totaling 20,001,859 plaintext bytes. Every object was encrypted, read back, decrypted and SHA-256 verified; the source inventory remained stable.
+- Historical private-media snapshot on 25 Nov: 40 source objects (38 catalogue, 2 legacy rental-private CNIC) totaling 20,001,859 plaintext bytes. Every object was encrypted, read back, decrypted and SHA-256 verified; the source inventory remained stable. The 90-day lifecycle expires this snapshot by 23 Feb 2027. New routine media backups exclude `rental-private/` objects.
 - Media manifest: `media-manifests/deverve-media-20261125T002348Z.dvmanifest`, encrypted and read-back/decrypted successfully. The previous plaintext media inventory manifest was deleted only after the encrypted replacement passed verification.
 - R2 lifecycle: encrypted D1/media archives and manifests expire after 90 days; legacy plaintext D1 SQL expires after 30 days; incomplete multipart uploads expire after 7 days. The backup and source media buckets have public domains disabled.
 - The encryption key is stored as a GitHub Actions secret. Independent owner password-manager escrow and a separate recovery copy remain unverified. Never paste the key into chat or commit it to Git.
@@ -107,7 +107,7 @@ For a manual recovery/fallback database snapshot (the automated daily workflow i
 7. Upload only the encrypted archive to the restricted Drive Database Exports folder. Keep its password separately.
 8. Keep a second encrypted copy on a separate offline drive.
 
-Recommended cadence: automated encrypted D1 and full private-R2 media snapshots daily (GitHub Actions schedule target 02:17 Pakistan time; actual scheduled dispatch may be delayed). Keep an independently encrypted off-site copy at least weekly once the Dropbox/Drive integration or manual process is approved. The current R2 media snapshot includes all private rental evidence objects, including CNIC front/back files. Do not overwrite the last known-good backup; keep dated versions.
+Recommended cadence: automated encrypted D1 and full private-R2 media snapshots daily (GitHub Actions schedule target 02:17 Pakistan time; actual scheduled dispatch may be delayed). Keep an independently encrypted off-site copy at least weekly once the Dropbox/Drive integration or manual process is approved. The historical 25 Nov snapshot includes the two existing CNIC images; new routine snapshots exclude CNIC evidence so the 90-day post-clearance policy is not extended by later backup copies. Do not overwrite the last known-good backup; keep dated versions.
 
 ## 5. Recovery procedure
 
@@ -126,13 +126,13 @@ Recommended cadence: automated encrypted D1 and full private-R2 media snapshots 
 - Validate table counts, indexes, triggers, key relationships and application compatibility before considering a cutover.
 - Keep the original production D1 untouched while validating recovery.
 - Restore CNIC image objects separately from their encrypted per-rental backups or the retained original R2 bucket. Reconcile each `rental_documents` metadata record with its object key, content type, byte size and cryptographic checksum.
-- The permanent CNIC immutability triggers are intentional. Do not disable or bypass them to force a restore. A reviewed recovery design must preserve the evidence and prove the restored record/object mapping before any controlled cutover.
+- The CNIC metadata update guard and rental-history no-delete guard remain intentional. The document-delete guard now permits only the scheduled retention Worker’s purging state after the recorded 90-day deadline and with no active hold. A reviewed recovery design must preserve the evidence and prove the restored record/object mapping before any controlled cutover.
 
 ## 6. What is and is not automated today
 
 | Capability | Current status |
 |---|---|
-| Original CNIC image retention in private R2 | Enabled with indefinite retention |
+| Original CNIC image retention in private R2 | 90 days after authorised final clearance; current indefinite bucket lock is removed only by the gated deployment workflow |
 | D1 protection against CNIC metadata update/delete | Production triggers verified |
 | Per-rental browser-side encrypted CNIC backup | Implemented |
 | CNIC backup decryption and local ZIP recovery | Implemented; does not reinsert into D1/R2 |
@@ -140,7 +140,7 @@ Recommended cadence: automated encrypted D1 and full private-R2 media snapshots 
 | Google Drive upload | Manual owner upload; ChatGPT Drive connector disabled by workspace administrator; no website OAuth integration |
 | Emailing CNIC backups | Not used and not recommended |
 | Scheduled encrypted D1 SQL export + isolated restore | Configured; last run passed 25 Nov 2026 (66 tables) |
-| Scheduled encrypted private R2 media snapshot | Configured; 40/40 objects and encrypted manifest verified 25 Nov 2026 |
+| Scheduled encrypted private R2 media snapshot | Configured; 40/40 objects and encrypted manifest verified 25 Nov 2026; future routine snapshots exclude CNIC evidence |
 | Automated R2-to-Google-Drive replication | Not configured |
 | Automated R2-to-Dropbox replication | Not configured |
 | Full replacement-system CNIC import | Requires a separately reviewed recovery importer |

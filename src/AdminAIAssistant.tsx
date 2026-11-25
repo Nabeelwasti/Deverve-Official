@@ -3,6 +3,7 @@ import { adminRequest as api } from "./adminApi";
 import { extractOfficeText } from "./officeImport";
 
 type Message = { role: "user" | "model"; text: string };
+type PendingAIConfirmation = { id: string; command: string; expiresAt: string };
 type DraftVariant = { size: string; color: string; initial_stock: number; reorder_level: number; cost_price_pkr: number | null };
 type ProductDraft = {
   name: string; category: string; audience: "men" | "women" | "kids" | "unisex"; description: string;
@@ -91,6 +92,7 @@ async function fileBatchFingerprint(files: File[], task: string, prompt: string)
 
 export default function AdminAIAssistant({ role, initialBarcode = "", onProductCreated, onManualCreate, onNavigate, settings }: Props) {
   const [history, setHistory] = useState<Message[]>([]);
+  const [pendingConfirmation, setPendingConfirmation] = useState<PendingAIConfirmation | null>(null);
   const [message, setMessage] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [previews, setPreviews] = useState<string[]>([]);
@@ -474,12 +476,17 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     setBusy(true); setStatus("Thinking through your request…");
     try {
       const messages = [...priorMessages.slice(-7), { role: "user" as const, text: original }];
-      const result = await api<{ ok: boolean; action?: string | null; task_id?: string; model?: string; message: string }>("/api/admin/ai/execute", {
+      const result = await api<{ ok: boolean; action?: string | null; task_id?: string; model?: string; message: string; confirmation_required?: boolean; confirmation_id?: string; expires_at?: string; action_preview?: string }>("/api/admin/ai/execute", {
         method: "POST", body: JSON.stringify({ command: original, messages, task_id: taskId })
       });
       const reply = result.message || "The assistant completed your request.";
       setHistory(current => [...current, { role: "user", text: original }, { role: "model", text: reply }]);
       setStatus(reply); setMessage("");
+      if (result.confirmation_required && result.confirmation_id && result.expires_at) {
+        setPendingConfirmation({ id: result.confirmation_id, command: result.action_preview || original, expiresAt: result.expires_at });
+        return true;
+      }
+      setPendingConfirmation(null);
       if (result.action) { taskIdRef.current = null; setActiveTaskId(null); onProductCreated(); }
       void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
       return true;
@@ -491,8 +498,29 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
     } finally { setBusy(false); }
   };
 
+  const confirmPendingAction = async () => {
+    const pending = pendingConfirmation;
+    if (!pending || busy) return;
+    setBusy(true); setStatus("Confirming the reviewed business action…");
+    try {
+      const result = await api<{ ok: boolean; action?: string | null; message: string }>("/api/admin/ai/execute", {
+        method: "POST", body: JSON.stringify({ confirmation_id: pending.id })
+      });
+      setPendingConfirmation(null);
+      setHistory(current => [...current, { role: "model", text: result.message || "The confirmed action completed." }]);
+      setStatus(result.message || "The confirmed action completed.");
+      if (result.action) { taskIdRef.current = null; setActiveTaskId(null); onProductCreated(); }
+      void api<{ tasks?: AITaskSummary[] }>("/api/admin/ai/tasks").then(value => setRecentTasks(Array.isArray(value.tasks) ? value.tasks : [])).catch(() => undefined);
+    } catch (error) {
+      setPendingConfirmation(null);
+      const reply = error instanceof Error ? error.message : "The confirmation could not be completed.";
+      setStatus(reply + " No success is being reported; review the workspace before preparing another action.");
+      setHistory(current => [...current, { role: "model", text: reply + " No success is being reported." }]);
+    } finally { setBusy(false); }
+  };
+
   const startNewChat = () => {
-    setHistory([]); setStatus(""); setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setSources([]);
+    setHistory([]); setStatus(""); setPendingConfirmation(null); setDraft(null); setDraftQueue([]); setDraftSourceFiles([]); setSources([]);
     setFiles([]); setResearchQuery(""); taskIdRef.current = null; setActiveTaskId(null);
     setActiveTool("chat"); setDrawerOpen(false);
   };
@@ -605,17 +633,18 @@ export default function AdminAIAssistant({ role, initialBarcode = "", onProductC
         </div>
         <div className="admin-ai-messages" ref={listRef} aria-live="polite">
           {visibleMessages.map((item, index) => <article key={index} className={"admin-ai-message " + item.role}><span>{item.role === "model" ? "DE VERVE AI" : "YOU"}</span><p>{item.text}</p></article>)}
+          {pendingConfirmation && <section className="admin-ai-action-confirmation" role="alert"><strong>Review before execution</strong><p>{pendingConfirmation.command}</p><small>This action has not run. It expires {new Date(pendingConfirmation.expiresAt).toLocaleTimeString("en-PK")}.</small><div><button type="button" className="admin-primary" disabled={busy} onClick={() => void confirmPendingAction()}>{busy ? "Confirming…" : "Confirm and execute"}</button><button type="button" className="admin-secondary" disabled={busy} onClick={() => setPendingConfirmation(null)}>Cancel</button></div></section>}
           {sources.length > 0 && <section className="admin-ai-source-list"><strong>Sources and references</strong>{sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}<span>↗</span></a>)}</section>}
           {busy && <p className="admin-ai-thinking"><span></span>Thinking through your request…</p>}
         </div>
         {files.length > 0 && <div className="admin-ai-attachments">{files.map((file, index) => <figure key={file.name + index}>{attachmentMime(file).startsWith("image/") && previews[index] ? <img src={previews[index]} alt={"Selected image attachment " + (index + 1)}/> : <div className="admin-ai-file-preview" aria-label={attachmentMime(file) + " attachment"}>▤<strong>{attachmentMime(file) === "application/pdf" ? "PDF" : attachmentMime(file).split("/").pop()?.toUpperCase()}</strong></div>}<button type="button" aria-label={"Remove " + file.name} onClick={() => setFiles(current => current.filter((_, i) => i !== index))}>×</button><figcaption>{file.name}</figcaption></figure>)}</div>}
         {status && <p className="admin-ai-live-status" role="status">{status}</p>}
         <form className="admin-ai-composer" onSubmit={event => void submit(activeTool, event)}>
-          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder={activeTool === "product" ? "Describe what to extract, compare or prepare from these files…" : activeTool === "research" ? "What would you like me to research?" : "Message De VERVE Assistant…"} disabled={busy} aria-label="Message De VERVE Assistant"/>
+          <textarea rows={3} maxLength={2200} value={message} onChange={event => setMessage(event.target.value)} placeholder={activeTool === "product" ? "Describe what to extract, compare or prepare from these files…" : activeTool === "research" ? "What would you like me to research?" : "Message De VERVE Assistant…"} disabled={busy || Boolean(pendingConfirmation)} aria-label="Message De VERVE Assistant"/>
           <div className="admin-ai-composer-toolbar">
             <label className="admin-ai-attach" title="Attach photos or documents">＋ Attach<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf,text/plain,text/csv,application/json,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.docx,.xlsx,.md" multiple onChange={chooseFiles} disabled={busy || files.length >= 100}/></label>
             <small>{files.length ? files.length + " attachment(s) ready" : "Photos and documents · up to 100 files"}</small>
-            <button type="submit" className="admin-ai-send" aria-label="Send message" disabled={busy || (!message.trim() && files.length === 0)}>{busy ? "Working…" : "Send"} <span>↑</span></button>
+            <button type="submit" className="admin-ai-send" aria-label="Send message" disabled={busy || Boolean(pendingConfirmation) || (!message.trim() && files.length === 0)}>{busy ? "Working…" : "Send"} <span>↑</span></button>
           </div>
           <p className="admin-ai-privacy">Never attach passwords, API keys, OTPs, payment credentials or identity documents. Actions are restricted to your role and available integrations.</p>
         </form>
