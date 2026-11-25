@@ -3,8 +3,8 @@ name: Monitor encrypted backup freshness
 on:
   workflow_dispatch:
   schedule:
-    # Run after the 21:17 UTC backup schedule has had time to complete.
-    - cron: "0 22 * * *"
+    # Check every six hours so a failed or stale backup is surfaced promptly.
+    - cron: "0 */6 * * *"
 
 permissions:
   actions: read
