@@ -2815,7 +2815,7 @@ test("authorised rental staff can preview and download private CNIC images with 
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
   const tokenHash = Buffer.from(digest).toString("base64url");
   db.admins.set(adminId, { id: adminId, email: "rental@deverve.example", role: "rental", is_active: 1 });
-  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
+  db.sessions.set(sessionId, { id: sessionId, admin_user_id: adminId, token_hash: tokenHash, created_at: new Date().toISOString(), last_seen_at: new Date().toISOString(), expires_at: new Date(Date.now()+3600000).toISOString(), revoked_at: null });
   db.rentalDocuments.set("doc-front", { id: "doc-front", rental_request_id: rentalId, document_side: "cnic_front", object_key: "rental-private/test/front.png", mime_type: "image/png" });
   const bytes = new Uint8Array([137,80,78,71,13,10,26,10]);
   const testEnv = { ...env(db), MEDIA: { get: async () => ({ body: new Response(bytes).body }) } };
