@@ -41,6 +41,10 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
           test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
           [[ "$D1_BACKUP_ENCRYPTION_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "::error::D1_BACKUP_ENCRYPTION_KEY must be 64 hexadecimal characters."; exit 1; }
+      - name: Run isolated remote D1 inventory integration suite
+        run: npm run test:d1:integration
+      - name: Run isolated offline POS D1 migration integration suite
+        run: npm run test:offline:d1
       - name: Rehearse offline POS migrations on a fresh encrypted production backup clone
         env:
           OFFLINE_POS_MIGRATION_CHECK: "true"
