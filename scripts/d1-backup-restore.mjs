@@ -133,7 +133,7 @@ async function restoreDrill(sql,expected){
    const permitColumns=await queryRows(id,"PRAGMA table_info(pos_offline_permits)");
    if(!permitColumns.some(column=>column.name==="cost_snapshot_json"))throw new Error("Server-only offline permit cost snapshot column was not installed.");
    for(const [table,count] of Object.entries(restored.rowCounts)){
-    if(migrated.rowCounts[table]!==count)throw new Error("Offline-POS migrations unexpectedly changed existing production-clone row counts in "+table+".");
+    if(migrated.rowCounts[table]!==count)throw new Error("Offline-POS migrations unexpectedly changed existing production-clone row counts in "+table+" (before="+count+", after="+migrated.rowCounts[table]+").");
    }
    const foreignKeysAfter=await queryRows(id,"PRAGMA foreign_key_check");
    if(stable(foreignKeysAfter)!==stable(foreignKeysBefore))throw new Error("Offline-POS migrations introduced a foreign-key violation on the production clone.");
