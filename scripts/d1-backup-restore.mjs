@@ -185,7 +185,7 @@ async function restoreDrill(sql,expected){
    if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE payment_provider='safepay' AND expires_at IS NOT NULL")!==0)throw new Error("The COD migration unexpectedly added expiry to a Safepay reservation.");
    if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE order_id='"+manualOrderId+"' AND expires_at >= strftime('%Y-%m-%dT%H:%M:%fZ','now','+23 hours') AND expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ','now','+25 hours')")!==1)throw new Error("The manual COD fixture did not receive its 24-hour expiry.");
    if(await count("SELECT COUNT(*) AS count FROM order_inventory_reservations WHERE order_id='"+safepayOrderId+"' AND expires_at IS NOT NULL")!==0)throw new Error("The Safepay fixture was incorrectly assigned a COD expiry.");
-   for(const [table,rowCount] of Object.entries(restored.rowCounts)){
+   for(const [table,rowCount] of Object.entries(hardeningBaseline.rowCounts)){
     if(migrated.rowCounts[table]!==rowCount)throw new Error("Hardening migrations unexpectedly changed existing row counts in "+table+".");
    }
    const expectBlocked=async(sql,message,label)=>{
