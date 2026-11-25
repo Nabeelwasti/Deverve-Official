@@ -322,7 +322,7 @@ function base64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function fromBase64Url(value: string): Uint8Array {
+function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(normalized + "=".repeat((4 - normalized.length % 4) % 4));
   return Uint8Array.from(binary, (char) => char.charCodeAt(0));
@@ -5889,7 +5889,7 @@ async function publicAIChatRoute(request:Request,env:Env):Promise<Response|null>
 
 }
 
-export function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
+export function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array<ArrayBuffer> {
   const output=new Uint8Array(44+pcm.length),view=new DataView(output.buffer);
   output.set(new TextEncoder().encode("RIFF"),0);view.setUint32(4,36+pcm.length,true);
   output.set(new TextEncoder().encode("WAVEfmt "),8);view.setUint32(16,16,true);
@@ -5899,9 +5899,9 @@ export function speechWavFromPcm(pcm:Uint8Array,sampleRate=24000):Uint8Array {
   return output;
 }
 
-export async function generateGeminiSpeech(apiKey:string,text:string,language:string,voice:string):Promise<{ok:boolean;status:number;audio?:Uint8Array;message:string;model:string}> {
+export async function generateGeminiSpeech(apiKey:string,text:string,language:string,voice:string):Promise<{ok:boolean;status:number;audio?:Uint8Array<ArrayBuffer>;message:string;model:string}> {
   const models=["gemini-3.1-flash-tts-preview","gemini-2.5-flash-preview-tts"];
-  let last={ok:false,status:503,audio:undefined as Uint8Array|undefined,message:"Speech generation is temporarily unavailable",model:models[0]};
+  let last={ok:false,status:503,audio:undefined as Uint8Array<ArrayBuffer>|undefined,message:"Speech generation is temporarily unavailable",model:models[0]};
   for(const model of models){
     try{
       const response=await fetch("https://generativelanguage.googleapis.com/v1beta/interactions",{
