@@ -8,6 +8,7 @@ on:
       - "workers/deverve-cnic-retention.js"
       - "workers/cnic-retention/**"
       - "migrations/0050_cnic_clearance_retention_workflow.sql"
+      - "migrations/0054_cnic_retention_claim_lease.sql"
       - ".github/workflows/deploy-cnic-retention.yml"
 
 permissions:
