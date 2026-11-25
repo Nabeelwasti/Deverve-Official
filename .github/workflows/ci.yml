@@ -59,6 +59,12 @@ jobs:
           grep -Fq "\"$expected_permissions\"" .github/workflows/production-smoke.yml
       - name: Validate private translation Worker JavaScript syntax
         run: node --check workers/site-translation/index.js
+      - name: Validate scheduled CNIC retention Worker and R2 lock gate syntax
+        run: |
+          node --check workers/deverve-cnic-retention.js
+          node --check scripts/reconcile-cnic-r2-retention-lock.mjs
+      - name: Validate scheduled outbox Worker TypeScript build
+        run: npx tsc --noEmit --target ES2022 --module ESNext --moduleResolution bundler --lib ES2022,DOM workers/outbox/index.ts worker/index.ts
       - name: Test Worker authentication and translation behavior
         run: npm run test:worker
       - name: Exercise offline POS lifecycle through the real Worker and isolated SQLite D1 adapter
