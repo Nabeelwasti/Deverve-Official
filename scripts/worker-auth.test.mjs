@@ -3582,3 +3582,25 @@ test("customer login has an email-account throttle that cannot be bypassed by ro
   assert.equal(last.status,429);
   assert.equal(db.rateLimits.size,12);
 });
+
+test("AI actions are preview-only until owner confirmation and confirmation IDs are one-time", async () => {
+  const db=new FakeD1();
+  const setup=await bootstrap(db);
+  const cookie=setup.headers.get("set-cookie").split(";")[0];
+  db.products.set("product-confirm-1",{id:"product-confirm-1",name:"Confirm Hoodie",status:"published"});
+  db.variants.set("variant-confirm-1",{id:"variant-confirm-1",product_id:"product-confirm-1",sku:"DV-CONFIRM-M",size:"M",color:"Black",stock_on_hand:4,reserved_quantity:1,is_active:1});
+  const headers={cookie,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.111"};
+  const previewResponse=await handleRequest(request("/api/admin/ai/execute","POST",{command:"set stock for SKU DV-CONFIRM-M to 9"},headers),env(db));
+  assert.equal(previewResponse.status,200);
+  const preview=await previewResponse.json();
+  assert.equal(preview.confirmation_required,true);
+  assert.match(preview.action_preview,/set stock for SKU DV-CONFIRM-M to 9/i);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,4);
+  const confirmBody={confirmation_id:preview.confirmation_id};
+  const confirmed=await handleRequest(request("/api/admin/ai/execute","POST",confirmBody,headers),env(db));
+  assert.equal(confirmed.status,200);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,9);
+  const replay=await handleRequest(request("/api/admin/ai/execute","POST",confirmBody,headers),env(db));
+  assert.equal(replay.status,409);
+  assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,9);
+});
