@@ -27,7 +27,7 @@ This section supersedes older dated snapshots below whenever they conflict.
 2. Deploy and health-check the scheduled outbox Worker and CNIC retention Worker. Verify the COD expiry cron and R2 lock transition.
 3. Complete the full Cloudflare Worker-to-isolated-D1 runtime test with a token that can create/deploy/delete a temporary Worker and D1 database.
 4. Configure GitHub main branch protection and replace the broad, non-expiring Cloudflare API token with a tested least-privilege token.
-5. Verify owner password-manager escrow and a separate recovery copy of the backup key. Independent off-account/offline disaster recovery remains deferred until the business domain/email are established, as directed by the owner.
+5. Verify owner password-manager escrow for the D1 backup key and both independent application keys, plus a separate recovery copy of the backup key. Independent off-account/offline disaster recovery remains deferred until the business domain/email are established, as directed by the owner.
 6. Configure verified sender/email and WhatsApp provider credentials before enabling delivery. Customer email verification/password recovery remains unavailable until a verified sender is configured.
 7. Complete catalogue/fleet/pricing/legal-policy owner review and the real-device acceptance stage at the end: Android PWA, airplane-mode sale/reload, sync/conflict handling, camera/barcode scanner, printer and shift controls.
 8. Reconcile the existing open production register against physical cash before closing it. Do not close it through software alone.
