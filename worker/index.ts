@@ -37,6 +37,7 @@ export interface Env {
   RESEND_FROM_EMAIL?: string;
   OWNER_NOTIFICATION_EMAIL?: string;
   AI_KEYS_ENCRYPTION_KEY?: string;
+  CNIC_PREVIEW_HMAC_KEY?: string;
   NabeelG_Api_key1?: string;
   NabeelG_Api_key2?: string;
   WHATSAPP_ACCESS_TOKEN?: string;
@@ -1775,10 +1776,18 @@ async function adminVehicleRoutes(request: Request, env: Env, url: URL): Promise
 }
 
 
-async function rentalPreviewHmacKey(env:Env):Promise<CryptoKey|null>{
- const secret=env.ADMIN_BOOTSTRAP_TOKEN?.trim()||"";if(secret.length<24)return null;
- const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-rental-preview-token:v1:"+secret));
+async function rentalPreviewHmacKeyForSecret(secret:string):Promise<CryptoKey|null>{
+ const value=secret.trim();if(value.length<24)return null;
+ const material=await crypto.subtle.digest("SHA-256",new TextEncoder().encode("deverve-rental-preview-token:v1:"+value));
  return crypto.subtle.importKey("raw",material,{name:"HMAC",hash:"SHA-256"},false,["sign","verify"]);
+}
+async function rentalPreviewHmacKey(env:Env):Promise<CryptoKey|null>{
+ return rentalPreviewHmacKeyForSecret(env.CNIC_PREVIEW_HMAC_KEY?.trim()||env.ADMIN_BOOTSTRAP_TOKEN?.trim()||"");
+}
+async function rentalPreviewHmacKeys(env:Env):Promise<CryptoKey[]>{
+ const secrets=[env.CNIC_PREVIEW_HMAC_KEY?.trim()||"",env.ADMIN_BOOTSTRAP_TOKEN?.trim()||""].filter((secret,index,all)=>secret.length>=24&&all.indexOf(secret)===index);
+ const keys=await Promise.all(secrets.map(rentalPreviewHmacKeyForSecret));
+ return keys.filter((key):key is CryptoKey=>Boolean(key));
 }
 async function createRentalPreviewToken(env:Env,payload:{rental_id:string;side:"cnic_front"|"cnic_back";admin_id:string;expires_at:number;nonce:string}):Promise<string|null>{
  const key=await rentalPreviewHmacKey(env);if(!key)return null;
@@ -1791,10 +1800,10 @@ async function publicRentalDocumentPreviewRoute(request:Request,env:Env,url:URL)
  if(request.method!=="GET")return error("Method not allowed",405);
  const token=url.searchParams.get("token")||"";if(token.length>1600)return error("This secure preview link is invalid or expired",403);
  const parts=token.split(".");if(parts.length!==2)return error("This secure preview link is invalid or expired",403);
- const key=await rentalPreviewHmacKey(env);if(!key)return error("Secure document preview is temporarily unavailable",503);
+ const keys=await rentalPreviewHmacKeys(env);if(!keys.length)return error("Secure document preview is temporarily unavailable",503);
  let payload:{rental_id?:string;side?:string;admin_id?:string;expires_at?:number;nonce?:string};
  try{
-  const valid=await crypto.subtle.verify("HMAC",key,fromBase64Url(parts[1]),new TextEncoder().encode(parts[0]));
+  let valid=false;for(const key of keys){if(await crypto.subtle.verify("HMAC",key,fromBase64Url(parts[1]),new TextEncoder().encode(parts[0]))){valid=true;break;}}
   if(!valid)return error("This secure preview link is invalid or expired",403);
   payload=JSON.parse(new TextDecoder().decode(fromBase64Url(parts[0]))) as typeof payload;
  }catch{return error("This secure preview link is invalid or expired",403);}
