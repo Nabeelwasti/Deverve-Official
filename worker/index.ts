@@ -340,6 +340,32 @@ async function sha256(value: string): Promise<string> {
  * Local development without Cloudflare's edge header intentionally skips this
  * control so developers can test forms. Production Pages requests include it.
  */
+async function enforceIdentityRateLimit(
+  env: Env,
+  scope: string,
+  identityDigest: string,
+  limit: number,
+  windowSeconds = 15 * 60,
+): Promise<Response | null> {
+  const bucketKey = await sha256("deverve-identity-rate-limit:v1:" + scope + ":" + identityDigest);
+  const now = Math.floor(Date.now() / 1000);
+  const windowStart = Math.floor(now / windowSeconds) * windowSeconds;
+  const expiresAt = windowStart + windowSeconds * 2;
+  try {
+    const row = await env.DB.prepare(
+      "INSERT INTO public_rate_limits (bucket_key, window_start, request_count, expires_at) VALUES (?, ?, 1, ?) ON CONFLICT(bucket_key) DO UPDATE SET request_count = CASE WHEN public_rate_limits.window_start = excluded.window_start THEN public_rate_limits.request_count + 1 ELSE 1 END, window_start = excluded.window_start, expires_at = excluded.expires_at RETURNING request_count",
+    ).bind(bucketKey, windowStart, expiresAt).first<{ request_count: number }>();
+    if (!row || !Number.isInteger(row.request_count)) return error("Request protection is temporarily unavailable. Please try again shortly.", 503);
+    if (row.request_count > limit) {
+      const retryAfter = Math.max(1, windowStart + windowSeconds - now);
+      return json({ error: "Too many sign-in attempts. Please wait before trying again." }, 429, { "retry-after": String(retryAfter) });
+    }
+    return null;
+  } catch {
+    return error("Request protection is temporarily unavailable. Please try again shortly.", 503);
+  }
+}
+
 async function enforcePublicRateLimit(
   request: Request,
   env: Env,
@@ -5106,6 +5132,8 @@ async function customerAccountRoutes(request: Request, env: Env, url: URL): Prom
     const email = cleanText(body.email, 160).toLowerCase();
     const password = typeof body.password === "string" ? body.password : "";
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length > 128) return error("Email or password is incorrect", 401);
+    const accountLimited = await enforceIdentityRateLimit(env, "customer-login-account", await sha256(email), 10);
+    if (accountLimited) return accountLimited;
     try {
       const customer = await env.DB.prepare("SELECT id, email, password_hash, full_name, phone, status FROM customers WHERE email = ? COLLATE NOCASE LIMIT 1")
         .bind(email).first<{ id: string; email: string; password_hash: string; full_name: string; phone: string; status: string }>();
