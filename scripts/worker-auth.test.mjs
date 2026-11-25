@@ -3604,3 +3604,17 @@ test("AI actions are preview-only until owner confirmation and confirmation IDs 
   assert.equal(replay.status,409);
   assert.equal(db.variants.get("variant-confirm-1").stock_on_hand,9);
 });
+
+test("JSON request body limits are enforced during streaming when Content-Length is absent", async () => {
+  const db=new FakeD1();
+  const raw=JSON.stringify({email:"large@example.com",password:"x".repeat(12000)});
+  const bytes=new TextEncoder().encode(raw);
+  const body=new ReadableStream({start(controller){controller.enqueue(bytes);controller.close();}});
+  const requestWithoutLength=new Request(origin+"/api/customer/login",{
+    method:"POST",headers:{"content-type":"application/json",origin,"sec-fetch-site":"same-origin","cf-connecting-ip":"203.0.113.222"},
+    body,duplex:"half"
+  });
+  assert.equal(requestWithoutLength.headers.has("content-length"),false);
+  const response=await handleRequest(requestWithoutLength,env(db));
+  assert.equal(response.status,400);
+});
