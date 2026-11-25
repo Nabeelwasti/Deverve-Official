@@ -1,0 +1,39 @@
+name: Deploy scheduled outbox Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "workers/outbox/**"
+      - "worker/index.ts"
+      - ".github/workflows/deploy-outbox.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deverve-outbox-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Type-check Worker and application
+        run: npm run check
+      - name: Deploy scheduled outbox Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing Cloudflare API token"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing Cloudflare account ID"; exit 1; }
+          npx --yes wrangler@4.45.0 deploy --config workers/outbox/wrangler.toml
