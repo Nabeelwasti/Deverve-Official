@@ -1,0 +1,55 @@
+name: Post-backup production migration rehearsals
+
+on:
+  workflow_run:
+    workflows: ["Encrypted D1 and R2 Media Backup and Restore Drill"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deverve-post-backup-migration-rehearsals
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE_ID: "355da876-17c4-4762-a59d-bb85f2e4551b"
+      D1_DATABASE_NAME: "deverve-production"
+      D1_BACKUP_R2_BUCKET: "deverve-db-backups"
+      D1_BACKUP_ENCRYPTION_KEY: ${{ secrets.D1_BACKUP_ENCRYPTION_KEY }}
+      D1_BACKUP_KEY_ID: "deverve-d1-key-v1"
+    steps:
+      - name: Check out protected main source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: main
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "24"
+      - name: Validate protected backup credentials
+        shell: bash
+        run: |
+          test -n "$CLOUDFLARE_API_TOKEN" || { echo "::error::Missing CLOUDFLARE_API_TOKEN"; exit 1; }
+          test -n "$CLOUDFLARE_ACCOUNT_ID" || { echo "::error::Missing CLOUDFLARE_ACCOUNT_ID"; exit 1; }
+          [[ "$D1_BACKUP_ENCRYPTION_KEY" =~ ^[A-Fa-f0-9]{64}$ ]] || { echo "::error::D1_BACKUP_ENCRYPTION_KEY must be 64 hexadecimal characters."; exit 1; }
+      - name: Run isolated remote D1 inventory integration suite
+        run: npm run test:d1:integration
+      - name: Run isolated offline POS D1 migration integration suite
+        run: npm run test:offline:d1
+      - name: Rehearse offline POS migrations on a fresh encrypted production backup clone
+        env:
+          OFFLINE_POS_MIGRATION_CHECK: "true"
+        run: node scripts/d1-backup-restore.mjs
+      - name: Rehearse hardening schema and retention guards on the fresh production backup clone
+        env:
+          HARDENING_MIGRATION_CHECK: "true"
+        run: node scripts/d1-backup-restore.mjs
