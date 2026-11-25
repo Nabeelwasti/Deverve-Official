@@ -921,7 +921,7 @@ async function publicOrderRoutes(request: Request, env: Env, url: URL): Promise<
     if (requestedPaymentProvider === "safepay") statements.push(env.DB.prepare("UPDATE orders SET payment_provider = 'safepay' WHERE id = ? AND payment_provider = 'manual'").bind(id));
     const reservationStatementStart = statements.length;
     for (const reservation of reservationLines) {
-      statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, ?, ? FROM orders WHERE id = ? AND order_status = 'pending'").bind(crypto.randomUUID(), id, reservation.variant.id, reservation.quantity, now, now, id));
+      statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, expires_at, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, CASE WHEN payment_provider = 'manual' THEN ? ELSE NULL END, ?, ? FROM orders WHERE id = ? AND order_status = 'pending'").bind(crypto.randomUUID(), id, reservation.variant.id, reservation.quantity, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), now, now, id));
     }
     if (couponRedemption) {
       statements.push(env.DB.prepare("INSERT INTO discount_coupon_redemptions (id,coupon_id,order_id,customer_id,exchange_request_id,discount_amount_paisa) SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM orders WHERE id = ?)").bind(crypto.randomUUID(), couponRedemption.coupon.id, id, signedInCustomer!.customer_id, couponRedemption.coupon.exchange_request_id, couponRedemption.discountPaisa, id));
@@ -2155,7 +2155,7 @@ async function publicWholesaleQuoteRoutes(request: Request, env: Env, url: URL):
     }
     const reservationLedgerStart = statements.length;
     for (const reservation of reservationLines) {
-      statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, ?, ? FROM orders WHERE id = ? AND source_quote_id = ?").bind(crypto.randomUUID(), orderId, reservation.variant_id, reservation.quantity, now, now, orderId, quote.id));
+      statements.push(env.DB.prepare("INSERT INTO order_inventory_reservations (id, order_id, variant_id, quantity, status, payment_provider, expires_at, reserved_at, updated_at) SELECT ?, ?, ?, ?, 'reserved', payment_provider, CASE WHEN payment_provider = 'manual' THEN ? ELSE NULL END, ?, ? FROM orders WHERE id = ? AND source_quote_id = ?").bind(crypto.randomUUID(), orderId, reservation.variant_id, reservation.quantity, new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(), now, now, orderId, quote.id));
     }
     statements.push(env.DB.prepare("UPDATE wholesale_quotes SET status = 'accepted', converted_order_id = ?, updated_at = ? WHERE id = ? AND status = 'sent' AND EXISTS (SELECT 1 FROM orders WHERE id = ? AND source_quote_id = ?)").bind(orderId, now, quote.id, orderId, quote.id));
     statements.push(env.DB.prepare("INSERT INTO audit_logs (id, actor_admin_id, action, entity_type, entity_id, metadata_json) SELECT ?, NULL, 'wholesale_quote.accepted', 'wholesale_quote', ?, ? WHERE EXISTS (SELECT 1 FROM wholesale_quotes WHERE id = ? AND status = 'accepted')").bind(crypto.randomUUID(), quote.id, JSON.stringify({ order_id: orderId, order_number: orderNumber }), quote.id));
