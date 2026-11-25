@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { deriveMediaKey, encryptMedia, decryptMedia } from "./r2-media-backup.mjs";
+import { deriveMediaKey, encryptMedia, decryptMedia, isBackupEligibleMediaObject } from "./r2-media-backup.mjs";
 
 const fixtureKey = "a".repeat(64);
 
@@ -51,4 +51,11 @@ test("private media inventory manifests are opaque until authenticated decryptio
   assert.equal(encrypted.includes(Buffer.from("rental-private")), false);
   assert.equal(encrypted.includes(Buffer.from("cnic_front")), false);
   assert.equal(decryptMedia(encrypted, key).toString("utf8"), manifest);
+});
+
+test("routine media backups exclude private rental CNIC evidence", () => {
+  assert.equal(isBackupEligibleMediaObject({key:"catalogue/hoodie.jpg"}), true);
+  assert.equal(isBackupEligibleMediaObject({key:"rental-private/request-id/cnic_front.jpg"}), false);
+  assert.equal(isBackupEligibleMediaObject({key:"rental-private/request-id/cnic_back.webp"}), false);
+  assert.equal(isBackupEligibleMediaObject({key:""}), false);
 });
