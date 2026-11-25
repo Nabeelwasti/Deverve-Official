@@ -202,7 +202,8 @@ async function restoreDrill(sql,expected){
     await expectBlocked("UPDATE rental_documents SET byte_size=byte_size WHERE id='"+documentId+"'","Permanent CNIC evidence metadata is immutable","CNIC document metadata immutability guard");
     await api("POST",queryPath,{sql:"UPDATE rental_requests SET cnic_clearance_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-100 days'),cnic_retention_due_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-10 days'),cnic_retention_status='purging' WHERE id='"+rentalId+"'"});
     const holdId="hardening-hold-"+fixtureSuffix;
-    await api("POST",queryPath,{sql:"INSERT INTO rental_cnic_holds (id,rental_request_id,reason,placed_at,review_at) VALUES ("+[holdId,rentalId,"CI fixture legal hold prevents deletion","strftime('%Y-%m-%dT%H:%M:%fZ','now')","strftime('%Y-%m-%dT%H:%M:%fZ','now','+7 days')].map((value,index)=>index<3?sqlValue(value):value).join(",")+")"});
+    const holdSql="INSERT INTO rental_cnic_holds (id,rental_request_id,reason,placed_at,review_at) VALUES ("+sqlValue(holdId)+","+sqlValue(rentalId)+","+sqlValue("CI fixture legal hold prevents deletion")+",strftime('%Y-%m-%dT%H:%M:%fZ','now'),strftime('%Y-%m-%dT%H:%M:%fZ','now','+7 days'))";
+    await api("POST",queryPath,{sql:holdSql});
     await expectBlocked("DELETE FROM rental_documents WHERE id='"+documentId+"'","CNIC deletion requires recorded clearance","CNIC active-hold delete guard");
     await api("POST",queryPath,{sql:"UPDATE rental_cnic_holds SET released_at=strftime('%Y-%m-%dT%H:%M:%fZ','now'),release_note='CI fixture released' WHERE id='"+holdId+"'"});
     await expectBlocked("UPDATE rental_requests SET cnic_clearance_at=strftime('%Y-%m-%dT%H:%M:%fZ','now','-99 days') WHERE id='"+rentalId+"'","Recorded CNIC clearance and retention deadline are immutable","CNIC clearance immutability guard");
