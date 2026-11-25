@@ -25,12 +25,11 @@ export default {
       console.error(JSON.stringify({event:"cnic-upload-token-cleanup-failed",error_code:"d1_unavailable"}));
     }
 
-    const staleClaimCutoff = new Date(Date.now()).toISOString();
     let dueRows = [];
     try {
       const due = await env.DB.prepare(
         "SELECT id,cnic_retention_due_at FROM rental_requests r WHERE (r.cnic_retention_status IN ('scheduled','retry') OR (r.cnic_retention_status='purging' AND (r.cnic_retention_claim_expires_at IS NULL OR r.cnic_retention_claim_expires_at <= ?))) AND r.cnic_retention_due_at IS NOT NULL AND r.cnic_retention_due_at <= ? AND NOT EXISTS (SELECT 1 FROM rental_cnic_holds h WHERE h.rental_request_id=r.id AND h.released_at IS NULL) ORDER BY r.cnic_retention_due_at,r.id LIMIT ?"
-      ).bind(staleClaimCutoff, now, MAX_PURGES_PER_RUN).all();
+      ).bind(now, now, MAX_PURGES_PER_RUN).all();
       dueRows = due.results ?? [];
     } catch (error) {
       console.error(JSON.stringify({event:"cnic-retention-scan-failed",error_code:"d1_unavailable",expired_upload_tokens:expiredUploadTokens}));
