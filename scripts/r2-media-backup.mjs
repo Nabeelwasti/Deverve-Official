@@ -11,6 +11,9 @@ const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
 const MAX_OBJECT_BYTES = 100 * 1024 * 1024;
 
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
+export function isBackupEligibleMediaObject(object) {
+  return typeof object?.key === "string" && !object.key.startsWith("rental-private/");
+}
 export function deriveMediaKey(hex) {
   if (!/^[a-f0-9]{64}$/i.test(hex)) throw new Error("D1_BACKUP_ENCRYPTION_KEY must contain exactly 64 hexadecimal characters.");
   return Buffer.from(hkdfSync("sha256", Buffer.from(hex, "hex"), Buffer.from("deverve-r2-media-backup-v1"), Buffer.from("DVMEDIA1 AES-256-GCM"), 32));
@@ -90,7 +93,7 @@ async function listObjects() {
     objects.push(...payload.result);
     if (objects.length > MAX_OBJECTS) throw new Error("R2 media inventory exceeds the configured safe object-count limit.");
     cursor = payload.result_info?.cursor;
-    if (!payload.result_info?.is_truncated || !cursor) return objects.sort((a, b) => String(a.key).localeCompare(String(b.key)));
+    if (!payload.result_info?.is_truncated || !cursor) return objects.filter(isBackupEligibleMediaObject).sort((a, b) => String(a.key).localeCompare(String(b.key)));
   }
   throw new Error("R2 media inventory pagination exceeded the configured safety limit.");
 }
