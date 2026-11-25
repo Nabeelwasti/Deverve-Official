@@ -33,6 +33,12 @@ if (!healthResponse.ok ||
   throw new Error("The deployed CNIC retention Worker did not pass its production health and policy gate. R2 lock rules were not changed.");
 }
 
+const schedules = await request("GET", "/accounts/" + accountId + "/workers/scripts/deverve-cnic-retention/schedules");
+const cronExpressions = (schedules.schedules || []).map((item) => item.cron);
+if (!cronExpressions.includes("0 3 * * *")) {
+  throw new Error("The daily 03:00 UTC CNIC retention Cron Trigger is not confirmed; R2 lock rules were not changed.");
+}
+
 const path = "/accounts/" + accountId + "/r2/buckets/" + bucket + "/lock";
 const before = await request("GET", path);
 const rules = Array.isArray(before.rules) ? before.rules : [];
