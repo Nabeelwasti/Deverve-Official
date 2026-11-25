@@ -1949,7 +1949,7 @@ const env = (db, token = "test-bootstrap-token-with-more-than-32-characters") =>
   delete: async key => db.mediaObjects.delete(key),
   head: async key => { const item=db.mediaObjects.get(key); return item?{customMetadata:item.customMetadata}:null; },
   get: async key => db.mediaObjects.get(key)??null
-}, ADMIN_BOOTSTRAP_TOKEN: token });
+}, ADMIN_BOOTSTRAP_TOKEN: token, CNIC_PREVIEW_HMAC_KEY: "test-cnic-preview-hmac-key-with-more-than-32-characters" });
 const origin = "https://deverve.example";
 async function executeAIAction(db, command, headers = {}, configuredEnv = env(db)) {
   const previewResponse = await handleRequest(request("/api/admin/ai/execute", "POST", { command }, headers), configuredEnv);
