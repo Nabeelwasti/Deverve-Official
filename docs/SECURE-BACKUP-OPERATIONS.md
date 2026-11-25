@@ -96,7 +96,7 @@ The current website does not yet produce one complete all-business archive or up
 
 D1 contains business records and CNIC document metadata; it does **not** contain the binary CNIC images stored in R2. A D1 SQL export is therefore not a substitute for the per-rental encrypted image backups.
 
-For a periodic database snapshot:
+For a manual recovery/fallback database snapshot (the automated daily workflow is the primary routine):
 
 1. An authorized owner/operator signs in to the Cloudflare Dashboard.
 2. Open Workers & Pages → D1 → `deverve-production`.
@@ -107,7 +107,7 @@ For a periodic database snapshot:
 7. Upload only the encrypted archive to the restricted Drive Database Exports folder. Keep its password separately.
 8. Keep a second encrypted copy on a separate offline drive.
 
-Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence backup whenever a new CNIC document is accepted or replaced by an explicitly authorized process. Do not overwrite the last known-good backup; keep dated versions.
+Recommended cadence: automated encrypted D1 and full private-R2 media snapshots daily (GitHub Actions schedule target 02:17 Pakistan time; actual scheduled dispatch may be delayed). Keep an independently encrypted off-site copy at least weekly once the Dropbox/Drive integration or manual process is approved. The current R2 media snapshot includes all private rental evidence objects, including CNIC front/back files. Do not overwrite the last known-good backup; keep dated versions.
 
 ## 5. Recovery procedure
 
@@ -140,6 +140,7 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 | Google Drive upload | Manual owner upload; ChatGPT Drive connector disabled by workspace administrator; no website OAuth integration |
 | Emailing CNIC backups | Not used and not recommended |
 | Scheduled encrypted D1 SQL export + isolated restore | Configured; last run passed 25 Nov 2026 (66 tables) |
+| Scheduled encrypted private R2 media snapshot | Configured; 40/40 objects and encrypted manifest verified 25 Nov 2026 |
 | Automated R2-to-Google-Drive replication | Not configured |
 | Automated R2-to-Dropbox replication | Not configured |
 | Full replacement-system CNIC import | Requires a separately reviewed recovery importer |
@@ -152,7 +153,7 @@ Recommended cadence: weekly D1 snapshot, and a new per-rental CNIC evidence back
 - [ ] Review Dropbox Business Vault membership and verify no shared links or unapproved members exist.
 - [ ] Create the restricted Google Drive folder structure; verify no public links exist.
 - [ ] Create encrypted CNIC backups for every existing rental with evidence and upload them.
-- [ ] Create a weekly encrypted D1 export and upload it.
+- [ ] Verify the latest daily encrypted D1 backup in GitHub Actions and arrange an independently stored encrypted off-site copy in the business vault.
 - [ ] Keep a second encrypted copy on a separate offline drive.
 - [ ] Store passwords separately from backup files.
 - [ ] Perform a restore drill on a non-production environment and record the result.
