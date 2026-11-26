@@ -1,16 +1,16 @@
-# Current release reconciliation — 26 November 2026 (post-PR #86)
+# Current release reconciliation — 26 November 2026 (post-PR #87 and key provisioning)
 
 This section supersedes older dated status notes below. The authoritative detailed audit is [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md).
 
-- [x] Merge PR #86 at `cd1bcf3ee113dac57faf99cf8af16b2591c851ba`: date-sensitive offline POS schema-probe fixture and CMS gallery-upload state fix.
+- [x] Merge PR #86 and PR #87; latest `main` is `f97fd7b6519364fac28b6b1d054b8656a41008c3`. PR #86 fixes the date-sensitive offline POS schema-probe fixture and CMS gallery-upload state; PR #87 reconciles release documentation.
 - [x] Exact PR-head Build/type-check and complete browser suite passed: [run 45731649819](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649819).
 - [x] CodeQL and Gitleaks passed: [run 45731649842](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649842).
 - [x] Read-only Cloudflare reconciliation: live Pages deployment remains `2cdb7e70` from older commit `48f4bc7`; automatic production/preview deployments remain disabled.
 - [x] Verify production D1 contains migrations 0050–0054; keep offline POS migrations 0045–0049 unapplied.
 - [x] Verify `deverve-rental-cnic-indefinite` R2 lock remains enabled for `rental-private/`; no CNIC objects or metadata were deleted.
 - [x] Read-only catalogue reconciliation: 5 products (3 published), 7 variants and 1 available Toyota vehicle. Record product media/variant/stock defects in issue #52; no records changed.
-- [ ] Provision independent application keys only after owner-controlled password-manager escrow and separate recovery copies are established.
-- [ ] Release the latest Pages application after secret dependencies and key recovery are verified; run production smoke tests.
+- [x] Configure `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` as encrypted Pages secrets and verify `APP_SECRET_HIERARCHY_VERSION=1`; owner reports protected Notepad storage plus a separate recovery copy. Independent off-account restore remains unverified.
+- [ ] Verify application-level AI vault migration/re-encryption and CNIC preview signing during a controlled Pages release; run production smoke tests.
 - [ ] Deploy and runtime-test `deverve-outbox`; verify its five-minute Cron Trigger. Keep customer email/WhatsApp delivery inactive until provider credentials, sender/template and consent tests pass.
 - [ ] Establish independent off-account/offline backup custody and complete a separate restore drill.
 - [ ] Configure and verify GitHub `main` branch protection and least-privilege Cloudflare credentials.
