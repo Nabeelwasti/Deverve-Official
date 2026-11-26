@@ -1,3 +1,19 @@
+# Pre-launch Pages deployment — 26 November 2026
+
+This release is the pre-customer website launch. It deploys the current tested application to the existing Cloudflare Pages `pages.dev` address; a custom domain, business email, live customer traffic and provider credentials are separate launch/operations tasks and are not prerequisites for publishing the website itself.
+
+- Latest verified application source before this release: `5984b70279573a4e5c1de5aecb201ee861329318` (PR #88 merged).
+- PR #88 exact-head checks passed: build/type-check, storefront browser tests, CodeQL and Gitleaks.
+- Cloudflare Pages project `deverve-official` remains connected to `Nabeelwasti/Deverve-Official`, production branch `main`; the owner-approved Pages production auto-deployment setting has now been enabled. Preview deployments remain disabled.
+- Production bindings retained: D1 `deverve-production`, private R2 `deverve-media-private`, translation service, existing bootstrap/Gemini secrets, `AI_KEYS_ENCRYPTION_KEY`, `CNIC_PREVIEW_HMAC_KEY`, and `APP_SECRET_HIERARCHY_VERSION=1`. No secret values are recorded here.
+- The Pages deployment does not itself deploy separate scheduled Workers or activate external email, WhatsApp, payment, custom-domain or offline-POS integrations. Those remain separately configured features and can be enabled when their credentials and business settings exist.
+- This website release does not run D1 migrations, modify product/vehicle data, close POS sessions, alter R2 locks, delete CNIC files, or change payment/provider credentials.
+- After merge, verify the Cloudflare Pages production deployment points to the new main commit and run public HTTP smoke checks against the `pages.dev` URL.
+
+**Release scope:** publish the pre-launch website on Cloudflare Pages. Do not misrepresent unconfigured third-party integrations as active.
+
+---
+
 # Latest production reconciliation — 26 November 2026 (post-PR #87 and key provisioning)
 
 This section is authoritative and supersedes earlier snapshots below. It records the verified state after the gallery-upload fix and schema-probe fixture fix were merged.
