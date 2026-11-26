@@ -1,3 +1,39 @@
+# Latest production reconciliation — 26 November 2026 (post-PR #84)
+
+This section is authoritative and supersedes earlier snapshots below.
+
+## Verified source, CI and backup state
+- GitHub `main` is `77b429e41ace7afcc0d181a7f2e6a2e3b64e8356`. The post-merge build/type-check run [45606537953](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537953), CodeQL/Gitleaks run [45606537815](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537815), and scheduled outbox bundle build [45606537816](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537816) all passed on this exact commit.
+- The outbox artifact from run 45606537816 is `deverve-outbox-bundle`, 26,768 bytes, SHA-256 `92dc9cafb611db3463ec9265bf6b92e6e5e1ed1a2fbb25d1264c33a1ee9bd346`. It contains the compiled scheduled handler. The artifact was retrieved and inspected; the production Worker is still absent.
+- The latest previously verified encrypted production backup remains the 25 November archive `d1/encrypted/deverve-production-20261125T105958Z.dvbackup` (196,732 bytes), with isolated restore row counts and private R2 media checksums matched. A fresh backup should precede any further production schema or deployment change.
+- Read-only production D1 inspection on 26 November confirms 69 application tables and 1,355,776 bytes. Migrations 0050–0054 remain applied: CNIC hold/retention schema, COD reservation expiry, claim-lease index and AI action confirmation schema are present. The production schema still has no `d1_migrations` or `schema_migration_history` ledger. Offline POS migrations 0045–0049 remain unapplied; no offline POS tables were found.
+- The R2 lock `deverve-rental-cnic-indefinite` remains enabled for prefix `rental-private/`. No CNIC objects or metadata were deleted. The existing CNIC Worker has a daily `0 3 * * *` schedule, but its deployed version predates the latest claim-leased source and is not proof that the current 90-day implementation is live. Treat it as legacy until its deployed code/version is reconciled; do not alter deletion or lock behavior without the documented approval artifact and reviewed transition.
+- Queue preflight (read-only): 2 notification outbox rows are queued/processing, 0 enquiry emails, 0 POS receipts, 0 active expired COD reservations, and 0 active reservations with an expiry timestamp. No queue rows or customer payloads were read or modified. The two queued notifications will remain pending until an approved provider configuration and Worker release exist.
+- The one open production POS session remains untouched pending physical cash reconciliation.
+
+## Current Cloudflare production state
+- Pages project: `deverve-official`, connected to `Nabeelwasti/Deverve-Official`, production branch `main`; source-triggered production and preview deployments are disabled.
+- The current Pages production deployment is `2cdb7e70-dbfe-469a-9554-e1e7a2d49124` (`https://2cdb7e70.deverve-official.pages.dev`) from commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`. It does not contain current `main`.
+- Production bindings currently include D1 `deverve-production`, private R2 `deverve-media-private`, the translation service, and existing secret binding names `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1`. The dedicated `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` bindings are not present. Secret values were not read.
+- Production Workers present: `deverve-cnic-retention`, `deverve-site-translation`, and `deverve-turnstile-verify`. `deverve-outbox` is absent; its five-minute Cron Trigger is therefore not active. Email/WhatsApp provider credentials and delivery remain unverified/inactive.
+- The production CNIC R2 indefinite lock and existing Worker are deliberately preserved. Do not deploy a replacement retention/deletion workflow until the legal approval artifact (approving authority, effective date, exact scope) is attached to the controlled policy record and the lock-transition/runtime gates pass.
+- GitHub branch-protection status could not be read through the connected GitHub integration (HTTP 403, resource not accessible). Do not represent protection as verified until an administrator checks it directly.
+
+## Remaining release gates — not safely automatable from this session
+1. Provision the two independent Pages application keys only after the owner has established password-manager escrow and a separate recovery copy. The guarded workflow generates keys and cannot prove external owner custody; do not run it and leave the only copies unrecoverable.
+2. Deploy and runtime-test the outbox Worker only after an approved controlled release. Its current artifact build passes, but the Worker is not deployed and no production cron execution is claimed. Email/WhatsApp remain disabled until sender/domain, provider credentials, templates and opt-in are verified.
+3. Complete the legal approval evidence record and retention lock-transition review. Keep the indefinite R2 lock enabled meanwhile.
+4. Establish an independent off-account/offline backup and key escrow, then run and record a restore drill. Same-account D1/R2 recovery is not independent disaster recovery.
+5. Replace broad, non-expiring Cloudflare credentials with least-privilege credentials and verify CI/runtime access. Configure and verify GitHub `main` protection through an administrator.
+6. Add a durable migration-history ledger with a rehearsed migration that records only migrations confirmed applied. Do not mark offline POS migrations 0045–0049 as applied.
+7. Complete owner review of catalogue, SKU/size/colour stock, vehicle fleet, prices, delivery/rental/payment/refund policies and published claims.
+8. Perform physical Android/PWA and POS acceptance: airplane-mode behavior, reconnect/replay/conflict handling, barcode/camera, printer, shift opening/closing and physical cash reconciliation. Keep online POS authoritative and offline checkout disabled until accepted.
+9. Complete provider sandbox tests and production smoke tests after the guarded Pages release, including admin login, AI-key decrypt/re-encrypt, rental document preview, Turnstile, checkout/COD expiry, email and WhatsApp only when configured.
+
+**Release decision (26 November 2026): NOT READY for full production release.** Latest source and automated CI are green, but the live Pages deployment is behind `main`, the dedicated app keys and owner recovery custody are absent, the outbox Worker is not deployed, and owner/device/provider acceptance remains open. Preserve current production traffic and business data. Do not enable offline checkout, CNIC deletion, payments or customer messaging by assumption.
+
+---
+
 # Latest production reconciliation — 25 November 2026 (post-PR #83 and verified outbox build)
 
 This section is authoritative and supersedes older snapshots below.
