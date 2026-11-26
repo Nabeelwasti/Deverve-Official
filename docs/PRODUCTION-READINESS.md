@@ -1,36 +1,45 @@
-# Latest production reconciliation — 26 November 2026 (post-PR #84)
+# Latest production reconciliation — 26 November 2026 (post-PR #86)
 
-This section is authoritative and supersedes earlier snapshots below.
+This section is authoritative and supersedes earlier snapshots below. It records the verified state after the gallery-upload fix and schema-probe fixture fix were merged.
 
-## Verified source, CI and backup state
-- GitHub `main` is `77b429e41ace7afcc0d181a7f2e6a2e3b64e8356`. The post-merge build/type-check run [45606537953](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537953), CodeQL/Gitleaks run [45606537815](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537815), and scheduled outbox bundle build [45606537816](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45606537816) all passed on this exact commit.
-- The outbox artifact from run 45606537816 is `deverve-outbox-bundle`, 26,768 bytes, SHA-256 `92dc9cafb611db3463ec9265bf6b92e6e5e1ed1a2fbb25d1264c33a1ee9bd346`. It contains the compiled scheduled handler. The artifact was retrieved and inspected; the production Worker is still absent.
-- The latest previously verified encrypted production backup remains the 25 November archive `d1/encrypted/deverve-production-20261125T105958Z.dvbackup` (196,732 bytes), with isolated restore row counts and private R2 media checksums matched. A fresh backup should precede any further production schema or deployment change.
-- Read-only production D1 inspection on 26 November confirms 69 application tables and 1,355,776 bytes. Migrations 0050–0054 remain applied: CNIC hold/retention schema, COD reservation expiry, claim-lease index and AI action confirmation schema are present. The production schema still has no `d1_migrations` or `schema_migration_history` ledger. Offline POS migrations 0045–0049 remain unapplied; no offline POS tables were found.
-- The R2 lock `deverve-rental-cnic-indefinite` remains enabled for prefix `rental-private/`. No CNIC objects or metadata were deleted. The existing CNIC Worker has a daily `0 3 * * *` schedule, but its deployed version predates the latest claim-leased source and is not proof that the current 90-day implementation is live. Treat it as legacy until its deployed code/version is reconciled; do not alter deletion or lock behavior without the documented approval artifact and reviewed transition.
-- Queue preflight (read-only): 2 notification outbox rows are queued/processing, 0 enquiry emails, 0 POS receipts, 0 active expired COD reservations, and 0 active reservations with an expiry timestamp. No queue rows or customer payloads were read or modified. The two queued notifications will remain pending until an approved provider configuration and Worker release exist.
-- The one open production POS session remains untouched pending physical cash reconciliation.
+## Verified source and CI
+- GitHub `main` is `cd1bcf3ee113dac57faf99cf8af16b2591c851ba`, merging PR [#86](https://github.com/Nabeelwasti/Deverve-Official/pull/86). The PR exact-head Build and type-check run [45731649819](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649819) passed, including the complete storefront/admin Playwright browser suite. CodeQL and Gitleaks run [45731649842](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649842) passed both jobs.
+- PR #86 fixes the date-sensitive offline POS schema-probe fixture and hardens CMS gallery upload state updates to merge against the latest editor state, deduplicate media paths, and release the busy state in a finally block.
+- These are verified exact-PR-head checks. A separate post-merge `main` workflow run has not been independently confirmed through the connected GitHub integration; do not claim one.
+- The latest previously verified encrypted production backup remains `d1/encrypted/deverve-production-20261125T105958Z.dvbackup` (196,732 bytes). Isolated restore row counts and private R2 media checksums matched. Take a fresh backup before any production schema or deployment change.
+- Read-only production D1 inspection confirms 69 application tables and 1,355,776 bytes. Migrations 0050–0054 are present; there is no `d1_migrations` or `schema_migration_history` ledger. Offline POS migrations 0045–0049 remain unapplied and no offline POS tables exist.
+- The one open production POS session remains untouched pending physical drawer and shift reconciliation. No production D1/R2 data, customer records, stock, prices, CNIC files, or POS records were changed during this reconciliation.
+
+## Read-only production catalogue audit
+- Production D1 contains 5 products (3 published, 2 draft), 7 variants, and 1 vehicle marked available.
+- Published products: T2 (2 variants, 665 available units, no product-media links), Tolaza (2 variants, 300 available units, 2 media links), and Trouser (1 variant, 2,000 available units, 2 media links). These stock totals are computed from variants only, without multiplying rows through media joins.
+- T2 has no product images. Tolaza has one M variant with no colour and one XS/black variant with zero stock. Trouser has one aggregate variant whose size and colour fields contain comma-separated lists and which has no SKU or barcode.
+- The available vehicle is recorded as Toyota, Sedan, automatic, 5 seats, petrol, with one linked image. Its identity, registration, actual availability, rates, driver terms and rental policies still require physical/owner verification.
+- The product and vehicle values are database records, not proof of physical inventory, product authenticity, accurate photographs, prices or current rental availability. No catalogue records were edited. Findings are tracked in [issue #52](https://github.com/Nabeelwasti/Deverve-Official/issues/52).
 
 ## Current Cloudflare production state
-- Pages project: `deverve-official`, connected to `Nabeelwasti/Deverve-Official`, production branch `main`; source-triggered production and preview deployments are disabled.
-- The current Pages production deployment is `2cdb7e70-dbfe-469a-9554-e1e7a2d49124` (`https://2cdb7e70.deverve-official.pages.dev`) from commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`. It does not contain current `main`.
-- Production bindings currently include D1 `deverve-production`, private R2 `deverve-media-private`, the translation service, and existing secret binding names `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1`. The dedicated `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` bindings are not present. Secret values were not read.
-- Production Workers present: `deverve-cnic-retention`, `deverve-site-translation`, and `deverve-turnstile-verify`. `deverve-outbox` is absent; its five-minute Cron Trigger is therefore not active. Email/WhatsApp provider credentials and delivery remain unverified/inactive.
-- The production CNIC R2 indefinite lock and existing Worker are deliberately preserved. Do not deploy a replacement retention/deletion workflow until the legal approval artifact (approving authority, effective date, exact scope) is attached to the controlled policy record and the lock-transition/runtime gates pass.
-- GitHub branch-protection status could not be read through the connected GitHub integration (HTTP 403, resource not accessible). Do not represent protection as verified until an administrator checks it directly.
+- Pages project `deverve-official` is connected to this repository with production branch `main`; automatic production and preview deployments are disabled.
+- Current production deployment remains `2cdb7e70-dbfe-469a-9554-e1e7a2d49124` (`https://2cdb7e70.deverve-official.pages.dev`) from older commit `48f4bc7cba5780686e8022bc4a71cbfc5b878f68`. It does not contain current `main`.
+- Production bindings include D1 `deverve-production`, private R2 `deverve-media-private`, translation service, and existing secret names `ADMIN_BOOTSTRAP_TOKEN` and `NabeelG_Api_key1`. Dedicated `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY` bindings are absent. Secret values were not read.
+- Production Workers present: `deverve-cnic-retention`, `deverve-site-translation`, and `deverve-turnstile-verify`. `deverve-outbox` is absent; its five-minute Cron Trigger is not active. Resend and Meta WhatsApp credentials/template delivery are not configured or verified.
+- The R2 lock `deverve-rental-cnic-indefinite` remains enabled for `rental-private/`; no CNIC objects or metadata were deleted. The existing daily CNIC Worker is older than the latest claim-leased source. Do not change the lock or deletion behavior until deployed code, retention scope and runtime health are reviewed.
+- Owner reconfirmed in chat on 26 November that legal approval for the CNIC retention policy has been obtained and authorised proceeding. The controlled policy record still lacks the approving authority, effective date and exact scope artifact; retain the lock until those details are recorded and the deployed implementation is reconciled.
+- GitHub `main` branch-protection status could not be read through the connected integration (HTTP 403/resource not accessible). Do not represent protection as configured or verified.
 
-## Remaining release gates — not safely automatable from this session
-1. Provision the two independent Pages application keys only after the owner has established password-manager escrow and a separate recovery copy. The guarded workflow generates keys and cannot prove external owner custody; do not run it and leave the only copies unrecoverable.
-2. Deploy and runtime-test the outbox Worker only after an approved controlled release. Its current artifact build passes, but the Worker is not deployed and no production cron execution is claimed. Email/WhatsApp remain disabled until sender/domain, provider credentials, templates and opt-in are verified.
-3. Complete the legal approval evidence record and retention lock-transition review. Keep the indefinite R2 lock enabled meanwhile.
-4. Establish an independent off-account/offline backup and key escrow, then run and record a restore drill. Same-account D1/R2 recovery is not independent disaster recovery.
-5. Replace broad, non-expiring Cloudflare credentials with least-privilege credentials and verify CI/runtime access. Configure and verify GitHub `main` protection through an administrator.
-6. Add a durable migration-history ledger with a rehearsed migration that records only migrations confirmed applied. Do not mark offline POS migrations 0045–0049 as applied.
-7. Complete owner review of catalogue, SKU/size/colour stock, vehicle fleet, prices, delivery/rental/payment/refund policies and published claims.
-8. Perform physical Android/PWA and POS acceptance: airplane-mode behavior, reconnect/replay/conflict handling, barcode/camera, printer, shift opening/closing and physical cash reconciliation. Keep online POS authoritative and offline checkout disabled until accepted.
-9. Complete provider sandbox tests and production smoke tests after the guarded Pages release, including admin login, AI-key decrypt/re-encrypt, rental document preview, Turnstile, checkout/COD expiry, email and WhatsApp only when configured.
+## Remaining release gates
+1. Establish owner-controlled password-manager escrow and an independent recovery copy for the two application keys. The guarded provisioning workflow generates random 256-bit keys and refuses unsafe partial regeneration; do not deploy a key that cannot be recovered.
+2. After key custody is verified, provision `AI_KEYS_ENCRYPTION_KEY` and `CNIC_PREVIEW_HMAC_KEY`, verify the vault migration/re-encryption and CNIC preview signing, then release the latest Pages application through a controlled deployment and smoke test.
+3. Deploy the verified outbox Worker bundle and confirm its five-minute Cron Trigger. Configure verified Resend sender credentials and approved Meta WhatsApp utility template/credentials separately on Pages and Worker; test actual opted-in delivery before enabling customer messages.
+4. Establish off-account/offline D1 and private R2 backup custody, protect the encryption key separately, and complete an independent restore drill. The existing verified backup is same-account recovery only.
+5. Configure and verify GitHub `main` branch protection and replace broad/non-expiring credentials with least-privilege tokens.
+6. Keep migrations 0045–0049 unapplied until the physical offline-POS acceptance and signing-key custody gates pass. Do not enable offline checkout by assumption.
+7. Reconcile the published catalogue: genuine product photographs; exact sizes/colours/SKUs/barcodes and per-variant stock; retail/wholesale prices; brand claims; and the Toyota fleet record, rates and rental terms. Correct the aggregate Trouser variant only after the physical count is verified.
+8. Complete end-to-end checkout, COD expiry, fulfilment, customer notifications and approved payment-provider sandbox/live tests. No live payment integration is considered verified merely because its adapter exists.
+9. Complete physical Android/PWA/POS acceptance, barcode/camera and printer tests, offline/reconnect/replay checks, shift opening/closing and physical cash reconciliation. The open register session must be reconciled by shop staff, not programmatically closed.
+10. Attach the CNIC approval details and complete retention implementation/lock transition review. Preserve existing CNIC protections until then.
 
-**Release decision (26 November 2026): NOT READY for full production release.** Latest source and automated CI are green, but the live Pages deployment is behind `main`, the dedicated app keys and owner recovery custody are absent, the outbox Worker is not deployed, and owner/device/provider acceptance remains open. Preserve current production traffic and business data. Do not enable offline checkout, CNIC deletion, payments or customer messaging by assumption.
+**Release decision (26 November 2026): NOT READY for unrestricted customer sales.** The exact PR-head CI and security checks pass and PR #86 is merged, but the live Pages app is behind main; dedicated keys and recovery custody are absent; the outbox Worker and providers are not active; and catalogue, backup, branch-protection, payment and physical-device acceptance remain incomplete. Preserve current production traffic and customer/business data.
+
 
 ---
 
