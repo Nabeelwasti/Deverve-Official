@@ -1,3 +1,36 @@
+# Offline POS production rollout — 26 November 2026
+
+**Current state:** the offline-first POS implementation is merged into `main` (PR #51), deployed with the Pages application, its production D1 schema is applied, its permit-signing keypair is configured, and the production checkout feature flag is enabled for controlled setup.
+
+## Verified rollout actions
+
+- Cloudflare Pages project: `deverve-official`; production branch `main`; latest application deployment before this rollout: `fd6a9108-0ef9-4bd4-9256-97bd3b86e65e`, source commit `60ec9f44611ecc4d92b4f5c4ed0815458c9bcffa`.
+- Production D1: `deverve-production` (`355da876-17c4-4762-a59d-bb85f2e4551b`).
+- A full D1 export checkpoint was completed immediately before applying the offline schema. Export completed successfully and the Cloudflare export service confirmed the SQL dump upload. This is a pre-migration recovery checkpoint; it is not represented as an encrypted, off-account restore drill.
+- Applied, in order, the repository migrations `0045`–`0049` from their exact `main` source files:
+  - `0045_pos_offline_emergency_foundation.sql`
+  - `0046_pos_offline_enrollment_challenges.sql`
+  - `0047_pos_offline_permit_guards.sql`
+  - `0048_pos_offline_permit_snapshot.sql`
+  - `0049_pos_offline_private_cost_snapshot.sql`
+- Read-back verified all seven `pos_offline_*` tables and all 20 required guard triggers. `PRAGMA foreign_key_check` returned no violations.
+- Read-back verified zero enrolled devices, zero permits and zero stock allocations. No stock reservation, product, sale, payment, customer, rental or POS-session business rows were created or changed by this rollout.
+- The one pre-existing open POS session remains untouched.
+- Generated a fresh P-256 ECDSA permit-signing keypair, verified sign/verify locally, and stored the private JWK as the encrypted Pages secret `POS_OFFLINE_PERMIT_PRIVATE_JWK`; the public-only JWK is configured as `POS_OFFLINE_PERMIT_PUBLIC_JWK`. Existing Pages secrets were verified preserved. Private key material is not recorded in Git or this document.
+- Set `OFFLINE_POS_CHECKOUT_ENABLED=true`. The application still requires an owner/manager-enrolled device, an active cashier grant, an already-open matching shift, and explicit reserved stock before issuing a permit. No device, cashier grant, stock allocation or permit was created automatically.
+
+## Automated validation evidence
+
+- PR #51 full CI run `45487554344` passed every job step, including type-check/build, production dependency audit, SQL binding/schema validation, real Worker offline POS lifecycle integration, isolated D1 migration suite, isolated production-backup-clone migration rehearsal and the full storefront browser suite.
+- The real Worker lifecycle suite covered signed permit/sale processing, replay protection, concurrency, conflict handling, atomic rollback and reconciliation failure paths.
+- Production D1 read-back after rollout confirmed seven tables, 20 triggers, no foreign-key violations, zero offline devices/permits/allocations and the original open shift still present.
+
+## Controlled use boundary
+
+The server-side feature is enabled and ready for owner-managed device setup. No offline device has yet been enrolled and no real-device outage/reload/reconnect, barcode/camera, printer or supervised cash-reconciliation acceptance has been performed in this session. Therefore, **do not describe physical-device acceptance or a supervised sales pilot as completed**. Begin with one owner-approved Android device, one register, an existing open shift, a cashier grant and a small verified stock allocation. Keep offline operation cash-only and limited to the signed permit policy. Reconcile every queued sale before shift close or allocation release.
+
+---
+
 # Pre-launch Pages deployment — 26 November 2026
 
 This release is the pre-customer website launch. It deploys the current tested application to the existing Cloudflare Pages `pages.dev` address; a custom domain, business email, live customer traffic and provider credentials are separate launch/operations tasks and are not prerequisites for publishing the website itself.
