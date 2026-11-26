@@ -1,23 +1,27 @@
-# Current release reconciliation — 26 November 2026
+# Current release reconciliation — 26 November 2026 (post-PR #86)
 
 This section supersedes older dated status notes below. The authoritative detailed audit is [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md).
 
-- [x] Reconcile GitHub `main` at `77b429e41ace7afcc0d181a7f2e6a2e3b64e8356`; latest build/type-check, CodeQL/Gitleaks and outbox bundle build passed (runs 45606537953, 45606537815 and 45606537816).
-- [x] Read-only Cloudflare reconciliation: live Pages deployment is still `2cdb7e70` from `48f4bc7`; automatic production/preview deployment remains disabled.
-- [x] Verify production D1 contains migrations 0050–0054 schema, COD expiry column and CNIC retention guards; keep offline POS migrations 0045–0049 unapplied.
-- [x] Verify `deverve-rental-cnic-indefinite` R2 lock remains enabled for `rental-private/`; preserve existing daily CNIC Worker.
-- [x] Retrieve and inspect the successful 26,768-byte outbox bundle artifact; verify that `deverve-outbox` is still absent from production.
-- [ ] Provision independent application keys only after password-manager escrow and a separate recovery copy are established.
-- [ ] Deploy and runtime-test the outbox Worker through a controlled release; verify its five-minute Cron Trigger. Keep customer email/WhatsApp inactive until provider configuration and test delivery pass.
-- [ ] Attach the CNIC retention legal approval artifact, approving authority, date and exact scope; complete lock-transition review before any deletion behavior changes.
-- [ ] Establish independent off-account/offline backup and key escrow; complete a separate restore drill.
-- [ ] Configure least-privilege Cloudflare credentials and verify GitHub main-branch protection with an administrator.
-- [ ] Add and rehearse a durable migration-history ledger; do not record offline POS migrations as applied.
-- [ ] Complete owner catalogue, inventory, vehicle, pricing and policy review.
-- [ ] Complete physical Android/PWA, offline/reconnect, barcode/camera, printer and POS cash/shift acceptance.
-- [ ] Deploy current Pages source only after all secret/recovery gates pass, then run production smoke tests and owner sign-off.
+- [x] Merge PR #86 at `cd1bcf3ee113dac57faf99cf8af16b2591c851ba`: date-sensitive offline POS schema-probe fixture and CMS gallery-upload state fix.
+- [x] Exact PR-head Build/type-check and complete browser suite passed: [run 45731649819](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649819).
+- [x] CodeQL and Gitleaks passed: [run 45731649842](https://github.com/Nabeelwasti/Deverve-Official/actions/runs/45731649842).
+- [x] Read-only Cloudflare reconciliation: live Pages deployment remains `2cdb7e70` from older commit `48f4bc7`; automatic production/preview deployments remain disabled.
+- [x] Verify production D1 contains migrations 0050–0054; keep offline POS migrations 0045–0049 unapplied.
+- [x] Verify `deverve-rental-cnic-indefinite` R2 lock remains enabled for `rental-private/`; no CNIC objects or metadata were deleted.
+- [x] Read-only catalogue reconciliation: 5 products (3 published), 7 variants and 1 available Toyota vehicle. Record product media/variant/stock defects in issue #52; no records changed.
+- [ ] Provision independent application keys only after owner-controlled password-manager escrow and separate recovery copies are established.
+- [ ] Release the latest Pages application after secret dependencies and key recovery are verified; run production smoke tests.
+- [ ] Deploy and runtime-test `deverve-outbox`; verify its five-minute Cron Trigger. Keep customer email/WhatsApp delivery inactive until provider credentials, sender/template and consent tests pass.
+- [ ] Establish independent off-account/offline backup custody and complete a separate restore drill.
+- [ ] Configure and verify GitHub `main` branch protection and least-privilege Cloudflare credentials.
+- [ ] Record CNIC approval authority, effective date and exact scope in the controlled policy record; preserve the existing R2 lock until retention code/health and lock transition are reviewed. Owner reconfirmed approval in chat on 26 November.
+- [ ] Owner/physical review: product photos, size/colour/SKU/barcode stock, prices, authenticity claims, vehicle details/rates and business policies.
+- [ ] Complete checkout/COD/fulfilment/payment/provider end-to-end acceptance.
+- [ ] Complete physical Android/PWA/POS acceptance, printer/barcode/camera tests, offline/reconnect tests and cash/shift reconciliation.
+- [ ] Do not enable offline checkout or alter CNIC deletion behavior until their specific acceptance gates pass.
 
-**Release status: NOT READY.** Keep the current Pages deployment stable, online POS authoritative, offline checkout disabled and the CNIC R2 indefinite lock enabled.
+**Release status: NOT READY for unrestricted customer sales.** Keep the existing production deployment stable, online POS authoritative, offline checkout disabled and the CNIC R2 indefinite lock enabled.
+
 
 ---
 
